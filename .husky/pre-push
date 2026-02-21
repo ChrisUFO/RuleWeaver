@@ -1,0 +1,54 @@
+#!/usr/bin/env sh
+
+# Check if this is a documentation-only change
+is_doc_only() {
+  # Get list of files changed compared to the base branch
+  # For pushes, compare against the remote tracking branch
+  base=$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null || echo "origin/main")
+  changed=$(git diff --name-only "$base"...HEAD 2>/dev/null || git diff --name-only HEAD~1 HEAD)
+  
+  # If no changed files, not doc-only
+  if [ -z "$changed" ]; then
+    return 1
+  fi
+  
+  # Check if any file is NOT a documentation file
+  for file in $changed; do
+    case "$file" in
+      *.md|*.txt|LICENSE|*.rst|docs/*|.husky/*)
+        # Documentation file, continue checking
+        ;;
+      *)
+        # Non-documentation file found
+        return 1
+        ;;
+    esac
+  done
+  
+  # All files are documentation
+  return 0
+}
+
+# Skip hooks for documentation-only changes
+if is_doc_only; then
+  echo "📝 Documentation-only change, skipping tests and type checks"
+  exit 0
+fi
+
+echo "🔍 Running TypeScript type check..."
+npm run typecheck
+
+echo ""
+echo "🦀 Running Rust lint (clippy)..."
+npm run lint:rust
+
+echo ""
+echo "🧪 Running frontend tests..."
+npm run test
+
+echo ""
+echo "🧪 Running Rust tests..."
+npm run test:rust
+
+echo ""
+echo "✅ All pre-push checks passed"

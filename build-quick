@@ -1,0 +1,13 @@
+#!/bin/bash
+
+# RuleWeaver Quick Build Script
+# Builds without running tests/linting (for faster iteration)
+
+set -e
+
+echo "⚡ Quick building RuleWeaver..."
+npm run tauri:build
+
+echo ""
+echo "✅ Build complete!"
+echo "📁 Distribution files are in src-tauri/target/release/bundle/"
