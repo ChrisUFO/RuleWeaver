@@ -498,6 +498,42 @@ impl<'a> SyncEngine<'a> {
                     }
                 }
             }
+
+            let local_rules_by_path: HashMap<String, Vec<Rule>> = {
+                let mut map: HashMap<String, Vec<Rule>> = HashMap::new();
+                for rule in adapter_rules.iter().filter(|r| r.scope == Scope::Local) {
+                    if let Some(paths) = &rule.target_paths {
+                        for base_path in paths {
+                            map.entry(base_path.clone()).or_default().push(rule.clone());
+                        }
+                    }
+                }
+                map
+            };
+
+            for (base_path, _path_rules) in local_rules_by_path {
+                let path = PathBuf::from(&base_path).join(adapter.file_name());
+                files_written.push(path.to_string_lossy().to_string());
+
+                if let Some(local_hash) = self
+                    .db
+                    .get_file_hash(&path.to_string_lossy())
+                    .ok()
+                    .flatten()
+                {
+                    if let Ok(current_hash) = compute_file_hash(&path) {
+                        if local_hash != current_hash {
+                            conflicts.push(Conflict {
+                                id: uuid::Uuid::new_v4().to_string(),
+                                file_path: path.to_string_lossy().to_string(),
+                                adapter_name: adapter.name().to_string(),
+                                local_hash,
+                                current_hash,
+                            });
+                        }
+                    }
+                }
+            }
         }
 
         SyncResult {
@@ -528,14 +564,41 @@ impl<'a> SyncEngine<'a> {
         let adapters = get_all_adapters();
 
         for adapter in &adapters {
-            let adapter_rules: Vec<Rule> = rules
-                .iter()
-                .filter(|r| r.enabled_adapters.contains(&adapter.id()) && r.scope == Scope::Global)
-                .cloned()
-                .collect();
+            if adapter.global_path() == path {
+                let adapter_rules: Vec<Rule> = rules
+                    .iter()
+                    .filter(|r| {
+                        r.enabled_adapters.contains(&adapter.id()) && r.scope == Scope::Global
+                    })
+                    .cloned()
+                    .collect();
 
-            if adapter.global_path() == path && !adapter_rules.is_empty() {
-                return self.sync_file(adapter.as_ref(), &adapter_rules, &path);
+                if !adapter_rules.is_empty() {
+                    return self.sync_file(adapter.as_ref(), &adapter_rules, &path);
+                }
+            }
+
+            let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            if file_name == adapter.file_name() {
+                if let Some(parent) = path.parent() {
+                    let parent_str = parent.to_string_lossy();
+                    let local_rules: Vec<Rule> = rules
+                        .iter()
+                        .filter(|r| {
+                            r.enabled_adapters.contains(&adapter.id())
+                                && r.scope == Scope::Local
+                                && r.target_paths
+                                    .as_ref()
+                                    .map(|paths| paths.contains(&parent_str.to_string()))
+                                    .unwrap_or(false)
+                        })
+                        .cloned()
+                        .collect();
+
+                    if !local_rules.is_empty() {
+                        return self.sync_file(adapter.as_ref(), &local_rules, &path);
+                    }
+                }
             }
         }
 

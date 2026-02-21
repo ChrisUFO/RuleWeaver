@@ -1,10 +1,28 @@
 use crate::database::{get_app_data_path, Database};
-use crate::error::Result;
+use crate::error::{AppError, Result};
 use crate::models::{CreateRuleInput, Rule, SyncHistoryEntry, SyncResult, UpdateRuleInput};
 use crate::sync::SyncEngine;
 use std::collections::HashMap;
 use std::fs;
+use std::path::PathBuf;
 use tauri::State;
+
+fn validate_path(path: &str) -> Result<PathBuf> {
+    let canonical_path = std::fs::canonicalize(path).map_err(|e| AppError::InvalidInput {
+        message: format!("Invalid path: {}", e),
+    })?;
+
+    let home_dir = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+    let canonical_home = std::fs::canonicalize(&home_dir).unwrap_or(home_dir);
+
+    if !canonical_path.starts_with(&canonical_home) {
+        return Err(AppError::InvalidInput {
+            message: "Path must be within user's home directory".to_string(),
+        });
+    }
+
+    Ok(canonical_path)
+}
 
 #[tauri::command]
 pub fn get_all_rules(db: State<'_, Database>) -> Result<Vec<Rule>> {
@@ -60,7 +78,8 @@ pub fn get_sync_history(
 
 #[tauri::command]
 pub fn read_file_content(path: String) -> Result<String> {
-    let content = fs::read_to_string(&path)?;
+    let validated_path = validate_path(&path)?;
+    let content = fs::read_to_string(validated_path)?;
     Ok(content)
 }
 

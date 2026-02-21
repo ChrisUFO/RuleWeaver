@@ -64,8 +64,14 @@ impl Database {
                     target_paths,
                     enabled_adapters,
                     enabled,
-                    created_at: chrono::Utc.timestamp_opt(created_at, 0).single().unwrap(),
-                    updated_at: chrono::Utc.timestamp_opt(updated_at, 0).single().unwrap(),
+                    created_at: chrono::Utc
+                        .timestamp_opt(created_at, 0)
+                        .single()
+                        .unwrap_or_else(|| chrono::Utc::now()),
+                    updated_at: chrono::Utc
+                        .timestamp_opt(updated_at, 0)
+                        .single()
+                        .unwrap_or_else(|| chrono::Utc::now()),
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -108,8 +114,14 @@ impl Database {
                     target_paths,
                     enabled_adapters,
                     enabled,
-                    created_at: chrono::Utc.timestamp_opt(created_at, 0).single().unwrap(),
-                    updated_at: chrono::Utc.timestamp_opt(updated_at, 0).single().unwrap(),
+                    created_at: chrono::Utc
+                        .timestamp_opt(created_at, 0)
+                        .single()
+                        .unwrap_or_else(|| chrono::Utc::now()),
+                    updated_at: chrono::Utc
+                        .timestamp_opt(updated_at, 0)
+                        .single()
+                        .unwrap_or_else(|| chrono::Utc::now()),
                 })
             })
             .map_err(|_| AppError::RuleNotFound { id: id.to_string() })?;
@@ -263,7 +275,10 @@ impl Database {
 
                 Ok(SyncHistoryEntry {
                     id,
-                    timestamp: chrono::Utc.timestamp_opt(timestamp, 0).single().unwrap(),
+                    timestamp: chrono::Utc
+                        .timestamp_opt(timestamp, 0)
+                        .single()
+                        .unwrap_or_else(|| chrono::Utc::now()),
                     files_written,
                     status,
                     triggered_by,
@@ -313,53 +328,61 @@ impl Database {
 }
 
 fn run_migrations(conn: &Connection) -> Result<()> {
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS rules (
-            id TEXT PRIMARY KEY NOT NULL,
-            name TEXT NOT NULL,
-            content TEXT NOT NULL,
-            scope TEXT NOT NULL,
-            target_paths TEXT,
-            enabled_adapters TEXT NOT NULL,
-            enabled INTEGER NOT NULL DEFAULT 1,
-            created_at INTEGER NOT NULL,
-            updated_at INTEGER NOT NULL
-        )",
-        [],
-    )?;
+    let current_version: i32 = conn
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .unwrap_or(0);
 
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS sync_history (
-            file_path TEXT PRIMARY KEY NOT NULL,
-            content_hash TEXT NOT NULL,
-            last_sync_at INTEGER NOT NULL
-        )",
-        [],
-    )?;
+    if current_version < 1 {
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS rules (
+                id TEXT PRIMARY KEY NOT NULL,
+                name TEXT NOT NULL,
+                content TEXT NOT NULL,
+                scope TEXT NOT NULL,
+                target_paths TEXT,
+                enabled_adapters TEXT NOT NULL,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            )",
+            [],
+        )?;
 
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS sync_logs (
-            id TEXT PRIMARY KEY NOT NULL,
-            timestamp INTEGER NOT NULL,
-            files_written INTEGER NOT NULL,
-            status TEXT NOT NULL,
-            triggered_by TEXT NOT NULL
-        )",
-        [],
-    )?;
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS sync_history (
+                file_path TEXT PRIMARY KEY NOT NULL,
+                content_hash TEXT NOT NULL,
+                last_sync_at INTEGER NOT NULL
+            )",
+            [],
+        )?;
 
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS settings (
-            key TEXT PRIMARY KEY NOT NULL,
-            value TEXT NOT NULL
-        )",
-        [],
-    )?;
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS sync_logs (
+                id TEXT PRIMARY KEY NOT NULL,
+                timestamp INTEGER NOT NULL,
+                files_written INTEGER NOT NULL,
+                status TEXT NOT NULL,
+                triggered_by TEXT NOT NULL
+            )",
+            [],
+        )?;
 
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_rules_scope ON rules(scope)",
-        [],
-    )?;
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY NOT NULL,
+                value TEXT NOT NULL
+            )",
+            [],
+        )?;
+
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_rules_scope ON rules(scope)",
+            [],
+        )?;
+
+        conn.execute("PRAGMA user_version = 1", [])?;
+    }
 
     Ok(())
 }

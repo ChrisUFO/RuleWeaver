@@ -38,7 +38,7 @@ export const api = {
   },
 
   app: {
-    getAppDataPath: () => invoke<string>("get_app_data_path"),
+    getAppDataPath: () => invoke<string>("get_app_data_path_cmd"),
     openInExplorer: (path: string) => invoke<void>("open_in_explorer", { path }),
     getVersion: () => invoke<string>("get_app_version"),
   },
