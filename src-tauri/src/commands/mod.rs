@@ -24,6 +24,35 @@ fn validate_path(path: &str) -> Result<PathBuf> {
     Ok(canonical_path)
 }
 
+const MAX_RULE_NAME_LENGTH: usize = 200;
+const MAX_RULE_CONTENT_LENGTH: usize = 1_000_000;
+
+fn validate_rule_input(name: &str, content: &str) -> Result<()> {
+    let trimmed_name = name.trim();
+    if trimmed_name.is_empty() {
+        return Err(AppError::InvalidInput {
+            message: "Rule name cannot be empty".to_string(),
+        });
+    }
+    if trimmed_name.len() > MAX_RULE_NAME_LENGTH {
+        return Err(AppError::InvalidInput {
+            message: format!(
+                "Rule name too long (max {} characters)",
+                MAX_RULE_NAME_LENGTH
+            ),
+        });
+    }
+    if content.len() > MAX_RULE_CONTENT_LENGTH {
+        return Err(AppError::InvalidInput {
+            message: format!(
+                "Rule content too large (max {} characters)",
+                MAX_RULE_CONTENT_LENGTH
+            ),
+        });
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub fn get_all_rules(db: State<'_, Database>) -> Result<Vec<Rule>> {
     db.get_all_rules()
@@ -36,11 +65,23 @@ pub fn get_rule_by_id(id: String, db: State<'_, Database>) -> Result<Rule> {
 
 #[tauri::command]
 pub fn create_rule(input: CreateRuleInput, db: State<'_, Database>) -> Result<Rule> {
+    validate_rule_input(&input.name, &input.content)?;
     db.create_rule(input)
 }
 
 #[tauri::command]
 pub fn update_rule(id: String, input: UpdateRuleInput, db: State<'_, Database>) -> Result<Rule> {
+    if let Some(ref name) = input.name {
+        if let Some(ref content) = input.content {
+            validate_rule_input(name, content)?;
+        } else {
+            let existing = db.get_rule_by_id(&id)?;
+            validate_rule_input(name, &existing.content)?;
+        }
+    } else if let Some(ref content) = input.content {
+        let existing = db.get_rule_by_id(&id)?;
+        validate_rule_input(&existing.name, content)?;
+    }
     db.update_rule(&id, input)
 }
 

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -369,14 +369,34 @@ impl<'a> SyncEngine<'a> {
         Self { db }
     }
 
+    fn get_disabled_adapters(&self) -> HashSet<AdapterType> {
+        self.db
+            .get_setting("adapter_settings")
+            .ok()
+            .flatten()
+            .and_then(|s| serde_json::from_str::<HashMap<String, bool>>(&s).ok())
+            .map(|m| {
+                m.into_iter()
+                    .filter(|(_, enabled)| !enabled)
+                    .filter_map(|(id, _)| AdapterType::from_str(&id))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
     pub fn sync_all(&self, rules: Vec<Rule>) -> SyncResult {
         let mut files_written = Vec::new();
         let mut errors = Vec::new();
         let conflicts = Vec::new();
 
+        let disabled_adapters = self.get_disabled_adapters();
         let adapters = get_all_adapters();
 
         for adapter in &adapters {
+            if disabled_adapters.contains(&adapter.id()) {
+                continue;
+            }
+
             let adapter_rules: Vec<Rule> = rules
                 .iter()
                 .filter(|r| r.enabled_adapters.contains(&adapter.id()))
@@ -456,9 +476,14 @@ impl<'a> SyncEngine<'a> {
         let mut files_written = Vec::new();
         let mut conflicts = Vec::new();
 
+        let disabled_adapters = self.get_disabled_adapters();
         let adapters = get_all_adapters();
 
         for adapter in &adapters {
+            if disabled_adapters.contains(&adapter.id()) {
+                continue;
+            }
+
             let adapter_rules: Vec<Rule> = rules
                 .iter()
                 .filter(|r| r.enabled_adapters.contains(&adapter.id()))

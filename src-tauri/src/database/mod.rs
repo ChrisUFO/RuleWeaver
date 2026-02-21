@@ -67,11 +67,11 @@ impl Database {
                     created_at: chrono::Utc
                         .timestamp_opt(created_at, 0)
                         .single()
-                        .unwrap_or_else(|| chrono::Utc::now()),
+                        .unwrap_or_else(chrono::Utc::now),
                     updated_at: chrono::Utc
                         .timestamp_opt(updated_at, 0)
                         .single()
-                        .unwrap_or_else(|| chrono::Utc::now()),
+                        .unwrap_or_else(chrono::Utc::now),
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -117,11 +117,11 @@ impl Database {
                     created_at: chrono::Utc
                         .timestamp_opt(created_at, 0)
                         .single()
-                        .unwrap_or_else(|| chrono::Utc::now()),
+                        .unwrap_or_else(chrono::Utc::now),
                     updated_at: chrono::Utc
                         .timestamp_opt(updated_at, 0)
                         .single()
-                        .unwrap_or_else(|| chrono::Utc::now()),
+                        .unwrap_or_else(chrono::Utc::now),
                 })
             })
             .map_err(|_| AppError::RuleNotFound { id: id.to_string() })?;
@@ -278,7 +278,7 @@ impl Database {
                     timestamp: chrono::Utc
                         .timestamp_opt(timestamp, 0)
                         .single()
-                        .unwrap_or_else(|| chrono::Utc::now()),
+                        .unwrap_or_else(chrono::Utc::now),
                     files_written,
                     status,
                     triggered_by,
@@ -382,6 +382,15 @@ fn run_migrations(conn: &Connection) -> Result<()> {
         )?;
 
         conn.execute("PRAGMA user_version = 1", [])?;
+    }
+
+    if current_version < 2 {
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sync_logs_timestamp ON sync_logs(timestamp)",
+            [],
+        )?;
+
+        conn.execute("PRAGMA user_version = 2", [])?;
     }
 
     Ok(())

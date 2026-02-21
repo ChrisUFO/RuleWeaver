@@ -102,13 +102,16 @@ export const useRulesStore = create<RulesState>((set, get) => ({
   duplicateRule: async (rule: Rule) => {
     set({ isLoading: true, error: null });
     try {
-      const newRule = await api.rules.create({
+      let newRule = await api.rules.create({
         name: `${rule.name} (Copy)`,
         content: rule.content,
         scope: rule.scope,
         targetPaths: rule.targetPaths ?? undefined,
         enabledAdapters: rule.enabledAdapters,
       });
+      if (!rule.enabled) {
+        newRule = await api.rules.toggle(newRule.id, false);
+      }
       set((state) => ({
         rules: [...state.rules, newRule],
         isLoading: false,
