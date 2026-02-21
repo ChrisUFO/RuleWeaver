@@ -1,6 +1,6 @@
-# AigentManager MVP Plan
+# RuleWeaver MVP Plan
 
-This document outlines the comprehensive, end-to-end plan to reach a Minimum Viable Product (MVP) for the AigentManager application. The plan is organized by prioritized phases: Foundation/Rules, Commands (MCP), and Skills.
+This document outlines the comprehensive, end-to-end plan to reach a Minimum Viable Product (MVP) for the RuleWeaver application. The plan is organized by prioritized phases: Foundation/Rules, Commands (MCP), and Skills.
 
 ## Phase 1: Foundation and "Rules" Sync Engine (High Priority)
 *Objective: Establish the core architecture, GUI, database, and the ability to sync static instruction files (like AGENTS.md, GEMINI.md, .clinerules) globally and locally.*

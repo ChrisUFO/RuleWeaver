@@ -1,6 +1,6 @@
 # System Architecture
 
-AigentManager is designed as a standalone desktop application. It requires deep filesystem access to sync tool configurations globally and locally, as well as network capabilities to host a local server.
+RuleWeaver is designed as a standalone desktop application. It requires deep filesystem access to sync tool configurations globally and locally, as well as network capabilities to host a local server.
 
 ## Tech Stack
 *   **Framework:** [Tauri](https://tauri.app/) (Provides a lightweight, fast, cross-platform standalone executable by combining a native Rust backend with a web frontend).

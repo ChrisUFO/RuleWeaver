@@ -1,4 +1,4 @@
-# AigentManager Roadmap
+# RuleWeaver Roadmap
 
 This roadmap defines the path to the Minimum Viable Product (MVP), structured around the requested priority: Rules > Commands > Skills.
 
@@ -15,7 +15,7 @@ This roadmap defines the path to the Minimum Viable Product (MVP), structured ar
 - [ ] **Core Engine:** Integrate a lightweight MCP Server running in the Rust backend of the Tauri app.
 - [ ] **UI:** Build the "Commands Manager". Interface to define shell commands, scripts, and their required arguments.
 - [ ] **Feature:** Map defined Custom Commands to dynamically generated MCP `tools`.
-- [ ] Document instructions on how to connect the target AI tools (Claude Code, OpenCode, etc.) to the local AigentManager MCP port.
+- [ ] Document instructions on how to connect the target AI tools (Claude Code, OpenCode, etc.) to the local RuleWeaver MCP port.
 
 ## Phase 3: "Skills" MVP (Lower Priority)
 *Goal: Support complex, multi-file execution environments (Agent Skills).*
