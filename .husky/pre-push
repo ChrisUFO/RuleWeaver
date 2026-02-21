@@ -35,6 +35,8 @@ if is_doc_only; then
   exit 0
 fi
 
+set -e
+
 echo "🔍 Running TypeScript type check..."
 npm run typecheck
 

@@ -182,7 +182,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
       setSyncHistory(history);
       if (history.length > 0) {
         const lastEntry = history[0];
-        setLastSync(new Date(lastEntry.timestamp).toLocaleTimeString());
+        setLastSync(new Date(lastEntry.timestamp * 1000).toLocaleTimeString());
       }
     } catch {
       console.error("Failed to fetch sync history");
@@ -426,7 +426,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                           {entry.filesWritten} file{entry.filesWritten !== 1 ? "s" : ""} synced
                         </p>
                         <p className="text-xs text-muted-foreground">
-                          {new Date(entry.timestamp).toLocaleString()}
+                          {new Date(entry.timestamp * 1000).toLocaleString()}
                         </p>
                       </div>
                     </div>

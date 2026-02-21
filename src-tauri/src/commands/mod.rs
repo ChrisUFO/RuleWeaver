@@ -12,7 +12,8 @@ fn validate_path(path: &str) -> Result<PathBuf> {
         message: format!("Invalid path: {}", e),
     })?;
 
-    let home_dir = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+    let home_dir = dirs::home_dir()
+        .ok_or_else(|| AppError::Path("Could not determine home directory".to_string()))?;
     let canonical_home = std::fs::canonicalize(&home_dir).unwrap_or(home_dir);
 
     if !canonical_path.starts_with(&canonical_home) {
@@ -201,8 +202,9 @@ pub fn open_in_explorer(path: String) -> Result<()> {
 
     #[cfg(target_os = "linux")]
     {
+        let parent_dir = validated_path.parent().unwrap_or(std::path::Path::new("/"));
         std::process::Command::new("xdg-open")
-            .arg(&validated_path.to_string_lossy())
+            .arg(parent_dir)
             .spawn()
             .map_err(crate::error::AppError::Io)?;
     }
