@@ -1,4 +1,5 @@
 use serde::Serialize;
+use std::sync::PoisonError;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -24,6 +25,15 @@ pub enum AppError {
 
     #[error("Path error: {0}")]
     Path(String),
+
+    #[error("Database lock poisoned")]
+    DatabasePoisoned,
+}
+
+impl<T> From<PoisonError<T>> for AppError {
+    fn from(_: PoisonError<T>) -> Self {
+        AppError::DatabasePoisoned
+    }
 }
 
 impl Serialize for AppError {

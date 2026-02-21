@@ -28,7 +28,7 @@ impl Database {
     }
 
     pub fn get_all_rules(&self) -> Result<Vec<Rule>> {
-        let conn = self.0.lock().unwrap();
+        let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
         let mut stmt = conn.prepare(
             "SELECT id, name, content, scope, target_paths, enabled_adapters, enabled, created_at, updated_at 
              FROM rules 
@@ -80,7 +80,7 @@ impl Database {
     }
 
     pub fn get_rule_by_id(&self, id: &str) -> Result<Rule> {
-        let conn = self.0.lock().unwrap();
+        let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
         let mut stmt = conn.prepare(
             "SELECT id, name, content, scope, target_paths, enabled_adapters, enabled, created_at, updated_at 
              FROM rules 
@@ -124,13 +124,18 @@ impl Database {
                         .unwrap_or_else(chrono::Utc::now),
                 })
             })
-            .map_err(|_| AppError::RuleNotFound { id: id.to_string() })?;
+            .map_err(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => {
+                    AppError::RuleNotFound { id: id.to_string() }
+                }
+                _ => AppError::Database(e),
+            })?;
 
         Ok(rule)
     }
 
     pub fn create_rule(&self, input: CreateRuleInput) -> Result<Rule> {
-        let conn = self.0.lock().unwrap();
+        let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
         let now = chrono::Utc::now().timestamp();
         let id = uuid::Uuid::new_v4().to_string();
 
@@ -162,7 +167,7 @@ impl Database {
 
     pub fn update_rule(&self, id: &str, input: UpdateRuleInput) -> Result<Rule> {
         let existing = self.get_rule_by_id(id)?;
-        let conn = self.0.lock().unwrap();
+        let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
 
         let name = input.name.unwrap_or(existing.name);
         let content = input.content.unwrap_or(existing.content);
@@ -198,13 +203,13 @@ impl Database {
     }
 
     pub fn delete_rule(&self, id: &str) -> Result<()> {
-        let conn = self.0.lock().unwrap();
+        let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
         conn.execute("DELETE FROM rules WHERE id = ?", params![id])?;
         Ok(())
     }
 
     pub fn toggle_rule(&self, id: &str, enabled: bool) -> Result<Rule> {
-        let conn = self.0.lock().unwrap();
+        let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
         let now = chrono::Utc::now().timestamp();
 
         conn.execute(
@@ -217,7 +222,7 @@ impl Database {
     }
 
     pub fn get_file_hash(&self, file_path: &str) -> Result<Option<String>> {
-        let conn = self.0.lock().unwrap();
+        let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
         let result: Option<String> = conn
             .query_row(
                 "SELECT content_hash FROM sync_history WHERE file_path = ?",
@@ -230,7 +235,7 @@ impl Database {
     }
 
     pub fn set_file_hash(&self, file_path: &str, hash: &str) -> Result<()> {
-        let conn = self.0.lock().unwrap();
+        let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
         let now = chrono::Utc::now().timestamp();
 
         conn.execute(
@@ -243,7 +248,7 @@ impl Database {
     }
 
     pub fn add_sync_log(&self, files_written: u32, status: &str, triggered_by: &str) -> Result<()> {
-        let conn = self.0.lock().unwrap();
+        let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
         let id = uuid::Uuid::new_v4().to_string();
         let now = chrono::Utc::now().timestamp();
 
@@ -257,7 +262,7 @@ impl Database {
     }
 
     pub fn get_sync_history(&self, limit: u32) -> Result<Vec<SyncHistoryEntry>> {
-        let conn = self.0.lock().unwrap();
+        let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
         let mut stmt = conn.prepare(
             "SELECT id, timestamp, files_written, status, triggered_by 
              FROM sync_logs 
@@ -290,7 +295,7 @@ impl Database {
     }
 
     pub fn get_setting(&self, key: &str) -> Result<Option<String>> {
-        let conn = self.0.lock().unwrap();
+        let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
         let result: Option<String> = conn
             .query_row(
                 "SELECT value FROM settings WHERE key = ?",
@@ -303,7 +308,7 @@ impl Database {
     }
 
     pub fn set_setting(&self, key: &str, value: &str) -> Result<()> {
-        let conn = self.0.lock().unwrap();
+        let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
         conn.execute(
             "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
             params![key, value],
@@ -312,7 +317,7 @@ impl Database {
     }
 
     pub fn get_all_settings(&self) -> Result<std::collections::HashMap<String, String>> {
-        let conn = self.0.lock().unwrap();
+        let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
         let mut stmt = conn.prepare("SELECT key, value FROM settings")?;
 
         let settings = stmt

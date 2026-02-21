@@ -5,8 +5,27 @@ use std::path::{Path, PathBuf};
 use sha2::{Digest, Sha256};
 
 use crate::database::Database;
-use crate::error::Result;
+use crate::error::{AppError, Result};
 use crate::models::{AdapterType, Conflict, Rule, Scope, SyncError, SyncResult};
+
+fn validate_target_path(base_path: &str) -> Result<PathBuf> {
+    let path = PathBuf::from(base_path);
+
+    if path.is_relative() {
+        return Err(AppError::InvalidInput {
+            message: "Target path must be absolute".to_string(),
+        });
+    }
+
+    let path_str = base_path.to_lowercase();
+    if path_str.contains("..") {
+        return Err(AppError::InvalidInput {
+            message: "Target path cannot contain path traversal sequences".to_string(),
+        });
+    }
+
+    Ok(path)
+}
 
 pub trait SyncAdapter: Send + Sync {
     fn id(&self) -> AdapterType;
@@ -430,7 +449,18 @@ impl<'a> SyncEngine<'a> {
                 for rule in adapter_rules.iter().filter(|r| r.scope == Scope::Local) {
                     if let Some(paths) = &rule.target_paths {
                         for path in paths {
-                            map.entry(path.clone()).or_default().push(rule.clone());
+                            match validate_target_path(path) {
+                                Ok(_) => {
+                                    map.entry(path.clone()).or_default().push(rule.clone());
+                                }
+                                Err(e) => {
+                                    errors.push(SyncError {
+                                        file_path: path.clone(),
+                                        adapter_name: adapter.name().to_string(),
+                                        message: e.to_string(),
+                                    });
+                                }
+                            }
                         }
                     }
                 }
@@ -529,7 +559,9 @@ impl<'a> SyncEngine<'a> {
                 for rule in adapter_rules.iter().filter(|r| r.scope == Scope::Local) {
                     if let Some(paths) = &rule.target_paths {
                         for base_path in paths {
-                            map.entry(base_path.clone()).or_default().push(rule.clone());
+                            if validate_target_path(base_path).is_ok() {
+                                map.entry(base_path.clone()).or_default().push(rule.clone());
+                            }
                         }
                     }
                 }
@@ -585,6 +617,8 @@ impl<'a> SyncEngine<'a> {
     }
 
     pub fn sync_file_by_path(&self, rules: &[Rule], file_path: &str) -> Result<()> {
+        validate_target_path(file_path)?;
+
         let path = PathBuf::from(file_path);
         let adapters = get_all_adapters();
 

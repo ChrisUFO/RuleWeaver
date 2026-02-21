@@ -12,7 +12,18 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/toast";
 import { api } from "@/lib/tauri";
-import type { Conflict, Rule } from "@/types/rule";
+import type { Conflict, Rule, AdapterType } from "@/types/rule";
+
+const DIFF_PREVIEW_LINES = 50;
+
+const ADAPTER_NAME_TO_ID: Record<string, AdapterType> = {
+  antigravity: "antigravity",
+  "gemini cli": "gemini",
+  opencode: "opencode",
+  cline: "cline",
+  "claude code": "claude-code",
+  codex: "codex",
+};
 
 interface ConflictResolutionDialogProps {
   open: boolean;
@@ -124,19 +135,10 @@ export function ConflictResolutionDialog({
         const remote = await api.sync.readFileContent(conflict.filePath);
         setRemoteContent(remote);
 
-        const adapterName = conflict.adapterName.toLowerCase().replace(" ", "-");
-        const adapterRules = localRules.filter((r) =>
-          r.enabledAdapters.some(
-            (a) =>
-              a.toLowerCase().includes(adapterName) ||
-              (adapterName.includes("gemini") && a === "gemini") ||
-              (adapterName.includes("opencode") && a === "opencode") ||
-              (adapterName.includes("cline") && a === "cline") ||
-              (adapterName.includes("claude") && a === "claude-code") ||
-              (adapterName.includes("codex") && a === "codex") ||
-              (adapterName.includes("antigravity") && a === "antigravity")
-          )
-        );
+        const adapterName = conflict.adapterName.toLowerCase();
+        const adapterId =
+          ADAPTER_NAME_TO_ID[adapterName] || (adapterName.replace(" ", "-") as AdapterType);
+        const adapterRules = localRules.filter((r) => r.enabledAdapters.includes(adapterId));
 
         const globalRules = adapterRules.filter((r) => r.scope === "global" && r.enabled);
 
@@ -170,8 +172,8 @@ export function ConflictResolutionDialog({
   };
 
   const diff = computeDiff(localContent, remoteContent);
-  const displayDiff = showFullDiff ? diff : diff.slice(0, 50);
-  const hasMore = diff.length > 50;
+  const displayDiff = showFullDiff ? diff : diff.slice(0, DIFF_PREVIEW_LINES);
+  const hasMore = diff.length > DIFF_PREVIEW_LINES;
 
   const handleResolve = async () => {
     if (!conflict || !resolution) return;
@@ -277,7 +279,7 @@ export function ConflictResolutionDialog({
                     onClick={() => setShowFullDiff(true)}
                   >
                     <ChevronDown className="h-4 w-4" />
-                    Show {diff.length - 50} more lines
+                    Show {diff.length - DIFF_PREVIEW_LINES} more lines
                   </button>
                 )}
                 {showFullDiff && hasMore && (

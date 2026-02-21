@@ -178,10 +178,15 @@ pub fn get_app_data_path_cmd(app: tauri::AppHandle) -> Result<String> {
 
 #[tauri::command]
 pub fn open_in_explorer(path: String) -> Result<()> {
+    let validated_path =
+        std::fs::canonicalize(&path).map_err(|e| crate::error::AppError::InvalidInput {
+            message: format!("Invalid path: {}", e),
+        })?;
+
     #[cfg(target_os = "windows")]
     {
         std::process::Command::new("explorer")
-            .args(["/select,", &path])
+            .args(["/select,", &validated_path.to_string_lossy()])
             .spawn()
             .map_err(crate::error::AppError::Io)?;
     }
@@ -189,7 +194,7 @@ pub fn open_in_explorer(path: String) -> Result<()> {
     #[cfg(target_os = "macos")]
     {
         std::process::Command::new("open")
-            .args(["-R", &path])
+            .args(["-R", &validated_path.to_string_lossy()])
             .spawn()
             .map_err(crate::error::AppError::Io)?;
     }
@@ -197,7 +202,7 @@ pub fn open_in_explorer(path: String) -> Result<()> {
     #[cfg(target_os = "linux")]
     {
         std::process::Command::new("xdg-open")
-            .arg(&path)
+            .arg(&validated_path.to_string_lossy())
             .spawn()
             .map_err(crate::error::AppError::Io)?;
     }
