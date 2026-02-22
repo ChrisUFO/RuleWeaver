@@ -601,6 +601,17 @@ async fn handle_command_call(
     args_map: serde_json::Map<String, serde_json::Value>,
     shared_db: &Option<Arc<Database>>,
 ) -> serde_json::Value {
+    if let Some(pattern) = contains_disallowed_pattern(&cmd.script) {
+        return json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "error": {
+                "code": -32602,
+                "message": format!("Command script contains a disallowed pattern: {}", pattern)
+            }
+        });
+    }
+
     let missing_required: Vec<String> = cmd
         .arguments
         .iter()

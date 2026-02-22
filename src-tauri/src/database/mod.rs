@@ -107,14 +107,22 @@ impl Database {
 
                 let target_paths: Option<Vec<String>> = match target_paths_json {
                     Some(j) => Some(serde_json::from_str(&j).map_err(|e| {
-                        rusqlite::Error::FromSqlConversionFailure(4, rusqlite::types::Type::Text, Box::new(e))
+                        rusqlite::Error::FromSqlConversionFailure(
+                            4,
+                            rusqlite::types::Type::Text,
+                            Box::new(e),
+                        )
                     })?),
                     None => None,
                 };
 
                 let enabled_adapters: Vec<AdapterType> =
                     serde_json::from_str(&enabled_adapters_json).map_err(|e| {
-                        rusqlite::Error::FromSqlConversionFailure(5, rusqlite::types::Type::Text, Box::new(e))
+                        rusqlite::Error::FromSqlConversionFailure(
+                            5,
+                            rusqlite::types::Type::Text,
+                            Box::new(e),
+                        )
                     })?;
 
                 Ok(Rule {
@@ -157,13 +165,21 @@ impl Database {
                 let scope = Scope::from_str(&scope_str).unwrap_or(Scope::Global);
                 let target_paths: Option<Vec<String>> = match target_paths_json {
                     Some(j) => Some(serde_json::from_str(&j).map_err(|e| {
-                        rusqlite::Error::FromSqlConversionFailure(4, rusqlite::types::Type::Text, Box::new(e))
+                        rusqlite::Error::FromSqlConversionFailure(
+                            4,
+                            rusqlite::types::Type::Text,
+                            Box::new(e),
+                        )
                     })?),
                     None => None,
                 };
                 let enabled_adapters: Vec<AdapterType> =
                     serde_json::from_str(&enabled_adapters_json).map_err(|e| {
-                        rusqlite::Error::FromSqlConversionFailure(5, rusqlite::types::Type::Text, Box::new(e))
+                        rusqlite::Error::FromSqlConversionFailure(
+                            5,
+                            rusqlite::types::Type::Text,
+                            Box::new(e),
+                        )
                     })?;
 
                 Ok(Rule {
@@ -295,9 +311,14 @@ impl Database {
                 let created_at: i64 = row.get(6)?;
                 let updated_at: i64 = row.get(7)?;
 
-                let arguments: Vec<CommandArgument> = serde_json::from_str(&arguments_json).map_err(|e| {
-                    rusqlite::Error::FromSqlConversionFailure(4, rusqlite::types::Type::Text, Box::new(e))
-                })?;
+                let arguments: Vec<CommandArgument> = serde_json::from_str(&arguments_json)
+                    .map_err(|e| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            4,
+                            rusqlite::types::Type::Text,
+                            Box::new(e),
+                        )
+                    })?;
 
                 Ok(Command {
                     id,
@@ -334,9 +355,14 @@ impl Database {
                 let created_at: i64 = row.get(6)?;
                 let updated_at: i64 = row.get(7)?;
 
-                let arguments: Vec<CommandArgument> = serde_json::from_str(&arguments_json).map_err(|e| {
-                    rusqlite::Error::FromSqlConversionFailure(4, rusqlite::types::Type::Text, Box::new(e))
-                })?;
+                let arguments: Vec<CommandArgument> = serde_json::from_str(&arguments_json)
+                    .map_err(|e| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            4,
+                            rusqlite::types::Type::Text,
+                            Box::new(e),
+                        )
+                    })?;
 
                 Ok(Command {
                     id,
@@ -350,7 +376,9 @@ impl Database {
                 })
             })
             .map_err(|e| match e {
-                rusqlite::Error::QueryReturnedNoRows => AppError::CommandNotFound { id: id.to_string() },
+                rusqlite::Error::QueryReturnedNoRows => {
+                    AppError::CommandNotFound { id: id.to_string() }
+                }
                 _ => AppError::Database(e),
             })?;
 
@@ -436,7 +464,11 @@ impl Database {
                     input_schema: {
                         let raw: String = row.get(4)?;
                         serde_json::from_str(&raw).map_err(|e| {
-                            rusqlite::Error::FromSqlConversionFailure(4, rusqlite::types::Type::Text, Box::new(e))
+                            rusqlite::Error::FromSqlConversionFailure(
+                                4,
+                                rusqlite::types::Type::Text,
+                                Box::new(e),
+                            )
                         })?
                     },
                     enabled: row.get(5)?,
@@ -466,7 +498,11 @@ impl Database {
                     input_schema: {
                         let raw: String = row.get(4)?;
                         serde_json::from_str(&raw).map_err(|e| {
-                            rusqlite::Error::FromSqlConversionFailure(4, rusqlite::types::Type::Text, Box::new(e))
+                            rusqlite::Error::FromSqlConversionFailure(
+                                4,
+                                rusqlite::types::Type::Text,
+                                Box::new(e),
+                            )
                         })?
                     },
                     enabled: row.get(5)?,
@@ -475,7 +511,9 @@ impl Database {
                 })
             })
             .map_err(|e| match e {
-                rusqlite::Error::QueryReturnedNoRows => AppError::SkillNotFound { id: id.to_string() },
+                rusqlite::Error::QueryReturnedNoRows => {
+                    AppError::SkillNotFound { id: id.to_string() }
+                }
                 _ => AppError::Database(e),
             })?;
 
@@ -535,68 +573,8 @@ impl Database {
     }
 
     pub fn get_mcp_data(&self) -> Result<(Vec<Command>, Vec<Skill>)> {
-        let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
-        
-        let mut cmd_stmt = conn.prepare(
-            "SELECT id, name, description, script, arguments, expose_via_mcp, created_at, updated_at
-             FROM commands
-             ORDER BY updated_at DESC",
-        )?;
-
-        let commands = cmd_stmt
-            .query_map([], |row| {
-                let id: String = row.get(0)?;
-                let name: String = row.get(1)?;
-                let description: String = row.get(2)?;
-                let script: String = row.get(3)?;
-                let arguments_json: String = row.get(4)?;
-                let expose_via_mcp: bool = row.get(5)?;
-                let created_at: i64 = row.get(6)?;
-                let updated_at: i64 = row.get(7)?;
-
-                let arguments: Vec<CommandArgument> = serde_json::from_str(&arguments_json).map_err(|e| {
-                    rusqlite::Error::FromSqlConversionFailure(4, rusqlite::types::Type::Text, Box::new(e))
-                })?;
-
-                Ok(Command {
-                    id,
-                    name,
-                    description,
-                    script,
-                    arguments,
-                    expose_via_mcp,
-                    created_at: parse_timestamp_or_now(created_at),
-                    updated_at: parse_timestamp_or_now(updated_at),
-                })
-            })?
-            .collect::<std::result::Result<Vec<_>, _>>()?;
-
-        let mut skill_stmt = conn.prepare(
-            "SELECT id, name, description, instructions, input_schema, enabled, created_at, updated_at
-             FROM skills
-             ORDER BY updated_at DESC",
-        )?;
-
-        let skills = skill_stmt
-            .query_map([], |row| {
-                Ok(Skill {
-                    id: row.get(0)?,
-                    name: row.get(1)?,
-                    description: row.get(2)?,
-                    instructions: row.get(3)?,
-                    input_schema: {
-                        let raw: String = row.get(4)?;
-                        serde_json::from_str(&raw).map_err(|e| {
-                            rusqlite::Error::FromSqlConversionFailure(4, rusqlite::types::Type::Text, Box::new(e))
-                        })?
-                    },
-                    enabled: row.get(5)?,
-                    created_at: parse_timestamp_or_now(row.get(6)?),
-                    updated_at: parse_timestamp_or_now(row.get(7)?),
-                })
-            })?
-            .collect::<std::result::Result<Vec<_>, _>>()?;
-
+        let commands = self.get_all_commands()?;
+        let skills = self.get_all_skills()?;
         Ok((commands, skills))
     }
 

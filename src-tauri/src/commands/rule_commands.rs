@@ -17,7 +17,7 @@ use super::{
 #[tauri::command]
 pub fn get_all_rules(db: State<'_, Arc<Database>>) -> Result<Vec<Rule>> {
     if use_file_storage(&db) {
-        let local_roots = get_local_rule_roots(&db);
+        let local_roots = get_local_rule_roots(&db)?;
         let loaded = file_storage::load_rules_from_locations(&local_roots)?;
         Ok(loaded.rules)
     } else {
@@ -28,7 +28,7 @@ pub fn get_all_rules(db: State<'_, Arc<Database>>) -> Result<Vec<Rule>> {
 #[tauri::command]
 pub fn get_rule_by_id(id: String, db: State<'_, Arc<Database>>) -> Result<Rule> {
     if use_file_storage(&db) {
-        let local_roots = get_local_rule_roots(&db);
+        let local_roots = get_local_rule_roots(&db)?;
         let loaded = file_storage::load_rules_from_locations(&local_roots)?;
         loaded
             .rules

@@ -230,13 +230,12 @@ pub fn use_file_storage(db: &Database) -> bool {
 
 pub const LOCAL_RULE_PATHS_KEY: &str = "local_rule_paths";
 
-pub fn get_local_rule_roots(db: &Database) -> Vec<PathBuf> {
-    db.get_setting(LOCAL_RULE_PATHS_KEY)
-        .ok()
-        .flatten()
-        .and_then(|json| serde_json::from_str::<Vec<String>>(&json).ok())
-        .map(|items| items.into_iter().map(PathBuf::from).collect())
-        .unwrap_or_default()
+pub fn get_local_rule_roots(db: &Database) -> Result<Vec<PathBuf>> {
+    let roots_json = db
+        .get_setting(LOCAL_RULE_PATHS_KEY)?
+        .unwrap_or_else(|| "[]".to_string());
+    let roots: Vec<String> = serde_json::from_str(&roots_json)?;
+    Ok(roots.into_iter().map(PathBuf::from).collect())
 }
 
 pub fn register_local_rule_paths(db: &Database, rule: &Rule) -> Result<()> {
@@ -244,7 +243,7 @@ pub fn register_local_rule_paths(db: &Database, rule: &Rule) -> Result<()> {
         return Ok(());
     }
 
-    let mut roots = get_local_rule_roots(db)
+    let mut roots = get_local_rule_roots(db)?
         .into_iter()
         .map(|p| p.to_string_lossy().to_string())
         .collect::<Vec<_>>();
