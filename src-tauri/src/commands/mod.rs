@@ -279,6 +279,43 @@ fn storage_location_for_rule(rule: &Rule) -> file_storage::StorageLocation {
     }
 }
 
+fn validate_local_rule_paths(
+    db: &Database,
+    id: Option<&str>,
+    scope: Option<crate::models::Scope>,
+    target_paths: &Option<Vec<String>>,
+) -> Result<()> {
+    let final_scope = if let Some(s) = scope {
+        s
+    } else if let Some(rule_id) = id {
+        db.get_rule_by_id(rule_id)?.scope
+    } else {
+        return Ok(());
+    };
+
+    if matches!(final_scope, crate::models::Scope::Local) {
+        let paths_exist = if let Some(p) = target_paths {
+            !p.is_empty()
+        } else if let Some(rule_id) = id {
+            let existing = db.get_rule_by_id(rule_id)?;
+            existing
+                .target_paths
+                .as_ref()
+                .map(|p| !p.is_empty())
+                .unwrap_or(false)
+        } else {
+            false
+        };
+
+        if !paths_exist {
+            return Err(AppError::InvalidInput {
+                message: "Local rules must have at least one target path".to_string(),
+            });
+        }
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub fn get_all_rules(db: State<'_, Arc<Database>>) -> Result<Vec<Rule>> {
     if use_file_storage(&db) {
@@ -308,20 +345,7 @@ pub fn get_rule_by_id(id: String, db: State<'_, Arc<Database>>) -> Result<Rule> 
 #[tauri::command]
 pub fn create_rule(input: CreateRuleInput, db: State<'_, Arc<Database>>) -> Result<Rule> {
     validate_rule_input(&input.name, &input.content)?;
-
-    if matches!(input.scope, crate::models::Scope::Local) {
-        if let Some(ref paths) = input.target_paths {
-            if paths.is_empty() {
-                return Err(AppError::InvalidInput {
-                    message: "Local rules must have at least one target path".to_string(),
-                });
-            }
-        } else {
-            return Err(AppError::InvalidInput {
-                message: "Local rules must have target paths specified".to_string(),
-            });
-        }
-    }
+    validate_local_rule_paths(&db, None, Some(input.scope), &input.target_paths)?;
 
     let created = db.create_rule(input)?;
 
@@ -349,38 +373,7 @@ pub fn update_rule(id: String, input: UpdateRuleInput, db: State<'_, Arc<Databas
         validate_rule_input(&existing.name, content)?;
     }
 
-    // Validate scope change or local rule path requirement
-    if let Some(scope) = input.scope {
-        if matches!(scope, crate::models::Scope::Local) {
-            if let Some(ref p) = input.target_paths {
-                if p.is_empty() {
-                    return Err(AppError::InvalidInput {
-                        message: "Local rules must have at least one target path".to_string(),
-                    });
-                }
-            } else {
-                // If we're changing scope to Local, we MUST provide target_paths
-                let existing = db.get_rule_by_id(&id)?;
-                if existing.target_paths.as_ref().map(|p| p.is_empty()).unwrap_or(true) {
-                    return Err(AppError::InvalidInput {
-                        message: "Local rules must have at least one target path".to_string(),
-                    });
-                }
-            }
-        }
-    } else {
-        // If scope is not changing, but we're updating target_paths for an existing local rule
-        let existing = db.get_rule_by_id(&id)?;
-        if matches!(existing.scope, crate::models::Scope::Local) {
-            if let Some(ref p) = input.target_paths {
-                if p.is_empty() {
-                    return Err(AppError::InvalidInput {
-                        message: "Local rules must have at least one target path".to_string(),
-                    });
-                }
-            }
-        }
-    }
+    validate_local_rule_paths(&db, Some(&id), input.scope, &input.target_paths)?;
 
     let updated = db.update_rule(&id, input)?;
 

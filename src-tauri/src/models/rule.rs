@@ -61,6 +61,7 @@ impl AdapterType {
         }
     }
 
+    #[allow(dead_code)]
     pub fn all() -> Vec<Self> {
         vec![
             AdapterType::Antigravity,

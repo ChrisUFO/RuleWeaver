@@ -103,12 +103,17 @@ impl Database {
 
                 let scope = Scope::from_str(&scope_str).unwrap_or(Scope::Global);
 
-                let target_paths: Option<Vec<String>> =
-                    target_paths_json.and_then(|j| serde_json::from_str(&j).ok());
+                let target_paths: Option<Vec<String>> = match target_paths_json {
+                    Some(j) => Some(serde_json::from_str(&j).map_err(|e| {
+                        rusqlite::Error::FromSqlConversionFailure(4, rusqlite::types::Type::Text, Box::new(e))
+                    })?),
+                    None => None,
+                };
 
                 let enabled_adapters: Vec<AdapterType> =
-                    serde_json::from_str(&enabled_adapters_json)
-                        .unwrap_or_else(|_| AdapterType::all());
+                    serde_json::from_str(&enabled_adapters_json).map_err(|e| {
+                        rusqlite::Error::FromSqlConversionFailure(5, rusqlite::types::Type::Text, Box::new(e))
+                    })?;
 
                 Ok(Rule {
                     id,
@@ -148,11 +153,16 @@ impl Database {
                 let updated_at: i64 = row.get(8)?;
 
                 let scope = Scope::from_str(&scope_str).unwrap_or(Scope::Global);
-                let target_paths: Option<Vec<String>> =
-                    target_paths_json.and_then(|j| serde_json::from_str(&j).ok());
+                let target_paths: Option<Vec<String>> = match target_paths_json {
+                    Some(j) => Some(serde_json::from_str(&j).map_err(|e| {
+                        rusqlite::Error::FromSqlConversionFailure(4, rusqlite::types::Type::Text, Box::new(e))
+                    })?),
+                    None => None,
+                };
                 let enabled_adapters: Vec<AdapterType> =
-                    serde_json::from_str(&enabled_adapters_json)
-                        .unwrap_or_else(|_| AdapterType::all());
+                    serde_json::from_str(&enabled_adapters_json).map_err(|e| {
+                        rusqlite::Error::FromSqlConversionFailure(5, rusqlite::types::Type::Text, Box::new(e))
+                    })?;
 
                 Ok(Rule {
                     id,
@@ -282,8 +292,9 @@ impl Database {
                 let created_at: i64 = row.get(6)?;
                 let updated_at: i64 = row.get(7)?;
 
-                let arguments: Vec<CommandArgument> =
-                    serde_json::from_str(&arguments_json).unwrap_or_default();
+                let arguments: Vec<CommandArgument> = serde_json::from_str(&arguments_json).map_err(|e| {
+                    rusqlite::Error::FromSqlConversionFailure(4, rusqlite::types::Type::Text, Box::new(e))
+                })?;
 
                 Ok(Command {
                     id,
@@ -320,8 +331,9 @@ impl Database {
                 let created_at: i64 = row.get(6)?;
                 let updated_at: i64 = row.get(7)?;
 
-                let arguments: Vec<CommandArgument> =
-                    serde_json::from_str(&arguments_json).unwrap_or_default();
+                let arguments: Vec<CommandArgument> = serde_json::from_str(&arguments_json).map_err(|e| {
+                    rusqlite::Error::FromSqlConversionFailure(4, rusqlite::types::Type::Text, Box::new(e))
+                })?;
 
                 Ok(Command {
                     id,
@@ -419,7 +431,9 @@ impl Database {
                     instructions: row.get(3)?,
                     input_schema: {
                         let raw: String = row.get(4)?;
-                        serde_json::from_str(&raw).unwrap_or_default()
+                        serde_json::from_str(&raw).map_err(|e| {
+                            rusqlite::Error::FromSqlConversionFailure(4, rusqlite::types::Type::Text, Box::new(e))
+                        })?
                     },
                     enabled: row.get(5)?,
                     created_at: parse_timestamp_or_now(row.get(6)?),
@@ -447,7 +461,9 @@ impl Database {
                     instructions: row.get(3)?,
                     input_schema: {
                         let raw: String = row.get(4)?;
-                        serde_json::from_str(&raw).unwrap_or_default()
+                        serde_json::from_str(&raw).map_err(|e| {
+                            rusqlite::Error::FromSqlConversionFailure(4, rusqlite::types::Type::Text, Box::new(e))
+                        })?
                     },
                     enabled: row.get(5)?,
                     created_at: parse_timestamp_or_now(row.get(6)?),

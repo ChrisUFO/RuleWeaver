@@ -100,6 +100,7 @@ pub fn run() {
                 let app_for_events = app_handle.clone();
                 window.on_window_event(move |event| {
                     if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                        api.prevent_close();
                         let minimize_to_tray = app_for_events
                             .try_state::<Arc<Database>>()
                             .and_then(|db| db.get_setting(MINIMIZE_TO_TRAY_KEY).ok().flatten())
@@ -107,12 +108,14 @@ pub fn run() {
                             .unwrap_or(true);
 
                         if minimize_to_tray {
-                            api.prevent_close();
                             if let Some(main) = app_for_events.get_webview_window("main") {
                                 let _ = main.hide();
                             }
-                        } else if let Some(mcp) = app_for_events.try_state::<McpManager>() {
-                            let _ = mcp.stop();
+                        } else {
+                            if let Some(mcp) = app_for_events.try_state::<McpManager>() {
+                                let _ = mcp.stop();
+                            }
+                            app_for_events.exit(0);
                         }
                     }
                 });

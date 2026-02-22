@@ -299,373 +299,10 @@ async fn mcp_handler(
     };
 
     let response = match request.method.as_str() {
-        "initialize" => json!({
-            "jsonrpc": "2.0",
-            "id": request.id,
-            "result": {
-                "serverInfo": {
-                    "name": "RuleWeaver MCP",
-                    "version": "0.1.0"
-                }
-            }
-        }),
-        "tools/list" => {
-            let tools: Vec<serde_json::Value> = commands
-                .iter()
-                .filter(|c| c.expose_via_mcp)
-                .map(|c| {
-                    let mut props = serde_json::Map::new();
-                    let mut required: Vec<String> = Vec::new();
-
-                    for arg in &c.arguments {
-                        props.insert(
-                            arg.name.clone(),
-                            json!({
-                                "type": "string",
-                                "description": arg.description,
-                            }),
-                        );
-                        if arg.required {
-                            required.push(arg.name.clone());
-                        }
-                    }
-
-                    json!({
-                        "name": slugify(&c.name),
-                        "description": c.description,
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": props,
-                            "required": required,
-                        }
-                    })
-                })
-                .collect();
-
-            let skill_tools: Vec<serde_json::Value> = skills
-                .iter()
-                .filter(|s| s.enabled)
-                .map(|s| {
-                    json!({
-                        "name": format!("skill_{}", slugify(&s.name)),
-                        "description": s.description,
-                        "inputSchema": {
-                            "type": "object",
-                            "properties": {
-                                "input": {
-                                    "type": "string",
-                                    "description": "Optional free-form input for the skill"
-                                }
-                            },
-                            "required": []
-                        }
-                    })
-                })
-                .collect();
-
-            let mut all_tools = tools;
-            all_tools.extend(skill_tools);
-
-            json!({
-                "jsonrpc": "2.0",
-                "id": request.id,
-                "result": { "tools": all_tools }
-            })
-        }
+        "initialize" => handle_initialize(request.id),
+        "tools/list" => handle_tools_list(request.id, &commands, &skills),
         "tools/call" => {
-            let allow = match manager.allow_invocation() {
-                Ok(a) => a,
-                Err(e) => {
-                    return Json(json!({
-                        "jsonrpc": "2.0",
-                        "id": request.id,
-                        "error": {
-                            "code": -32603,
-                            "message": format!("Internal server error: {}", e)
-                        }
-                    }));
-                }
-            };
-
-            if !allow {
-                json!({
-                    "jsonrpc": "2.0",
-                    "id": request.id,
-                    "error": {
-                        "code": -32029,
-                        "message": "Rate limit exceeded. Please retry shortly."
-                    }
-                })
-            } else {
-                let params = request.params.unwrap_or_else(|| json!({}));
-                let name = params
-                    .get("name")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or_default()
-                    .to_string();
-
-                let args_map = params
-                    .get("arguments")
-                    .and_then(|v| v.as_object())
-                    .cloned()
-                    .unwrap_or_default();
-
-                if let Some(cmd) = commands.iter().find(|c| slugify(&c.name) == name && c.expose_via_mcp) {
-                    let missing_required: Vec<String> = cmd
-                        .arguments
-                        .iter()
-                        .filter(|arg| {
-                            arg.required
-                                && !args_map.contains_key(&arg.name)
-                                && arg
-                                    .default_value
-                                    .as_ref()
-                                    .map(|v| v.is_empty())
-                                    .unwrap_or(true)
-                        })
-                        .map(|arg| arg.name.clone())
-                        .collect();
-
-                    if !missing_required.is_empty() {
-                        json!({
-                            "jsonrpc": "2.0",
-                            "id": request.id,
-                            "error": {
-                                "code": -32602,
-                                "message": format!("Missing required arguments: {}", missing_required.join(", "))
-                            }
-                        })
-                    } else {
-                        let mut rendered = cmd.script.clone();
-                        let mut envs: Vec<(String, String)> = Vec::new();
-                        let mut invalid_arg_message: Option<String> = None;
-
-                        for arg in &cmd.arguments {
-                            rendered = replace_template_with_env_ref(&rendered, &arg.name);
-
-                            let raw_value = args_map
-                                .get(&arg.name)
-                                .map(|v| {
-                                    if let Some(s) = v.as_str() {
-                                        s.to_string()
-                                    } else {
-                                        v.to_string()
-                                    }
-                                })
-                                .or_else(|| arg.default_value.clone())
-                                .unwrap_or_default();
-
-                            match sanitize_argument_value(&raw_value) {
-                                Ok(safe_value) => {
-                                    envs.push((argument_env_var_name(&arg.name), safe_value));
-                                }
-                                Err(e) => {
-                                    invalid_arg_message = Some(e.to_string());
-                                    break;
-                                }
-                            }
-                        }
-
-                        if let Some(message) = invalid_arg_message {
-                            json!({
-                                "jsonrpc": "2.0",
-                                "id": request.id,
-                                "error": {
-                                    "code": -32602,
-                                    "message": format!("Invalid argument value: {}", message)
-                                }
-                            })
-                        } else {
-                            let start = Instant::now();
-                            match execute_shell_with_timeout_env(
-                                &rendered,
-                                Duration::from_secs(CMD_EXEC_TIMEOUT_SECS),
-                                &envs,
-                            )
-                            .await
-                            {
-                                Ok((exit_code, stdout, stderr)) => {
-                                    let duration_ms = start.elapsed().as_millis() as u64;
-                                    let _ = manager.log(format!(
-                                        "MCP tools/call '{}' exit code {} ({}ms)",
-                                        cmd.name, exit_code, duration_ms
-                                    ));
-                                    if let Some(db) = &shared_db {
-                                        let args_json =
-                                            serde_json::to_string(&args_map).unwrap_or_default();
-                                        let _ = db.add_execution_log(&ExecutionLogInput {
-                                            command_id: &cmd.id,
-                                            command_name: &cmd.name,
-                                            arguments_json: &args_json,
-                                            stdout: &stdout,
-                                            stderr: &stderr,
-                                            exit_code,
-                                            duration_ms,
-                                            triggered_by: "mcp",
-                                        });
-                                    }
-                                    json!({
-                                        "jsonrpc": "2.0",
-                                        "id": request.id,
-                                        "result": {
-                                            "content": [{
-                                                "type": "text",
-                                                "text": format!("exit_code: {}\n\nstdout:\n{}\n\nstderr:\n{}", exit_code, truncate_output(stdout), truncate_output(stderr))
-                                            }],
-                                            "is_error": exit_code != 0
-                                        }
-                                    })
-                                }
-                                Err(e) => json!({
-                                    "jsonrpc": "2.0",
-                                    "id": request.id,
-                                    "result": {
-                                        "content": [{
-                                            "type": "text",
-                                            "text": format!("Failed to execute command: {}", e)
-                                        }],
-                                        "is_error": true
-                                    }
-                                }),
-                            }
-                        }
-                    }
-                } else if let Some(skill) = skills
-                    .iter()
-                    .find(|s| s.enabled && format!("skill_{}", slugify(&s.name)) == name)
-                {
-                    let input = args_map
-                        .get("input")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or_default()
-                        .to_string();
-
-                    // Security: DO NOT use string replacement for {{input}} as it leads to command injection.
-                    // Instead, we pass the input via environment variables.
-                    #[cfg(target_os = "windows")]
-                    let rendered = skill.instructions.replace("{{input}}", "%RW_SKILL_INPUT%");
-                    #[cfg(not(target_os = "windows"))]
-                    let rendered = skill.instructions.replace("{{input}}", "$RW_SKILL_INPUT");
-
-                    let steps = extract_skill_steps(&rendered);
-
-                    if steps.is_empty() {
-                        // If no shell steps, just return the instructions (with input placeholder)
-                        // Note: If we really want to return the text with the input replaced,
-                        // we should do it safely here ONLY for the returned text, not for execution.
-                        let display_text = skill.instructions.replace("{{input}}", &input);
-                        json!({
-                            "jsonrpc": "2.0",
-                            "id": request.id,
-                            "result": {
-                                "content": [{
-                                    "type": "text",
-                                    "text": display_text
-                                }],
-                                "is_error": false
-                            }
-                        })
-                    } else {
-                        let mut output = String::new();
-                        let mut is_error = false;
-                        let start = Instant::now();
-                        let skill_envs = vec![("RW_SKILL_INPUT".to_string(), input.clone())];
-
-                        for (idx, step) in steps.iter().take(MAX_SKILL_STEPS).enumerate() {
-                            if step.len() > MAX_STEP_LENGTH {
-                                is_error = true;
-                                output.push_str(&format!("Step {} rejected: too long\n", idx + 1));
-                                break;
-                            }
-
-                            if let Some(pattern) = contains_disallowed_pattern(step) {
-                                is_error = true;
-                                output.push_str(&format!(
-                                    "Step {} rejected due to unsafe pattern: {}\n",
-                                    idx + 1,
-                                    pattern
-                                ));
-                                break;
-                            }
-
-                            match execute_shell_with_timeout_env(
-                                step,
-                                Duration::from_secs(SKILL_EXEC_TIMEOUT_SECS),
-                                &skill_envs,
-                            )
-                            .await
-                            {
-                                Ok((exit_code, stdout, stderr)) => {
-                                    output.push_str(&format!(
-                                        "[step {}] exit_code: {}\nstdout:\n{}\nstderr:\n{}\n\n",
-                                        idx + 1,
-                                        exit_code,
-                                        stdout,
-                                        stderr
-                                    ));
-                                    if exit_code != 0 {
-                                        is_error = true;
-                                        break;
-                                    }
-                                }
-                                Err(e) => {
-                                    is_error = true;
-                                    output.push_str(&format!(
-                                        "[step {}] execution error: {}\n",
-                                        idx + 1,
-                                        e
-                                    ));
-                                    break;
-                                }
-                            }
-                        }
-
-                        let duration_ms = start.elapsed().as_millis() as u64;
-                        let _ = manager.log(format!(
-                            "MCP tools/call '{}' skill execution {} ({}ms)",
-                            skill.name,
-                            if is_error { "failed" } else { "succeeded" },
-                            duration_ms
-                        ));
-
-                        if let Some(db) = &shared_db {
-                            let args_json = serde_json::to_string(&args_map).unwrap_or_default();
-                            let skill_name = format!("skill:{}", skill.name);
-                            let _ = db.add_execution_log(&ExecutionLogInput {
-                                command_id: &skill.id,
-                                command_name: &skill_name,
-                                arguments_json: &args_json,
-                                stdout: &output,
-                                stderr: "",
-                                exit_code: if is_error { 1 } else { 0 },
-                                duration_ms,
-                                triggered_by: "mcp-skill",
-                            });
-                        }
-
-                        json!({
-                            "jsonrpc": "2.0",
-                            "id": request.id,
-                            "result": {
-                                "content": [{
-                                    "type": "text",
-                                    "text": truncate_output(output)
-                                }],
-                                "is_error": is_error
-                            }
-                        })
-                    }
-                } else {
-                    json!({
-                        "jsonrpc": "2.0",
-                        "id": request.id,
-                        "error": {
-                            "code": -32602,
-                            "message": format!("Unknown or disabled tool: {}", name)
-                        }
-                    })
-                }
-            }
+            handle_tools_call(&manager, request.id, request.params, &commands, &skills, &shared_db).await
         }
         _ => json!({
             "jsonrpc": "2.0",
@@ -678,6 +315,412 @@ async fn mcp_handler(
     };
 
     Json(response)
+}
+
+fn handle_initialize(id: serde_json::Value) -> serde_json::Value {
+    json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "result": {
+            "serverInfo": {
+                "name": "RuleWeaver MCP",
+                "version": "0.1.0"
+            }
+        }
+    })
+}
+
+fn handle_tools_list(
+    id: serde_json::Value,
+    commands: &[Command],
+    skills: &[Skill],
+) -> serde_json::Value {
+    let tools: Vec<serde_json::Value> = commands
+        .iter()
+        .filter(|c| c.expose_via_mcp)
+        .map(|c| {
+            let mut props = serde_json::Map::new();
+            let mut required: Vec<String> = Vec::new();
+
+            for arg in &c.arguments {
+                props.insert(
+                    arg.name.clone(),
+                    json!({
+                        "type": "string",
+                        "description": arg.description,
+                    }),
+                );
+                if arg.required {
+                    required.push(arg.name.clone());
+                }
+            }
+
+            json!({
+                "name": slugify(&c.name),
+                "description": c.description,
+                "inputSchema": {
+                    "type": "object",
+                    "properties": props,
+                    "required": required,
+                }
+            })
+        })
+        .collect();
+
+    let skill_tools: Vec<serde_json::Value> = skills
+        .iter()
+        .filter(|s| s.enabled)
+        .map(|s| {
+            json!({
+                "name": format!("skill_{}", slugify(&s.name)),
+                "description": s.description,
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "input": {
+                            "type": "string",
+                            "description": "Optional free-form input for the skill"
+                        }
+                    },
+                    "required": []
+                }
+            })
+        })
+        .collect();
+
+    let mut all_tools = tools;
+    all_tools.extend(skill_tools);
+
+    json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "result": { "tools": all_tools }
+    })
+}
+
+async fn handle_tools_call(
+    manager: &McpManager,
+    id: serde_json::Value,
+    params: Option<serde_json::Value>,
+    commands: &[Command],
+    skills: &[Skill],
+    shared_db: &Option<Arc<Database>>,
+) -> serde_json::Value {
+    let allow = match manager.allow_invocation() {
+        Ok(a) => a,
+        Err(e) => {
+            return json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "error": {
+                    "code": -32603,
+                    "message": format!("Internal server error: {}", e)
+                }
+            });
+        }
+    };
+
+    if !allow {
+        return json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "error": {
+                "code": -32029,
+                "message": "Rate limit exceeded. Please retry shortly."
+            }
+        });
+    }
+
+    let params = params.unwrap_or_else(|| json!({}));
+    let name = params
+        .get("name")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
+
+    let args_map = params
+        .get("arguments")
+        .and_then(|v| v.as_object())
+        .cloned()
+        .unwrap_or_default();
+
+    if let Some(cmd) = commands
+        .iter()
+        .find(|c| slugify(&c.name) == name && c.expose_via_mcp)
+    {
+        handle_command_call(manager, id, cmd, args_map, shared_db).await
+    } else if let Some(skill) = skills
+        .iter()
+        .find(|s| s.enabled && format!("skill_{}", slugify(&s.name)) == name)
+    {
+        handle_skill_call(manager, id, skill, args_map, shared_db).await
+    } else {
+        json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "error": {
+                "code": -32602,
+                "message": format!("Unknown or disabled tool: {}", name)
+            }
+        })
+    }
+}
+
+async fn handle_command_call(
+    manager: &McpManager,
+    id: serde_json::Value,
+    cmd: &Command,
+    args_map: serde_json::Map<String, serde_json::Value>,
+    shared_db: &Option<Arc<Database>>,
+) -> serde_json::Value {
+    let missing_required: Vec<String> = cmd
+        .arguments
+        .iter()
+        .filter(|arg| {
+            arg.required
+                && !args_map.contains_key(&arg.name)
+                && arg
+                    .default_value
+                    .as_ref()
+                    .map(|v| v.is_empty())
+                    .unwrap_or(true)
+        })
+        .map(|arg| arg.name.clone())
+        .collect();
+
+    if !missing_required.is_empty() {
+        return json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "error": {
+                "code": -32602,
+                "message": format!("Missing required arguments: {}", missing_required.join(", "))
+            }
+        });
+    }
+
+    let mut rendered = cmd.script.clone();
+    let mut envs: Vec<(String, String)> = Vec::new();
+    let mut invalid_arg_message: Option<String> = None;
+
+    for arg in &cmd.arguments {
+        rendered = replace_template_with_env_ref(&rendered, &arg.name);
+
+        let raw_value = args_map
+            .get(&arg.name)
+            .map(|v| {
+                if let Some(s) = v.as_str() {
+                    s.to_string()
+                } else {
+                    v.to_string()
+                }
+            })
+            .or_else(|| arg.default_value.clone())
+            .unwrap_or_default();
+
+        match sanitize_argument_value(&raw_value) {
+            Ok(safe_value) => {
+                envs.push((argument_env_var_name(&arg.name), safe_value));
+            }
+            Err(e) => {
+                invalid_arg_message = Some(e.to_string());
+                break;
+            }
+        }
+    }
+
+    if let Some(message) = invalid_arg_message {
+        return json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "error": {
+                "code": -32602,
+                "message": format!("Invalid argument value: {}", message)
+            }
+        });
+    }
+
+    let start = Instant::now();
+    match execute_shell_with_timeout_env(
+        &rendered,
+        Duration::from_secs(CMD_EXEC_TIMEOUT_SECS),
+        &envs,
+    )
+    .await
+    {
+        Ok((exit_code, stdout, stderr)) => {
+            let duration_ms = start.elapsed().as_millis() as u64;
+            let _ = manager.log(format!(
+                "MCP tools/call '{}' exit code {} ({}ms)",
+                cmd.name, exit_code, duration_ms
+            ));
+            if let Some(db) = shared_db {
+                let args_json = serde_json::to_string(&args_map).unwrap_or_default();
+                let _ = db.add_execution_log(&ExecutionLogInput {
+                    command_id: &cmd.id,
+                    command_name: &cmd.name,
+                    arguments_json: &args_json,
+                    stdout: &stdout,
+                    stderr: &stderr,
+                    exit_code,
+                    duration_ms,
+                    triggered_by: "mcp",
+                });
+            }
+            json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "result": {
+                    "content": [{
+                        "type": "text",
+                        "text": format!("exit_code: {}\n\nstdout:\n{}\n\nstderr:\n{}", exit_code, truncate_output(stdout), truncate_output(stderr))
+                    }],
+                    "is_error": exit_code != 0
+                }
+            })
+        }
+        Err(e) => json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "result": {
+                "content": [{
+                    "type": "text",
+                    "text": format!("Failed to execute command: {}", e)
+                }],
+                "is_error": true
+            }
+        }),
+    }
+}
+
+async fn handle_skill_call(
+    manager: &McpManager,
+    id: serde_json::Value,
+    skill: &Skill,
+    args_map: serde_json::Map<String, serde_json::Value>,
+    shared_db: &Option<Arc<Database>>,
+) -> serde_json::Value {
+    let input = args_map
+        .get("input")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
+
+    // Security: DO NOT use string replacement for {{input}} as it leads to command injection.
+    // Instead, we pass the input via environment variables.
+    #[cfg(target_os = "windows")]
+    let rendered = skill.instructions.replace("{{input}}", "%RW_SKILL_INPUT%");
+    #[cfg(not(target_os = "windows"))]
+    let rendered = skill.instructions.replace("{{input}}", "$RW_SKILL_INPUT");
+
+    let steps = extract_skill_steps(&rendered);
+
+    if steps.is_empty() {
+        // If no shell steps, just return the instructions (with input placeholder)
+        // Note: If we really want to return the text with the input replaced,
+        // we should do it safely here ONLY for the returned text, not for execution.
+        let display_text = skill.instructions.replace("{{input}}", &input);
+        json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "result": {
+                "content": [{
+                    "type": "text",
+                    "text": display_text
+                }],
+                "is_error": false
+            }
+        })
+    } else {
+        let mut output = String::new();
+        let mut is_error = false;
+        let start = Instant::now();
+        let skill_envs = vec![("RW_SKILL_INPUT".to_string(), input.clone())];
+
+        for (idx, step) in steps.iter().take(MAX_SKILL_STEPS).enumerate() {
+            if step.len() > MAX_STEP_LENGTH {
+                is_error = true;
+                output.push_str(&format!("Step {} rejected: too long\n", idx + 1));
+                break;
+            }
+
+            if let Some(pattern) = contains_disallowed_pattern(step) {
+                is_error = true;
+                output.push_str(&format!(
+                    "Step {} rejected due to unsafe pattern: {}\n",
+                    idx + 1,
+                    pattern
+                ));
+                break;
+            }
+
+            match execute_shell_with_timeout_env(
+                step,
+                Duration::from_secs(SKILL_EXEC_TIMEOUT_SECS),
+                &skill_envs,
+            )
+            .await
+            {
+                Ok((exit_code, stdout, stderr)) => {
+                    output.push_str(&format!(
+                        "[step {}] exit_code: {}\nstdout:\n{}\nstderr:\n{}\n\n",
+                        idx + 1,
+                        exit_code,
+                        stdout,
+                        stderr
+                    ));
+                    if exit_code != 0 {
+                        is_error = true;
+                        break;
+                    }
+                }
+                Err(e) => {
+                    is_error = true;
+                    output.push_str(&format!(
+                        "[step {}] execution error: {}\n",
+                        idx + 1,
+                        e
+                    ));
+                    break;
+                }
+            }
+        }
+
+        let duration_ms = start.elapsed().as_millis() as u64;
+        let _ = manager.log(format!(
+            "MCP tools/call '{}' skill execution {} ({}ms)",
+            skill.name,
+            if is_error { "failed" } else { "succeeded" },
+            duration_ms
+        ));
+
+        if let Some(db) = shared_db {
+            let args_json = serde_json::to_string(&args_map).unwrap_or_default();
+            let skill_name = format!("skill:{}", skill.name);
+            let _ = db.add_execution_log(&ExecutionLogInput {
+                command_id: &skill.id,
+                command_name: &skill_name,
+                arguments_json: &args_json,
+                stdout: &output,
+                stderr: "",
+                exit_code: if is_error { 1 } else { 0 },
+                duration_ms,
+                triggered_by: "mcp-skill",
+            });
+        }
+
+        json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "result": {
+                "content": [{
+                    "type": "text",
+                    "text": truncate_output(output)
+                }],
+                "is_error": is_error
+            }
+        })
+    }
 }
 
 pub fn extract_skill_steps(instructions: &str) -> Vec<String> {
