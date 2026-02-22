@@ -170,6 +170,7 @@ pub struct Conflict {
     pub id: String,
     pub file_path: String,
     pub adapter_name: String,
+    pub adapter_id: Option<AdapterType>,
     pub local_hash: String,
     pub current_hash: String,
 }

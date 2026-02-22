@@ -138,8 +138,14 @@ export const useRulesStore = create<RulesState>((set, get) => ({
         targetPaths: recentlyDeleted.targetPaths ?? undefined,
         enabledAdapters: recentlyDeleted.enabledAdapters,
       });
+      if (!recentlyDeleted.enabled) {
+        await api.rules.toggle(restoredRule.id, false);
+      }
       set((state) => ({
-        rules: [...state.rules, restoredRule],
+        rules: [
+          ...state.rules,
+          recentlyDeleted.enabled ? restoredRule : { ...restoredRule, enabled: false },
+        ],
         recentlyDeleted: null,
       }));
     } catch (error) {

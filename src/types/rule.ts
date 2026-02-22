@@ -48,6 +48,7 @@ export interface Conflict {
   id: string;
   filePath: string;
   adapterName: string;
+  adapterId?: AdapterType;
   localHash: string;
   currentHash: string;
 }
