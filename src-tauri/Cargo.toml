@@ -5,6 +5,14 @@ description = "A unified desktop app for managing AI coding assistant rules and 
 authors = ["ChrisUFO"]
 edition = "2021"
 
+[[bin]]
+name = "ruleweaver"
+path = "src/main.rs"
+
+[[bin]]
+name = "ruleweaver-mcp"
+path = "src/bin/mcp-server.rs"
+
 [lib]
 name = "ruleweaver_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
@@ -13,7 +21,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -23,3 +31,17 @@ uuid = { version = "1", features = ["v4", "serde"] }
 sha2 = "0.10"
 chrono = { version = "0.4", features = ["serde"] }
 dirs = "6"
+serde_yaml = "0.9"
+notify = "6"
+glob = "0.3"
+walkdir = "2"
+tokio = { version = "1", features = ["full"] }
+regex = "1"
+log = "0.4"
+env_logger = "0.11"
+clap = { version = "4", features = ["derive"] }
+axum = "0.7"
+axum-extra = { version = "0.9", features = ["typed-header"] }
+tower-http = { version = "0.5", features = ["cors"] }
+toml = "0.8"
+parking_lot = "0.12.5"

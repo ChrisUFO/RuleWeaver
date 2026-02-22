@@ -151,9 +151,10 @@ export function MarkdownEditor({
             className="h-8 w-8"
             onClick={item.action}
             title={item.title}
+            aria-label={item.title}
             type="button"
           >
-            <item.icon className="h-4 w-4" />
+            <item.icon className="h-4 w-4" aria-hidden="true" />
           </Button>
         ))}
         <div className="w-px h-6 bg-border mx-1" />
@@ -164,9 +165,10 @@ export function MarkdownEditor({
           onClick={undo}
           disabled={historyIndex <= 0}
           title="Undo"
+          aria-label="Undo"
           type="button"
         >
-          <Undo className="h-4 w-4" />
+          <Undo className="h-4 w-4" aria-hidden="true" />
         </Button>
         <Button
           variant="ghost"
@@ -175,6 +177,7 @@ export function MarkdownEditor({
           onClick={redo}
           disabled={historyIndex >= history.length - 1}
           title="Redo"
+          aria-label="Redo"
           type="button"
         >
           <Redo className="h-4 w-4" />

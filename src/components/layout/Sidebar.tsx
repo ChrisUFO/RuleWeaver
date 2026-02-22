@@ -1,5 +1,13 @@
 import { cn } from "@/lib/utils";
-import { LayoutDashboard, FileText, Settings, ChevronLeft, ChevronRight } from "lucide-react";
+import {
+  LayoutDashboard,
+  FileText,
+  Settings,
+  ChevronLeft,
+  ChevronRight,
+  Terminal,
+  Brain,
+} from "lucide-react";
 
 interface SidebarProps {
   collapsed: boolean;
@@ -11,6 +19,8 @@ interface SidebarProps {
 const navItems = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { id: "rules", label: "Rules", icon: FileText },
+  { id: "commands", label: "Commands", icon: Terminal },
+  { id: "skills", label: "Skills", icon: Brain },
   { id: "settings", label: "Settings", icon: Settings },
 ];
 

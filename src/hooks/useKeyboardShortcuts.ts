@@ -50,10 +50,15 @@ export function useKeyboardShortcuts({ shortcuts, enabled = true }: UseKeyboardS
 
 export const SHORTCUTS = {
   NEW_RULE: { key: "n", ctrl: true, description: "Create new rule" },
+  NEW_COMMAND: { key: "n", ctrl: true, shift: true, description: "Create new command" },
   SAVE: { key: "s", ctrl: true, description: "Save current rule" },
   SYNC: { key: "s", ctrl: true, shift: true, description: "Sync all rules" },
   SEARCH: { key: "f", ctrl: true, description: "Focus search" },
   SETTINGS: { key: ",", ctrl: true, description: "Open settings" },
+  DASHBOARD: { key: "1", ctrl: true, description: "Go to dashboard" },
+  RULES: { key: "2", ctrl: true, description: "Go to rules" },
+  COMMANDS: { key: "3", ctrl: true, description: "Go to commands" },
+  SKILLS: { key: "4", ctrl: true, description: "Go to skills" },
   HELP: { key: "?", shift: true, description: "Show keyboard shortcuts" },
   ESCAPE: { key: "Escape", description: "Close dialog/cancel" },
 } as const;

@@ -152,8 +152,9 @@ export function SyncPreviewDialog({
                           handleOpenFolder(filePath);
                         }}
                         title="Open in file manager"
+                        aria-label="Open in file manager"
                       >
-                        <ExternalLink className="h-4 w-4" />
+                        <ExternalLink className="h-4 w-4" aria-hidden="true" />
                       </Button>
                     </div>
                   );

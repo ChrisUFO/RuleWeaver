@@ -15,9 +15,14 @@ interface ShortcutItem {
 
 const shortcutList: ShortcutItem[] = [
   { key: "n", ctrl: true, label: "New Rule" },
+  { key: "n", ctrl: true, shift: true, label: "New Command" },
   { key: "s", ctrl: true, label: "Save" },
   { key: "s", ctrl: true, shift: true, label: "Sync All" },
   { key: "f", ctrl: true, label: "Search" },
+  { key: "1", ctrl: true, label: "Dashboard" },
+  { key: "2", ctrl: true, label: "Rules" },
+  { key: "3", ctrl: true, label: "Commands" },
+  { key: "4", ctrl: true, label: "Skills" },
   { key: ",", ctrl: true, label: "Settings" },
   { key: "Escape", label: "Close/Cancel" },
 ];

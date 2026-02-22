@@ -3,7 +3,6 @@ use std::sync::PoisonError;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
-#[allow(dead_code)]
 pub enum AppError {
     #[error("Database error: {0}")]
     Database(#[from] rusqlite::Error),
@@ -14,8 +13,27 @@ pub enum AppError {
     #[error("Rule not found: {id}")]
     RuleNotFound { id: String },
 
+    #[error("Command not found: {id}")]
+    CommandNotFound { id: String },
+
+    #[error("Skill not found: {id}")]
+    SkillNotFound { id: String },
+
     #[error("Sync conflict detected in: {file_path}")]
+    #[allow(dead_code)]
     SyncConflict { file_path: String },
+
+    #[error("Validation error: {0}")]
+    #[allow(dead_code)]
+    Validation(String),
+
+    #[error("Unauthorized: {0}")]
+    #[allow(dead_code)]
+    Auth(String),
+
+    #[error("MCP server error: {0}")]
+    #[allow(dead_code)]
+    Mcp(String),
 
     #[error("Invalid input: {message}")]
     InvalidInput { message: String },
@@ -26,8 +44,23 @@ pub enum AppError {
     #[error("Path error: {0}")]
     Path(String),
 
-    #[error("Database lock poisoned")]
+    #[error("Database internal state error (poisoned lock). Please restart the application.")]
     DatabasePoisoned,
+
+    #[error("Lock error")]
+    LockError,
+
+    #[error("YAML parsing error: {message}")]
+    #[allow(dead_code)]
+    Yaml { message: String },
+
+    #[error("Migration error: {message}")]
+    #[allow(dead_code)]
+    Migration { message: String },
+
+    #[error("File watcher error: {message}")]
+    #[allow(dead_code)]
+    Watcher { message: String },
 }
 
 impl<T> From<PoisonError<T>> for AppError {
