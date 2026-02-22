@@ -343,13 +343,7 @@ pub fn update_rule(id: String, input: UpdateRuleInput, db: State<'_, Arc<Databas
     // Validate scope change or local rule path requirement
     if let Some(scope) = input.scope {
         if matches!(scope, crate::models::Scope::Local) {
-            let paths = input.target_paths.as_ref().or_else(|| {
-                // If not providing paths in update, check existing ones
-                // Note: existing paths might be fetched if needed
-                None
-            });
-
-            if let Some(p) = paths {
+            if let Some(ref p) = input.target_paths {
                 if p.is_empty() {
                     return Err(AppError::InvalidInput {
                         message: "Local rules must have at least one target path".to_string(),
