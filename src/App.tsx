@@ -2,6 +2,8 @@ import { useState } from "react";
 import { MainLayout } from "./components/layout/MainLayout";
 import { Dashboard } from "./components/pages/Dashboard";
 import { RulesPage } from "./components/pages/RulesPage";
+import { Commands } from "./components/pages/Commands";
+import { Skills } from "./components/pages/Skills";
 import { Settings } from "./components/pages/Settings";
 import { ToastProvider } from "./components/ui/toast";
 import { ErrorBoundary } from "./components/ui/error-boundary";
@@ -24,6 +26,26 @@ function App() {
         action: () => setActiveView("settings"),
       },
       {
+        ...SHORTCUTS.NEW_COMMAND,
+        action: () => setActiveView("commands"),
+      },
+      {
+        ...SHORTCUTS.DASHBOARD,
+        action: () => setActiveView("dashboard"),
+      },
+      {
+        ...SHORTCUTS.RULES,
+        action: () => setActiveView("rules"),
+      },
+      {
+        ...SHORTCUTS.COMMANDS,
+        action: () => setActiveView("commands"),
+      },
+      {
+        ...SHORTCUTS.SKILLS,
+        action: () => setActiveView("skills"),
+      },
+      {
         ...SHORTCUTS.HELP,
         action: () => setShortcutsDialogOpen(true),
       },
@@ -36,6 +58,10 @@ function App() {
         return <Dashboard onNavigate={setActiveView} />;
       case "rules":
         return <RulesPage />;
+      case "commands":
+        return <Commands />;
+      case "skills":
+        return <Skills />;
       case "settings":
         return <Settings />;
       default:

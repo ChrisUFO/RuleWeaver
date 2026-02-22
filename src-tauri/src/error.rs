@@ -28,6 +28,18 @@ pub enum AppError {
 
     #[error("Database lock poisoned")]
     DatabasePoisoned,
+
+    #[error("Lock error")]
+    LockError,
+
+    #[error("YAML parsing error: {0}")]
+    Yaml(String),
+
+    #[error("Migration error: {0}")]
+    Migration(String),
+
+    #[error("File watcher error: {0}")]
+    Watcher(String),
 }
 
 impl<T> From<PoisonError<T>> for AppError {

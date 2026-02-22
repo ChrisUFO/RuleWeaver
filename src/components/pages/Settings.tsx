@@ -1,5 +1,14 @@
 import { useEffect, useState, useCallback } from "react";
-import { FolderOpen, ExternalLink, Info, Save } from "lucide-react";
+import {
+  FolderOpen,
+  ExternalLink,
+  Info,
+  RotateCcw,
+  Save,
+  ShieldCheck,
+  Server,
+  RefreshCw,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
@@ -27,19 +36,73 @@ export function Settings() {
   const [hasChanges, setHasChanges] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [storageMode, setStorageMode] = useState<"sqlite" | "file">("sqlite");
+  const [storageInfo, setStorageInfo] = useState<Record<string, string> | null>(null);
+  const [isMigratingStorage, setIsMigratingStorage] = useState(false);
+  const [backupPath, setBackupPath] = useState<string>("");
+  const [migrationProgress, setMigrationProgress] = useState<{
+    total: number;
+    migrated: number;
+    current_rule?: string;
+    status: "NotStarted" | "InProgress" | "Completed" | "Failed" | "RolledBack";
+  } | null>(null);
+  const [isRollingBack, setIsRollingBack] = useState(false);
+  const [isVerifyingMigration, setIsVerifyingMigration] = useState(false);
+  const [mcpStatus, setMcpStatus] = useState<{
+    running: boolean;
+    port: number;
+    uptime_seconds: number;
+  } | null>(null);
+  const [mcpInstructions, setMcpInstructions] = useState<{
+    claude_code_json: string;
+    opencode_json: string;
+    standalone_command: string;
+  } | null>(null);
+  const [isMcpLoading, setIsMcpLoading] = useState(false);
+  const [mcpAutoStart, setMcpAutoStart] = useState(false);
+  const [minimizeToTray, setMinimizeToTray] = useState(true);
+  const [mcpLogs, setMcpLogs] = useState<string[]>([]);
   const { addToast } = useToast();
 
   useEffect(() => {
     const loadData = async () => {
       setIsLoading(true);
       try {
-        const [path, version, settingsJson] = await Promise.all([
+        const [
+          path,
+          version,
+          settingsJson,
+          mode,
+          info,
+          savedBackupPath,
+          progress,
+          mcpStatusRes,
+          mcpAutoStartSetting,
+          minimizeToTraySetting,
+          mcpLogsInitial,
+        ] = await Promise.all([
           api.app.getAppDataPath(),
           api.app.getVersion(),
           api.settings.get(ADAPTER_SETTINGS_KEY),
+          api.storage.getMode(),
+          api.storage.getInfo(),
+          api.settings.get("file_storage_backup_path"),
+          api.storage.getMigrationProgress(),
+          api.mcp.getStatus(),
+          api.settings.get("mcp_auto_start"),
+          api.settings.get("minimize_to_tray"),
+          api.mcp.getLogs(20),
         ]);
         setAppDataPath(path);
         setAppVersion(version);
+        setStorageMode(mode === "file" ? "file" : "sqlite");
+        setStorageInfo(info);
+        setBackupPath(savedBackupPath ?? "");
+        setMigrationProgress(progress);
+        setMcpStatus(mcpStatusRes);
+        setMcpAutoStart(mcpAutoStartSetting === "true");
+        setMinimizeToTray(minimizeToTraySetting !== "false");
+        setMcpLogs(mcpLogsInitial);
 
         if (settingsJson) {
           try {
@@ -102,6 +165,216 @@ export function Settings() {
     }
   };
 
+  const migrateToFileStorage = async () => {
+    setIsMigratingStorage(true);
+    let poll: ReturnType<typeof setInterval> | null = null;
+    try {
+      poll = setInterval(async () => {
+        try {
+          const progress = await api.storage.getMigrationProgress();
+          setMigrationProgress(progress);
+        } catch {
+          // no-op during migration polling
+        }
+      }, 500);
+
+      const result = await api.storage.migrateToFileStorage();
+      clearInterval(poll);
+      poll = null;
+
+      if (!result.success) {
+        throw new Error(
+          result.errors[0]?.error ?? "Migration completed with errors. Check logs for details."
+        );
+      }
+
+      setBackupPath(result.backup_path ?? "");
+
+      const [mode, info] = await Promise.all([api.storage.getMode(), api.storage.getInfo()]);
+      setStorageMode(mode === "file" ? "file" : "sqlite");
+      setStorageInfo(info);
+      setMigrationProgress(await api.storage.getMigrationProgress());
+
+      addToast({
+        title: "Migration Complete",
+        description: `Migrated ${result.rules_migrated} rules to file storage.`,
+        variant: "success",
+      });
+    } catch (error) {
+      addToast({
+        title: "Migration Failed",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "error",
+      });
+    } finally {
+      if (poll) {
+        clearInterval(poll);
+      }
+      setIsMigratingStorage(false);
+    }
+  };
+
+  const rollbackMigration = async () => {
+    if (!backupPath) {
+      addToast({
+        title: "Rollback Unavailable",
+        description: "No backup path available for rollback.",
+        variant: "error",
+      });
+      return;
+    }
+
+    setIsRollingBack(true);
+    try {
+      await api.storage.rollbackMigration(backupPath);
+      setStorageMode("sqlite");
+      setMigrationProgress(await api.storage.getMigrationProgress());
+      addToast({
+        title: "Rollback Complete",
+        description: "Database backup restored and file storage disabled.",
+        variant: "success",
+      });
+    } catch (error) {
+      addToast({
+        title: "Rollback Failed",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "error",
+      });
+    } finally {
+      setIsRollingBack(false);
+    }
+  };
+
+  const verifyMigration = async () => {
+    setIsVerifyingMigration(true);
+    try {
+      const result = await api.storage.verifyMigration();
+      if (result.is_valid) {
+        addToast({
+          title: "Migration Verified",
+          description: `Verified ${result.file_rule_count} file rules match ${result.db_rule_count} database rules.`,
+          variant: "success",
+        });
+      } else {
+        addToast({
+          title: "Verification Failed",
+          description: `${result.missing_rules.length} missing, ${result.mismatched_rules.length} mismatched, ${result.load_errors} load errors.`,
+          variant: "error",
+        });
+      }
+    } catch (error) {
+      addToast({
+        title: "Verification Error",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "error",
+      });
+    } finally {
+      setIsVerifyingMigration(false);
+    }
+  };
+
+  const refreshMcpStatus = async () => {
+    try {
+      const [status, logs] = await Promise.all([api.mcp.getStatus(), api.mcp.getLogs(20)]);
+      setMcpStatus(status);
+      setMcpLogs(logs);
+    } catch (error) {
+      addToast({
+        title: "MCP Status Error",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "error",
+      });
+    }
+  };
+
+  const startMcp = async () => {
+    setIsMcpLoading(true);
+    try {
+      await api.mcp.start();
+      const [status, instructions] = await Promise.all([
+        api.mcp.getStatus(),
+        api.mcp.getInstructions(),
+      ]);
+      setMcpStatus(status);
+      setMcpInstructions(instructions);
+      setMcpLogs(await api.mcp.getLogs(20));
+      addToast({
+        title: "MCP Started",
+        description: `Server running on port ${status.port}`,
+        variant: "success",
+      });
+    } catch (error) {
+      addToast({
+        title: "MCP Start Failed",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "error",
+      });
+    } finally {
+      setIsMcpLoading(false);
+    }
+  };
+
+  const stopMcp = async () => {
+    setIsMcpLoading(true);
+    try {
+      await api.mcp.stop();
+      await refreshMcpStatus();
+      addToast({
+        title: "MCP Stopped",
+        description: "Server has been stopped",
+        variant: "success",
+      });
+    } catch (error) {
+      addToast({
+        title: "MCP Stop Failed",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "error",
+      });
+    } finally {
+      setIsMcpLoading(false);
+    }
+  };
+
+  const toggleMcpAutoStart = async (enabled: boolean) => {
+    setMcpAutoStart(enabled);
+    try {
+      await api.settings.set("mcp_auto_start", enabled ? "true" : "false");
+      addToast({
+        title: "MCP Setting Saved",
+        description: enabled ? "MCP will auto-start on app launch" : "MCP auto-start disabled",
+        variant: "success",
+      });
+    } catch (error) {
+      setMcpAutoStart(!enabled);
+      addToast({
+        title: "Setting Failed",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "error",
+      });
+    }
+  };
+
+  const toggleMinimizeToTray = async (enabled: boolean) => {
+    setMinimizeToTray(enabled);
+    try {
+      await api.settings.set("minimize_to_tray", enabled ? "true" : "false");
+      addToast({
+        title: "Window Behavior Updated",
+        description: enabled
+          ? "Closing the window will hide RuleWeaver to tray"
+          : "Closing the window will exit RuleWeaver",
+        variant: "success",
+      });
+    } catch (error) {
+      setMinimizeToTray(!enabled);
+      addToast({
+        title: "Setting Failed",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "error",
+      });
+    }
+  };
+
   return (
     <div className="space-y-6 max-w-3xl">
       <div className="flex items-center justify-between">
@@ -133,6 +406,174 @@ export function Settings() {
               <FolderOpen className="h-4 w-4" />
             </Button>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>MCP Server</CardTitle>
+          <CardDescription>
+            Start and manage the local MCP server for tool integration
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between rounded-md border p-3">
+            <div className="flex items-center gap-2">
+              <Server className="h-4 w-4" />
+              <div>
+                <div className="font-medium">Status</div>
+                <div className="text-sm text-muted-foreground">
+                  {mcpStatus?.running ? `Running on port ${mcpStatus.port}` : "Stopped"}
+                </div>
+              </div>
+            </div>
+            <Badge variant={mcpStatus?.running ? "default" : "outline"}>
+              {mcpStatus?.running ? "Running" : "Stopped"}
+            </Badge>
+          </div>
+
+          {mcpStatus?.running && (
+            <p className="text-xs text-muted-foreground">Uptime: {mcpStatus.uptime_seconds}s</p>
+          )}
+
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={startMcp} disabled={isMcpLoading || !!mcpStatus?.running}>
+              Start
+            </Button>
+            <Button
+              variant="outline"
+              onClick={stopMcp}
+              disabled={isMcpLoading || !mcpStatus?.running}
+            >
+              Stop
+            </Button>
+            <Button variant="outline" onClick={refreshMcpStatus} disabled={isMcpLoading}>
+              <RefreshCw className="mr-2 h-4 w-4" />
+              Refresh
+            </Button>
+          </div>
+
+          <div className="flex items-center justify-between rounded-md border p-3">
+            <div>
+              <div className="font-medium">Auto-start MCP</div>
+              <div className="text-xs text-muted-foreground">
+                Start MCP automatically when RuleWeaver launches
+              </div>
+            </div>
+            <Switch checked={mcpAutoStart} onCheckedChange={toggleMcpAutoStart} />
+          </div>
+
+          <div className="flex items-center justify-between rounded-md border p-3">
+            <div>
+              <div className="font-medium">Minimize to tray on close</div>
+              <div className="text-xs text-muted-foreground">
+                Keep app and MCP running when closing the main window
+              </div>
+            </div>
+            <Switch checked={minimizeToTray} onCheckedChange={toggleMinimizeToTray} />
+          </div>
+
+          {mcpInstructions && (
+            <div className="space-y-2">
+              <code className="block rounded-md bg-muted p-2 text-xs overflow-auto">
+                {mcpInstructions.standalone_command}
+              </code>
+              <div className="grid gap-2 md:grid-cols-2">
+                <code className="rounded-md bg-muted p-2 text-xs overflow-auto">
+                  {mcpInstructions.claude_code_json}
+                </code>
+                <code className="rounded-md bg-muted p-2 text-xs overflow-auto">
+                  {mcpInstructions.opencode_json}
+                </code>
+              </div>
+            </div>
+          )}
+
+          <div className="rounded-md border p-3">
+            <div className="mb-2 text-sm font-medium">Recent MCP Logs</div>
+            <div className="max-h-40 space-y-1 overflow-auto text-xs text-muted-foreground">
+              {mcpLogs.length === 0 && <div>No logs yet.</div>}
+              {mcpLogs.map((log, idx) => (
+                <div key={`${idx}-${log.slice(0, 20)}`}>{log}</div>
+              ))}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Storage</CardTitle>
+          <CardDescription>
+            Manage where rules are stored: legacy SQLite or file-based markdown storage
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between rounded-md border p-3">
+            <div>
+              <div className="font-medium">Current Mode</div>
+              <div className="text-sm text-muted-foreground">
+                {storageMode === "file"
+                  ? "File storage (.ruleweaver/rules/*.md)"
+                  : "SQLite database (legacy)"}
+              </div>
+            </div>
+            <Badge variant={storageMode === "file" ? "default" : "outline"}>
+              {storageMode === "file" ? "File" : "SQLite"}
+            </Badge>
+          </div>
+
+          {storageInfo && (
+            <div className="grid grid-cols-1 gap-2 text-sm text-muted-foreground md:grid-cols-3">
+              <div>Rules: {storageInfo.rule_count ?? "0"}</div>
+              <div>Size: {storageInfo.total_size_bytes ?? "0"} bytes</div>
+              <div>Storage Exists: {storageInfo.exists ?? "false"}</div>
+            </div>
+          )}
+
+          {storageMode !== "file" && (
+            <Button onClick={migrateToFileStorage} disabled={isMigratingStorage || isLoading}>
+              {isMigratingStorage ? "Migrating..." : "Migrate to File Storage"}
+            </Button>
+          )}
+
+          {migrationProgress && (
+            <div className="rounded-md border p-3 space-y-2">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Migration Status</span>
+                <Badge variant="outline">{migrationProgress.status}</Badge>
+              </div>
+              <div className="text-sm">
+                {migrationProgress.migrated} / {migrationProgress.total || 0} rules migrated
+              </div>
+              {migrationProgress.current_rule && (
+                <div className="text-xs text-muted-foreground truncate">
+                  Current: {migrationProgress.current_rule}
+                </div>
+              )}
+            </div>
+          )}
+
+          {storageMode === "file" && (
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" onClick={verifyMigration} disabled={isVerifyingMigration}>
+                <ShieldCheck className="mr-2 h-4 w-4" />
+                {isVerifyingMigration ? "Verifying..." : "Verify Migration"}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={rollbackMigration}
+                disabled={isRollingBack || !backupPath}
+              >
+                <RotateCcw className="mr-2 h-4 w-4" />
+                {isRollingBack ? "Rolling Back..." : "Rollback"}
+              </Button>
+            </div>
+          )}
+
+          {backupPath && (
+            <p className="text-xs text-muted-foreground break-all">Backup: {backupPath}</p>
+          )}
         </CardContent>
       </Card>
 

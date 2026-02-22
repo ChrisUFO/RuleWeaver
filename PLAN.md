@@ -1925,3 +1925,41 @@ Per our rules:
 - Document architecture decisions in comments
 - Keep AGENTS.md updated (if exists)
 - Screenshots/GIFs for major UI changes
+
+---
+
+## 10. Robust MCP Mode Addendum
+
+To make MCP reliable for daily workflows and tool reconnects, we add a dual-mode runtime:
+
+### A. Embedded MCP (Desktop App Runtime)
+
+- Keep MCP server embedded in Tauri for integrated UX and settings controls.
+- Add `mcp_auto_start` setting so MCP can start automatically when app launches.
+- Expose status/start/stop/restart and connection instructions in Settings.
+
+### B. Standalone MCP Binary (`ruleweaver-mcp`)
+
+- Ship a separate CLI/EXE entrypoint that starts MCP without opening the desktop UI.
+- Command shape: `ruleweaver-mcp --port <PORT>`.
+- Reuse the same database and command registry as the desktop app.
+- Include standalone launch snippet in MCP connection instructions so AI tools can call it directly.
+
+### C. Process & Background Expectations
+
+- Embedded mode requires RuleWeaver app process alive.
+- Standalone mode requires `ruleweaver-mcp` process alive.
+- No Docker container is required.
+
+### D. Remaining hardening after implementation
+
+- Add system tray/background mode to keep embedded MCP alive when window closes.
+- Add startup conflict handling between embedded MCP and standalone MCP on same port.
+- Add reconnect-resilience tests for long-lived MCP clients.
+
+### E. Implementation status in current branch
+
+- Tray/background mode implemented (`minimize_to_tray` + tray menu controls).
+- Standalone MCP binary implemented (`ruleweaver-mcp`).
+- Command stub sync implemented (`sync_commands` for Gemini/OpenCode/Claude Code files).
+- Phase 3 foundation started: Skills CRUD backend + initial Skills page/navigation.
