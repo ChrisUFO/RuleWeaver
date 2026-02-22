@@ -14,13 +14,23 @@ use crate::models::{
 use crate::sync::SyncEngine;
 use std::collections::HashMap;
 use std::fs;
+use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::State;
 
 fn validate_path(path: &str) -> Result<PathBuf> {
-    let canonical_path = std::fs::canonicalize(path).map_err(|e| AppError::InvalidInput {
+    let p = PathBuf::from(path);
+    
+    // Check for traversal components before canonicalization for defense-in-depth
+    if path.contains("..") {
+        return Err(AppError::InvalidInput {
+            message: "Path cannot contain traversal sequences (..)".to_string(),
+        });
+    }
+
+    let canonical_path = std::fs::canonicalize(&p).map_err(|e| AppError::InvalidInput {
         message: format!("Invalid path: {}", e),
     })?;
 
@@ -294,6 +304,19 @@ fn validate_local_rule_paths(
     };
 
     if matches!(final_scope, crate::models::Scope::Local) {
+        if let Some(ref paths) = target_paths {
+            for path in paths {
+                validate_path(path)?;
+            }
+        } else if let Some(rule_id) = id {
+            let existing = db.get_rule_by_id(rule_id)?;
+            if let Some(ref paths) = existing.target_paths {
+                for path in paths {
+                    validate_path(path)?;
+                }
+            }
+        }
+
         let paths_exist = if let Some(p) = target_paths {
             !p.is_empty()
         } else if let Some(rule_id) = id {
@@ -427,7 +450,7 @@ pub fn migrate_to_file_storage(db: State<'_, Arc<Database>>) -> Result<file_stor
 
 #[tauri::command]
 pub fn rollback_file_migration(backup_path: String, db: State<'_, Arc<Database>>) -> Result<()> {
-    file_storage::rollback_migration(&backup_path)?;
+    file_storage::rollback_migration(&backup_path, Some(&db))?;
     db.set_storage_mode("sqlite")?;
     db.set_setting("file_storage_backup_path", "")
 }
@@ -540,6 +563,18 @@ pub async fn test_command(
             .or_else(|| arg.default_value.clone())
             .unwrap_or_default();
         let safe_value = sanitize_argument_value(&raw_value)?;
+        
+        // Enum validation
+        if matches!(arg.arg_type, crate::models::ArgumentType::Enum) {
+            if let Some(ref options) = arg.options {
+                if !options.contains(&raw_value) {
+                    return Err(AppError::InvalidInput {
+                        message: format!("Argument '{}' must be one of: {}", arg.name, options.join(", ")),
+                    });
+                }
+            }
+        }
+
         envs.push((argument_env_var_name(&arg.name), safe_value));
     }
 
@@ -598,8 +633,23 @@ pub fn sync_commands(db: State<'_, Arc<Database>>) -> Result<SyncResult> {
         };
 
         let temp_path = path.with_extension("tmp");
-        let write_result = fs::write(&temp_path, content)
-            .and_then(|_| fs::rename(&temp_path, &path));
+        let write_result = (|| -> std::io::Result<()> {
+            {
+                let mut file = fs::File::create(&temp_path)?;
+                file.write_all(content.as_bytes())?;
+                file.sync_all()?;
+            }
+            fs::rename(&temp_path, &path)?;
+            
+            // Ensure directory metadata is also synced to disk if possible
+            if let Some(parent) = path.parent() {
+                if let Ok(dir) = fs::File::open(parent) {
+                    let _ = dir.sync_all();
+                }
+            }
+            
+            Ok(())
+        })();
 
         match write_result {
             Ok(()) => files_written.push(path_str),

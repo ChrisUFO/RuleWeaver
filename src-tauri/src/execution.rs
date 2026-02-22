@@ -64,7 +64,10 @@ pub fn sanitize_argument_value(value: &str) -> Result<String> {
     // We use \b for eval and exec to avoid catching words like "evaluation"
     static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
     let re = RE.get_or_init(|| {
-        regex::Regex::new(r"(?i);|&&|&|\|\||\||`|\$\s*\(|\$\s*\{|\)|<|>|<<|<&|>&|\beval\b|\bexec\b")
+        regex::RegexBuilder::new(r"(?i);|&&|&|\|\||\||`|\$\s*\(|\$\s*\{|\)|<|>|<<|<&|>&|\beval\b|\bexec\b")
+            .size_limit(100_000)
+            .dfa_size_limit(100_000)
+            .build()
             .expect("Invalid dangerous tokens regex")
     });
 

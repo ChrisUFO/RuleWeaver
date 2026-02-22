@@ -20,8 +20,24 @@ pub struct Command {
 pub struct CommandArgument {
     pub name: String,
     pub description: String,
+    #[serde(default = "default_arg_type")]
+    pub arg_type: ArgumentType,
     pub required: bool,
     pub default_value: Option<String>,
+    pub options: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ArgumentType {
+    String,
+    Number,
+    Boolean,
+    Enum,
+}
+
+fn default_arg_type() -> ArgumentType {
+    ArgumentType::String
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -115,8 +131,10 @@ mod tests {
             arguments: vec![CommandArgument {
                 name: "path".to_string(),
                 description: "Test path".to_string(),
+                arg_type: ArgumentType::String,
                 required: false,
                 default_value: None,
+                options: None,
             }],
             expose_via_mcp: true,
         };

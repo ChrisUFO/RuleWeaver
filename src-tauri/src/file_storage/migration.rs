@@ -184,16 +184,21 @@ fn create_backup(db: &Database) -> Result<String> {
     Ok(backup_path)
 }
 
-pub fn rollback_migration(backup_path: &str) -> Result<()> {
+pub fn rollback_migration(backup_path: &str, db: Option<&Database>) -> Result<()> {
     // backup_path: /path/to/db.timestamp.migration-backup
-    let db_path = if let Some(stripped) = backup_path.strip_suffix(".migration-backup") {
-        if let Some(last_dot_idx) = stripped.rfind('.') {
-            &stripped[..last_dot_idx]
-        } else {
-            stripped
-        }
+    let db_path_buf = if let Some(d) = db {
+        PathBuf::from(d.get_database_path()?)
     } else {
-        backup_path
+        let path = if let Some(stripped) = backup_path.strip_suffix(".migration-backup") {
+            if let Some(last_dot_idx) = stripped.rfind('.') {
+                &stripped[..last_dot_idx]
+            } else {
+                stripped
+            }
+        } else {
+            backup_path
+        };
+        PathBuf::from(path)
     };
 
     if !PathBuf::from(backup_path).exists() {
@@ -202,7 +207,7 @@ pub fn rollback_migration(backup_path: &str) -> Result<()> {
         });
     }
 
-    fs::copy(backup_path, db_path).map_err(|e| AppError::InvalidInput {
+    fs::copy(backup_path, &db_path_buf).map_err(|e| AppError::InvalidInput {
         message: format!("Failed to restore database from backup: {}", e),
     })?;
 

@@ -4,6 +4,7 @@ use axum::{
     routing::post,
     Json, Router,
 };
+use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tower_http::cors::CorsLayer;
@@ -32,9 +33,13 @@ const MAX_OUTPUT_SIZE: usize = 10 * 1024 * 1024; // 10MB
 
 fn truncate_output(s: String) -> String {
     if s.len() > MAX_OUTPUT_SIZE {
+        let original_len = s.len();
         let mut truncated = s;
         truncated.truncate(MAX_OUTPUT_SIZE);
-        truncated.push_str("\n\n[Output truncated due to size limit]");
+        truncated.push_str(&format!(
+            "\n\n[Output truncated from {} bytes due to 10MB size limit]",
+            original_len
+        ));
         truncated
     } else {
         s
@@ -64,7 +69,7 @@ struct McpRuntime {
     stop_tx: Option<broadcast::Sender<()>>,
     commands: Vec<Command>,
     skills: Vec<Skill>,
-    invocation_timestamps: Vec<Instant>,
+    invocation_timestamps: VecDeque<Instant>,
     db: Option<Arc<Database>>,
 }
 
@@ -90,7 +95,7 @@ impl McpManager {
                 stop_tx: None,
                 commands: Vec::new(),
                 skills: Vec::new(),
-                invocation_timestamps: Vec::new(),
+                invocation_timestamps: VecDeque::new(),
                 db: None,
             })),
         }
@@ -267,13 +272,20 @@ impl McpManager {
     fn allow_invocation(&self) -> Result<bool> {
         let mut state = self.inner.lock().map_err(|_| AppError::LockError)?;
         let cutoff = Instant::now() - Duration::from_secs(MCP_RATE_LIMIT_WINDOW_SECS);
-        state.invocation_timestamps.retain(|t| *t >= cutoff);
+        
+        while let Some(t) = state.invocation_timestamps.front() {
+            if *t < cutoff {
+                state.invocation_timestamps.pop_front();
+            } else {
+                break;
+            }
+        }
 
         if state.invocation_timestamps.len() >= MCP_RATE_LIMIT_MAX_CALLS {
             return Ok(false);
         }
 
-        state.invocation_timestamps.push(Instant::now());
+        state.invocation_timestamps.push_back(Instant::now());
         Ok(true)
     }
 }
@@ -528,15 +540,29 @@ async fn handle_command_call(
             .or_else(|| arg.default_value.clone())
             .unwrap_or_default();
 
-        match sanitize_argument_value(&raw_value) {
-            Ok(safe_value) => {
-                envs.push((argument_env_var_name(&arg.name), safe_value));
-            }
-            Err(e) => {
-                invalid_arg_message = Some(e.to_string());
-                break;
-            }
-        }
+                                    match sanitize_argument_value(&raw_value) {
+                                        Ok(safe_value) => {
+                                            // Enum validation
+                                            if matches!(arg.arg_type, crate::models::ArgumentType::Enum) {
+                                                if let Some(ref options) = arg.options {
+                                                    if !options.contains(&raw_value) {
+                                                        invalid_arg_message = Some(format!(
+                                                            "Argument '{}' must be one of: {}",
+                                                            arg.name,
+                                                            options.join(", ")
+                                                        ));
+                                                        break;
+                                                    }
+                                                }
+                                            }
+                                            envs.push((argument_env_var_name(&arg.name), safe_value));
+                                        }
+                                        Err(e) => {
+                                            invalid_arg_message = Some(e.to_string());
+                                            break;
+                                        }
+                                    }
+        
     }
 
     if let Some(message) = invalid_arg_message {
