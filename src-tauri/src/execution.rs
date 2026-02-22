@@ -2,7 +2,7 @@ use std::time::Duration;
 use tokio::process::Command as TokioCommand;
 use tokio::time::timeout;
 
-use crate::constants::{MAX_ARG_LENGTH, MAX_SCRIPT_LENGTH};
+use crate::constants::{MAX_ARG_LENGTH, MAX_SCRIPT_LENGTH, REGEX_DFA_SIZE_LIMIT};
 use crate::database::{Database, ExecutionLogInput};
 use crate::error::{AppError, Result};
 
@@ -65,7 +65,7 @@ pub fn sanitize_argument_value(value: &str) -> Result<String> {
     let re = RE.get_or_init(|| {
         regex::RegexBuilder::new(r"(?i);|&&|&|\|\||\||`|\$\s*\(|\$\s*\{|\)|<|>|<<|<&|>&|\beval\b|\bexec\b")
             .size_limit(100_000)
-            .dfa_size_limit(100_000)
+            .dfa_size_limit(REGEX_DFA_SIZE_LIMIT)
             .build()
             .expect("Invalid dangerous tokens regex")
     });

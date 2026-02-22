@@ -109,6 +109,47 @@ fn validate_command_input(name: &str, script: &str) -> Result<()> {
     Ok(())
 }
 
+fn validate_command_arguments(args: &[crate::models::CommandArgument]) -> Result<()> {
+    for arg in args {
+        if arg.name.trim().is_empty() {
+            return Err(AppError::InvalidInput {
+                message: "Argument name cannot be empty".to_string(),
+            });
+        }
+
+        if matches!(arg.arg_type, crate::models::ArgumentType::Enum) {
+            match &arg.options {
+                Some(options) => {
+                    if options.is_empty() {
+                        return Err(AppError::InvalidInput {
+                            message: format!("Enum argument '{}' must have at least one option", arg.name),
+                        });
+                    }
+                    let mut seen = std::collections::HashSet::new();
+                    for opt in options {
+                        if opt.trim().is_empty() {
+                            return Err(AppError::InvalidInput {
+                                message: format!("Enum argument '{}' contains an empty option", arg.name),
+                            });
+                        }
+                        if !seen.insert(opt) {
+                            return Err(AppError::InvalidInput {
+                                message: format!("Enum argument '{}' contains duplicate option: {}", arg.name, opt),
+                            });
+                        }
+                    }
+                }
+                None => {
+                    return Err(AppError::InvalidInput {
+                        message: format!("Enum argument '{}' must have options defined", arg.name),
+                    });
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 fn validate_skill_input(name: &str, instructions: &str) -> Result<()> {
     let trimmed_name = name.trim();
     if trimmed_name.is_empty() {
@@ -522,6 +563,7 @@ pub fn create_command(
     mcp: State<'_, McpManager>,
 ) -> Result<Command> {
     validate_command_input(&input.name, &input.script)?;
+    validate_command_arguments(&input.arguments)?;
     let created = db.create_command(input)?;
     let _ = mcp.refresh_commands(&db);
     Ok(created)
@@ -544,6 +586,10 @@ pub fn update_command(
     } else if let Some(script) = &input.script {
         let existing = db.get_command_by_id(&id)?;
         validate_command_input(&existing.name, script)?;
+    }
+
+    if let Some(args) = &input.arguments {
+        validate_command_arguments(args)?;
     }
 
     let updated = db.update_command(&id, input)?;
@@ -646,7 +692,7 @@ pub fn sync_commands(db: State<'_, Arc<Database>>) -> Result<SyncResult> {
             format_commands_markdown(&commands, "RuleWeaver Commands (Claude Code)")
         };
 
-        let temp_path = path.with_extension("tmp");
+        let temp_path = path.with_extension(format!("tmp-{}", uuid::Uuid::new_v4()));
         let write_result = (|| -> std::io::Result<()> {
             {
                 let mut file = fs::File::create(&temp_path)?;
@@ -722,36 +768,36 @@ pub fn delete_skill(id: String, db: State<'_, Arc<Database>>) -> Result<()> {
 }
 
 #[tauri::command]
-pub fn get_mcp_status(mcp: State<'_, McpManager>) -> Result<McpStatus> {
-    mcp.status()
+pub async fn get_mcp_status(mcp: State<'_, McpManager>) -> Result<McpStatus> {
+    mcp.status().await
 }
 
 #[tauri::command]
-pub fn start_mcp_server(db: State<'_, Arc<Database>>, mcp: State<'_, McpManager>) -> Result<()> {
-    mcp.start(&db)
+pub async fn start_mcp_server(db: State<'_, Arc<Database>>, mcp: State<'_, McpManager>) -> Result<()> {
+    mcp.start(&db).await
 }
 
 #[tauri::command]
-pub fn stop_mcp_server(mcp: State<'_, McpManager>) -> Result<()> {
-    mcp.stop()
+pub async fn stop_mcp_server(mcp: State<'_, McpManager>) -> Result<()> {
+    mcp.stop().await
 }
 
 #[tauri::command]
-pub fn restart_mcp_server(db: State<'_, Arc<Database>>, mcp: State<'_, McpManager>) -> Result<()> {
-    mcp.stop()?;
-    mcp.start(&db)
+pub async fn restart_mcp_server(db: State<'_, Arc<Database>>, mcp: State<'_, McpManager>) -> Result<()> {
+    mcp.stop().await?;
+    mcp.start(&db).await
 }
 
 #[tauri::command]
-pub fn get_mcp_connection_instructions(
+pub async fn get_mcp_connection_instructions(
     mcp: State<'_, McpManager>,
 ) -> Result<McpConnectionInstructions> {
-    mcp.instructions()
+    mcp.instructions().await
 }
 
 #[tauri::command]
-pub fn get_mcp_logs(limit: Option<u32>, mcp: State<'_, McpManager>) -> Result<Vec<String>> {
-    mcp.logs(limit.unwrap_or(50) as usize)
+pub async fn get_mcp_logs(limit: Option<u32>, mcp: State<'_, McpManager>) -> Result<Vec<String>> {
+    mcp.logs(limit.unwrap_or(50) as usize).await
 }
 
 #[tauri::command]

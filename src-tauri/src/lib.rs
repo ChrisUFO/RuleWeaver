@@ -174,13 +174,17 @@ pub fn run() {
         .expect("error while running tauri application");
 }
 
-pub fn run_mcp_cli(port: u16) -> std::result::Result<(), String> {
+pub fn run_mcp_cli(port: u16, token: Option<String>) -> std::result::Result<(), String> {
     let db = Arc::new(Database::new_for_cli().map_err(|e| e.to_string())?);
     let manager = McpManager::new(port);
-    manager.start(&db).map_err(|e| e.to_string())?;
-
+    
     let rt = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
     rt.block_on(async {
+        if let Some(t) = token {
+            manager.set_api_token(t).await;
+        }
+
+        manager.start(&db).await.map_err(|e| e.to_string())?;
         manager.wait_until_stopped().await.map_err(|e| e.to_string())?;
         Ok(())
     })

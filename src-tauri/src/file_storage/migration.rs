@@ -2,6 +2,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Mutex, OnceLock};
+use sha2::Digest;
 
 use crate::database::Database;
 use crate::error::{AppError, Result};
@@ -61,8 +62,8 @@ pub struct MigrationError {
 }
 
 pub fn migrate_to_file_storage(db: &Database) -> Result<MigrationResult> {
-    MIGRATION_PROGRESS.store(0, Ordering::SeqCst);
-    MIGRATION_TOTAL.store(0, Ordering::SeqCst);
+    MIGRATION_PROGRESS.store(0, Ordering::Relaxed);
+    MIGRATION_TOTAL.store(0, Ordering::Relaxed);
     if let Ok(mut state) = migration_state().lock() {
         state.current_rule = None;
         state.status = MigrationStatus::InProgress;
@@ -70,7 +71,7 @@ pub fn migrate_to_file_storage(db: &Database) -> Result<MigrationResult> {
 
     let rules = db.get_all_rules()?;
     let total = rules.len() as u32;
-    MIGRATION_TOTAL.store(total, Ordering::SeqCst);
+    MIGRATION_TOTAL.store(total, Ordering::Relaxed);
 
     if total == 0 {
         if let Ok(mut state) = migration_state().lock() {
@@ -102,7 +103,7 @@ pub fn migrate_to_file_storage(db: &Database) -> Result<MigrationResult> {
         if let Ok(mut state) = migration_state().lock() {
             state.current_rule = Some(rule.name.clone());
         }
-        MIGRATION_PROGRESS.fetch_add(1, Ordering::SeqCst);
+        MIGRATION_PROGRESS.fetch_add(1, Ordering::Relaxed);
 
         let location = match rule.scope {
             crate::models::Scope::Global => StorageLocation::Global,
@@ -181,6 +182,13 @@ fn create_backup(db: &Database) -> Result<String> {
         message: format!("Failed to create database backup: {}", e),
     })?;
 
+    // Create checksum
+    let content = fs::read(&backup_path)?;
+    let mut hasher = sha2::Sha256::new();
+    sha2::Digest::update(&mut hasher, &content);
+    let checksum = format!("{:x}", hasher.finalize());
+    fs::write(format!("{}.checksum", backup_path), checksum)?;
+
     Ok(backup_path)
 }
 
@@ -204,6 +212,26 @@ pub fn rollback_migration(backup_path: &str, db: Option<&Database>) -> Result<()
     if !PathBuf::from(backup_path).exists() {
         return Err(AppError::InvalidInput {
             message: "Backup file not found".to_string(),
+        });
+    }
+
+    // Verify checksum
+    let checksum_path = format!("{}.checksum", backup_path);
+    if PathBuf::from(&checksum_path).exists() {
+        let stored_checksum = fs::read_to_string(&checksum_path)?;
+        let content = fs::read(backup_path)?;
+        let mut hasher = sha2::Sha256::new();
+        sha2::Digest::update(&mut hasher, &content);
+        let current_checksum = format!("{:x}", hasher.finalize());
+
+        if stored_checksum.trim() != current_checksum {
+            return Err(AppError::InvalidInput {
+                message: "Backup integrity check failed: checksum mismatch".to_string(),
+            });
+        }
+    } else {
+        return Err(AppError::InvalidInput {
+            message: "Backup checksum file missing. Restoration aborted for safety.".to_string(),
         });
     }
 
@@ -232,8 +260,8 @@ pub fn rollback_migration(backup_path: &str, db: Option<&Database>) -> Result<()
 }
 
 pub fn get_migration_progress() -> MigrationProgress {
-    let migrated = MIGRATION_PROGRESS.load(Ordering::SeqCst);
-    let total = MIGRATION_TOTAL.load(Ordering::SeqCst);
+    let migrated = MIGRATION_PROGRESS.load(Ordering::Relaxed);
+    let total = MIGRATION_TOTAL.load(Ordering::Relaxed);
     let (current_rule, status) = migration_state()
         .lock()
         .map(|s| (s.current_rule.clone(), s.status.clone()))

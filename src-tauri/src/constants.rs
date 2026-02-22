@@ -10,8 +10,10 @@ pub const MAX_ARG_LENGTH: usize = 2000;
 pub const MAX_SCRIPT_LENGTH: usize = 20000;
 pub const MAX_OUTPUT_SIZE: usize = 10 * 1024 * 1024; // 10MB
 
+pub const REGEX_DFA_SIZE_LIMIT: usize = 10_000;
+
 pub const MCP_RATE_LIMIT_WINDOW: Duration = Duration::from_secs(10);
-pub const MCP_RATE_LIMIT_MAX_CALLS: usize = 30;
+pub const MCP_RATE_LIMIT_MAX_CALLS: usize = 10;
 
 pub const LOG_LIMIT: usize = 500;
 

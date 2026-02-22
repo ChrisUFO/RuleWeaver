@@ -1,18 +1,19 @@
 use axum::{
     extract::State,
-    http::{HeaderValue, Method},
+    http::{HeaderMap, HeaderValue, Method, StatusCode},
+    response::{IntoResponse, Response},
     routing::post,
     Json, Router,
 };
 use std::collections::VecDeque;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc};
 use std::time::{Duration, Instant};
 use tower_http::cors::CorsLayer;
 
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, Mutex};
 use tokio::task::JoinHandle;
 
 use crate::constants::{
@@ -29,13 +30,13 @@ use crate::execution::{
 };
 use crate::models::{Command, Skill};
 
-fn truncate_output(s: String) -> String {
-    if s.len() > MAX_OUTPUT_SIZE {
+fn truncate_output_custom(s: String, max_size: usize) -> String {
+    if s.len() > max_size {
         let original_len = s.len();
         let mut truncated = s;
-        truncated.truncate(MAX_OUTPUT_SIZE);
+        truncated.truncate(max_size);
         truncated.push_str(&format!(
-            "\n\n[Output truncated from {} bytes due to 10MB size limit]",
+            "\n\n[Output truncated from {} bytes due to size limit]",
             original_len
         ));
         truncated
@@ -44,11 +45,16 @@ fn truncate_output(s: String) -> String {
     }
 }
 
+fn truncate_output(s: String) -> String {
+    truncate_output_custom(s, MAX_OUTPUT_SIZE)
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct McpStatus {
     pub running: bool,
     pub port: u16,
     pub uptime_seconds: u64,
+    pub api_token: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -56,12 +62,14 @@ pub struct McpConnectionInstructions {
     pub claude_code_json: String,
     pub opencode_json: String,
     pub standalone_command: String,
+    pub api_token: String,
 }
 
 #[derive(Debug)]
 struct McpRuntime {
     running: bool,
     port: u16,
+    api_token: String,
     started_at: Option<Instant>,
     logs: Vec<String>,
     stop_tx: Option<broadcast::Sender<()>>,
@@ -85,10 +93,12 @@ pub struct McpSnapshot {
 
 impl McpManager {
     pub fn new(port: u16) -> Self {
+        let api_token = uuid::Uuid::new_v4().to_string();
         Self {
             inner: Arc::new(Mutex::new(McpRuntime {
                 running: false,
                 port,
+                api_token,
                 started_at: None,
                 logs: Vec::new(),
                 stop_tx: None,
@@ -101,16 +111,21 @@ impl McpManager {
         }
     }
 
-    pub fn refresh_commands(&self, db: &Database) -> Result<()> {
+    pub async fn set_api_token(&self, token: String) {
+        let mut state = self.inner.lock().await;
+        state.api_token = token;
+    }
+
+    pub async fn refresh_commands(&self, db: &Database) -> Result<()> {
         let (commands, skills) = db.get_mcp_data()?;
-        let mut state = self.inner.lock().map_err(|_| AppError::LockError)?;
+        let mut state = self.inner.lock().await;
         state.commands = commands;
         state.skills = skills;
         Ok(())
     }
 
-    fn snapshot(&self) -> Result<McpSnapshot> {
-        let state = self.inner.lock().map_err(|_| AppError::LockError)?;
+    async fn snapshot(&self) -> Result<McpSnapshot> {
+        let state = self.inner.lock().await;
         Ok(McpSnapshot {
             commands: state.commands.clone(),
             skills: state.skills.clone(),
@@ -118,11 +133,11 @@ impl McpManager {
         })
     }
 
-    pub fn start(&self, db: &Arc<Database>) -> Result<()> {
-        self.refresh_commands(db)?;
+    pub async fn start(&self, db: &Arc<Database>) -> Result<()> {
+        self.refresh_commands(db).await?;
 
         let port = {
-            let mut state = self.inner.lock().map_err(|_| AppError::LockError)?;
+            let mut state = self.inner.lock().await;
             if state.running {
                 return Ok(());
             }
@@ -135,7 +150,7 @@ impl McpManager {
 
         let (stop_tx, _) = broadcast::channel(1);
         {
-            let mut state = self.inner.lock().map_err(|_| AppError::LockError)?;
+            let mut state = self.inner.lock().await;
             state.stop_tx = Some(stop_tx.clone());
         }
 
@@ -202,16 +217,16 @@ impl McpManager {
         });
 
         {
-            let mut state = self.inner.lock().map_err(|_| AppError::LockError)?;
+            let mut state = self.inner.lock().await;
             state.task_handle = Some(handle);
         }
 
         Ok(())
     }
 
-    pub fn stop(&self) -> Result<()> {
+    pub async fn stop(&self) -> Result<()> {
         let tx = {
-            let mut state = self.inner.lock().map_err(|_| AppError::LockError)?;
+            let mut state = self.inner.lock().await;
             if !state.running {
                 return Ok(());
             }
@@ -227,7 +242,7 @@ impl McpManager {
 
     pub async fn wait_until_stopped(&self) -> Result<()> {
         let handle = {
-            let mut state = self.inner.lock().map_err(|_| AppError::LockError)?;
+            let mut state = self.inner.lock().await;
             state.task_handle.take()
         };
 
@@ -237,31 +252,36 @@ impl McpManager {
         Ok(())
     }
 
-    pub fn status(&self) -> Result<McpStatus> {
-        let state = self.inner.lock().map_err(|_| AppError::LockError)?;
+    pub async fn status(&self) -> Result<McpStatus> {
+        let state = self.inner.lock().await;
         let uptime_seconds = state.started_at.map(|t| t.elapsed().as_secs()).unwrap_or(0);
         Ok(McpStatus {
             running: state.running,
             port: state.port,
             uptime_seconds,
+            api_token: Some(state.api_token.clone()),
         })
     }
 
-    pub fn logs(&self, limit: usize) -> Result<Vec<String>> {
-        let state = self.inner.lock().map_err(|_| AppError::LockError)?;
+    pub async fn logs(&self, limit: usize) -> Result<Vec<String>> {
+        let state = self.inner.lock().await;
         let len = state.logs.len();
         let start = len.saturating_sub(limit);
         Ok(state.logs[start..].to_vec())
     }
 
-    pub fn instructions(&self) -> Result<McpConnectionInstructions> {
-        let status = self.status()?;
+    pub async fn instructions(&self) -> Result<McpConnectionInstructions> {
+        let status = self.status().await?;
         let port = status.port;
+        let token = status.api_token.clone().unwrap_or_default();
 
         let claude_code_json = serde_json::to_string_pretty(&json!({
             "mcpServers": {
                 "ruleweaver": {
-                    "url": format!("http://127.0.0.1:{}", port)
+                    "url": format!("http://127.0.0.1:{}", port),
+                    "env": {
+                        "X_API_KEY": token
+                    }
                 }
             }
         }))
@@ -272,7 +292,10 @@ impl McpManager {
                 "servers": [
                     {
                         "name": "ruleweaver",
-                        "url": format!("http://127.0.0.1:{}", port)
+                        "url": format!("http://127.0.0.1:{}", port),
+                        "headers": {
+                            "X-API-Key": token
+                        }
                     }
                 ]
             }
@@ -282,12 +305,13 @@ impl McpManager {
         Ok(McpConnectionInstructions {
             claude_code_json,
             opencode_json,
-            standalone_command: format!("ruleweaver-mcp --port {}", port),
+            standalone_command: format!("ruleweaver-mcp --port {} --token {}", port, token),
+            api_token: token,
         })
     }
 
-    fn log(&self, message: String) -> Result<()> {
-        let mut state = self.inner.lock().map_err(|_| AppError::LockError)?;
+    async fn log(&self, message: String) -> Result<()> {
+        let mut state = self.inner.lock().await;
         state.logs.push(message);
         if state.logs.len() > LOG_LIMIT {
             let drain_to = state.logs.len() - LOG_LIMIT;
@@ -296,16 +320,16 @@ impl McpManager {
         Ok(())
     }
 
-    fn mark_stopped(&self) -> Result<()> {
-        let mut state = self.inner.lock().map_err(|_| AppError::LockError)?;
+    async fn mark_stopped(&self) -> Result<()> {
+        let mut state = self.inner.lock().await;
         state.running = false;
         state.stop_tx = None;
         state.started_at = None;
         Ok(())
     }
 
-    fn allow_invocation(&self) -> Result<bool> {
-        let mut state = self.inner.lock().map_err(|_| AppError::LockError)?;
+    async fn allow_invocation(&self) -> Result<bool> {
+        let mut state = self.inner.lock().await;
         let cutoff = Instant::now() - MCP_RATE_LIMIT_WINDOW;
         
         while let Some(t) = state.invocation_timestamps.front() {
@@ -334,13 +358,27 @@ struct JsonRpcRequest {
 
 async fn mcp_handler(
     State(manager): State<McpManager>,
+    headers: HeaderMap,
     Json(request): Json<JsonRpcRequest>,
-) -> Json<serde_json::Value> {
+) -> Response {
+    let auth_valid = {
+        let state = manager.inner.lock().await;
+        
+        let provided_key = headers.get("X-API-Key")
+            .and_then(|v| v.to_str().ok());
+        
+        provided_key == Some(&state.api_token)
+    };
+
+    if !auth_valid {
+        return (StatusCode::UNAUTHORIZED, "Unauthorized: Invalid or missing X-API-Key header").into_response();
+    }
+
     let McpSnapshot {
         commands,
         skills,
         db: shared_db,
-    } = match manager.snapshot() {
+    } = match manager.snapshot().await {
         Ok(s) => s,
         Err(e) => {
             return Json(json!({
@@ -350,7 +388,7 @@ async fn mcp_handler(
                     "code": -32603,
                     "message": format!("Internal server error: {}", e)
                 }
-            }));
+            })).into_response();
         }
     };
 
@@ -370,7 +408,7 @@ async fn mcp_handler(
         }),
     };
 
-    Json(response)
+    Json(response).into_response()
 }
 
 fn handle_initialize(id: serde_json::Value) -> serde_json::Value {
@@ -463,7 +501,7 @@ async fn handle_tools_call(
     skills: &[Skill],
     shared_db: &Option<Arc<Database>>,
 ) -> serde_json::Value {
-    let allow = match manager.allow_invocation() {
+    let allow = match manager.allow_invocation().await {
         Ok(a) => a,
         Err(e) => {
             return json!({
@@ -627,7 +665,7 @@ async fn handle_command_call(
             let _ = manager.log(format!(
                 "MCP tools/call '{}' exit code {} ({}ms)",
                 cmd.name, exit_code, duration_ms
-            ));
+            )).await;
             json!({
                 "jsonrpc": "2.0",
                 "id": id,
@@ -725,12 +763,15 @@ async fn handle_skill_call(
             
             {
                 Ok((exit_code, stdout, stderr)) => {
+                    let step_stdout = truncate_output_custom(stdout, 1024 * 1024); // 1MB per step
+                    let step_stderr = truncate_output_custom(stderr, 1024 * 1024); // 1MB per step
+                    
                     output.push_str(&format!(
                         "[step {}] exit_code: {}\nstdout:\n{}\nstderr:\n{}\n\n",
                         idx + 1,
                         exit_code,
-                        stdout,
-                        stderr
+                        step_stdout,
+                        step_stderr
                     ));
                     if exit_code != 0 {
                         is_error = true;
@@ -755,7 +796,7 @@ async fn handle_skill_call(
             skill.name,
             if is_error { "failed" } else { "succeeded" },
             duration_ms
-        ));
+        )).await;
 
         if let Some(db) = shared_db {
             let args_json = serde_json::to_string(&args_map).unwrap_or_default();

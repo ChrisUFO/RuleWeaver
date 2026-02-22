@@ -155,7 +155,7 @@ pub fn save_rule_to_disk(rule: &Rule, location: &StorageLocation) -> Result<Path
 
     let file_path = find_or_create_rule_file(&base_dir, rule)?;
 
-    let temp_path = file_path.with_extension("md.tmp");
+    let temp_path = file_path.with_extension(format!("md.tmp-{}", uuid::Uuid::new_v4()));
     {
         let mut file = fs::File::create(&temp_path)?;
         file.write_all(file_content.as_bytes())?;
