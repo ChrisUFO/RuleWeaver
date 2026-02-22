@@ -1,0 +1,45 @@
+import * as React from "react";
+import { Sidebar } from "./Sidebar";
+import { Header } from "./Header";
+
+type Theme = "light" | "dark" | "system";
+
+interface MainLayoutProps {
+  children: React.ReactNode;
+  activeView: string;
+  onViewChange: (view: string) => void;
+}
+
+export function MainLayout({ children, activeView, onViewChange }: MainLayoutProps) {
+  const [sidebarCollapsed, setSidebarCollapsed] = React.useState(false);
+  const [theme, setTheme] = React.useState<Theme>("system");
+
+  React.useEffect(() => {
+    const root = window.document.documentElement;
+    root.classList.remove("light", "dark");
+
+    if (theme === "system") {
+      const systemTheme = window.matchMedia("(prefers-color-scheme: dark)").matches
+        ? "dark"
+        : "light";
+      root.classList.add(systemTheme);
+    } else {
+      root.classList.add(theme);
+    }
+  }, [theme]);
+
+  return (
+    <div className="flex h-screen w-full overflow-hidden bg-background">
+      <Sidebar
+        collapsed={sidebarCollapsed}
+        onCollapsedChange={setSidebarCollapsed}
+        activeView={activeView}
+        onViewChange={onViewChange}
+      />
+      <div className="flex flex-1 flex-col overflow-hidden">
+        <Header theme={theme} onThemeChange={setTheme} />
+        <main className="flex-1 overflow-auto p-6">{children}</main>
+      </div>
+    </div>
+  );
+}

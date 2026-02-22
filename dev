@@ -1,0 +1,7 @@
+#!/bin/bash
+
+# RuleWeaver Development Script
+# Starts the development server
+
+echo "🚀 Starting RuleWeaver development server..."
+npm run tauri:dev

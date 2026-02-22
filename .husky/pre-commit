@@ -1,0 +1,41 @@
+#!/usr/bin/env sh
+set -e
+
+# Check if this is a documentation-only change
+is_doc_only() {
+  # Get list of staged files
+  staged=$(git diff --cached --name-only --diff-filter=ACM)
+  
+  # If no staged files, not doc-only
+  if [ -z "$staged" ]; then
+    return 1
+  fi
+  
+  # Check if any file is NOT a documentation file
+  for file in $staged; do
+    case "$file" in
+      *.md|*.txt|LICENSE|*.rst|docs/*)
+        # Documentation file, continue checking
+        ;;
+      *)
+        # Non-documentation file found
+        return 1
+        ;;
+    esac
+  done
+  
+  # All files are documentation
+  return 0
+}
+
+# Skip hooks for documentation-only changes
+if is_doc_only; then
+  echo "📝 Documentation-only change, skipping lint and format checks"
+  exit 0
+fi
+
+echo "🔍 Running lint-staged..."
+npx lint-staged
+
+echo ""
+echo "✅ Pre-commit checks passed"

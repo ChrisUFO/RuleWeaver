@@ -1,0 +1,287 @@
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Scope {
+    Global,
+    Local,
+}
+
+impl Scope {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Scope::Global => "global",
+            Scope::Local => "local",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "global" => Some(Scope::Global),
+            "local" => Some(Scope::Local),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum AdapterType {
+    Antigravity,
+    Gemini,
+    OpenCode,
+    Cline,
+    ClaudeCode,
+    Codex,
+}
+
+impl AdapterType {
+    #[allow(dead_code)]
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            AdapterType::Antigravity => "antigravity",
+            AdapterType::Gemini => "gemini",
+            AdapterType::OpenCode => "opencode",
+            AdapterType::Cline => "cline",
+            AdapterType::ClaudeCode => "claude-code",
+            AdapterType::Codex => "codex",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "antigravity" => Some(AdapterType::Antigravity),
+            "gemini" => Some(AdapterType::Gemini),
+            "opencode" => Some(AdapterType::OpenCode),
+            "cline" => Some(AdapterType::Cline),
+            "claude-code" => Some(AdapterType::ClaudeCode),
+            "codex" => Some(AdapterType::Codex),
+            _ => None,
+        }
+    }
+
+    pub fn all() -> Vec<Self> {
+        vec![
+            AdapterType::Antigravity,
+            AdapterType::Gemini,
+            AdapterType::OpenCode,
+            AdapterType::Cline,
+            AdapterType::ClaudeCode,
+            AdapterType::Codex,
+        ]
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Rule {
+    pub id: String,
+    pub name: String,
+    pub content: String,
+    pub scope: Scope,
+    pub target_paths: Option<Vec<String>>,
+    pub enabled_adapters: Vec<AdapterType>,
+    pub enabled: bool,
+    #[serde(with = "ts_seconds")]
+    pub created_at: DateTime<Utc>,
+    #[serde(with = "ts_seconds")]
+    pub updated_at: DateTime<Utc>,
+}
+
+mod ts_seconds {
+    use chrono::{DateTime, TimeZone, Utc};
+    use serde::{self, Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S>(date: &DateTime<Utc>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        date.timestamp().serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<DateTime<Utc>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let ts = i64::deserialize(deserializer)?;
+        Utc.timestamp_opt(ts, 0)
+            .single()
+            .ok_or_else(|| serde::de::Error::custom(format!("Invalid timestamp: {}", ts)))
+    }
+}
+
+impl Rule {
+    #[allow(dead_code)]
+    pub fn new(name: String, content: String, scope: Scope) -> Self {
+        let now = Utc::now();
+        Self {
+            id: Uuid::new_v4().to_string(),
+            name,
+            content,
+            scope,
+            target_paths: None,
+            enabled_adapters: vec![AdapterType::Gemini, AdapterType::OpenCode],
+            enabled: true,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateRuleInput {
+    pub name: String,
+    pub content: String,
+    pub scope: Scope,
+    #[serde(default)]
+    pub target_paths: Option<Vec<String>>,
+    pub enabled_adapters: Vec<AdapterType>,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct UpdateRuleInput {
+    pub name: Option<String>,
+    pub content: Option<String>,
+    pub scope: Option<Scope>,
+    pub target_paths: Option<Vec<String>>,
+    pub enabled_adapters: Option<Vec<AdapterType>>,
+    pub enabled: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SyncResult {
+    pub success: bool,
+    pub files_written: Vec<String>,
+    pub errors: Vec<SyncError>,
+    pub conflicts: Vec<Conflict>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SyncError {
+    pub file_path: String,
+    pub adapter_name: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Conflict {
+    pub id: String,
+    pub file_path: String,
+    pub adapter_name: String,
+    pub adapter_id: Option<AdapterType>,
+    pub local_hash: String,
+    pub current_hash: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SyncHistoryEntry {
+    pub id: String,
+    #[serde(with = "ts_seconds")]
+    pub timestamp: DateTime<Utc>,
+    pub files_written: u32,
+    pub status: String,
+    pub triggered_by: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_scope_from_str() {
+        assert!(matches!(Scope::from_str("global"), Some(Scope::Global)));
+        assert!(matches!(Scope::from_str("local"), Some(Scope::Local)));
+        assert!(matches!(Scope::from_str("GLOBAL"), Some(Scope::Global)));
+        assert!(matches!(Scope::from_str("invalid"), None));
+    }
+
+    #[test]
+    fn test_scope_as_str() {
+        assert_eq!(Scope::Global.as_str(), "global");
+        assert_eq!(Scope::Local.as_str(), "local");
+    }
+
+    #[test]
+    fn test_adapter_type_from_str() {
+        assert!(matches!(
+            AdapterType::from_str("antigravity"),
+            Some(AdapterType::Antigravity)
+        ));
+        assert!(matches!(
+            AdapterType::from_str("gemini"),
+            Some(AdapterType::Gemini)
+        ));
+        assert!(matches!(
+            AdapterType::from_str("opencode"),
+            Some(AdapterType::OpenCode)
+        ));
+        assert!(matches!(
+            AdapterType::from_str("cline"),
+            Some(AdapterType::Cline)
+        ));
+        assert!(matches!(
+            AdapterType::from_str("claude-code"),
+            Some(AdapterType::ClaudeCode)
+        ));
+        assert!(matches!(
+            AdapterType::from_str("codex"),
+            Some(AdapterType::Codex)
+        ));
+        assert!(matches!(AdapterType::from_str("invalid"), None));
+    }
+
+    #[test]
+    fn test_adapter_type_all() {
+        let all = AdapterType::all();
+        assert_eq!(all.len(), 6);
+        assert!(all.contains(&AdapterType::Antigravity));
+        assert!(all.contains(&AdapterType::Gemini));
+        assert!(all.contains(&AdapterType::OpenCode));
+        assert!(all.contains(&AdapterType::Cline));
+        assert!(all.contains(&AdapterType::ClaudeCode));
+        assert!(all.contains(&AdapterType::Codex));
+    }
+
+    #[test]
+    fn test_rule_new() {
+        let rule = Rule::new(
+            "Test Rule".to_string(),
+            "Test content".to_string(),
+            Scope::Global,
+        );
+
+        assert_eq!(rule.name, "Test Rule");
+        assert_eq!(rule.content, "Test content");
+        assert!(matches!(rule.scope, Scope::Global));
+        assert!(rule.enabled);
+        assert!(!rule.id.is_empty());
+    }
+
+    #[test]
+    fn test_create_rule_input_serialization() {
+        let input = CreateRuleInput {
+            name: "Test".to_string(),
+            content: "Content".to_string(),
+            scope: Scope::Global,
+            target_paths: None,
+            enabled_adapters: vec![AdapterType::Gemini, AdapterType::OpenCode],
+            enabled: true,
+        };
+
+        let json = serde_json::to_string(&input).unwrap();
+        let parsed: CreateRuleInput = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed.name, input.name);
+        assert_eq!(parsed.content, input.content);
+        assert!(matches!(parsed.scope, Scope::Global));
+        assert_eq!(parsed.enabled_adapters.len(), 2);
+        assert_eq!(parsed.enabled, true);
+    }
+}
