@@ -7,6 +7,7 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/tauri";
 import { useToast } from "@/components/ui/toast";
+import { CommandsListSkeleton } from "@/components/ui/skeleton";
 import type { CommandModel, ExecutionLog } from "@/types/command";
 
 export function Commands() {
@@ -27,6 +28,7 @@ export function Commands() {
   const [query, setQuery] = useState("");
   const [history, setHistory] = useState<ExecutionLog[]>([]);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const { addToast } = useToast();
 
   const selected = useMemo(
@@ -55,13 +57,18 @@ export function Commands() {
   };
 
   useEffect(() => {
-    Promise.all([loadCommands(), loadHistory()]).catch((error) => {
-      addToast({
-        title: "Failed to Load Commands",
-        description: error instanceof Error ? error.message : "Unknown error",
-        variant: "error",
+    setIsLoading(true);
+    Promise.all([loadCommands(), loadHistory()])
+      .catch((error) => {
+        addToast({
+          title: "Failed to Load Commands",
+          description: error instanceof Error ? error.message : "Unknown error",
+          variant: "error",
+        });
+      })
+      .finally(() => {
+        setIsLoading(false);
       });
-    });
   }, [addToast]);
 
   useEffect(() => {
@@ -204,6 +211,10 @@ export function Commands() {
       setIsSyncing(false);
     }
   };
+
+  if (isLoading) {
+    return <CommandsListSkeleton />;
+  }
 
   return (
     <div className="grid gap-6 lg:grid-cols-[320px,1fr]">
