@@ -13,23 +13,20 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::sync::broadcast;
+use tokio::task::JoinHandle;
 
+use crate::constants::{
+    CMD_EXEC_TIMEOUT, LOG_LIMIT, MAX_OUTPUT_SIZE, MAX_SKILL_STEPS, MAX_STEP_LENGTH,
+    MCP_RATE_LIMIT_MAX_CALLS, MCP_RATE_LIMIT_WINDOW, MCP_SERVER_BACKOFF_INITIAL_MS,
+    MCP_SERVER_RETRY_COUNT, SKILL_EXEC_TIMEOUT,
+};
 use crate::database::{Database, ExecutionLogInput};
 use crate::error::{AppError, Result};
 use crate::execution::{
-    argument_env_var_name, contains_disallowed_pattern,
-    execute_shell_with_timeout_env, replace_template_with_env_ref, sanitize_argument_value,
-    slugify,
+    argument_env_var_name, contains_disallowed_pattern, execute_and_log,
+    execute_shell_with_timeout_env, replace_template_with_env_ref, sanitize_argument_value, slugify,
 };
 use crate::models::{Command, Skill};
-
-const MAX_SKILL_STEPS: usize = 10;
-const MAX_STEP_LENGTH: usize = 4000;
-const CMD_EXEC_TIMEOUT_SECS: u64 = 60;
-const SKILL_EXEC_TIMEOUT_SECS: u64 = 60;
-const MCP_RATE_LIMIT_WINDOW_SECS: u64 = 10;
-const MCP_RATE_LIMIT_MAX_CALLS: usize = 30;
-const MAX_OUTPUT_SIZE: usize = 10 * 1024 * 1024; // 10MB
 
 fn truncate_output(s: String) -> String {
     if s.len() > MAX_OUTPUT_SIZE {
@@ -67,6 +64,7 @@ struct McpRuntime {
     started_at: Option<Instant>,
     logs: Vec<String>,
     stop_tx: Option<broadcast::Sender<()>>,
+    task_handle: Option<JoinHandle<()>>,
     commands: Vec<Command>,
     skills: Vec<Skill>,
     invocation_timestamps: VecDeque<Instant>,
@@ -93,6 +91,7 @@ impl McpManager {
                 started_at: None,
                 logs: Vec::new(),
                 stop_tx: None,
+                task_handle: None,
                 commands: Vec::new(),
                 skills: Vec::new(),
                 invocation_timestamps: VecDeque::new(),
@@ -102,8 +101,7 @@ impl McpManager {
     }
 
     pub fn refresh_commands(&self, db: &Database) -> Result<()> {
-        let commands = db.get_all_commands()?;
-        let skills = db.get_all_skills()?;
+        let (commands, skills) = db.get_mcp_data()?;
         let mut state = self.inner.lock().map_err(|_| AppError::LockError)?;
         state.commands = commands;
         state.skills = skills;
@@ -142,7 +140,7 @@ impl McpManager {
 
         let manager = self.clone();
         let mut stop_rx = stop_tx.subscribe();
-        tokio::spawn(async move {
+        let handle = tokio::spawn(async move {
             let app = Router::new()
                 .route("/", post(mcp_handler))
                 // Support root and any other path for flexibility
@@ -159,10 +157,29 @@ impl McpManager {
                 .with_state(manager.clone());
 
             let addr = format!("127.0.0.1:{}", port);
-            let listener = match tokio::net::TcpListener::bind(&addr).await {
-                Ok(l) => l,
-                Err(e) => {
-                    let _ = manager.log(format!("Failed to bind MCP server {}: {}", addr, e));
+            
+            // Port binding with retry/backoff
+            let mut retry_count = 0;
+            let mut backoff_ms = MCP_SERVER_BACKOFF_INITIAL_MS;
+            let listener = loop {
+                match tokio::net::TcpListener::bind(&addr).await {
+                    Ok(l) => break Some(l),
+                    Err(e) => {
+                        if retry_count >= MCP_SERVER_RETRY_COUNT {
+                            let _ = manager.log(format!("Failed to bind MCP server after {} attempts {}: {}", MCP_SERVER_RETRY_COUNT, addr, e));
+                            break None;
+                        }
+                        let _ = manager.log(format!("Port {} busy, retrying in {}ms...", port, backoff_ms));
+                        tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
+                        retry_count += 1;
+                        backoff_ms *= 2;
+                    }
+                }
+            };
+
+            let listener = match listener {
+                Some(l) => l,
+                None => {
                     let _ = manager.mark_stopped();
                     return;
                 }
@@ -183,6 +200,11 @@ impl McpManager {
             let _ = manager.mark_stopped();
         });
 
+        {
+            let mut state = self.inner.lock().map_err(|_| AppError::LockError)?;
+            state.task_handle = Some(handle);
+        }
+
         Ok(())
     }
 
@@ -199,6 +221,18 @@ impl McpManager {
             let _ = tx.send(());
         }
 
+        Ok(())
+    }
+
+    pub async fn wait_until_stopped(&self) -> Result<()> {
+        let handle = {
+            let mut state = self.inner.lock().map_err(|_| AppError::LockError)?;
+            state.task_handle.take()
+        };
+
+        if let Some(handle) = handle {
+            let _ = handle.await;
+        }
         Ok(())
     }
 
@@ -254,8 +288,8 @@ impl McpManager {
     fn log(&self, message: String) -> Result<()> {
         let mut state = self.inner.lock().map_err(|_| AppError::LockError)?;
         state.logs.push(message);
-        if state.logs.len() > 500 {
-            let drain_to = state.logs.len() - 500;
+        if state.logs.len() > LOG_LIMIT {
+            let drain_to = state.logs.len() - LOG_LIMIT;
             state.logs.drain(0..drain_to);
         }
         Ok(())
@@ -271,7 +305,7 @@ impl McpManager {
 
     fn allow_invocation(&self) -> Result<bool> {
         let mut state = self.inner.lock().map_err(|_| AppError::LockError)?;
-        let cutoff = Instant::now() - Duration::from_secs(MCP_RATE_LIMIT_WINDOW_SECS);
+        let cutoff = Instant::now() - MCP_RATE_LIMIT_WINDOW;
         
         while let Some(t) = state.invocation_timestamps.front() {
             if *t < cutoff {
@@ -576,57 +610,46 @@ async fn handle_command_call(
         });
     }
 
-    let start = Instant::now();
-    match execute_shell_with_timeout_env(
+    match execute_and_log(
+        shared_db.as_ref().map(|arc| arc.as_ref()),
+        &cmd.id,
+        &cmd.name,
         &rendered,
-        Duration::from_secs(CMD_EXEC_TIMEOUT_SECS),
+        CMD_EXEC_TIMEOUT,
         &envs,
+        &serde_json::to_string(&args_map).unwrap_or_default(),
+        "mcp",
     )
     .await
     {
-        Ok((exit_code, stdout, stderr)) => {
-            let duration_ms = start.elapsed().as_millis() as u64;
+        Ok((exit_code, stdout, stderr, duration_ms)) => {
             let _ = manager.log(format!(
                 "MCP tools/call '{}' exit code {} ({}ms)",
                 cmd.name, exit_code, duration_ms
             ));
-            if let Some(db) = shared_db {
-                let args_json = serde_json::to_string(&args_map).unwrap_or_default();
-                let _ = db.add_execution_log(&ExecutionLogInput {
-                    command_id: &cmd.id,
-                    command_name: &cmd.name,
-                    arguments_json: &args_json,
-                    stdout: &stdout,
-                    stderr: &stderr,
-                    exit_code,
-                    duration_ms,
-                    triggered_by: "mcp",
-                });
-            }
             json!({
                 "jsonrpc": "2.0",
                 "id": id,
                 "result": {
                     "content": [{
                         "type": "text",
-                                                                    "text": format!("exit_code: {}\n\nstdout:\n{}\n\nstderr:\n{}", exit_code, truncate_output(stdout), truncate_output(stderr))
-                                                                }],
-                                                                "isError": exit_code != 0
-                                                            }
-                                                        })
-                                                    }
-                                                    Err(e) => json!({
-                                                        "jsonrpc": "2.0",
-                                                        "id": id,
-                                                        "result": {
-                                                            "content": [{
-                                                                "type": "text",
-                                                                "text": format!("Failed to execute command: {}", e)
-                                                            }],
-                                                            "isError": true
-                                                        }
-                                                    }),
-                        
+                        "text": format!("exit_code: {}\n\nstdout:\n{}\n\nstderr:\n{}", exit_code, truncate_output(stdout), truncate_output(stderr))
+                    }],
+                    "isError": exit_code != 0
+                }
+            })
+        }
+        Err(e) => json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "result": {
+                "content": [{
+                    "type": "text",
+                    "text": format!("Failed to execute command: {}", e)
+                }],
+                "isError": true
+            }
+        }),
     }
 }
 
@@ -692,12 +715,13 @@ async fn handle_skill_call(
                 break;
             }
 
-            match execute_shell_with_timeout_env(
-                step,
-                Duration::from_secs(SKILL_EXEC_TIMEOUT_SECS),
-                &skill_envs,
-            )
-            .await
+                                        match execute_shell_with_timeout_env(
+                                            step,
+                                            SKILL_EXEC_TIMEOUT,
+                                            &skill_envs,
+                                        )
+                                        .await
+            
             {
                 Ok((exit_code, stdout, stderr)) => {
                     output.push_str(&format!(

@@ -2,10 +2,9 @@ use std::time::Duration;
 use tokio::process::Command as TokioCommand;
 use tokio::time::timeout;
 
+use crate::constants::{MAX_ARG_LENGTH, MAX_SCRIPT_LENGTH};
+use crate::database::{Database, ExecutionLogInput};
 use crate::error::{AppError, Result};
-
-const MAX_ARG_LENGTH: usize = 2000;
-const MAX_SCRIPT_LENGTH: usize = 20000;
 
 pub fn template_token(arg_name: &str) -> String {
     format!("{{{{{}}}}}", arg_name)
@@ -82,7 +81,7 @@ pub fn sanitize_argument_value(value: &str) -> Result<String> {
 
 pub fn contains_disallowed_pattern(script: &str) -> Option<&'static str> {
     let lower = script.to_lowercase();
-    let patterns: [(&str, &str); 15] = [
+    let patterns: [(&str, &str); 18] = [
         ("rm -rf", "rm -rf"),
         ("del /f", "del /f"),
         ("format ", "format"),
@@ -91,12 +90,15 @@ pub fn contains_disallowed_pattern(script: &str) -> Option<&'static str> {
         ("reboot", "reboot"),
         ("curl |", "curl pipe"),
         ("wget |", "wget pipe"),
+        ("base64 -d", "base64 decode"),
+        ("base64 --decode", "base64 decode"),
+        ("| sh", "pipe to shell"),
+        ("| bash", "pipe to shell"),
+        ("| zsh", "pipe to shell"),
         ("`", "backticks"),
         ("$(", "command substitution"),
         ("eval ", "eval"),
         ("exec ", "exec"),
-        ("<(", "process substitution"),
-        (">(", "process substitution"),
         ("<<", "heredoc"),
     ];
 
@@ -150,5 +152,39 @@ pub async fn execute_shell_with_timeout_env(
         Err(_) => Err(AppError::InvalidInput {
             message: format!("Execution timed out after {}s", timeout_dur.as_secs()),
         }),
+    }
+}
+
+pub async fn execute_and_log(
+    db: Option<&Database>,
+    command_id: &str,
+    command_name: &str,
+    script: &str,
+    timeout_dur: Duration,
+    envs: &[(String, String)],
+    arguments_json: &str,
+    triggered_by: &str,
+) -> Result<(i32, String, String, u64)> {
+    let start = std::time::Instant::now();
+    let result = execute_shell_with_timeout_env(script, timeout_dur, envs).await;
+    let duration_ms = start.elapsed().as_millis() as u64;
+
+    match result {
+        Ok((exit_code, stdout, stderr)) => {
+            if let Some(db) = db {
+                let _ = db.add_execution_log(&ExecutionLogInput {
+                    command_id,
+                    command_name,
+                    arguments_json,
+                    stdout: &stdout,
+                    stderr: &stderr,
+                    exit_code,
+                    duration_ms,
+                    triggered_by,
+                });
+            }
+            Ok((exit_code, stdout, stderr, duration_ms))
+        }
+        Err(e) => Err(e),
     }
 }

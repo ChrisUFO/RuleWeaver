@@ -1,4 +1,5 @@
 mod commands;
+mod constants;
 mod database;
 mod error;
 mod execution;
@@ -24,7 +25,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let db = Arc::new(Database::new(app.handle())?);
-            let mcp_manager = McpManager::new(8080);
+            let mcp_manager = McpManager::new(crate::constants::DEFAULT_MCP_PORT);
 
             let auto_start_mcp = db
                 .get_setting("mcp_auto_start")
@@ -180,13 +181,7 @@ pub fn run_mcp_cli(port: u16) -> std::result::Result<(), String> {
 
     let rt = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
     rt.block_on(async {
-        loop {
-            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-            let status = manager.status().map_err(|e| e.to_string())?;
-            if !status.running {
-                break;
-            }
-        }
+        manager.wait_until_stopped().await.map_err(|e| e.to_string())?;
         Ok(())
     })
 }
