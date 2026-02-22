@@ -6,7 +6,7 @@ pub mod rule_commands;
 pub mod skill_commands;
 pub mod system_commands;
 
-use adapters::{CommandAdapter, GeminiAdapter, OpenCodeAdapter, ClaudeAdapter};
+use adapters::{ClaudeAdapter, CommandAdapter, GeminiAdapter, OpenCodeAdapter};
 pub use command_commands::*;
 pub use mcp_commands::*;
 pub use migration_commands::*;
@@ -14,25 +14,30 @@ pub use rule_commands::*;
 pub use skill_commands::*;
 pub use system_commands::*;
 
-use std::collections::HashSet;
+use parking_lot::Mutex;
+use std::collections::{HashSet, VecDeque};
 use std::path::PathBuf;
-use std::sync::{Mutex, LazyLock};
+use std::sync::LazyLock;
+use std::time::Instant;
 
+use crate::constants::limits::{
+    MAX_COMMAND_NAME_LENGTH, MAX_COMMAND_SCRIPT_LENGTH, MAX_RULE_CONTENT_LENGTH,
+    MAX_RULE_NAME_LENGTH, MAX_SKILL_INSTRUCTIONS_LENGTH, MAX_SKILL_NAME_LENGTH, MAX_SKILL_STEPS,
+};
 use crate::database::Database;
 use crate::error::{AppError, Result};
 use crate::file_storage;
 use crate::mcp::extract_skill_steps;
 use crate::models::Rule;
-use crate::constants::limits::{
-    MAX_COMMAND_NAME_LENGTH, MAX_COMMAND_SCRIPT_LENGTH, MAX_RULE_CONTENT_LENGTH,
-    MAX_RULE_NAME_LENGTH, MAX_SKILL_INSTRUCTIONS_LENGTH, MAX_SKILL_NAME_LENGTH, MAX_SKILL_STEPS,
-};
 
-pub static RUNNING_TESTS: LazyLock<Mutex<HashSet<String>>> = LazyLock::new(|| Mutex::new(HashSet::new()));
+pub static RUNNING_TESTS: LazyLock<Mutex<HashSet<String>>> =
+    LazyLock::new(|| Mutex::new(HashSet::new()));
+pub static TEST_INVOCATION_TIMESTAMPS: LazyLock<Mutex<VecDeque<Instant>>> =
+    LazyLock::new(|| Mutex::new(VecDeque::new()));
 
 pub fn validate_path(path: &str) -> Result<PathBuf> {
     let p = PathBuf::from(path);
-    
+
     // Check for traversal components before canonicalization for defense-in-depth
     if path.contains("..") {
         return Err(AppError::InvalidInput {
@@ -60,7 +65,9 @@ pub fn validate_path(path: &str) -> Result<PathBuf> {
 pub fn validate_rule_input(name: &str, content: &str) -> Result<()> {
     let trimmed_name = name.trim();
     if trimmed_name.is_empty() {
-        return Err(AppError::Validation("Rule name cannot be empty".to_string()));
+        return Err(AppError::Validation(
+            "Rule name cannot be empty".to_string(),
+        ));
     }
     if trimmed_name.len() > MAX_RULE_NAME_LENGTH {
         return Err(AppError::Validation(format!(
@@ -80,7 +87,9 @@ pub fn validate_rule_input(name: &str, content: &str) -> Result<()> {
 pub fn validate_command_input(name: &str, script: &str) -> Result<()> {
     let trimmed_name = name.trim();
     if trimmed_name.is_empty() {
-        return Err(AppError::Validation("Command name cannot be empty".to_string()));
+        return Err(AppError::Validation(
+            "Command name cannot be empty".to_string(),
+        ));
     }
     if trimmed_name.len() > MAX_COMMAND_NAME_LENGTH {
         return Err(AppError::Validation(format!(
@@ -89,7 +98,9 @@ pub fn validate_command_input(name: &str, script: &str) -> Result<()> {
         )));
     }
     if script.trim().is_empty() {
-        return Err(AppError::Validation("Command script cannot be empty".to_string()));
+        return Err(AppError::Validation(
+            "Command script cannot be empty".to_string(),
+        ));
     }
     if script.len() > MAX_COMMAND_SCRIPT_LENGTH {
         return Err(AppError::Validation(format!(
@@ -103,27 +114,41 @@ pub fn validate_command_input(name: &str, script: &str) -> Result<()> {
 pub fn validate_command_arguments(args: &[crate::models::CommandArgument]) -> Result<()> {
     for arg in args {
         if arg.name.trim().is_empty() {
-            return Err(AppError::Validation("Argument name cannot be empty".to_string()));
+            return Err(AppError::Validation(
+                "Argument name cannot be empty".to_string(),
+            ));
         }
 
         if matches!(arg.arg_type, crate::models::ArgumentType::Enum) {
             match &arg.options {
                 Some(options) => {
                     if options.is_empty() {
-                        return Err(AppError::Validation(format!("Enum argument '{}' must have at least one option", arg.name)));
+                        return Err(AppError::Validation(format!(
+                            "Enum argument '{}' must have at least one option",
+                            arg.name
+                        )));
                     }
                     let mut seen = std::collections::HashSet::new();
                     for opt in options {
                         if opt.trim().is_empty() {
-                            return Err(AppError::Validation(format!("Enum argument '{}' contains an empty option", arg.name)));
+                            return Err(AppError::Validation(format!(
+                                "Enum argument '{}' contains an empty option",
+                                arg.name
+                            )));
                         }
                         if !seen.insert(opt) {
-                            return Err(AppError::Validation(format!("Enum argument '{}' contains duplicate option: {}", arg.name, opt)));
+                            return Err(AppError::Validation(format!(
+                                "Enum argument '{}' contains duplicate option: {}",
+                                arg.name, opt
+                            )));
                         }
                     }
                 }
                 None => {
-                    return Err(AppError::Validation(format!("Enum argument '{}' must have options defined", arg.name)));
+                    return Err(AppError::Validation(format!(
+                        "Enum argument '{}' must have options defined",
+                        arg.name
+                    )));
                 }
             }
         }
@@ -134,7 +159,9 @@ pub fn validate_command_arguments(args: &[crate::models::CommandArgument]) -> Re
 pub fn validate_skill_input(name: &str, instructions: &str) -> Result<()> {
     let trimmed_name = name.trim();
     if trimmed_name.is_empty() {
-        return Err(AppError::Validation("Skill name cannot be empty".to_string()));
+        return Err(AppError::Validation(
+            "Skill name cannot be empty".to_string(),
+        ));
     }
     if trimmed_name.len() > MAX_SKILL_NAME_LENGTH {
         return Err(AppError::Validation(format!(
@@ -143,7 +170,9 @@ pub fn validate_skill_input(name: &str, instructions: &str) -> Result<()> {
         )));
     }
     if instructions.trim().is_empty() {
-        return Err(AppError::Validation("Skill instructions cannot be empty".to_string()));
+        return Err(AppError::Validation(
+            "Skill instructions cannot be empty".to_string(),
+        ));
     }
     if instructions.len() > MAX_SKILL_INSTRUCTIONS_LENGTH {
         return Err(AppError::Validation(format!(

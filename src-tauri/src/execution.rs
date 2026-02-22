@@ -43,6 +43,25 @@ pub fn slugify(input: &str) -> String {
     parts.join("-")
 }
 
+pub fn validate_enum_argument(
+    arg_name: &str,
+    value: &str,
+    options: &Option<Vec<String>>,
+) -> Result<()> {
+    if let Some(opts) = options {
+        if !opts.contains(&value.to_string()) {
+            return Err(AppError::InvalidInput {
+                message: format!(
+                    "Argument '{}' must be one of: {}",
+                    arg_name,
+                    opts.join(", ")
+                ),
+            });
+        }
+    }
+    Ok(())
+}
+
 pub fn sanitize_argument_value(value: &str) -> Result<String> {
     if value.len() > MAX_ARG_LENGTH {
         return Err(AppError::InvalidInput {
@@ -60,48 +79,61 @@ pub fn sanitize_argument_value(value: &str) -> Result<String> {
     // We use \b for eval and exec to avoid catching words like "evaluation"
     static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
     let re = RE.get_or_init(|| {
-        regex::RegexBuilder::new(r"(?i);|&&|&|\|\||\||`|\$\s*\(|\$\s*\{|\)|<|>|<<|<&|>&|\beval\b|\bexec\b")
-            .size_limit(100_000)
-            .dfa_size_limit(REGEX_DFA_SIZE_LIMIT)
-            .build()
-            .expect("Invalid dangerous tokens regex")
+        regex::RegexBuilder::new(
+            r"(?i);|&&|&|\|\||\||`|\$\s*\(|\$\s*\{|\)|<|>|<<|<&|>&|\beval\b|\bexec\b",
+        )
+        .size_limit(100_000)
+        .dfa_size_limit(REGEX_DFA_SIZE_LIMIT)
+        .build()
+        .expect("Invalid dangerous tokens regex")
     });
 
     if let Some(m) = re.find(value) {
+        let matched = m.as_str();
+        let category = match matched {
+            ";" | "&&" | "&" | "||" | "|" => "command chaining",
+            "`" | "$(" | "${" | ")" => "command substitution",
+            "<" | ">" | "<<" | "<&" | ">&" => "I/O redirection",
+            "eval" | "exec" => "dynamic execution",
+            _ => "suspicious pattern",
+        };
         return Err(AppError::InvalidInput {
-            message: format!("Argument contains forbidden token: {}", m.as_str()),
+            message: format!(
+                "Argument contains forbidden {} token: {}",
+                category, matched
+            ),
         });
     }
 
     Ok(value.to_string())
 }
 
-pub fn contains_disallowed_pattern(script: &str) -> Option<&'static str> {
+pub fn contains_disallowed_pattern(script: &str) -> Option<String> {
     let lower = script.to_lowercase();
-    let patterns: [(&str, &str); 18] = [
-        ("rm -rf", "rm -rf"),
-        ("del /f", "del /f"),
-        ("format ", "format"),
-        ("mkfs", "mkfs"),
-        ("shutdown", "shutdown"),
-        ("reboot", "reboot"),
-        ("curl |", "curl pipe"),
-        ("wget |", "wget pipe"),
-        ("base64 -d", "base64 decode"),
-        ("base64 --decode", "base64 decode"),
-        ("| sh", "pipe to shell"),
-        ("| bash", "pipe to shell"),
-        ("| zsh", "pipe to shell"),
-        ("`", "backticks"),
-        ("$(", "command substitution"),
-        ("eval ", "eval"),
-        ("exec ", "exec"),
-        ("<<", "heredoc"),
+    let patterns: [(&str, &str, &str); 18] = [
+        ("rm -rf", "destructive", "rm -rf"),
+        ("del /f", "destructive", "del /f"),
+        ("format ", "destructive", "format"),
+        ("mkfs", "destructive", "mkfs"),
+        ("shutdown", "system control", "shutdown"),
+        ("reboot", "system control", "reboot"),
+        ("curl |", "network pipe", "curl pipe"),
+        ("wget |", "network pipe", "wget pipe"),
+        ("base64 -d", "encoding", "base64 decode"),
+        ("base64 --decode", "encoding", "base64 decode"),
+        ("| sh", "shell pipe", "pipe to shell"),
+        ("| bash", "shell pipe", "pipe to shell"),
+        ("| zsh", "shell pipe", "pipe to shell"),
+        ("`", "substitution", "backticks"),
+        ("$(", "substitution", "command substitution"),
+        ("eval ", "dynamic execution", "eval"),
+        ("exec ", "dynamic execution", "exec"),
+        ("<<", "I/O", "heredoc"),
     ];
 
-    for (needle, name) in patterns {
+    for (needle, category, name) in patterns {
         if lower.contains(needle) {
-            return Some(name);
+            return Some(format!("matched {} pattern: {}", category, name));
         }
     }
 
@@ -168,9 +200,7 @@ pub struct ExecuteAndLogInput<'a> {
     pub triggered_by: &'a str,
 }
 
-pub async fn execute_and_log(
-    input: ExecuteAndLogInput<'_>,
-) -> Result<(i32, String, String, u64)> {
+pub async fn execute_and_log(input: ExecuteAndLogInput<'_>) -> Result<(i32, String, String, u64)> {
     let start = std::time::Instant::now();
     let result = execute_shell_with_timeout_env(input.script, input.timeout_dur, input.envs).await;
     let duration_ms = start.elapsed().as_millis() as u64;

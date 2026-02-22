@@ -5,21 +5,22 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::State;
 
-use crate::constants::timing::TEST_CMD_TIMEOUT;
+use crate::commands::{RUNNING_TESTS, TEST_INVOCATION_TIMESTAMPS};
+use crate::constants::limits::TEST_CMD_RATE_LIMIT_MAX;
+use crate::constants::timing::{TEST_CMD_RATE_LIMIT_WINDOW, TEST_CMD_TIMEOUT};
 use crate::database::Database;
 use crate::error::{AppError, Result};
 use crate::execution::{
-    argument_env_var_name, execute_and_log, replace_template_with_env_ref,
-    sanitize_argument_value, ExecuteAndLogInput,
+    argument_env_var_name, execute_and_log, replace_template_with_env_ref, sanitize_argument_value,
+    validate_enum_argument, ExecuteAndLogInput,
 };
 use crate::mcp::McpManager;
 use crate::models::{
     Command, CreateCommandInput, SyncError, SyncResult, TestCommandResult, UpdateCommandInput,
 };
+use std::time::Instant;
 
-use super::{
-    command_file_targets, validate_command_arguments, validate_command_input, RUNNING_TESTS,
-};
+use super::{command_file_targets, validate_command_arguments, validate_command_input};
 
 #[tauri::command]
 pub fn get_all_commands(db: State<'_, Arc<Database>>) -> Result<Vec<Command>> {
@@ -88,12 +89,39 @@ pub async fn test_command(
     args: HashMap<String, String>,
     db: State<'_, Arc<Database>>,
 ) -> Result<TestCommandResult> {
-    // Concurrency control: prevent multiple simultaneous tests of the same command
+    // 1. Global Rate Limiting
     {
-        let mut running = RUNNING_TESTS.lock().map_err(|_| AppError::LockError)?;
+        let mut timestamps = TEST_INVOCATION_TIMESTAMPS.lock();
+        let now = Instant::now();
+        let cutoff = now - TEST_CMD_RATE_LIMIT_WINDOW;
+
+        while let Some(t) = timestamps.front() {
+            if *t < cutoff {
+                timestamps.pop_front();
+            } else {
+                break;
+            }
+        }
+
+        if timestamps.len() >= TEST_CMD_RATE_LIMIT_MAX {
+            return Err(AppError::InvalidInput {
+                message: format!(
+                    "Rate limit exceeded. Max {} tests per minute. Please try again later.",
+                    TEST_CMD_RATE_LIMIT_MAX
+                ),
+            });
+        }
+        timestamps.push_back(now);
+    }
+
+    // 2. Concurrency control: prevent multiple simultaneous tests of the same command
+    {
+        let mut running = RUNNING_TESTS.lock();
         if running.contains(&id) {
             return Err(AppError::InvalidInput {
-                message: "A test is already running for this command. Please wait for it to complete.".to_string(),
+                message:
+                    "A test is already running for this command. Please wait for it to complete."
+                        .to_string(),
             });
         }
         running.insert(id.clone());
@@ -103,7 +131,7 @@ pub async fn test_command(
 
     // Clean up regardless of success or failure
     {
-        let mut running = RUNNING_TESTS.lock().map_err(|_| AppError::LockError)?;
+        let mut running = RUNNING_TESTS.lock();
         running.remove(&id);
     }
 
@@ -128,20 +156,16 @@ async fn test_command_internal(
             .or_else(|| arg.default_value.clone())
             .unwrap_or_default();
         let safe_value = sanitize_argument_value(&raw_value)?;
-        
-        // Enum validation
+
+        // Enum validation (shared helper)
         if matches!(arg.arg_type, crate::models::ArgumentType::Enum) {
-            if let Some(ref options) = arg.options {
-                if !options.contains(&raw_value) {
-                    return Err(AppError::InvalidInput {
-                        message: format!("Argument '{}' must be one of: {}", arg.name, options.join(", ")),
-                    });
-                }
-            }
+            validate_enum_argument(&arg.name, &raw_value, &arg.options)?;
         }
 
         envs.push((argument_env_var_name(&arg.name), safe_value));
     }
+
+    let args_json = serde_json::to_string(&args).map_err(|e| AppError::Serialization(e))?;
 
     let (exit_code, stdout, stderr, duration_ms) = execute_and_log(ExecuteAndLogInput {
         db: Some(db),
@@ -150,7 +174,7 @@ async fn test_command_internal(
         script: &script,
         timeout_dur: TEST_CMD_TIMEOUT,
         envs: &envs,
-        arguments_json: &serde_json::to_string(&args).unwrap_or_default(),
+        arguments_json: &args_json,
         triggered_by: "test",
     })
     .await?;
@@ -202,7 +226,7 @@ pub fn sync_commands(db: State<'_, Arc<Database>>) -> Result<SyncResult> {
                 file.sync_all()?;
             }
             fs::rename(&temp_path, &path)?;
-            
+
             if let Some(parent) = path.parent() {
                 if let Ok(dir) = fs::File::open(parent) {
                     let _ = dir.sync_all();

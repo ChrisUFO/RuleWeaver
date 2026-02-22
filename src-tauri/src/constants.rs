@@ -6,6 +6,7 @@ pub mod timing {
     pub const SKILL_EXEC_TIMEOUT: Duration = Duration::from_secs(60);
     pub const TEST_CMD_TIMEOUT: Duration = Duration::from_secs(30);
     pub const MCP_RATE_LIMIT_WINDOW: Duration = Duration::from_secs(10);
+    pub const TEST_CMD_RATE_LIMIT_WINDOW: Duration = Duration::from_secs(60);
     pub const MCP_SERVER_BACKOFF_INITIAL_MS: u64 = 100;
 }
 
@@ -17,6 +18,7 @@ pub mod limits {
     pub const MAX_OUTPUT_SIZE: usize = 10 * 1024 * 1024; // 10MB
     pub const LOG_LIMIT: usize = 500;
     pub const MCP_RATE_LIMIT_MAX_CALLS: usize = 10;
+    pub const TEST_CMD_RATE_LIMIT_MAX: usize = 5;
     pub const MAX_RULE_NAME_LENGTH: usize = 200;
     pub const MAX_RULE_CONTENT_LENGTH: usize = 1_000_000;
     pub const MAX_COMMAND_NAME_LENGTH: usize = 120;

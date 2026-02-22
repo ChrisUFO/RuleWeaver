@@ -6,7 +6,7 @@ use axum::{
     Json, Router,
 };
 use std::collections::VecDeque;
-use std::sync::{Arc};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tower_http::cors::CorsLayer;
 
@@ -29,8 +29,8 @@ use crate::database::{Database, ExecutionLogInput};
 use crate::error::{AppError, Result};
 use crate::execution::{
     argument_env_var_name, contains_disallowed_pattern, execute_and_log,
-    execute_shell_with_timeout_env, ExecuteAndLogInput, replace_template_with_env_ref,
-    sanitize_argument_value, slugify,
+    execute_shell_with_timeout_env, replace_template_with_env_ref, sanitize_argument_value,
+    slugify, ExecuteAndLogInput,
 };
 use crate::models::{Command, Skill};
 
@@ -177,7 +177,7 @@ impl McpManager {
                 .with_state(manager.clone());
 
             let addr = format!("127.0.0.1:{}", port);
-            
+
             // Port binding with retry/backoff
             let mut retry_count = 0;
             let mut backoff_ms = MCP_SERVER_BACKOFF_INITIAL_MS;
@@ -186,10 +186,20 @@ impl McpManager {
                     Ok(l) => break Some(l),
                     Err(e) => {
                         if retry_count >= MCP_SERVER_RETRY_COUNT {
-                            let _ = manager.log(format!("Failed to bind MCP server after {} attempts {}: {}", MCP_SERVER_RETRY_COUNT, addr, e)).await;
+                            let _ = manager
+                                .log(format!(
+                                    "Failed to bind MCP server after {} attempts {}: {}",
+                                    MCP_SERVER_RETRY_COUNT, addr, e
+                                ))
+                                .await;
                             break None;
                         }
-                        let _ = manager.log(format!("Port {} busy, retrying in {}ms...", port, backoff_ms)).await;
+                        let _ = manager
+                            .log(format!(
+                                "Port {} busy, retrying in {}ms...",
+                                port, backoff_ms
+                            ))
+                            .await;
                         tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
                         retry_count += 1;
                         backoff_ms *= 2;
@@ -205,7 +215,9 @@ impl McpManager {
                 }
             };
 
-            let _ = manager.log(format!("MCP server listening on {}", addr)).await;
+            let _ = manager
+                .log(format!("MCP server listening on {}", addr))
+                .await;
 
             if let Err(e) = axum::serve(listener, app)
                 .with_graceful_shutdown(async move {
@@ -335,7 +347,7 @@ impl McpManager {
     async fn allow_invocation(&self) -> Result<bool> {
         let mut state = self.inner.lock().await;
         let cutoff = Instant::now() - MCP_RATE_LIMIT_WINDOW;
-        
+
         while let Some(t) = state.invocation_timestamps.front() {
             if *t < cutoff {
                 state.invocation_timestamps.pop_front();
@@ -367,15 +379,18 @@ async fn mcp_handler(
 ) -> Response {
     let auth_valid = {
         let state = manager.inner.lock().await;
-        
-        let provided_key = headers.get("X-API-Key")
-            .and_then(|v| v.to_str().ok());
-        
+
+        let provided_key = headers.get("X-API-Key").and_then(|v| v.to_str().ok());
+
         provided_key == Some(&state.api_token)
     };
 
     if !auth_valid {
-        return (StatusCode::UNAUTHORIZED, "Unauthorized: Invalid or missing X-API-Key header").into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            "Unauthorized: Invalid or missing X-API-Key header",
+        )
+            .into_response();
     }
 
     let McpSnapshot {
@@ -392,7 +407,8 @@ async fn mcp_handler(
                     "code": -32603,
                     "message": "Internal server error"
                 }
-            })).into_response();
+            }))
+            .into_response();
         }
     };
 
@@ -400,7 +416,15 @@ async fn mcp_handler(
         "initialize" => handle_initialize(request.id),
         "tools/list" => handle_tools_list(request.id, &commands, &skills),
         "tools/call" => {
-            handle_tools_call(&manager, request.id, request.params, &commands, &skills, &shared_db).await
+            handle_tools_call(
+                &manager,
+                request.id,
+                request.params,
+                &commands,
+                &skills,
+                &shared_db,
+            )
+            .await
         }
         _ => json!({
             "jsonrpc": "2.0",
@@ -441,10 +465,16 @@ fn handle_tools_list(
             let mut required: Vec<String> = Vec::new();
 
             for arg in &c.arguments {
+                let json_type = match arg.arg_type {
+                    crate::models::ArgumentType::Number => "number",
+                    crate::models::ArgumentType::Boolean => "boolean",
+                    _ => "string",
+                };
+
                 props.insert(
                     arg.name.clone(),
                     json!({
-                        "type": "string",
+                        "type": json_type,
                         "description": arg.description,
                     }),
                 );
@@ -453,16 +483,15 @@ fn handle_tools_list(
                 }
             }
 
-                                json!({
-                                    "name": format!("{}-{}", slugify(&c.name), &c.id[..8]),
-                                    "description": c.description,
-                                    "inputSchema": {
-                                        "type": "object",
-                                        "properties": props,
-                                        "required": required,
-                                    }
-                                })
-            
+            json!({
+                "name": format!("{}-{}", slugify(&c.name), &c.id[..8]),
+                "description": c.description,
+                "inputSchema": {
+                    "type": "object",
+                    "properties": props,
+                    "required": required,
+                }
+            })
         })
         .collect();
 
@@ -617,29 +646,28 @@ async fn handle_command_call(
             .or_else(|| arg.default_value.clone())
             .unwrap_or_default();
 
-                                    match sanitize_argument_value(&raw_value) {
-                                        Ok(safe_value) => {
-                                            // Enum validation
-                                            if matches!(arg.arg_type, crate::models::ArgumentType::Enum) {
-                                                if let Some(ref options) = arg.options {
-                                                    if !options.contains(&raw_value) {
-                                                        invalid_arg_message = Some(format!(
-                                                            "Argument '{}' must be one of: {}",
-                                                            arg.name,
-                                                            options.join(", ")
-                                                        ));
-                                                        break;
-                                                    }
-                                                }
-                                            }
-                                            envs.push((argument_env_var_name(&arg.name), safe_value));
-                                        }
-                                        Err(e) => {
-                                            invalid_arg_message = Some(e.to_string());
-                                            break;
-                                        }
-                                    }
-        
+        match sanitize_argument_value(&raw_value) {
+            Ok(safe_value) => {
+                // Enum validation
+                if matches!(arg.arg_type, crate::models::ArgumentType::Enum) {
+                    if let Some(ref options) = arg.options {
+                        if !options.contains(&raw_value) {
+                            invalid_arg_message = Some(format!(
+                                "Argument '{}' must be one of: {}",
+                                arg.name,
+                                options.join(", ")
+                            ));
+                            break;
+                        }
+                    }
+                }
+                envs.push((argument_env_var_name(&arg.name), safe_value));
+            }
+            Err(e) => {
+                invalid_arg_message = Some(e.to_string());
+                break;
+            }
+        }
     }
 
     if let Some(message) = invalid_arg_message {
@@ -653,6 +681,20 @@ async fn handle_command_call(
         });
     }
 
+    let args_json = match serde_json::to_string(&args_map) {
+        Ok(s) => s,
+        Err(e) => {
+            return json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "error": {
+                    "code": -32603,
+                    "message": format!("Serialization error: {}", e)
+                }
+            });
+        }
+    };
+
     match execute_and_log(ExecuteAndLogInput {
         db: shared_db.as_ref().map(|arc| arc.as_ref()),
         command_id: &cmd.id,
@@ -660,16 +702,18 @@ async fn handle_command_call(
         script: &rendered,
         timeout_dur: CMD_EXEC_TIMEOUT,
         envs: &envs,
-        arguments_json: &serde_json::to_string(&args_map).unwrap_or_default(),
+        arguments_json: &args_json,
         triggered_by: "mcp",
     })
     .await
     {
         Ok((exit_code, stdout, stderr, duration_ms)) => {
-            let _ = manager.log(format!(
-                "MCP tools/call '{}' exit code {} ({}ms)",
-                cmd.name, exit_code, duration_ms
-            )).await;
+            let _ = manager
+                .log(format!(
+                    "MCP tools/call '{}' exit code {} ({}ms)",
+                    cmd.name, exit_code, duration_ms
+                ))
+                .await;
             json!({
                 "jsonrpc": "2.0",
                 "id": id,
@@ -723,21 +767,21 @@ async fn handle_skill_call(
         // Note: If we really want to return the text with the input replaced,
         // we should do it safely here ONLY for the returned text, not for execution.
         let display_text = skill.instructions.replace("{{input}}", &input);
-                                json!({
-                                    "jsonrpc": "2.0",
-                                    "id": id,
-                                    "result": {
-                                        "content": [{
-                                            "type": "text",
-                                            "text": display_text
-                                        }],
-                                        "isError": false
-                                    }
-                                })
-                            } else {
-                                let mut output = String::new();
-                                let mut is_error = false;
-        
+        json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "result": {
+                "content": [{
+                    "type": "text",
+                    "text": display_text
+                }],
+                "isError": false
+            }
+        })
+    } else {
+        let mut output = String::new();
+        let mut is_error = false;
+
         let start = Instant::now();
         let skill_envs = vec![("RW_SKILL_INPUT".to_string(), input.clone())];
 
@@ -758,18 +802,11 @@ async fn handle_skill_call(
                 break;
             }
 
-                                        match execute_shell_with_timeout_env(
-                                            step,
-                                            SKILL_EXEC_TIMEOUT,
-                                            &skill_envs,
-                                        )
-                                        .await
-            
-            {
+            match execute_shell_with_timeout_env(step, SKILL_EXEC_TIMEOUT, &skill_envs).await {
                 Ok((exit_code, stdout, stderr)) => {
                     let step_stdout = truncate_output_custom(stdout, 1024 * 1024); // 1MB per step
                     let step_stderr = truncate_output_custom(stderr, 1024 * 1024); // 1MB per step
-                    
+
                     output.push_str(&format!(
                         "[step {}] exit_code: {}\nstdout:\n{}\nstderr:\n{}\n\n",
                         idx + 1,
@@ -784,26 +821,32 @@ async fn handle_skill_call(
                 }
                 Err(e) => {
                     is_error = true;
-                    output.push_str(&format!(
-                        "[step {}] execution error: {}\n",
-                        idx + 1,
-                        e
-                    ));
+                    output.push_str(&format!("[step {}] execution error: {}\n", idx + 1, e));
                     break;
                 }
             }
         }
 
         let duration_ms = start.elapsed().as_millis() as u64;
-        let _ = manager.log(format!(
-            "MCP tools/call '{}' skill execution {} ({}ms)",
-            skill.name,
-            if is_error { "failed" } else { "succeeded" },
-            duration_ms
-        )).await;
+        let _ = manager
+            .log(format!(
+                "MCP tools/call '{}' skill execution {} ({}ms)",
+                skill.name,
+                if is_error { "failed" } else { "succeeded" },
+                duration_ms
+            ))
+            .await;
 
         if let Some(db) = shared_db {
-            let args_json = serde_json::to_string(&args_map).unwrap_or_default();
+            let args_json = match serde_json::to_string(&args_map) {
+                Ok(s) => s,
+                Err(e) => {
+                    let _ = manager
+                        .log(format!("Skill execution serialization error: {}", e))
+                        .await;
+                    String::new()
+                }
+            };
             let skill_name = format!("skill:{}", skill.name);
             let _ = db.add_execution_log(&ExecutionLogInput {
                 command_id: &skill.id,
@@ -817,18 +860,17 @@ async fn handle_skill_call(
             });
         }
 
-                                json!({
-                                    "jsonrpc": "2.0",
-                                    "id": id,
-                                    "result": {
-                                        "content": [{
-                                            "type": "text",
-                                            "text": truncate_output(output)
-                                        }],
-                                        "isError": is_error
-                                    }
-                                })
-        
+        json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "result": {
+                "content": [{
+                    "type": "text",
+                    "text": truncate_output(output)
+                }],
+                "isError": is_error
+            }
+        })
     }
 }
 
