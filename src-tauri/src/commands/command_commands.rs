@@ -144,7 +144,7 @@ async fn test_command_internal(
     }
 
     let (exit_code, stdout, stderr, duration_ms) = execute_and_log(ExecuteAndLogInput {
-        db: Some(&db),
+        db: Some(db),
         command_id: &cmd.id,
         command_name: &cmd.name,
         script: &script,
