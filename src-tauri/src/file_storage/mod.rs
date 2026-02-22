@@ -21,6 +21,7 @@ use std::path::{Path, PathBuf};
 
 use walkdir::WalkDir;
 
+use crate::database::Database;
 use crate::error::{AppError, Result};
 use crate::models::Rule;
 
@@ -192,7 +193,22 @@ fn find_or_create_rule_file(base_dir: &Path, rule: &Rule) -> Result<PathBuf> {
     Ok(generate_rule_file_path(base_dir, rule))
 }
 
-pub fn delete_rule_file(rule_id: &str, location: &StorageLocation) -> Result<bool> {
+pub fn delete_rule_file(
+    rule_id: &str,
+    location: &StorageLocation,
+    db: Option<&Database>,
+) -> Result<bool> {
+    // Optimization: try to use database index first
+    if let Some(db) = db {
+        if let Ok(Some(path_str)) = db.get_rule_file_path(rule_id) {
+            let path = PathBuf::from(path_str);
+            if path.exists() {
+                fs::remove_file(path)?;
+                return Ok(true);
+            }
+        }
+    }
+
     let base_dir = match location {
         StorageLocation::Global => get_global_rules_dir()?,
         StorageLocation::Local(project_path) => get_local_rules_dir(project_path),
@@ -229,7 +245,21 @@ pub fn delete_rule_file(rule_id: &str, location: &StorageLocation) -> Result<boo
 }
 
 #[allow(dead_code)]
-pub fn get_rule_file_path(rule_id: &str, location: &StorageLocation) -> Result<Option<PathBuf>> {
+pub fn get_rule_file_path(
+    rule_id: &str,
+    location: &StorageLocation,
+    db: Option<&Database>,
+) -> Result<Option<PathBuf>> {
+    // Optimization: try to use database index first
+    if let Some(db) = db {
+        if let Ok(Some(path_str)) = db.get_rule_file_path(rule_id) {
+            let path = PathBuf::from(path_str);
+            if path.exists() {
+                return Ok(Some(path));
+            }
+        }
+    }
+
     let base_dir = match location {
         StorageLocation::Global => get_global_rules_dir()?,
         StorageLocation::Local(project_path) => get_local_rules_dir(project_path),
@@ -459,7 +489,7 @@ mod tests {
         assert!(rule_path.exists());
 
         let deleted =
-            delete_rule_file("to-delete", &StorageLocation::Local(temp_dir.clone())).unwrap();
+            delete_rule_file("to-delete", &StorageLocation::Local(temp_dir.clone()), None).unwrap();
         assert!(deleted);
         assert!(!rule_path.exists());
 
@@ -470,7 +500,7 @@ mod tests {
     fn test_delete_rule_file_not_found() {
         let temp_dir = create_temp_test_dir();
         let result =
-            delete_rule_file("nonexistent", &StorageLocation::Local(temp_dir.clone())).unwrap();
+            delete_rule_file("nonexistent", &StorageLocation::Local(temp_dir.clone()), None).unwrap();
         assert!(!result);
         cleanup_temp_dir(&temp_dir);
     }

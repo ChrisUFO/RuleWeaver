@@ -15,7 +15,7 @@ use tokio::sync::broadcast;
 use crate::database::{Database, ExecutionLogInput};
 use crate::error::{AppError, Result};
 use crate::execution::{
-    argument_env_var_name, contains_disallowed_pattern, execute_shell_with_timeout,
+    argument_env_var_name, contains_disallowed_pattern,
     execute_shell_with_timeout_env, replace_template_with_env_ref, sanitize_argument_value,
     slugify,
 };
@@ -319,7 +319,7 @@ async fn mcp_handler(
                     }
 
                     json!({
-                        "name": c.name,
+                        "name": slugify(&c.name),
                         "description": c.description,
                         "inputSchema": {
                             "type": "object",
@@ -398,7 +398,7 @@ async fn mcp_handler(
                     .cloned()
                     .unwrap_or_default();
 
-                if let Some(cmd) = commands.iter().find(|c| c.name == name && c.expose_via_mcp) {
+                if let Some(cmd) = commands.iter().find(|c| slugify(&c.name) == name && c.expose_via_mcp) {
                     let missing_required: Vec<String> = cmd
                         .arguments
                         .iter()
@@ -464,6 +464,7 @@ async fn mcp_handler(
                                 }
                             })
                         } else {
+                            let start = Instant::now();
                             match execute_shell_with_timeout_env(
                                 &rendered,
                                 Duration::from_secs(CMD_EXEC_TIMEOUT_SECS),
@@ -472,9 +473,10 @@ async fn mcp_handler(
                             .await
                             {
                                 Ok((exit_code, stdout, stderr)) => {
+                                    let duration_ms = start.elapsed().as_millis() as u64;
                                     let _ = manager.log(format!(
-                                        "MCP tools/call '{}' exit code {}",
-                                        cmd.name, exit_code
+                                        "MCP tools/call '{}' exit code {} ({}ms)",
+                                        cmd.name, exit_code, duration_ms
                                     ));
                                     if let Some(db) = &shared_db {
                                         let args_json =
@@ -486,7 +488,7 @@ async fn mcp_handler(
                                             stdout: &stdout,
                                             stderr: &stderr,
                                             exit_code,
-                                            duration_ms: 0,
+                                            duration_ms,
                                             triggered_by: "mcp",
                                         });
                                     }
@@ -523,17 +525,27 @@ async fn mcp_handler(
                         .unwrap_or_default()
                         .to_string();
 
-                    let rendered = skill.instructions.replace("{{input}}", &input);
+                    // Security: DO NOT use string replacement for {{input}} as it leads to command injection.
+                    // Instead, we pass the input via environment variables.
+                    #[cfg(target_os = "windows")]
+                    let rendered = skill.instructions.replace("{{input}}", "%RW_SKILL_INPUT%");
+                    #[cfg(not(target_os = "windows"))]
+                    let rendered = skill.instructions.replace("{{input}}", "$RW_SKILL_INPUT");
+
                     let steps = extract_skill_steps(&rendered);
 
                     if steps.is_empty() {
+                        // If no shell steps, just return the instructions (with input placeholder)
+                        // Note: If we really want to return the text with the input replaced,
+                        // we should do it safely here ONLY for the returned text, not for execution.
+                        let display_text = skill.instructions.replace("{{input}}", &input);
                         json!({
                             "jsonrpc": "2.0",
                             "id": request.id,
                             "result": {
                                 "content": [{
                                     "type": "text",
-                                    "text": rendered
+                                    "text": display_text
                                 }],
                                 "is_error": false
                             }
@@ -541,6 +553,8 @@ async fn mcp_handler(
                     } else {
                         let mut output = String::new();
                         let mut is_error = false;
+                        let start = Instant::now();
+                        let skill_envs = vec![("RW_SKILL_INPUT".to_string(), input.clone())];
 
                         for (idx, step) in steps.iter().take(MAX_SKILL_STEPS).enumerate() {
                             if step.len() > MAX_STEP_LENGTH {
@@ -559,9 +573,10 @@ async fn mcp_handler(
                                 break;
                             }
 
-                            match execute_shell_with_timeout(
+                            match execute_shell_with_timeout_env(
                                 step,
                                 Duration::from_secs(SKILL_EXEC_TIMEOUT_SECS),
+                                &skill_envs,
                             )
                             .await
                             {
@@ -590,10 +605,12 @@ async fn mcp_handler(
                             }
                         }
 
+                        let duration_ms = start.elapsed().as_millis() as u64;
                         let _ = manager.log(format!(
-                            "MCP tools/call '{}' skill execution {}",
+                            "MCP tools/call '{}' skill execution {} ({}ms)",
                             skill.name,
-                            if is_error { "failed" } else { "succeeded" }
+                            if is_error { "failed" } else { "succeeded" },
+                            duration_ms
                         ));
 
                         if let Some(db) = &shared_db {
@@ -606,7 +623,7 @@ async fn mcp_handler(
                                 stdout: &output,
                                 stderr: "",
                                 exit_code: if is_error { 1 } else { 0 },
-                                duration_ms: 0,
+                                duration_ms,
                                 triggered_by: "mcp-skill",
                             });
                         }

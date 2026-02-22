@@ -101,7 +101,7 @@ pub fn run() {
                 window.on_window_event(move |event| {
                     if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                         let minimize_to_tray = app_for_events
-                            .try_state::<Database>()
+                            .try_state::<Arc<Database>>()
                             .and_then(|db| db.get_setting(MINIMIZE_TO_TRAY_KEY).ok().flatten())
                             .map(|v| v == "true")
                             .unwrap_or(true);

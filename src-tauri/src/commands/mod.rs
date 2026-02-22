@@ -390,7 +390,7 @@ pub fn delete_rule(id: String, db: State<'_, Arc<Database>>) -> Result<()> {
     if use_file_storage(&db) {
         if let Ok(existing) = db.get_rule_by_id(&id) {
             let location = storage_location_for_rule(&existing);
-            file_storage::delete_rule_file(&id, &location)?;
+            file_storage::delete_rule_file(&id, &location, Some(&db))?;
             db.remove_rule_file_index(&id)?;
         }
     }
