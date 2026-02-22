@@ -65,6 +65,22 @@ impl Database {
         Self::new_with_db_path(db_path)
     }
 
+    #[allow(dead_code)]
+    pub fn reconnect(&self) -> Result<()> {
+        let db_path = {
+            let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
+            let path: String = conn.query_row("PRAGMA database_list", [], |row| row.get(2))?;
+            PathBuf::from(path)
+        };
+
+        let conn = Connection::open(&db_path)?;
+        run_migrations(&conn)?;
+
+        let mut guard = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
+        *guard = conn;
+        Ok(())
+    }
+
     pub fn get_all_rules(&self) -> Result<Vec<Rule>> {
         let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
         let mut stmt = conn.prepare(
@@ -682,7 +698,6 @@ impl Database {
         Ok(())
     }
 
-    #[allow(dead_code)]
     pub fn get_rule_file_path(&self, rule_id: &str) -> Result<Option<String>> {
         let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
         let result: Option<String> = conn

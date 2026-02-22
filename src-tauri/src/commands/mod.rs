@@ -5,7 +5,7 @@ use crate::execution::{
     sanitize_argument_value, slugify,
 };
 use crate::file_storage;
-use crate::mcp::{McpConnectionInstructions, McpManager, McpStatus};
+use crate::mcp::{extract_skill_steps, McpConnectionInstructions, McpManager, McpStatus};
 use crate::models::{
     Command, CreateCommandInput, CreateRuleInput, CreateSkillInput, ExecutionLog, Rule, Skill,
     SyncError, SyncHistoryEntry, SyncResult, TestCommandResult, UpdateCommandInput,
@@ -129,6 +129,15 @@ fn validate_skill_input(name: &str, instructions: &str) -> Result<()> {
             ),
         });
     }
+
+    // Validate step count
+    let steps = extract_skill_steps(instructions);
+    if steps.len() > 10 {
+        return Err(AppError::InvalidInput {
+            message: format!("Skill contains too many shell steps ({} found, max 10). Please consolidate your instructions.", steps.len()),
+        });
+    }
+
     Ok(())
 }
 

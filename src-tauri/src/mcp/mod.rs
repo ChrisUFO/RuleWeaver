@@ -27,6 +27,18 @@ const CMD_EXEC_TIMEOUT_SECS: u64 = 60;
 const SKILL_EXEC_TIMEOUT_SECS: u64 = 60;
 const MCP_RATE_LIMIT_WINDOW_SECS: u64 = 10;
 const MCP_RATE_LIMIT_MAX_CALLS: usize = 30;
+const MAX_OUTPUT_SIZE: usize = 10 * 1024 * 1024; // 10MB
+
+fn truncate_output(s: String) -> String {
+    if s.len() > MAX_OUTPUT_SIZE {
+        let mut truncated = s;
+        truncated.truncate(MAX_OUTPUT_SIZE);
+        truncated.push_str("\n\n[Output truncated due to size limit]");
+        truncated
+    } else {
+        s
+    }
+}
 
 #[derive(Debug, Clone, Serialize)]
 pub struct McpStatus {
@@ -498,7 +510,7 @@ async fn mcp_handler(
                                         "result": {
                                             "content": [{
                                                 "type": "text",
-                                                "text": format!("exit_code: {}\n\nstdout:\n{}\n\nstderr:\n{}", exit_code, stdout, stderr)
+                                                "text": format!("exit_code: {}\n\nstdout:\n{}\n\nstderr:\n{}", exit_code, truncate_output(stdout), truncate_output(stderr))
                                             }],
                                             "is_error": exit_code != 0
                                         }
@@ -507,9 +519,12 @@ async fn mcp_handler(
                                 Err(e) => json!({
                                     "jsonrpc": "2.0",
                                     "id": request.id,
-                                    "error": {
-                                        "code": -32000,
-                                        "message": format!("Failed to execute command: {}", e)
+                                    "result": {
+                                        "content": [{
+                                            "type": "text",
+                                            "text": format!("Failed to execute command: {}", e)
+                                        }],
+                                        "is_error": true
                                     }
                                 }),
                             }
@@ -634,7 +649,7 @@ async fn mcp_handler(
                             "result": {
                                 "content": [{
                                     "type": "text",
-                                    "text": output
+                                    "text": truncate_output(output)
                                 }],
                                 "is_error": is_error
                             }
@@ -665,7 +680,7 @@ async fn mcp_handler(
     Json(response)
 }
 
-fn extract_skill_steps(instructions: &str) -> Vec<String> {
+pub fn extract_skill_steps(instructions: &str) -> Vec<String> {
     static RE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
     let re = RE.get_or_init(|| {
         Regex::new(r"(?s)```(?:bash|sh|shell|powershell|pwsh|cmd)?\n(.*?)```")

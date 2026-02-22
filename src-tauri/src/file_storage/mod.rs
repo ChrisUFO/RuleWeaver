@@ -164,6 +164,13 @@ pub fn save_rule_to_disk(rule: &Rule, location: &StorageLocation) -> Result<Path
 
     fs::rename(&temp_path, &file_path)?;
 
+    // Ensure directory metadata is also synced to disk if possible
+    if let Some(parent) = file_path.parent() {
+        if let Ok(dir) = fs::File::open(parent) {
+            let _ = dir.sync_all();
+        }
+    }
+
     Ok(file_path)
 }
 
@@ -328,7 +335,6 @@ pub fn get_storage_info() -> Result<StorageInfo> {
     })
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct StorageInfo {
     pub global_dir: PathBuf,

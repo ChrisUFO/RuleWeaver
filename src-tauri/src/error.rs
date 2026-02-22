@@ -3,7 +3,6 @@ use std::sync::PoisonError;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
-#[allow(dead_code)]
 pub enum AppError {
     #[error("Database error: {0}")]
     Database(#[from] rusqlite::Error),
@@ -21,6 +20,7 @@ pub enum AppError {
     SkillNotFound { id: String },
 
     #[error("Sync conflict detected in: {file_path}")]
+    #[allow(dead_code)]
     SyncConflict { file_path: String },
 
     #[error("Invalid input: {message}")]
@@ -32,20 +32,23 @@ pub enum AppError {
     #[error("Path error: {0}")]
     Path(String),
 
-    #[error("Database lock poisoned")]
+    #[error("Database internal state error (poisoned lock). Please restart the application.")]
     DatabasePoisoned,
 
     #[error("Lock error")]
     LockError,
 
-    #[error("YAML parsing error: {0}")]
-    Yaml(String),
+    #[error("YAML parsing error: {message}")]
+    #[allow(dead_code)]
+    Yaml { message: String },
 
-    #[error("Migration error: {0}")]
-    Migration(String),
+    #[error("Migration error: {message}")]
+    #[allow(dead_code)]
+    Migration { message: String },
 
-    #[error("File watcher error: {0}")]
-    Watcher(String),
+    #[error("File watcher error: {message}")]
+    #[allow(dead_code)]
+    Watcher { message: String },
 }
 
 impl<T> From<PoisonError<T>> for AppError {

@@ -38,7 +38,6 @@ pub enum AdapterType {
 }
 
 impl AdapterType {
-    #[allow(dead_code)]
     pub fn as_str(&self) -> &'static str {
         match self {
             AdapterType::Antigravity => "antigravity",
@@ -83,32 +82,20 @@ pub struct Rule {
     pub target_paths: Option<Vec<String>>,
     pub enabled_adapters: Vec<AdapterType>,
     pub enabled: bool,
-    #[serde(with = "ts_seconds")]
+    #[serde(with = "crate::models::timestamp")]
     pub created_at: DateTime<Utc>,
-    #[serde(with = "ts_seconds")]
+    #[serde(with = "crate::models::timestamp")]
     pub updated_at: DateTime<Utc>,
 }
 
-mod ts_seconds {
-    use chrono::{DateTime, TimeZone, Utc};
-    use serde::{self, Deserialize, Deserializer, Serialize, Serializer};
-
-    pub fn serialize<S>(date: &DateTime<Utc>, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        date.timestamp().serialize(serializer)
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<DateTime<Utc>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let ts = i64::deserialize(deserializer)?;
-        Utc.timestamp_opt(ts, 0)
-            .single()
-            .ok_or_else(|| serde::de::Error::custom(format!("Invalid timestamp: {}", ts)))
-    }
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SyncHistoryEntry {
+    pub id: String,
+    #[serde(with = "crate::models::timestamp")]
+    pub timestamp: DateTime<Utc>,
+    pub files_written: u32,
+    pub status: String,
+    pub triggered_by: String,
 }
 
 impl Rule {
@@ -178,16 +165,6 @@ pub struct Conflict {
     pub adapter_id: Option<AdapterType>,
     pub local_hash: String,
     pub current_hash: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SyncHistoryEntry {
-    pub id: String,
-    #[serde(with = "ts_seconds")]
-    pub timestamp: DateTime<Utc>,
-    pub files_written: u32,
-    pub status: String,
-    pub triggered_by: String,
 }
 
 #[cfg(test)]

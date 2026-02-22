@@ -26,7 +26,6 @@ fn migration_state() -> &'static Mutex<MigrationState> {
     })
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct MigrationProgress {
     pub total: u32,
@@ -35,7 +34,6 @@ pub struct MigrationProgress {
     pub status: MigrationStatus,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, serde::Serialize, PartialEq)]
 pub enum MigrationStatus {
     NotStarted,
@@ -212,9 +210,12 @@ pub fn rollback_migration(backup_path: &str) -> Result<()> {
 
     let storage_dir = crate::file_storage::get_global_rules_dir()?;
     if storage_dir.exists() {
-        fs::remove_dir_all(&storage_dir).map_err(|e| AppError::InvalidInput {
-            message: format!("Failed to remove storage directory: {}", e),
-        })?;
+        // Only remove if it's empty to avoid deleting new rules
+        if let Ok(entries) = fs::read_dir(&storage_dir) {
+            if entries.count() == 0 {
+                fs::remove_dir(&storage_dir).ok();
+            }
+        }
     }
 
     if let Ok(mut state) = migration_state().lock() {
@@ -225,7 +226,6 @@ pub fn rollback_migration(backup_path: &str) -> Result<()> {
     Ok(())
 }
 
-#[allow(dead_code)]
 pub fn get_migration_progress() -> MigrationProgress {
     let migrated = MIGRATION_PROGRESS.load(Ordering::SeqCst);
     let total = MIGRATION_TOTAL.load(Ordering::SeqCst);

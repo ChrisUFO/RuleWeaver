@@ -10,9 +10,9 @@ pub struct Command {
     pub script: String,
     pub arguments: Vec<CommandArgument>,
     pub expose_via_mcp: bool,
-    #[serde(with = "ts_seconds")]
+    #[serde(with = "crate::models::timestamp")]
     pub created_at: DateTime<Utc>,
-    #[serde(with = "ts_seconds")]
+    #[serde(with = "crate::models::timestamp")]
     pub updated_at: DateTime<Utc>,
 }
 
@@ -24,26 +24,19 @@ pub struct CommandArgument {
     pub default_value: Option<String>,
 }
 
-mod ts_seconds {
-    use chrono::{DateTime, TimeZone, Utc};
-    use serde::{self, Deserialize, Deserializer, Serialize, Serializer};
-
-    pub fn serialize<S>(date: &DateTime<Utc>, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        date.timestamp().serialize(serializer)
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<DateTime<Utc>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let ts = i64::deserialize(deserializer)?;
-        Utc.timestamp_opt(ts, 0)
-            .single()
-            .ok_or_else(|| serde::de::Error::custom(format!("Invalid timestamp: {}", ts)))
-    }
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExecutionLog {
+    pub id: String,
+    pub command_id: String,
+    pub command_name: String,
+    pub arguments: String,
+    pub stdout: String,
+    pub stderr: String,
+    pub exit_code: i32,
+    pub duration_ms: u64,
+    #[serde(with = "crate::models::timestamp")]
+    pub executed_at: DateTime<Utc>,
+    pub triggered_by: String,
 }
 
 impl Command {
@@ -94,21 +87,6 @@ pub struct TestCommandResult {
     pub stderr: String,
     pub exit_code: i32,
     pub duration_ms: u64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ExecutionLog {
-    pub id: String,
-    pub command_id: String,
-    pub command_name: String,
-    pub arguments: String,
-    pub stdout: String,
-    pub stderr: String,
-    pub exit_code: i32,
-    pub duration_ms: u64,
-    #[serde(with = "ts_seconds")]
-    pub executed_at: DateTime<Utc>,
-    pub triggered_by: String,
 }
 
 #[cfg(test)]
