@@ -10,7 +10,7 @@ name = "ruleweaver"
 path = "src/main.rs"
 
 [[bin]]
-name = "mcp-server"
+name = "ruleweaver-mcp"
 path = "src/bin/mcp-server.rs"
 
 [lib]
@@ -39,3 +39,6 @@ tokio = { version = "1", features = ["full"] }
 regex = "1"
 log = "0.4"
 env_logger = "0.11"
+clap = { version = "4", features = ["derive"] }
+axum = "0.7"
+tower-http = { version = "0.5", features = ["cors"] }

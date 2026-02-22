@@ -319,9 +319,7 @@ impl Database {
                 })
             })
             .map_err(|e| match e {
-                rusqlite::Error::QueryReturnedNoRows => AppError::InvalidInput {
-                    message: format!("Command not found: {}", id),
-                },
+                rusqlite::Error::QueryReturnedNoRows => AppError::CommandNotFound { id: id.to_string() },
                 _ => AppError::Database(e),
             })?;
 
@@ -441,9 +439,7 @@ impl Database {
                 })
             })
             .map_err(|e| match e {
-                rusqlite::Error::QueryReturnedNoRows => AppError::InvalidInput {
-                    message: format!("Skill not found: {}", id),
-                },
+                rusqlite::Error::QueryReturnedNoRows => AppError::SkillNotFound { id: id.to_string() },
                 _ => AppError::Database(e),
             })?;
 

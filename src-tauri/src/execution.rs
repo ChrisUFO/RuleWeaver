@@ -60,16 +60,18 @@ pub fn sanitize_argument_value(value: &str) -> Result<String> {
         });
     }
 
-    let dangerous_tokens = [
-        ";", "&&", "&", "||", "|", "`", "$(", ")", "<", ">", "<<", "<&", ">&", "eval", "exec",
-    ];
-    let lower = value.to_lowercase();
-    for token in dangerous_tokens {
-        if lower.contains(token) {
-            return Err(AppError::InvalidInput {
-                message: format!("Argument contains forbidden token: {}", token),
-            });
-        }
+    // Use regex to catch dangerous tokens even with internal whitespace (e.g. $( pwd ))
+    // We use \b for eval and exec to avoid catching words like "evaluation"
+    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let re = RE.get_or_init(|| {
+        regex::Regex::new(r"(?i);|&&|&|\|\||\||`|\$\s*\(|\)|<|>|<<|<&|>&|\beval\b|\bexec\b")
+            .expect("Invalid dangerous tokens regex")
+    });
+
+    if let Some(m) = re.find(value) {
+        return Err(AppError::InvalidInput {
+            message: format!("Argument contains forbidden token: {}", m.as_str()),
+        });
     }
 
     Ok(value.to_string())

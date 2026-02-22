@@ -1,11 +1,15 @@
+use axum::{
+    extract::{State},
+    routing::post,
+    Json, Router,
+};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+use tower_http::cors::CorsLayer;
 
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::broadcast;
 
 use crate::database::{Database, ExecutionLogInput};
@@ -121,40 +125,32 @@ impl McpManager {
         let manager = self.clone();
         let mut stop_rx = stop_tx.subscribe();
         tokio::spawn(async move {
-            let bind_addr = format!("127.0.0.1:{}", port);
-            let listener = match TcpListener::bind(&bind_addr).await {
-                Ok(listener) => listener,
+            let app = Router::new()
+                .route("/", post(mcp_handler))
+                // Support root and any other path for flexibility
+                .fallback(post(mcp_handler))
+                .layer(CorsLayer::permissive())
+                .with_state(manager.clone());
+
+            let addr = format!("127.0.0.1:{}", port);
+            let listener = match tokio::net::TcpListener::bind(&addr).await {
+                Ok(l) => l,
                 Err(e) => {
-                    let _ = manager.log(format!("Failed to bind MCP server {}: {}", bind_addr, e));
+                    let _ = manager.log(format!("Failed to bind MCP server {}: {}", addr, e));
                     let _ = manager.mark_stopped();
                     return;
                 }
             };
-            let _ = manager.log(format!("MCP server listening on {}", bind_addr));
 
-            loop {
-                tokio::select! {
-                    _ = stop_rx.recv() => {
-                        break;
-                    }
-                    accept_res = listener.accept() => {
-                        match accept_res {
-                            Ok((stream, addr)) => {
-                                let _ = manager.log(format!("Client connected: {}", addr));
-                                let manager_clone = manager.clone();
-                                tokio::spawn(async move {
-                                    if let Err(e) = handle_client(stream, &manager_clone).await {
-                                        let _ = manager_clone.log(format!("MCP handler error: {}", e));
-                                    }
-                                });
-                            }
-                            Err(e) => {
-                                let _ = manager.log(format!("Listener error: {}", e));
-                                tokio::time::sleep(Duration::from_millis(200)).await;
-                            }
-                        }
-                    }
-                }
+            let _ = manager.log(format!("MCP server listening on {}", addr));
+
+            if let Err(e) = axum::serve(listener, app)
+                .with_graceful_shutdown(async move {
+                    let _ = stop_rx.recv().await;
+                })
+                .await
+            {
+                let _ = manager.log(format!("MCP server error: {}", e));
             }
 
             let _ = manager.log("MCP server stopped".to_string());
@@ -268,22 +264,27 @@ struct JsonRpcRequest {
     params: Option<serde_json::Value>,
 }
 
-async fn handle_client(mut stream: TcpStream, manager: &McpManager) -> Result<()> {
-    let body = read_http_body(&mut stream).await?;
-
-    let request: JsonRpcRequest = match serde_json::from_str(body.trim()) {
-        Ok(req) => req,
-        Err(e) => {
-            let _ = manager.log(format!("Invalid JSON-RPC request: {}", e));
-            return Ok(());
-        }
-    };
-
+async fn mcp_handler(
+    State(manager): State<McpManager>,
+    Json(request): Json<JsonRpcRequest>,
+) -> Json<serde_json::Value> {
     let McpSnapshot {
         commands,
         skills,
         db: shared_db,
-    } = manager.snapshot()?;
+    } = match manager.snapshot() {
+        Ok(s) => s,
+        Err(e) => {
+            return Json(json!({
+                "jsonrpc": "2.0",
+                "id": request.id,
+                "error": {
+                    "code": -32603,
+                    "message": format!("Internal server error: {}", e)
+                }
+            }));
+        }
+    };
 
     let response = match request.method.as_str() {
         "initialize" => json!({
@@ -360,7 +361,21 @@ async fn handle_client(mut stream: TcpStream, manager: &McpManager) -> Result<()
             })
         }
         "tools/call" => {
-            if !manager.allow_invocation()? {
+            let allow = match manager.allow_invocation() {
+                Ok(a) => a,
+                Err(e) => {
+                    return Json(json!({
+                        "jsonrpc": "2.0",
+                        "id": request.id,
+                        "error": {
+                            "code": -32603,
+                            "message": format!("Internal server error: {}", e)
+                        }
+                    }));
+                }
+            };
+
+            if !allow {
                 json!({
                     "jsonrpc": "2.0",
                     "id": request.id,
@@ -630,16 +645,7 @@ async fn handle_client(mut stream: TcpStream, manager: &McpManager) -> Result<()
         }),
     };
 
-    let payload = serde_json::to_string(&response)?;
-    let http_response = format!(
-        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-        payload.len(),
-        payload
-    );
-
-    stream.write_all(http_response.as_bytes()).await?;
-    stream.flush().await?;
-    Ok(())
+    Json(response)
 }
 
 fn extract_skill_steps(instructions: &str) -> Vec<String> {
@@ -653,63 +659,6 @@ fn extract_skill_steps(instructions: &str) -> Vec<String> {
         .filter_map(|caps| caps.get(1).map(|m| m.as_str().trim().to_string()))
         .filter(|s| !s.is_empty())
         .collect()
-}
-
-async fn read_http_body(stream: &mut TcpStream) -> Result<String> {
-    let mut headers_buf = Vec::new();
-    let mut temp = [0u8; 4096];
-
-    loop {
-        let n = stream.read(&mut temp).await?;
-        if n == 0 {
-            break;
-        }
-        headers_buf.extend_from_slice(&temp[..n]);
-        if headers_buf.windows(4).any(|w| w == b"\r\n\r\n") {
-            break;
-        }
-        if headers_buf.len() > 1024 * 1024 {
-            return Err(AppError::InvalidInput {
-                message: "Request headers too large".to_string(),
-            });
-        }
-    }
-
-    let raw = String::from_utf8_lossy(&headers_buf);
-    let split_idx = raw.find("\r\n\r\n").ok_or_else(|| AppError::InvalidInput {
-        message: "Malformed HTTP request".to_string(),
-    })?;
-    let headers = &raw[..split_idx];
-    let mut body = headers_buf[(split_idx + 4)..].to_vec();
-
-    let content_length = headers
-        .lines()
-        .find_map(|line| {
-            let lower = line.to_lowercase();
-            if lower.starts_with("content-length:") {
-                line.split(':')
-                    .nth(1)
-                    .and_then(|v| v.trim().parse::<usize>().ok())
-            } else {
-                None
-            }
-        })
-        .unwrap_or(body.len());
-
-    while body.len() < content_length {
-        let n = stream.read(&mut temp).await?;
-        if n == 0 {
-            break;
-        }
-        body.extend_from_slice(&temp[..n]);
-        if body.len() > 2 * 1024 * 1024 {
-            return Err(AppError::InvalidInput {
-                message: "Request body too large".to_string(),
-            });
-        }
-    }
-
-    Ok(String::from_utf8_lossy(&body[..std::cmp::min(body.len(), content_length)]).to_string())
 }
 
 #[cfg(test)]

@@ -14,6 +14,12 @@ pub enum AppError {
     #[error("Rule not found: {id}")]
     RuleNotFound { id: String },
 
+    #[error("Command not found: {id}")]
+    CommandNotFound { id: String },
+
+    #[error("Skill not found: {id}")]
+    SkillNotFound { id: String },
+
     #[error("Sync conflict detected in: {file_path}")]
     SyncConflict { file_path: String },
 

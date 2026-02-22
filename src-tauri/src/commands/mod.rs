@@ -299,11 +299,26 @@ pub fn get_rule_by_id(id: String, db: State<'_, Arc<Database>>) -> Result<Rule> 
 #[tauri::command]
 pub fn create_rule(input: CreateRuleInput, db: State<'_, Arc<Database>>) -> Result<Rule> {
     validate_rule_input(&input.name, &input.content)?;
+
+    if matches!(input.scope, crate::models::Scope::Local) {
+        if let Some(ref paths) = input.target_paths {
+            if paths.is_empty() {
+                return Err(AppError::InvalidInput {
+                    message: "Local rules must have at least one target path".to_string(),
+                });
+            }
+        } else {
+            return Err(AppError::InvalidInput {
+                message: "Local rules must have target paths specified".to_string(),
+            });
+        }
+    }
+
     let created = db.create_rule(input)?;
 
     if use_file_storage(&db) {
         let location = storage_location_for_rule(&created);
-        let _ = file_storage::save_rule_to_disk(&created, &location)?;
+        file_storage::save_rule_to_disk(&created, &location)?;
         db.update_rule_file_index(&created.id, &location)?;
         register_local_rule_paths(&db, &created)?;
     }
@@ -324,11 +339,51 @@ pub fn update_rule(id: String, input: UpdateRuleInput, db: State<'_, Arc<Databas
         let existing = db.get_rule_by_id(&id)?;
         validate_rule_input(&existing.name, content)?;
     }
+
+    // Validate scope change or local rule path requirement
+    if let Some(scope) = input.scope {
+        if matches!(scope, crate::models::Scope::Local) {
+            let paths = input.target_paths.as_ref().or_else(|| {
+                // If not providing paths in update, check existing ones
+                // Note: existing paths might be fetched if needed
+                None
+            });
+
+            if let Some(p) = paths {
+                if p.is_empty() {
+                    return Err(AppError::InvalidInput {
+                        message: "Local rules must have at least one target path".to_string(),
+                    });
+                }
+            } else {
+                // If we're changing scope to Local, we MUST provide target_paths
+                let existing = db.get_rule_by_id(&id)?;
+                if existing.target_paths.as_ref().map(|p| p.is_empty()).unwrap_or(true) {
+                    return Err(AppError::InvalidInput {
+                        message: "Local rules must have at least one target path".to_string(),
+                    });
+                }
+            }
+        }
+    } else {
+        // If scope is not changing, but we're updating target_paths for an existing local rule
+        let existing = db.get_rule_by_id(&id)?;
+        if matches!(existing.scope, crate::models::Scope::Local) {
+            if let Some(ref p) = input.target_paths {
+                if p.is_empty() {
+                    return Err(AppError::InvalidInput {
+                        message: "Local rules must have at least one target path".to_string(),
+                    });
+                }
+            }
+        }
+    }
+
     let updated = db.update_rule(&id, input)?;
 
     if use_file_storage(&db) {
         let location = storage_location_for_rule(&updated);
-        let _ = file_storage::save_rule_to_disk(&updated, &location)?;
+        file_storage::save_rule_to_disk(&updated, &location)?;
         db.update_rule_file_index(&updated.id, &location)?;
         register_local_rule_paths(&db, &updated)?;
     }
@@ -341,7 +396,7 @@ pub fn delete_rule(id: String, db: State<'_, Arc<Database>>) -> Result<()> {
     if use_file_storage(&db) {
         if let Ok(existing) = db.get_rule_by_id(&id) {
             let location = storage_location_for_rule(&existing);
-            let _ = file_storage::delete_rule_file(&id, &location);
+            file_storage::delete_rule_file(&id, &location)?;
             db.remove_rule_file_index(&id)?;
         }
     }
@@ -354,7 +409,7 @@ pub fn toggle_rule(id: String, enabled: bool, db: State<'_, Arc<Database>>) -> R
 
     if use_file_storage(&db) {
         let location = storage_location_for_rule(&toggled);
-        let _ = file_storage::save_rule_to_disk(&toggled, &location)?;
+        file_storage::save_rule_to_disk(&toggled, &location)?;
         db.update_rule_file_index(&toggled.id, &location)?;
         register_local_rule_paths(&db, &toggled)?;
     }
