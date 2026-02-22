@@ -262,8 +262,11 @@ export function Commands() {
           ) : (
             <>
               <div className="grid gap-2">
-                <label className="text-sm font-medium">Name</label>
+                <label htmlFor="command-name" className="text-sm font-medium">
+                  Name
+                </label>
                 <Input
+                  id="command-name"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="Command name"
@@ -271,8 +274,11 @@ export function Commands() {
               </div>
 
               <div className="grid gap-2">
-                <label className="text-sm font-medium">Description</label>
+                <label htmlFor="command-description" className="text-sm font-medium">
+                  Description
+                </label>
                 <Input
+                  id="command-description"
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   placeholder="What this command does"
@@ -280,8 +286,11 @@ export function Commands() {
               </div>
 
               <div className="grid gap-2">
-                <label className="text-sm font-medium">Script</label>
+                <label htmlFor="command-script" className="text-sm font-medium">
+                  Script
+                </label>
                 <textarea
+                  id="command-script"
                   value={script}
                   onChange={(e) => setScript(e.target.value)}
                   className="min-h-36 rounded-md border bg-background p-3 text-sm"
@@ -296,7 +305,11 @@ export function Commands() {
                     Enable this command in tools/list responses.
                   </div>
                 </div>
-                <Switch checked={exposeViaMcp} onCheckedChange={setExposeViaMcp} />
+                <Switch
+                  checked={exposeViaMcp}
+                  onCheckedChange={setExposeViaMcp}
+                  aria-label="Expose command via MCP"
+                />
               </div>
 
               {selected.arguments.length > 0 && (

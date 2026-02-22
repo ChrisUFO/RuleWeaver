@@ -1,3 +1,6 @@
+//! File watcher for tracking external changes to rule files.
+//! NOTE: This module is currently not integrated into the main application loop
+//! and is intended for a future update to enable full "file-first" bidirectional sync.
 #![allow(dead_code)]
 
 use std::path::PathBuf;

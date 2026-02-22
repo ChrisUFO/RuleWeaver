@@ -23,6 +23,15 @@ pub enum AppError {
     #[allow(dead_code)]
     SyncConflict { file_path: String },
 
+    #[error("Validation error: {0}")]
+    Validation(String),
+
+    #[error("Unauthorized: {0}")]
+    Auth(String),
+
+    #[error("MCP server error: {0}")]
+    Mcp(String),
+
     #[error("Invalid input: {message}")]
     InvalidInput { message: String },
 

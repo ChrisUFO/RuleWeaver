@@ -1,31 +1,36 @@
-use crate::constants::{
+pub mod adapters;
+pub mod command_commands;
+pub mod mcp_commands;
+pub mod migration_commands;
+pub mod rule_commands;
+pub mod skill_commands;
+pub mod system_commands;
+
+use adapters::{CommandAdapter, GeminiAdapter, OpenCodeAdapter, ClaudeAdapter};
+pub use command_commands::*;
+pub use mcp_commands::*;
+pub use migration_commands::*;
+pub use rule_commands::*;
+pub use skill_commands::*;
+pub use system_commands::*;
+
+use std::collections::HashSet;
+use std::path::PathBuf;
+use std::sync::{Mutex, LazyLock};
+
+use crate::database::Database;
+use crate::error::{AppError, Result};
+use crate::file_storage;
+use crate::mcp::extract_skill_steps;
+use crate::models::Rule;
+use crate::constants::limits::{
     MAX_COMMAND_NAME_LENGTH, MAX_COMMAND_SCRIPT_LENGTH, MAX_RULE_CONTENT_LENGTH,
     MAX_RULE_NAME_LENGTH, MAX_SKILL_INSTRUCTIONS_LENGTH, MAX_SKILL_NAME_LENGTH, MAX_SKILL_STEPS,
-    TEST_CMD_TIMEOUT,
 };
-use crate::database::{get_app_data_path, Database};
-use crate::error::{AppError, Result};
-use crate::execution::{
-    argument_env_var_name, execute_and_log, replace_template_with_env_ref, sanitize_argument_value,
-    slugify, ExecuteAndLogInput,
-};
-use crate::file_storage;
-use crate::mcp::{extract_skill_steps, McpConnectionInstructions, McpManager, McpStatus};
-use crate::models::{
-    Command, CreateCommandInput, CreateRuleInput, CreateSkillInput, ExecutionLog, Rule, Skill,
-    SyncError, SyncHistoryEntry, SyncResult, TestCommandResult, UpdateCommandInput,
-    UpdateRuleInput, UpdateSkillInput,
-};
-use crate::sync::SyncEngine;
-use serde::Serialize;
-use std::collections::HashMap;
-use std::fs;
-use std::io::Write;
-use std::path::PathBuf;
-use std::sync::Arc;
-use tauri::State;
 
-fn validate_path(path: &str) -> Result<PathBuf> {
+pub static RUNNING_TESTS: LazyLock<Mutex<HashSet<String>>> = LazyLock::new(|| Mutex::new(HashSet::new()));
+
+pub fn validate_path(path: &str) -> Result<PathBuf> {
     let p = PathBuf::from(path);
     
     // Check for traversal components before canonicalization for defense-in-depth
@@ -52,7 +57,7 @@ fn validate_path(path: &str) -> Result<PathBuf> {
     Ok(canonical_path)
 }
 
-fn validate_rule_input(name: &str, content: &str) -> Result<()> {
+pub fn validate_rule_input(name: &str, content: &str) -> Result<()> {
     let trimmed_name = name.trim();
     if trimmed_name.is_empty() {
         return Err(AppError::InvalidInput {
@@ -78,7 +83,7 @@ fn validate_rule_input(name: &str, content: &str) -> Result<()> {
     Ok(())
 }
 
-fn validate_command_input(name: &str, script: &str) -> Result<()> {
+pub fn validate_command_input(name: &str, script: &str) -> Result<()> {
     let trimmed_name = name.trim();
     if trimmed_name.is_empty() {
         return Err(AppError::InvalidInput {
@@ -109,7 +114,7 @@ fn validate_command_input(name: &str, script: &str) -> Result<()> {
     Ok(())
 }
 
-fn validate_command_arguments(args: &[crate::models::CommandArgument]) -> Result<()> {
+pub fn validate_command_arguments(args: &[crate::models::CommandArgument]) -> Result<()> {
     for arg in args {
         if arg.name.trim().is_empty() {
             return Err(AppError::InvalidInput {
@@ -150,7 +155,7 @@ fn validate_command_arguments(args: &[crate::models::CommandArgument]) -> Result
     Ok(())
 }
 
-fn validate_skill_input(name: &str, instructions: &str) -> Result<()> {
+pub fn validate_skill_input(name: &str, instructions: &str) -> Result<()> {
     let trimmed_name = name.trim();
     if trimmed_name.is_empty() {
         return Err(AppError::InvalidInput {
@@ -190,11 +195,11 @@ fn validate_skill_input(name: &str, instructions: &str) -> Result<()> {
     Ok(())
 }
 
-fn markdown_escape_inline(input: &str) -> String {
+pub fn markdown_escape_inline(input: &str) -> String {
     input.replace('`', "\\`")
 }
 
-fn command_file_targets() -> Result<Vec<(String, String)>> {
+pub fn command_file_targets() -> Result<Vec<(String, Box<dyn CommandAdapter>)>> {
     let home = dirs::home_dir()
         .ok_or_else(|| AppError::Path("Could not determine home directory".to_string()))?;
     Ok(vec![
@@ -203,107 +208,34 @@ fn command_file_targets() -> Result<Vec<(String, String)>> {
                 .join("COMMANDS.toml")
                 .to_string_lossy()
                 .to_string(),
-            "gemini".to_string(),
+            Box::new(GeminiAdapter),
         ),
         (
             home.join(".opencode")
                 .join("COMMANDS.md")
                 .to_string_lossy()
                 .to_string(),
-            "opencode".to_string(),
+            Box::new(OpenCodeAdapter),
         ),
         (
             home.join(".claude")
                 .join("COMMANDS.md")
                 .to_string_lossy()
                 .to_string(),
-            "claude-code".to_string(),
+            Box::new(ClaudeAdapter),
         ),
     ])
 }
 
-fn format_commands_toml(commands: &[Command]) -> String {
-    #[derive(Serialize)]
-    struct CommandStub {
-        name: String,
-        description: String,
-        script: String,
-        arguments: Option<HashMap<String, ArgumentStub>>,
-    }
-
-    #[derive(Serialize)]
-    struct ArgumentStub {
-        #[serde(rename = "type")]
-        arg_type: String,
-        required: bool,
-    }
-
-    #[derive(Serialize)]
-    struct CommandsFile {
-        command: Vec<CommandStub>,
-    }
-
-    let mut stubs = Vec::new();
-    for cmd in commands.iter().filter(|c| c.expose_via_mcp) {
-        let mut args = HashMap::new();
-        for arg in &cmd.arguments {
-            args.insert(
-                arg.name.clone(),
-                ArgumentStub {
-                    arg_type: "string".to_string(), // Currently all are strings in stubs
-                    required: arg.required,
-                },
-            );
-        }
-
-        stubs.push(CommandStub {
-            name: slugify(&cmd.name),
-            description: cmd.description.clone(),
-            script: cmd.script.clone(),
-            arguments: if args.is_empty() { None } else { Some(args) },
-        });
-    }
-
-    let file = CommandsFile { command: stubs };
-    let toml_content = toml::to_string(&file).unwrap_or_default();
-    format!("# Generated by RuleWeaver - Do not edit manually\n\n{}", toml_content)
-}
-
-fn format_commands_markdown(commands: &[Command], title: &str) -> String {
-    let mut out = format!("# {}\n\n", title);
-    out.push_str("<!-- Generated by RuleWeaver - Do not edit manually -->\n\n");
-    for cmd in commands.iter().filter(|c| c.expose_via_mcp) {
-        out.push_str(&format!("## {}\n\n", cmd.name));
-        out.push_str(&format!("{}\n\n", cmd.description));
-        out.push_str(&format!(
-            "**Command:** `{}`\n\n",
-            markdown_escape_inline(&cmd.script)
-        ));
-        if !cmd.arguments.is_empty() {
-            out.push_str("**Arguments:**\n");
-            for arg in &cmd.arguments {
-                out.push_str(&format!(
-                    "- `{}` (string, {}): {}\n",
-                    arg.name,
-                    if arg.required { "required" } else { "optional" },
-                    arg.description
-                ));
-            }
-            out.push('\n');
-        }
-    }
-    out
-}
-
-fn use_file_storage(db: &Database) -> bool {
+pub fn use_file_storage(db: &Database) -> bool {
     db.get_storage_mode()
         .map(|mode| mode == "file")
         .unwrap_or(false)
 }
 
-const LOCAL_RULE_PATHS_KEY: &str = "local_rule_paths";
+pub const LOCAL_RULE_PATHS_KEY: &str = "local_rule_paths";
 
-fn get_local_rule_roots(db: &Database) -> Vec<PathBuf> {
+pub fn get_local_rule_roots(db: &Database) -> Vec<PathBuf> {
     db.get_setting(LOCAL_RULE_PATHS_KEY)
         .ok()
         .flatten()
@@ -312,7 +244,7 @@ fn get_local_rule_roots(db: &Database) -> Vec<PathBuf> {
         .unwrap_or_default()
 }
 
-fn register_local_rule_paths(db: &Database, rule: &Rule) -> Result<()> {
+pub fn register_local_rule_paths(db: &Database, rule: &Rule) -> Result<()> {
     if !matches!(rule.scope, crate::models::Scope::Local) {
         return Ok(());
     }
@@ -334,7 +266,7 @@ fn register_local_rule_paths(db: &Database, rule: &Rule) -> Result<()> {
     db.set_setting(LOCAL_RULE_PATHS_KEY, &encoded)
 }
 
-fn storage_location_for_rule(rule: &Rule) -> file_storage::StorageLocation {
+pub fn storage_location_for_rule(rule: &Rule) -> file_storage::StorageLocation {
     match rule.scope {
         crate::models::Scope::Global => file_storage::StorageLocation::Global,
         crate::models::Scope::Local => {
@@ -348,7 +280,7 @@ fn storage_location_for_rule(rule: &Rule) -> file_storage::StorageLocation {
     }
 }
 
-fn validate_local_rule_paths(
+pub fn validate_local_rule_paths(
     db: &Database,
     id: Option<&str>,
     scope: Option<crate::models::Scope>,
@@ -395,529 +327,5 @@ fn validate_local_rule_paths(
             });
         }
     }
-    Ok(())
-}
-
-#[tauri::command]
-pub fn get_all_rules(db: State<'_, Arc<Database>>) -> Result<Vec<Rule>> {
-    if use_file_storage(&db) {
-        let local_roots = get_local_rule_roots(&db);
-        let loaded = file_storage::load_rules_from_locations(&local_roots)?;
-        Ok(loaded.rules)
-    } else {
-        db.get_all_rules()
-    }
-}
-
-#[tauri::command]
-pub fn get_rule_by_id(id: String, db: State<'_, Arc<Database>>) -> Result<Rule> {
-    if use_file_storage(&db) {
-        let local_roots = get_local_rule_roots(&db);
-        let loaded = file_storage::load_rules_from_locations(&local_roots)?;
-        loaded
-            .rules
-            .into_iter()
-            .find(|r| r.id == id)
-            .ok_or_else(|| AppError::RuleNotFound { id })
-    } else {
-        db.get_rule_by_id(&id)
-    }
-}
-
-#[tauri::command]
-pub fn create_rule(input: CreateRuleInput, db: State<'_, Arc<Database>>) -> Result<Rule> {
-    validate_rule_input(&input.name, &input.content)?;
-    validate_local_rule_paths(&db, None, Some(input.scope), &input.target_paths)?;
-
-    let created = db.create_rule(input)?;
-
-    if use_file_storage(&db) {
-        let location = storage_location_for_rule(&created);
-        file_storage::save_rule_to_disk(&created, &location)?;
-        db.update_rule_file_index(&created.id, &location)?;
-        register_local_rule_paths(&db, &created)?;
-    }
-
-    Ok(created)
-}
-
-#[tauri::command]
-pub fn update_rule(id: String, input: UpdateRuleInput, db: State<'_, Arc<Database>>) -> Result<Rule> {
-    if let Some(ref name) = input.name {
-        if let Some(ref content) = input.content {
-            validate_rule_input(name, content)?;
-        } else {
-            let existing = db.get_rule_by_id(&id)?;
-            validate_rule_input(name, &existing.content)?;
-        }
-    } else if let Some(ref content) = input.content {
-        let existing = db.get_rule_by_id(&id)?;
-        validate_rule_input(&existing.name, content)?;
-    }
-
-    validate_local_rule_paths(&db, Some(&id), input.scope, &input.target_paths)?;
-
-    let updated = db.update_rule(&id, input)?;
-
-    if use_file_storage(&db) {
-        let location = storage_location_for_rule(&updated);
-        file_storage::save_rule_to_disk(&updated, &location)?;
-        db.update_rule_file_index(&updated.id, &location)?;
-        register_local_rule_paths(&db, &updated)?;
-    }
-
-    Ok(updated)
-}
-
-#[tauri::command]
-pub fn delete_rule(id: String, db: State<'_, Arc<Database>>) -> Result<()> {
-    if use_file_storage(&db) {
-        if let Ok(existing) = db.get_rule_by_id(&id) {
-            let location = storage_location_for_rule(&existing);
-            file_storage::delete_rule_file(&id, &location, Some(&db))?;
-            db.remove_rule_file_index(&id)?;
-        }
-    }
-    db.delete_rule(&id)
-}
-
-#[tauri::command]
-pub fn toggle_rule(id: String, enabled: bool, db: State<'_, Arc<Database>>) -> Result<Rule> {
-    let toggled = db.toggle_rule(&id, enabled)?;
-
-    if use_file_storage(&db) {
-        let location = storage_location_for_rule(&toggled);
-        file_storage::save_rule_to_disk(&toggled, &location)?;
-        db.update_rule_file_index(&toggled.id, &location)?;
-        register_local_rule_paths(&db, &toggled)?;
-    }
-
-    Ok(toggled)
-}
-
-#[tauri::command]
-pub fn migrate_to_file_storage(db: State<'_, Arc<Database>>) -> Result<file_storage::MigrationResult> {
-    let result = file_storage::migrate_to_file_storage(&db)?;
-    if result.success {
-        db.set_storage_mode("file")?;
-        if let Some(path) = &result.backup_path {
-            db.set_setting("file_storage_backup_path", path)?;
-        }
-    }
-    Ok(result)
-}
-
-#[tauri::command]
-pub fn rollback_file_migration(backup_path: String, db: State<'_, Arc<Database>>) -> Result<()> {
-    file_storage::rollback_migration(&backup_path, Some(&db))?;
-    db.set_storage_mode("sqlite")?;
-    db.set_setting("file_storage_backup_path", "")
-}
-
-#[tauri::command]
-pub fn verify_file_migration(db: State<'_, Arc<Database>>) -> Result<file_storage::VerificationResult> {
-    file_storage::verify_migration(&db)
-}
-
-#[tauri::command]
-pub fn get_file_migration_progress() -> file_storage::MigrationProgress {
-    file_storage::get_migration_progress()
-}
-
-#[tauri::command]
-pub fn get_storage_info() -> Result<HashMap<String, String>> {
-    let info = file_storage::get_storage_info()?;
-    let mut out = HashMap::new();
-    out.insert(
-        "global_dir".to_string(),
-        info.global_dir.to_string_lossy().to_string(),
-    );
-    out.insert("exists".to_string(), info.exists.to_string());
-    out.insert("rule_count".to_string(), info.rule_count.to_string());
-    out.insert(
-        "total_size_bytes".to_string(),
-        info.total_size_bytes.to_string(),
-    );
-    Ok(out)
-}
-
-#[tauri::command]
-pub fn get_storage_mode(db: State<'_, Arc<Database>>) -> Result<String> {
-    db.get_storage_mode()
-}
-
-#[tauri::command]
-pub fn get_all_commands(db: State<'_, Arc<Database>>) -> Result<Vec<Command>> {
-    db.get_all_commands()
-}
-
-#[tauri::command]
-pub fn get_command_by_id(id: String, db: State<'_, Arc<Database>>) -> Result<Command> {
-    db.get_command_by_id(&id)
-}
-
-#[tauri::command]
-pub fn create_command(
-    input: CreateCommandInput,
-    db: State<'_, Arc<Database>>,
-    mcp: State<'_, McpManager>,
-) -> Result<Command> {
-    validate_command_input(&input.name, &input.script)?;
-    validate_command_arguments(&input.arguments)?;
-    let created = db.create_command(input)?;
-    let _ = mcp.refresh_commands(&db);
-    Ok(created)
-}
-
-#[tauri::command]
-pub fn update_command(
-    id: String,
-    input: UpdateCommandInput,
-    db: State<'_, Arc<Database>>,
-    mcp: State<'_, McpManager>,
-) -> Result<Command> {
-    if let Some(name) = &input.name {
-        if let Some(script) = &input.script {
-            validate_command_input(name, script)?;
-        } else {
-            let existing = db.get_command_by_id(&id)?;
-            validate_command_input(name, &existing.script)?;
-        }
-    } else if let Some(script) = &input.script {
-        let existing = db.get_command_by_id(&id)?;
-        validate_command_input(&existing.name, script)?;
-    }
-
-    if let Some(args) = &input.arguments {
-        validate_command_arguments(args)?;
-    }
-
-    let updated = db.update_command(&id, input)?;
-    let _ = mcp.refresh_commands(&db);
-    Ok(updated)
-}
-
-#[tauri::command]
-pub fn delete_command(
-    id: String,
-    db: State<'_, Arc<Database>>,
-    mcp: State<'_, McpManager>,
-) -> Result<()> {
-    db.delete_command(&id)?;
-    let _ = mcp.refresh_commands(&db);
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn test_command(
-    id: String,
-    args: HashMap<String, String>,
-    db: State<'_, Arc<Database>>,
-) -> Result<TestCommandResult> {
-    let cmd = db.get_command_by_id(&id)?;
-    let mut script = cmd.script.clone();
-    let mut envs: Vec<(String, String)> = Vec::new();
-
-    for arg in &cmd.arguments {
-        script = replace_template_with_env_ref(&script, &arg.name);
-
-        let raw_value = args
-            .get(&arg.name)
-            .cloned()
-            .or_else(|| arg.default_value.clone())
-            .unwrap_or_default();
-        let safe_value = sanitize_argument_value(&raw_value)?;
-        
-        // Enum validation
-        if matches!(arg.arg_type, crate::models::ArgumentType::Enum) {
-            if let Some(ref options) = arg.options {
-                if !options.contains(&raw_value) {
-                    return Err(AppError::InvalidInput {
-                        message: format!("Argument '{}' must be one of: {}", arg.name, options.join(", ")),
-                    });
-                }
-            }
-        }
-
-        envs.push((argument_env_var_name(&arg.name), safe_value));
-    }
-
-    let (exit_code, stdout, stderr, duration_ms) = execute_and_log(ExecuteAndLogInput {
-        db: Some(&db),
-        command_id: &cmd.id,
-        command_name: &cmd.name,
-        script: &script,
-        timeout_dur: TEST_CMD_TIMEOUT,
-        envs: &envs,
-        arguments_json: &serde_json::to_string(&args).unwrap_or_default(),
-        triggered_by: "test",
-    })
-    .await?;
-
-    let success = exit_code == 0;
-
-    Ok(TestCommandResult {
-        success,
-        stdout,
-        stderr,
-        exit_code,
-        duration_ms,
-    })
-}
-
-#[tauri::command]
-pub fn sync_commands(db: State<'_, Arc<Database>>) -> Result<SyncResult> {
-    let commands = db.get_all_commands()?;
-    let mut files_written = Vec::new();
-    let mut errors = Vec::new();
-
-    for (path_str, adapter_name) in command_file_targets()? {
-        let path = PathBuf::from(&path_str);
-        if let Some(parent) = path.parent() {
-            if let Err(e) = fs::create_dir_all(parent) {
-                errors.push(SyncError {
-                    file_path: path_str.clone(),
-                    adapter_name: adapter_name.clone(),
-                    message: e.to_string(),
-                });
-                continue;
-            }
-        }
-
-        let content = if adapter_name == "gemini" {
-            format_commands_toml(&commands)
-        } else if adapter_name == "opencode" {
-            format_commands_markdown(&commands, "RuleWeaver Commands")
-        } else {
-            format_commands_markdown(&commands, "RuleWeaver Commands (Claude Code)")
-        };
-
-        let temp_path = path.with_extension(format!("tmp-{}", uuid::Uuid::new_v4()));
-        let write_result = (|| -> std::io::Result<()> {
-            {
-                let mut file = fs::File::create(&temp_path)?;
-                file.write_all(content.as_bytes())?;
-                file.sync_all()?;
-            }
-            fs::rename(&temp_path, &path)?;
-            
-            // Ensure directory metadata is also synced to disk if possible
-            if let Some(parent) = path.parent() {
-                if let Ok(dir) = fs::File::open(parent) {
-                    let _ = dir.sync_all();
-                }
-            }
-            
-            Ok(())
-        })();
-
-        match write_result {
-            Ok(()) => files_written.push(path_str),
-            Err(e) => errors.push(SyncError {
-                file_path: path.to_string_lossy().to_string(),
-                adapter_name,
-                message: e.to_string(),
-            }),
-        }
-    }
-
-    Ok(SyncResult {
-        success: errors.is_empty(),
-        files_written,
-        errors,
-        conflicts: Vec::new(),
-    })
-}
-
-#[tauri::command]
-pub fn get_all_skills(db: State<'_, Arc<Database>>) -> Result<Vec<Skill>> {
-    db.get_all_skills()
-}
-
-#[tauri::command]
-pub fn get_skill_by_id(id: String, db: State<'_, Arc<Database>>) -> Result<Skill> {
-    db.get_skill_by_id(&id)
-}
-
-#[tauri::command]
-pub fn create_skill(input: CreateSkillInput, db: State<'_, Arc<Database>>) -> Result<Skill> {
-    validate_skill_input(&input.name, &input.instructions)?;
-    db.create_skill(input)
-}
-
-#[tauri::command]
-pub fn update_skill(id: String, input: UpdateSkillInput, db: State<'_, Arc<Database>>) -> Result<Skill> {
-    if let Some(ref name) = input.name {
-        if let Some(ref instructions) = input.instructions {
-            validate_skill_input(name, instructions)?;
-        } else {
-            let existing = db.get_skill_by_id(&id)?;
-            validate_skill_input(name, &existing.instructions)?;
-        }
-    } else if let Some(ref instructions) = input.instructions {
-        let existing = db.get_skill_by_id(&id)?;
-        validate_skill_input(&existing.name, instructions)?;
-    }
-
-    db.update_skill(&id, input)
-}
-
-#[tauri::command]
-pub fn delete_skill(id: String, db: State<'_, Arc<Database>>) -> Result<()> {
-    db.delete_skill(&id)
-}
-
-#[tauri::command]
-pub async fn get_mcp_status(mcp: State<'_, McpManager>) -> Result<McpStatus> {
-    mcp.status().await
-}
-
-#[tauri::command]
-pub async fn start_mcp_server(db: State<'_, Arc<Database>>, mcp: State<'_, McpManager>) -> Result<()> {
-    mcp.start(&db).await
-}
-
-#[tauri::command]
-pub async fn stop_mcp_server(mcp: State<'_, McpManager>) -> Result<()> {
-    mcp.stop().await
-}
-
-#[tauri::command]
-pub async fn restart_mcp_server(db: State<'_, Arc<Database>>, mcp: State<'_, McpManager>) -> Result<()> {
-    mcp.stop().await?;
-    mcp.start(&db).await
-}
-
-#[tauri::command]
-pub async fn get_mcp_connection_instructions(
-    mcp: State<'_, McpManager>,
-) -> Result<McpConnectionInstructions> {
-    mcp.instructions().await
-}
-
-#[tauri::command]
-pub async fn get_mcp_logs(limit: Option<u32>, mcp: State<'_, McpManager>) -> Result<Vec<String>> {
-    mcp.logs(limit.unwrap_or(50) as usize).await
-}
-
-#[tauri::command]
-pub fn get_execution_history(
-    limit: Option<u32>,
-    db: State<'_, Arc<Database>>,
-) -> Result<Vec<ExecutionLog>> {
-    db.get_execution_history(limit.unwrap_or(100))
-}
-
-#[tauri::command]
-pub fn sync_rules(db: State<'_, Arc<Database>>) -> Result<SyncResult> {
-    let rules = db.get_all_rules()?;
-    let engine = SyncEngine::new(&db);
-    Ok(engine.sync_all(rules))
-}
-
-#[tauri::command]
-pub fn preview_sync(db: State<'_, Arc<Database>>) -> Result<SyncResult> {
-    let rules = db.get_all_rules()?;
-    let engine = SyncEngine::new(&db);
-    Ok(engine.preview(rules))
-}
-
-#[tauri::command]
-pub fn get_sync_history(
-    limit: Option<u32>,
-    db: State<'_, Arc<Database>>,
-) -> Result<Vec<SyncHistoryEntry>> {
-    db.get_sync_history(limit.unwrap_or(50))
-}
-
-#[tauri::command]
-pub fn read_file_content(path: String) -> Result<String> {
-    let validated_path = validate_path(&path)?;
-    let content = fs::read_to_string(validated_path)?;
-    Ok(content)
-}
-
-#[tauri::command]
-pub fn resolve_conflict(
-    file_path: String,
-    resolution: String,
-    db: State<'_, Arc<Database>>,
-) -> Result<()> {
-    match resolution.as_str() {
-        "overwrite" => {
-            let rules = db.get_all_rules()?;
-            let engine = SyncEngine::new(&db);
-            engine.sync_file_by_path(&rules, &file_path)?;
-        }
-        "keep-remote" => {
-            let validated_path = validate_path(&file_path)?;
-            let content = fs::read_to_string(validated_path)?;
-            let hash = crate::sync::compute_content_hash_public(&content);
-            db.set_file_hash(&file_path, &hash)?;
-        }
-        _ => {
-            return Err(crate::error::AppError::InvalidInput {
-                message: format!("Unknown resolution: {}", resolution),
-            });
-        }
-    }
-    Ok(())
-}
-
-#[tauri::command]
-pub fn get_app_version() -> String {
-    env!("CARGO_PKG_VERSION").to_string()
-}
-
-#[tauri::command]
-pub fn get_setting(key: String, db: State<'_, Arc<Database>>) -> Result<Option<String>> {
-    db.get_setting(&key)
-}
-
-#[tauri::command]
-pub fn set_setting(key: String, value: String, db: State<'_, Arc<Database>>) -> Result<()> {
-    db.set_setting(&key, &value)
-}
-
-#[tauri::command]
-pub fn get_all_settings(db: State<'_, Arc<Database>>) -> Result<HashMap<String, String>> {
-    db.get_all_settings()
-}
-
-#[tauri::command]
-pub fn get_app_data_path_cmd(app: tauri::AppHandle) -> Result<String> {
-    let path = get_app_data_path(&app)?;
-    Ok(path.to_string_lossy().to_string())
-}
-
-#[tauri::command]
-pub fn open_in_explorer(path: String) -> Result<()> {
-    let validated_path = validate_path(&path)?;
-
-    #[cfg(target_os = "windows")]
-    {
-        std::process::Command::new("explorer")
-            .args(["/select,", &validated_path.to_string_lossy()])
-            .spawn()
-            .map_err(crate::error::AppError::Io)?;
-    }
-
-    #[cfg(target_os = "macos")]
-    {
-        std::process::Command::new("open")
-            .args(["-R", &validated_path.to_string_lossy()])
-            .spawn()
-            .map_err(crate::error::AppError::Io)?;
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        let parent_dir = validated_path.parent().unwrap_or(std::path::Path::new("/"));
-        std::process::Command::new("xdg-open")
-            .arg(parent_dir)
-            .spawn()
-            .map_err(crate::error::AppError::Io)?;
-    }
-
     Ok(())
 }

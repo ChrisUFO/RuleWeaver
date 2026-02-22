@@ -17,9 +17,13 @@ use tokio::sync::{broadcast, Mutex};
 use tokio::task::JoinHandle;
 
 use crate::constants::{
-    CMD_EXEC_TIMEOUT, LOG_LIMIT, MAX_OUTPUT_SIZE, MAX_SKILL_STEPS, MAX_STEP_LENGTH,
-    MCP_RATE_LIMIT_MAX_CALLS, MCP_RATE_LIMIT_WINDOW, MCP_SERVER_BACKOFF_INITIAL_MS,
-    MCP_SERVER_RETRY_COUNT, SKILL_EXEC_TIMEOUT,
+    limits::{
+        LOG_LIMIT, MAX_OUTPUT_SIZE, MAX_SKILL_STEPS, MAX_STEP_LENGTH, MCP_RATE_LIMIT_MAX_CALLS,
+        MCP_SERVER_RETRY_COUNT,
+    },
+    timing::{
+        CMD_EXEC_TIMEOUT, MCP_RATE_LIMIT_WINDOW, MCP_SERVER_BACKOFF_INITIAL_MS, SKILL_EXEC_TIMEOUT,
+    },
 };
 use crate::database::{Database, ExecutionLogInput};
 use crate::error::{AppError, Result};
@@ -66,7 +70,7 @@ pub struct McpConnectionInstructions {
 }
 
 #[derive(Debug)]
-struct McpRuntime {
+pub struct McpRuntime {
     running: bool,
     port: u16,
     api_token: String,
@@ -82,7 +86,7 @@ struct McpRuntime {
 
 #[derive(Clone, Debug)]
 pub struct McpManager {
-    inner: Arc<Mutex<McpRuntime>>,
+    pub inner: Arc<Mutex<McpRuntime>>,
 }
 
 pub struct McpSnapshot {
@@ -182,10 +186,10 @@ impl McpManager {
                     Ok(l) => break Some(l),
                     Err(e) => {
                         if retry_count >= MCP_SERVER_RETRY_COUNT {
-                            let _ = manager.log(format!("Failed to bind MCP server after {} attempts {}: {}", MCP_SERVER_RETRY_COUNT, addr, e));
+                            let _ = manager.log(format!("Failed to bind MCP server after {} attempts {}: {}", MCP_SERVER_RETRY_COUNT, addr, e)).await;
                             break None;
                         }
-                        let _ = manager.log(format!("Port {} busy, retrying in {}ms...", port, backoff_ms));
+                        let _ = manager.log(format!("Port {} busy, retrying in {}ms...", port, backoff_ms)).await;
                         tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
                         retry_count += 1;
                         backoff_ms *= 2;
@@ -196,12 +200,12 @@ impl McpManager {
             let listener = match listener {
                 Some(l) => l,
                 None => {
-                    let _ = manager.mark_stopped();
+                    let _ = manager.mark_stopped().await;
                     return;
                 }
             };
 
-            let _ = manager.log(format!("MCP server listening on {}", addr));
+            let _ = manager.log(format!("MCP server listening on {}", addr)).await;
 
             if let Err(e) = axum::serve(listener, app)
                 .with_graceful_shutdown(async move {
@@ -209,11 +213,11 @@ impl McpManager {
                 })
                 .await
             {
-                let _ = manager.log(format!("MCP server error: {}", e));
+                let _ = manager.log(format!("MCP server error: {}", e)).await;
             }
 
-            let _ = manager.log("MCP server stopped".to_string());
-            let _ = manager.mark_stopped();
+            let _ = manager.log("MCP server stopped".to_string()).await;
+            let _ = manager.mark_stopped().await;
         });
 
         {

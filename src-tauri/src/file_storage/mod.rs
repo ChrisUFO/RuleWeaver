@@ -105,7 +105,7 @@ pub fn load_rules_from_directory(dir: &Path) -> Result<(Vec<Rule>, Vec<RuleLoadE
     }
 
     for entry in WalkDir::new(dir)
-        .follow_links(true)
+        .follow_links(false)
         .into_iter()
         .filter_map(|e| e.ok())
     {
@@ -505,8 +505,12 @@ mod tests {
     #[test]
     fn test_delete_rule_file_not_found() {
         let temp_dir = create_temp_test_dir();
-        let result =
-            delete_rule_file("nonexistent", &StorageLocation::Local(temp_dir.clone()), None).unwrap();
+        let result = delete_rule_file(
+            "nonexistent",
+            &StorageLocation::Local(temp_dir.clone()),
+            None,
+        )
+        .unwrap();
         assert!(!result);
         cleanup_temp_dir(&temp_dir);
     }

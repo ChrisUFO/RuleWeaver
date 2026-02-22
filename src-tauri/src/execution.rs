@@ -2,7 +2,10 @@ use std::time::Duration;
 use tokio::process::Command as TokioCommand;
 use tokio::time::timeout;
 
-use crate::constants::{MAX_ARG_LENGTH, MAX_SCRIPT_LENGTH, REGEX_DFA_SIZE_LIMIT};
+use crate::constants::{
+    limits::{MAX_ARG_LENGTH, MAX_SCRIPT_LENGTH},
+    security::REGEX_DFA_SIZE_LIMIT,
+};
 use crate::database::{Database, ExecutionLogInput};
 use crate::error::{AppError, Result};
 
@@ -32,18 +35,12 @@ pub fn replace_template_with_env_ref(script: &str, arg_name: &str) -> String {
 }
 
 pub fn slugify(input: &str) -> String {
-    let mut out = String::new();
-    for ch in input.chars() {
-        if ch.is_ascii_alphanumeric() {
-            out.push(ch.to_ascii_lowercase());
-        } else if ch.is_whitespace() || ch == '-' || ch == '_' {
-            out.push('-');
-        }
-    }
-    while out.contains("--") {
-        out = out.replace("--", "-");
-    }
-    out.trim_matches('-').to_string()
+    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let re = RE.get_or_init(|| regex::Regex::new(r"[a-z0-9]+").expect("Invalid slugify regex"));
+
+    let lower = input.to_lowercase();
+    let parts: Vec<&str> = re.find_iter(&lower).map(|m| m.as_str()).collect();
+    parts.join("-")
 }
 
 pub fn sanitize_argument_value(value: &str) -> Result<String> {

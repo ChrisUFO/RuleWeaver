@@ -65,6 +65,8 @@ impl Database {
         Self::new_with_db_path(db_path)
     }
 
+    /// Re-establishes the database connection and runs migrations.
+    /// Useful for recovering from disk disconnections or handling external database modifications.
     #[allow(dead_code)]
     pub fn reconnect(&self) -> Result<()> {
         let db_path = {

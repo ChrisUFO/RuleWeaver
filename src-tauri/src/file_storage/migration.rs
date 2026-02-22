@@ -1,8 +1,8 @@
+use sha2::Digest;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Mutex, OnceLock};
-use sha2::Digest;
 
 use crate::database::Database;
 use crate::error::{AppError, Result};

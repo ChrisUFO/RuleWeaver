@@ -35,7 +35,11 @@ pub fn run() {
                 .unwrap_or(false);
 
             if auto_start_mcp {
-                let _ = mcp_manager.start(&db);
+                let mcp_for_setup = mcp_manager.clone();
+                let db_for_setup = Arc::clone(&db);
+                tauri::async_runtime::spawn(async move {
+                    let _ = mcp_for_setup.start(&db_for_setup).await;
+                });
             }
 
             if db.get_setting(MINIMIZE_TO_TRAY_KEY)?.is_none() {
@@ -70,7 +74,10 @@ pub fn run() {
                     }
                     "quit" => {
                         if let Some(mcp) = app.try_state::<McpManager>() {
-                            let _ = mcp.stop();
+                            let mcp_clone = mcp.inner().clone();
+                            tauri::async_runtime::spawn(async move {
+                                let _ = mcp_clone.stop().await;
+                            });
                         }
                         app.exit(0);
                     }
@@ -114,7 +121,10 @@ pub fn run() {
                             }
                         } else {
                             if let Some(mcp) = app_for_events.try_state::<McpManager>() {
-                                let _ = mcp.stop();
+                                let mcp_clone = mcp.inner().clone();
+                                tauri::async_runtime::spawn(async move {
+                                    let _ = mcp_clone.stop().await;
+                                });
                             }
                             app_for_events.exit(0);
                         }

@@ -81,8 +81,9 @@ export function SyncResultsDialog({ open, onOpenChange, result }: SyncResultsDia
                       size="icon"
                       className="h-6 w-6 shrink-0"
                       onClick={() => handleOpenFolder(filePath)}
+                      aria-label={`Open folder for ${filePath}`}
                     >
-                      <ExternalLink className="h-3 w-3" />
+                      <ExternalLink className="h-3 w-3" aria-hidden="true" />
                     </Button>
                   </div>
                 ))}

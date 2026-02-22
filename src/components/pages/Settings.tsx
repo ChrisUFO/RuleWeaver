@@ -402,8 +402,14 @@ export function Settings() {
             <code className="flex-1 p-2 rounded-md bg-muted text-sm truncate">
               {isLoading ? "Loading..." : appDataPath || "Not available"}
             </code>
-            <Button variant="outline" size="icon" onClick={handleOpenAppData} disabled={isLoading}>
-              <FolderOpen className="h-4 w-4" />
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={handleOpenAppData}
+              disabled={isLoading}
+              aria-label="Open app data folder"
+            >
+              <FolderOpen className="h-4 w-4" aria-hidden="true" />
             </Button>
           </div>
         </CardContent>
