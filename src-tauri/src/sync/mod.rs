@@ -601,10 +601,10 @@ impl<'a> SyncEngine<'a> {
                 };
                 files_written.push(path.to_string_lossy().to_string());
 
-                // Note: There's a potential race condition here where the file could change
-                // between reading the stored hash and computing the current hash.
-                // This is acceptable for a sync preview as we prioritize eventual consistency
-                // over strict atomicity. The actual sync operation will handle conflicts properly.
+                // TODO: Address race condition between hash read and file computation.
+                // The file could change between reading the stored hash and computing the current hash.
+                // For now, this is acceptable for a sync preview as we prioritize eventual consistency
+                // over strict atomicity. Consider adding file locking for stricter consistency.
                 if let Some(local_hash) = self
                     .db
                     .get_file_hash(&path.to_string_lossy())

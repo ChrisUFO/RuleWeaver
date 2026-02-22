@@ -137,6 +137,12 @@ pub struct CreateRuleInput {
     #[serde(default)]
     pub target_paths: Option<Vec<String>>,
     pub enabled_adapters: Vec<AdapterType>,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -266,6 +272,7 @@ mod tests {
             scope: Scope::Global,
             target_paths: None,
             enabled_adapters: vec![AdapterType::Gemini, AdapterType::OpenCode],
+            enabled: true,
         };
 
         let json = serde_json::to_string(&input).unwrap();
@@ -275,5 +282,6 @@ mod tests {
         assert_eq!(parsed.content, input.content);
         assert!(matches!(parsed.scope, Scope::Global));
         assert_eq!(parsed.enabled_adapters.len(), 2);
+        assert_eq!(parsed.enabled, true);
     }
 }

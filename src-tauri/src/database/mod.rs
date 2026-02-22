@@ -151,7 +151,7 @@ impl Database {
                 input.scope.as_str(),
                 target_paths_json,
                 enabled_adapters_json,
-                true,
+                input.enabled,
                 now,
                 now
             ],

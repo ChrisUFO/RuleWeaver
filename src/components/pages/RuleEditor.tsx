@@ -46,16 +46,20 @@ export function RuleEditor({ rule, onBack, isNew = false }: RuleEditorProps) {
   const wordCount = getWordCount(content);
   const characterCount = getCharacterCount(content);
 
+  // Load default adapters from database settings
   useEffect(() => {
-    const savedDefaults = localStorage.getItem("ruleweaver-default-adapters");
-    if (savedDefaults) {
+    const loadDefaultAdapters = async () => {
       try {
-        const parsed = JSON.parse(savedDefaults);
-        setDefaultAdapters(parsed);
+        const savedDefaults = await api.settings.get("default_adapters");
+        if (savedDefaults) {
+          const parsed = JSON.parse(savedDefaults);
+          setDefaultAdapters(parsed);
+        }
       } catch {
-        console.error("Failed to parse default adapters");
+        console.error("Failed to load default adapters from database");
       }
-    }
+    };
+    loadDefaultAdapters();
   }, []);
 
   useEffect(() => {

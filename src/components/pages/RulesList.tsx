@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import {
   Plus,
   Search,
@@ -74,10 +74,25 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
   const [menuOpen, setMenuOpen] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     fetchRules();
   }, [fetchRules]);
+
+  // Handle click outside to close menu
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setMenuOpen(null);
+      }
+    };
+
+    if (menuOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [menuOpen]);
 
   const { sortField, sortDirection } = useMemo(() => {
     const [field, dir] = sortValue.split("-") as [SortField, SortDirection];
@@ -427,7 +442,7 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
                     </div>
                   </button>
 
-                  <div className="relative">
+                  <div className="relative" ref={menuOpen === rule.id ? menuRef : undefined}>
                     <Button
                       variant="ghost"
                       size="icon"

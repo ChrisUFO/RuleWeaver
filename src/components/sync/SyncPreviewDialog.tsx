@@ -44,7 +44,8 @@ export function SyncPreviewDialog({
   };
 
   const handleOpenFolder = async (filePath: string) => {
-    const dirPath = filePath.substring(0, filePath.lastIndexOf("/"));
+    const lastSeparatorIndex = Math.max(filePath.lastIndexOf("/"), filePath.lastIndexOf("\\"));
+    const dirPath = lastSeparatorIndex >= 0 ? filePath.substring(0, lastSeparatorIndex) : filePath;
     try {
       await api.app.openInExplorer(dirPath);
     } catch {
@@ -105,7 +106,7 @@ export function SyncPreviewDialog({
                 {previewResult.filesWritten.map((filePath) => {
                   const status = getFileStatus(filePath);
                   const conflict = conflictFiles.find((c) => c.filePath === filePath);
-                  const fileName = filePath.split("/").pop() || filePath;
+                  const fileName = filePath.split(/[/\\]/).pop() || filePath;
 
                   return (
                     <div

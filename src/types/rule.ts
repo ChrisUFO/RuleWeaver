@@ -20,6 +20,7 @@ export interface CreateRuleInput {
   scope: Scope;
   targetPaths?: string[];
   enabledAdapters: AdapterType[];
+  enabled?: boolean;
 }
 
 export interface UpdateRuleInput {
