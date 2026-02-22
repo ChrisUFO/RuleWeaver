@@ -214,6 +214,7 @@ impl Database {
             ],
         )?;
 
+        drop(conn);
         self.get_rule_by_id(&id)
     }
 
@@ -375,6 +376,7 @@ impl Database {
             ],
         )?;
 
+        drop(conn);
         self.get_command_by_id(&id)
     }
 
@@ -499,6 +501,7 @@ impl Database {
             ],
         )?;
 
+        drop(conn);
         self.get_skill_by_id(&id)
     }
 

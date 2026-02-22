@@ -1,5 +1,6 @@
 use axum::{
-    extract::{State},
+    extract::State,
+    http::{HeaderValue, Method},
     routing::post,
     Json, Router,
 };
@@ -141,7 +142,15 @@ impl McpManager {
                 .route("/", post(mcp_handler))
                 // Support root and any other path for flexibility
                 .fallback(post(mcp_handler))
-                .layer(CorsLayer::permissive())
+                .layer(
+                    CorsLayer::new()
+                        .allow_origin([
+                            "http://localhost".parse::<HeaderValue>().unwrap(),
+                            "http://127.0.0.1".parse::<HeaderValue>().unwrap(),
+                        ])
+                        .allow_methods([Method::POST])
+                        .allow_headers([axum::http::header::CONTENT_TYPE]),
+                )
                 .with_state(manager.clone());
 
             let addr = format!("127.0.0.1:{}", port);
@@ -355,15 +364,16 @@ fn handle_tools_list(
                 }
             }
 
-            json!({
-                "name": slugify(&c.name),
-                "description": c.description,
-                "inputSchema": {
-                    "type": "object",
-                    "properties": props,
-                    "required": required,
-                }
-            })
+                                json!({
+                                    "name": format!("{}-{}", slugify(&c.name), &c.id[..8]),
+                                    "description": c.description,
+                                    "inputSchema": {
+                                        "type": "object",
+                                        "properties": props,
+                                        "required": required,
+                                    }
+                                })
+            
         })
         .collect();
 
@@ -372,7 +382,7 @@ fn handle_tools_list(
         .filter(|s| s.enabled)
         .map(|s| {
             json!({
-                "name": format!("skill_{}", slugify(&s.name)),
+                "name": format!("skill_{}-{}", slugify(&s.name), &s.id[..8]),
                 "description": s.description,
                 "inputSchema": {
                     "type": "object",
@@ -446,12 +456,12 @@ async fn handle_tools_call(
 
     if let Some(cmd) = commands
         .iter()
-        .find(|c| slugify(&c.name) == name && c.expose_via_mcp)
+        .find(|c| format!("{}-{}", slugify(&c.name), &c.id[..8]) == name && c.expose_via_mcp)
     {
         handle_command_call(manager, id, cmd, args_map, shared_db).await
     } else if let Some(skill) = skills
         .iter()
-        .find(|s| s.enabled && format!("skill_{}", slugify(&s.name)) == name)
+        .find(|s| s.enabled && format!("skill_{}-{}", slugify(&s.name), &s.id[..8]) == name)
     {
         handle_skill_call(manager, id, skill, args_map, shared_db).await
     } else {
@@ -573,23 +583,24 @@ async fn handle_command_call(
                 "result": {
                     "content": [{
                         "type": "text",
-                        "text": format!("exit_code: {}\n\nstdout:\n{}\n\nstderr:\n{}", exit_code, truncate_output(stdout), truncate_output(stderr))
-                    }],
-                    "is_error": exit_code != 0
-                }
-            })
-        }
-        Err(e) => json!({
-            "jsonrpc": "2.0",
-            "id": id,
-            "result": {
-                "content": [{
-                    "type": "text",
-                    "text": format!("Failed to execute command: {}", e)
-                }],
-                "is_error": true
-            }
-        }),
+                                                                    "text": format!("exit_code: {}\n\nstdout:\n{}\n\nstderr:\n{}", exit_code, truncate_output(stdout), truncate_output(stderr))
+                                                                }],
+                                                                "isError": exit_code != 0
+                                                            }
+                                                        })
+                                                    }
+                                                    Err(e) => json!({
+                                                        "jsonrpc": "2.0",
+                                                        "id": id,
+                                                        "result": {
+                                                            "content": [{
+                                                                "type": "text",
+                                                                "text": format!("Failed to execute command: {}", e)
+                                                            }],
+                                                            "isError": true
+                                                        }
+                                                    }),
+                        
     }
 }
 
@@ -620,20 +631,21 @@ async fn handle_skill_call(
         // Note: If we really want to return the text with the input replaced,
         // we should do it safely here ONLY for the returned text, not for execution.
         let display_text = skill.instructions.replace("{{input}}", &input);
-        json!({
-            "jsonrpc": "2.0",
-            "id": id,
-            "result": {
-                "content": [{
-                    "type": "text",
-                    "text": display_text
-                }],
-                "is_error": false
-            }
-        })
-    } else {
-        let mut output = String::new();
-        let mut is_error = false;
+                                json!({
+                                    "jsonrpc": "2.0",
+                                    "id": id,
+                                    "result": {
+                                        "content": [{
+                                            "type": "text",
+                                            "text": display_text
+                                        }],
+                                        "isError": false
+                                    }
+                                })
+                            } else {
+                                let mut output = String::new();
+                                let mut is_error = false;
+        
         let start = Instant::now();
         let skill_envs = vec![("RW_SKILL_INPUT".to_string(), input.clone())];
 
@@ -709,17 +721,18 @@ async fn handle_skill_call(
             });
         }
 
-        json!({
-            "jsonrpc": "2.0",
-            "id": id,
-            "result": {
-                "content": [{
-                    "type": "text",
-                    "text": truncate_output(output)
-                }],
-                "is_error": is_error
-            }
-        })
+                                json!({
+                                    "jsonrpc": "2.0",
+                                    "id": id,
+                                    "result": {
+                                        "content": [{
+                                            "type": "text",
+                                            "text": truncate_output(output)
+                                        }],
+                                        "isError": is_error
+                                    }
+                                })
+        
     }
 }
 

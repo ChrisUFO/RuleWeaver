@@ -597,7 +597,11 @@ pub fn sync_commands(db: State<'_, Arc<Database>>) -> Result<SyncResult> {
             format_commands_markdown(&commands, "RuleWeaver Commands (Claude Code)")
         };
 
-        match fs::write(&path, content) {
+        let temp_path = path.with_extension("tmp");
+        let write_result = fs::write(&temp_path, content)
+            .and_then(|_| fs::rename(&temp_path, &path));
+
+        match write_result {
             Ok(()) => files_written.push(path_str),
             Err(e) => errors.push(SyncError {
                 file_path: path.to_string_lossy().to_string(),
