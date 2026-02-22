@@ -165,7 +165,7 @@ async fn test_command_internal(
         envs.push((argument_env_var_name(&arg.name), safe_value));
     }
 
-    let args_json = serde_json::to_string(&args).map_err(|e| AppError::Serialization(e))?;
+    let args_json = serde_json::to_string(&args).map_err(AppError::Serialization)?;
 
     let (exit_code, stdout, stderr, duration_ms) = execute_and_log(ExecuteAndLogInput {
         db: Some(db),
