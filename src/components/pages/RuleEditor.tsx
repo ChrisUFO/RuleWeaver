@@ -229,7 +229,8 @@ export function RuleEditor({ rule, onBack, isNew = false }: RuleEditorProps) {
   const handleOpenFolder = async (adapter: AdapterType) => {
     const path = getAdapterPath(adapter);
     if (!path) return;
-    const dirPath = path.substring(0, path.lastIndexOf("/"));
+    const lastSeparatorIndex = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+    const dirPath = lastSeparatorIndex >= 0 ? path.substring(0, lastSeparatorIndex) : path;
     try {
       await api.app.openInExplorer(dirPath);
     } catch {

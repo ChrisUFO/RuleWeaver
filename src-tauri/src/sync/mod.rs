@@ -21,17 +21,12 @@ fn validate_target_path(base_path: &str) -> Result<PathBuf> {
         });
     }
 
-    let path_str = base_path.to_lowercase();
-    if path_str.contains("..") {
-        return Err(AppError::InvalidInput {
-            message: "Target path cannot contain path traversal sequences".to_string(),
-        });
-    }
-
+    // First canonicalize to resolve any path traversal sequences and normalize Unicode
     let canonical_path = std::fs::canonicalize(&path).map_err(|e| AppError::InvalidInput {
         message: format!("Invalid path: {}", e),
     })?;
 
+    // Check for traversal by comparing against home directory after canonicalization
     let home_dir = get_home_dir()?;
     let canonical_home = std::fs::canonicalize(&home_dir).unwrap_or(home_dir);
 
@@ -41,7 +36,7 @@ fn validate_target_path(base_path: &str) -> Result<PathBuf> {
         });
     }
 
-    Ok(path)
+    Ok(canonical_path)
 }
 
 pub trait SyncAdapter: Send + Sync {
@@ -437,18 +432,29 @@ impl<'a> SyncEngine<'a> {
     }
 
     fn get_disabled_adapters(&self) -> HashSet<AdapterType> {
-        self.db
-            .get_setting("adapter_settings")
-            .ok()
-            .flatten()
-            .and_then(|s| serde_json::from_str::<HashMap<String, bool>>(&s).ok())
-            .map(|m| {
-                m.into_iter()
-                    .filter(|(_, enabled)| !enabled)
-                    .filter_map(|(id, _)| AdapterType::from_str(&id))
-                    .collect()
-            })
-            .unwrap_or_default()
+        match self.db.get_setting("adapter_settings") {
+            Ok(Some(settings_json)) => {
+                match serde_json::from_str::<HashMap<String, bool>>(&settings_json) {
+                    Ok(settings_map) => settings_map
+                        .into_iter()
+                        .filter(|(_, enabled)| !enabled)
+                        .filter_map(|(id, _)| AdapterType::from_str(&id))
+                        .collect(),
+                    Err(e) => {
+                        eprintln!("Warning: Failed to deserialize adapter_settings: {}", e);
+                        HashSet::new()
+                    }
+                }
+            }
+            Ok(None) => HashSet::new(),
+            Err(e) => {
+                eprintln!(
+                    "Warning: Failed to load adapter_settings from database: {}",
+                    e
+                );
+                HashSet::new()
+            }
+        }
     }
 
     pub fn sync_all(&self, rules: Vec<Rule>) -> SyncResult {
@@ -595,6 +601,10 @@ impl<'a> SyncEngine<'a> {
                 };
                 files_written.push(path.to_string_lossy().to_string());
 
+                // Note: There's a potential race condition here where the file could change
+                // between reading the stored hash and computing the current hash.
+                // This is acceptable for a sync preview as we prioritize eventual consistency
+                // over strict atomicity. The actual sync operation will handle conflicts properly.
                 if let Some(local_hash) = self
                     .db
                     .get_file_hash(&path.to_string_lossy())
@@ -634,6 +644,9 @@ impl<'a> SyncEngine<'a> {
                 let path = PathBuf::from(&base_path).join(adapter.file_name());
                 files_written.push(path.to_string_lossy().to_string());
 
+                // Note: There's a potential race condition here where the file could change
+                // between reading the stored hash and computing the current hash.
+                // This is acceptable for a sync preview as we prioritize eventual consistency.
                 if let Some(local_hash) = self
                     .db
                     .get_file_hash(&path.to_string_lossy())

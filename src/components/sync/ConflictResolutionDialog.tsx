@@ -207,7 +207,7 @@ export function ConflictResolutionDialog({
 
   if (!conflict) return null;
 
-  const fileName = conflict.filePath.split("/").pop() || conflict.filePath;
+  const fileName = conflict.filePath.split(/[/\\]/).pop() || conflict.filePath;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

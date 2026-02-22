@@ -1,12 +1,19 @@
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use chrono::TimeZone;
+use chrono::{DateTime, TimeZone, Utc};
 use rusqlite::{params, Connection, OptionalExtension};
 use tauri::Manager;
 
 use crate::error::{AppError, Result};
 use crate::models::{AdapterType, CreateRuleInput, Rule, Scope, SyncHistoryEntry, UpdateRuleInput};
+
+fn parse_timestamp_or_now(timestamp: i64) -> DateTime<Utc> {
+    chrono::Utc
+        .timestamp_opt(timestamp, 0)
+        .single()
+        .unwrap_or_else(chrono::Utc::now)
+}
 
 pub struct Database(Mutex<Connection>);
 
@@ -64,14 +71,8 @@ impl Database {
                     target_paths,
                     enabled_adapters,
                     enabled,
-                    created_at: chrono::Utc
-                        .timestamp_opt(created_at, 0)
-                        .single()
-                        .unwrap_or_else(chrono::Utc::now),
-                    updated_at: chrono::Utc
-                        .timestamp_opt(updated_at, 0)
-                        .single()
-                        .unwrap_or_else(chrono::Utc::now),
+                    created_at: parse_timestamp_or_now(created_at),
+                    updated_at: parse_timestamp_or_now(updated_at),
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -114,14 +115,8 @@ impl Database {
                     target_paths,
                     enabled_adapters,
                     enabled,
-                    created_at: chrono::Utc
-                        .timestamp_opt(created_at, 0)
-                        .single()
-                        .unwrap_or_else(chrono::Utc::now),
-                    updated_at: chrono::Utc
-                        .timestamp_opt(updated_at, 0)
-                        .single()
-                        .unwrap_or_else(chrono::Utc::now),
+                    created_at: parse_timestamp_or_now(created_at),
+                    updated_at: parse_timestamp_or_now(updated_at),
                 })
             })
             .map_err(|e| match e {
@@ -280,10 +275,7 @@ impl Database {
 
                 Ok(SyncHistoryEntry {
                     id,
-                    timestamp: chrono::Utc
-                        .timestamp_opt(timestamp, 0)
-                        .single()
-                        .unwrap_or_else(chrono::Utc::now),
+                    timestamp: parse_timestamp_or_now(timestamp),
                     files_written,
                     status,
                     triggered_by,

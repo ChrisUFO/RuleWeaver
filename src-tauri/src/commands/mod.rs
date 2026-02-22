@@ -138,7 +138,8 @@ pub fn resolve_conflict(
             engine.sync_file_by_path(&rules, &file_path)?;
         }
         "keep-remote" => {
-            let content = fs::read_to_string(&file_path)?;
+            let validated_path = validate_path(&file_path)?;
+            let content = fs::read_to_string(validated_path)?;
             let hash = crate::sync::compute_content_hash_public(&content);
             db.set_file_hash(&file_path, &hash)?;
         }
@@ -179,10 +180,7 @@ pub fn get_app_data_path_cmd(app: tauri::AppHandle) -> Result<String> {
 
 #[tauri::command]
 pub fn open_in_explorer(path: String) -> Result<()> {
-    let validated_path =
-        std::fs::canonicalize(&path).map_err(|e| crate::error::AppError::InvalidInput {
-            message: format!("Invalid path: {}", e),
-        })?;
+    let validated_path = validate_path(&path)?;
 
     #[cfg(target_os = "windows")]
     {
