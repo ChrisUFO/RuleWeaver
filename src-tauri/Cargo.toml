@@ -5,6 +5,14 @@ description = "A unified desktop app for managing AI coding assistant rules and 
 authors = ["ChrisUFO"]
 edition = "2021"
 
+[[bin]]
+name = "ruleweaver"
+path = "src/main.rs"
+
+[[bin]]
+name = "mcp-server"
+path = "src/bin/mcp-server.rs"
+
 [lib]
 name = "ruleweaver_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
@@ -29,3 +37,5 @@ glob = "0.3"
 walkdir = "2"
 tokio = { version = "1", features = ["full"] }
 regex = "1"
+log = "0.4"
+env_logger = "0.11"

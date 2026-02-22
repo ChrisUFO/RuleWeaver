@@ -1,7 +1,6 @@
-use std::process::Command as ProcessCommand;
-use std::sync::mpsc;
-use std::thread;
 use std::time::Duration;
+use tokio::process::Command as TokioCommand;
+use tokio::time::timeout;
 
 use crate::error::{AppError, Result};
 
@@ -62,7 +61,7 @@ pub fn sanitize_argument_value(value: &str) -> Result<String> {
     }
 
     let dangerous_tokens = [
-        ";", "&&", "||", "|", "`", "$(", ")", "<", ">", "<<", "<&", ">&", "eval", "exec",
+        ";", "&&", "&", "||", "|", "`", "$(", ")", "<", ">", "<<", "<&", ">&", "eval", "exec",
     ];
     let lower = value.to_lowercase();
     for token in dangerous_tokens {
@@ -105,9 +104,9 @@ pub fn contains_disallowed_pattern(script: &str) -> Option<&'static str> {
     None
 }
 
-pub fn execute_shell_with_timeout(
+pub async fn execute_shell_with_timeout(
     script: &str,
-    timeout: Duration,
+    timeout_dur: Duration,
 ) -> Result<(i32, String, String)> {
     if script.trim().is_empty() {
         return Err(AppError::InvalidInput {
@@ -121,24 +120,19 @@ pub fn execute_shell_with_timeout(
         });
     }
 
-    let script_owned = script.to_string();
-    let (tx, rx) = mpsc::channel();
+    #[cfg(target_os = "windows")]
+    let mut cmd = TokioCommand::new("cmd");
+    #[cfg(target_os = "windows")]
+    cmd.args(["/C", script]);
 
-    thread::spawn(move || {
-        #[cfg(target_os = "windows")]
-        let output = ProcessCommand::new("cmd")
-            .args(["/C", &script_owned])
-            .output();
+    #[cfg(not(target_os = "windows"))]
+    let mut cmd = TokioCommand::new("sh");
+    #[cfg(not(target_os = "windows"))]
+    cmd.args(["-c", script]);
 
-        #[cfg(not(target_os = "windows"))]
-        let output = ProcessCommand::new("sh")
-            .args(["-c", &script_owned])
-            .output();
+    let future = cmd.output();
 
-        let _ = tx.send(output);
-    });
-
-    match rx.recv_timeout(timeout) {
+    match timeout(timeout_dur, future).await {
         Ok(Ok(output)) => {
             let stdout = String::from_utf8_lossy(&output.stdout).to_string();
             let stderr = String::from_utf8_lossy(&output.stderr).to_string();
@@ -146,14 +140,14 @@ pub fn execute_shell_with_timeout(
         }
         Ok(Err(e)) => Err(AppError::Io(e)),
         Err(_) => Err(AppError::InvalidInput {
-            message: format!("Execution timed out after {}s", timeout.as_secs()),
+            message: format!("Execution timed out after {}s", timeout_dur.as_secs()),
         }),
     }
 }
 
-pub fn execute_shell_with_timeout_env(
+pub async fn execute_shell_with_timeout_env(
     script: &str,
-    timeout: Duration,
+    timeout_dur: Duration,
     envs: &[(String, String)],
 ) -> Result<(i32, String, String)> {
     if script.trim().is_empty() {
@@ -168,31 +162,21 @@ pub fn execute_shell_with_timeout_env(
         });
     }
 
-    let script_owned = script.to_string();
-    let env_owned = envs.to_vec();
-    let (tx, rx) = mpsc::channel();
+    #[cfg(target_os = "windows")]
+    let mut cmd = TokioCommand::new("cmd");
+    #[cfg(target_os = "windows")]
+    cmd.args(["/C", script]);
 
-    thread::spawn(move || {
-        #[cfg(target_os = "windows")]
-        let output = {
-            let mut cmd = ProcessCommand::new("cmd");
-            cmd.args(["/C", &script_owned]);
-            cmd.envs(env_owned.iter().cloned());
-            cmd.output()
-        };
+    #[cfg(not(target_os = "windows"))]
+    let mut cmd = TokioCommand::new("sh");
+    #[cfg(not(target_os = "windows"))]
+    cmd.args(["-c", script]);
 
-        #[cfg(not(target_os = "windows"))]
-        let output = {
-            let mut cmd = ProcessCommand::new("sh");
-            cmd.args(["-c", &script_owned]);
-            cmd.envs(env_owned.iter().cloned());
-            cmd.output()
-        };
+    cmd.envs(envs.iter().cloned());
 
-        let _ = tx.send(output);
-    });
+    let future = cmd.output();
 
-    match rx.recv_timeout(timeout) {
+    match timeout(timeout_dur, future).await {
         Ok(Ok(output)) => {
             let stdout = String::from_utf8_lossy(&output.stdout).to_string();
             let stderr = String::from_utf8_lossy(&output.stderr).to_string();
@@ -200,7 +184,7 @@ pub fn execute_shell_with_timeout_env(
         }
         Ok(Err(e)) => Err(AppError::Io(e)),
         Err(_) => Err(AppError::InvalidInput {
-            message: format!("Execution timed out after {}s", timeout.as_secs()),
+            message: format!("Execution timed out after {}s", timeout_dur.as_secs()),
         }),
     }
 }

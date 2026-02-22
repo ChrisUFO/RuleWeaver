@@ -15,6 +15,7 @@ use crate::sync::SyncEngine;
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 use tauri::State;
 
@@ -270,7 +271,7 @@ fn storage_location_for_rule(rule: &Rule) -> file_storage::StorageLocation {
 }
 
 #[tauri::command]
-pub fn get_all_rules(db: State<'_, Database>) -> Result<Vec<Rule>> {
+pub fn get_all_rules(db: State<'_, Arc<Database>>) -> Result<Vec<Rule>> {
     if use_file_storage(&db) {
         let local_roots = get_local_rule_roots(&db);
         let loaded = file_storage::load_rules_from_locations(&local_roots)?;
@@ -281,7 +282,7 @@ pub fn get_all_rules(db: State<'_, Database>) -> Result<Vec<Rule>> {
 }
 
 #[tauri::command]
-pub fn get_rule_by_id(id: String, db: State<'_, Database>) -> Result<Rule> {
+pub fn get_rule_by_id(id: String, db: State<'_, Arc<Database>>) -> Result<Rule> {
     if use_file_storage(&db) {
         let local_roots = get_local_rule_roots(&db);
         let loaded = file_storage::load_rules_from_locations(&local_roots)?;
@@ -296,7 +297,7 @@ pub fn get_rule_by_id(id: String, db: State<'_, Database>) -> Result<Rule> {
 }
 
 #[tauri::command]
-pub fn create_rule(input: CreateRuleInput, db: State<'_, Database>) -> Result<Rule> {
+pub fn create_rule(input: CreateRuleInput, db: State<'_, Arc<Database>>) -> Result<Rule> {
     validate_rule_input(&input.name, &input.content)?;
     let created = db.create_rule(input)?;
 
@@ -311,7 +312,7 @@ pub fn create_rule(input: CreateRuleInput, db: State<'_, Database>) -> Result<Ru
 }
 
 #[tauri::command]
-pub fn update_rule(id: String, input: UpdateRuleInput, db: State<'_, Database>) -> Result<Rule> {
+pub fn update_rule(id: String, input: UpdateRuleInput, db: State<'_, Arc<Database>>) -> Result<Rule> {
     if let Some(ref name) = input.name {
         if let Some(ref content) = input.content {
             validate_rule_input(name, content)?;
@@ -336,7 +337,7 @@ pub fn update_rule(id: String, input: UpdateRuleInput, db: State<'_, Database>) 
 }
 
 #[tauri::command]
-pub fn delete_rule(id: String, db: State<'_, Database>) -> Result<()> {
+pub fn delete_rule(id: String, db: State<'_, Arc<Database>>) -> Result<()> {
     if use_file_storage(&db) {
         if let Ok(existing) = db.get_rule_by_id(&id) {
             let location = storage_location_for_rule(&existing);
@@ -348,7 +349,7 @@ pub fn delete_rule(id: String, db: State<'_, Database>) -> Result<()> {
 }
 
 #[tauri::command]
-pub fn toggle_rule(id: String, enabled: bool, db: State<'_, Database>) -> Result<Rule> {
+pub fn toggle_rule(id: String, enabled: bool, db: State<'_, Arc<Database>>) -> Result<Rule> {
     let toggled = db.toggle_rule(&id, enabled)?;
 
     if use_file_storage(&db) {
@@ -362,7 +363,7 @@ pub fn toggle_rule(id: String, enabled: bool, db: State<'_, Database>) -> Result
 }
 
 #[tauri::command]
-pub fn migrate_to_file_storage(db: State<'_, Database>) -> Result<file_storage::MigrationResult> {
+pub fn migrate_to_file_storage(db: State<'_, Arc<Database>>) -> Result<file_storage::MigrationResult> {
     let result = file_storage::migrate_to_file_storage(&db)?;
     if result.success {
         db.set_storage_mode("file")?;
@@ -374,14 +375,14 @@ pub fn migrate_to_file_storage(db: State<'_, Database>) -> Result<file_storage::
 }
 
 #[tauri::command]
-pub fn rollback_file_migration(backup_path: String, db: State<'_, Database>) -> Result<()> {
+pub fn rollback_file_migration(backup_path: String, db: State<'_, Arc<Database>>) -> Result<()> {
     file_storage::rollback_migration(&backup_path)?;
     db.set_storage_mode("sqlite")?;
     db.set_setting("file_storage_backup_path", "")
 }
 
 #[tauri::command]
-pub fn verify_file_migration(db: State<'_, Database>) -> Result<file_storage::VerificationResult> {
+pub fn verify_file_migration(db: State<'_, Arc<Database>>) -> Result<file_storage::VerificationResult> {
     file_storage::verify_migration(&db)
 }
 
@@ -408,24 +409,24 @@ pub fn get_storage_info() -> Result<HashMap<String, String>> {
 }
 
 #[tauri::command]
-pub fn get_storage_mode(db: State<'_, Database>) -> Result<String> {
+pub fn get_storage_mode(db: State<'_, Arc<Database>>) -> Result<String> {
     db.get_storage_mode()
 }
 
 #[tauri::command]
-pub fn get_all_commands(db: State<'_, Database>) -> Result<Vec<Command>> {
+pub fn get_all_commands(db: State<'_, Arc<Database>>) -> Result<Vec<Command>> {
     db.get_all_commands()
 }
 
 #[tauri::command]
-pub fn get_command_by_id(id: String, db: State<'_, Database>) -> Result<Command> {
+pub fn get_command_by_id(id: String, db: State<'_, Arc<Database>>) -> Result<Command> {
     db.get_command_by_id(&id)
 }
 
 #[tauri::command]
 pub fn create_command(
     input: CreateCommandInput,
-    db: State<'_, Database>,
+    db: State<'_, Arc<Database>>,
     mcp: State<'_, McpManager>,
 ) -> Result<Command> {
     validate_command_input(&input.name, &input.script)?;
@@ -438,7 +439,7 @@ pub fn create_command(
 pub fn update_command(
     id: String,
     input: UpdateCommandInput,
-    db: State<'_, Database>,
+    db: State<'_, Arc<Database>>,
     mcp: State<'_, McpManager>,
 ) -> Result<Command> {
     if let Some(name) = &input.name {
@@ -461,7 +462,7 @@ pub fn update_command(
 #[tauri::command]
 pub fn delete_command(
     id: String,
-    db: State<'_, Database>,
+    db: State<'_, Arc<Database>>,
     mcp: State<'_, McpManager>,
 ) -> Result<()> {
     db.delete_command(&id)?;
@@ -470,10 +471,10 @@ pub fn delete_command(
 }
 
 #[tauri::command]
-pub fn test_command(
+pub async fn test_command(
     id: String,
     args: HashMap<String, String>,
-    db: State<'_, Database>,
+    db: State<'_, Arc<Database>>,
 ) -> Result<TestCommandResult> {
     let cmd = db.get_command_by_id(&id)?;
     let mut script = cmd.script.clone();
@@ -493,7 +494,7 @@ pub fn test_command(
 
     let start = std::time::Instant::now();
     let (exit_code, stdout, stderr) =
-        execute_shell_with_timeout_env(&script, Duration::from_secs(30), &envs)?;
+        execute_shell_with_timeout_env(&script, Duration::from_secs(30), &envs).await?;
     let duration_ms = start.elapsed().as_millis() as u64;
     let success = exit_code == 0;
 
@@ -519,7 +520,7 @@ pub fn test_command(
 }
 
 #[tauri::command]
-pub fn sync_commands(db: State<'_, Database>) -> Result<SyncResult> {
+pub fn sync_commands(db: State<'_, Arc<Database>>) -> Result<SyncResult> {
     let commands = db.get_all_commands()?;
     let mut files_written = Vec::new();
     let mut errors = Vec::new();
@@ -564,23 +565,23 @@ pub fn sync_commands(db: State<'_, Database>) -> Result<SyncResult> {
 }
 
 #[tauri::command]
-pub fn get_all_skills(db: State<'_, Database>) -> Result<Vec<Skill>> {
+pub fn get_all_skills(db: State<'_, Arc<Database>>) -> Result<Vec<Skill>> {
     db.get_all_skills()
 }
 
 #[tauri::command]
-pub fn get_skill_by_id(id: String, db: State<'_, Database>) -> Result<Skill> {
+pub fn get_skill_by_id(id: String, db: State<'_, Arc<Database>>) -> Result<Skill> {
     db.get_skill_by_id(&id)
 }
 
 #[tauri::command]
-pub fn create_skill(input: CreateSkillInput, db: State<'_, Database>) -> Result<Skill> {
+pub fn create_skill(input: CreateSkillInput, db: State<'_, Arc<Database>>) -> Result<Skill> {
     validate_skill_input(&input.name, &input.instructions)?;
     db.create_skill(input)
 }
 
 #[tauri::command]
-pub fn update_skill(id: String, input: UpdateSkillInput, db: State<'_, Database>) -> Result<Skill> {
+pub fn update_skill(id: String, input: UpdateSkillInput, db: State<'_, Arc<Database>>) -> Result<Skill> {
     if let Some(ref name) = input.name {
         if let Some(ref instructions) = input.instructions {
             validate_skill_input(name, instructions)?;
@@ -597,7 +598,7 @@ pub fn update_skill(id: String, input: UpdateSkillInput, db: State<'_, Database>
 }
 
 #[tauri::command]
-pub fn delete_skill(id: String, db: State<'_, Database>) -> Result<()> {
+pub fn delete_skill(id: String, db: State<'_, Arc<Database>>) -> Result<()> {
     db.delete_skill(&id)
 }
 
@@ -607,7 +608,7 @@ pub fn get_mcp_status(mcp: State<'_, McpManager>) -> Result<McpStatus> {
 }
 
 #[tauri::command]
-pub fn start_mcp_server(db: State<'_, Database>, mcp: State<'_, McpManager>) -> Result<()> {
+pub fn start_mcp_server(db: State<'_, Arc<Database>>, mcp: State<'_, McpManager>) -> Result<()> {
     mcp.start(&db)
 }
 
@@ -617,7 +618,7 @@ pub fn stop_mcp_server(mcp: State<'_, McpManager>) -> Result<()> {
 }
 
 #[tauri::command]
-pub fn restart_mcp_server(db: State<'_, Database>, mcp: State<'_, McpManager>) -> Result<()> {
+pub fn restart_mcp_server(db: State<'_, Arc<Database>>, mcp: State<'_, McpManager>) -> Result<()> {
     mcp.stop()?;
     mcp.start(&db)
 }
@@ -637,20 +638,20 @@ pub fn get_mcp_logs(limit: Option<u32>, mcp: State<'_, McpManager>) -> Result<Ve
 #[tauri::command]
 pub fn get_execution_history(
     limit: Option<u32>,
-    db: State<'_, Database>,
+    db: State<'_, Arc<Database>>,
 ) -> Result<Vec<ExecutionLog>> {
     db.get_execution_history(limit.unwrap_or(100))
 }
 
 #[tauri::command]
-pub fn sync_rules(db: State<'_, Database>) -> Result<SyncResult> {
+pub fn sync_rules(db: State<'_, Arc<Database>>) -> Result<SyncResult> {
     let rules = db.get_all_rules()?;
     let engine = SyncEngine::new(&db);
     Ok(engine.sync_all(rules))
 }
 
 #[tauri::command]
-pub fn preview_sync(db: State<'_, Database>) -> Result<SyncResult> {
+pub fn preview_sync(db: State<'_, Arc<Database>>) -> Result<SyncResult> {
     let rules = db.get_all_rules()?;
     let engine = SyncEngine::new(&db);
     Ok(engine.preview(rules))
@@ -659,7 +660,7 @@ pub fn preview_sync(db: State<'_, Database>) -> Result<SyncResult> {
 #[tauri::command]
 pub fn get_sync_history(
     limit: Option<u32>,
-    db: State<'_, Database>,
+    db: State<'_, Arc<Database>>,
 ) -> Result<Vec<SyncHistoryEntry>> {
     db.get_sync_history(limit.unwrap_or(50))
 }
@@ -675,7 +676,7 @@ pub fn read_file_content(path: String) -> Result<String> {
 pub fn resolve_conflict(
     file_path: String,
     resolution: String,
-    db: State<'_, Database>,
+    db: State<'_, Arc<Database>>,
 ) -> Result<()> {
     match resolution.as_str() {
         "overwrite" => {
@@ -704,17 +705,17 @@ pub fn get_app_version() -> String {
 }
 
 #[tauri::command]
-pub fn get_setting(key: String, db: State<'_, Database>) -> Result<Option<String>> {
+pub fn get_setting(key: String, db: State<'_, Arc<Database>>) -> Result<Option<String>> {
     db.get_setting(&key)
 }
 
 #[tauri::command]
-pub fn set_setting(key: String, value: String, db: State<'_, Database>) -> Result<()> {
+pub fn set_setting(key: String, value: String, db: State<'_, Arc<Database>>) -> Result<()> {
     db.set_setting(&key, &value)
 }
 
 #[tauri::command]
-pub fn get_all_settings(db: State<'_, Database>) -> Result<HashMap<String, String>> {
+pub fn get_all_settings(db: State<'_, Arc<Database>>) -> Result<HashMap<String, String>> {
     db.get_all_settings()
 }
 

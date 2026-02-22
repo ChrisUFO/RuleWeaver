@@ -9,6 +9,7 @@ mod sync;
 
 use database::Database;
 use mcp::McpManager;
+use std::sync::Arc;
 use tauri::menu::{MenuBuilder, MenuItemBuilder};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::Manager;
@@ -20,7 +21,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
-            let db = Database::new(app.handle())?;
+            let db = Arc::new(Database::new(app.handle())?);
             let mcp_manager = McpManager::new(8080);
 
             let auto_start_mcp = db
@@ -115,7 +116,7 @@ pub fn run() {
                 });
             }
 
-            app.manage(db);
+            app.manage(Arc::clone(&db));
             app.manage(mcp_manager);
             Ok(())
         })
@@ -168,17 +169,19 @@ pub fn run() {
 }
 
 pub fn run_mcp_cli(port: u16) -> std::result::Result<(), String> {
-    let db = Database::new_for_cli().map_err(|e| e.to_string())?;
+    let db = Arc::new(Database::new_for_cli().map_err(|e| e.to_string())?);
     let manager = McpManager::new(port);
     manager.start(&db).map_err(|e| e.to_string())?;
 
-    loop {
-        std::thread::sleep(std::time::Duration::from_secs(1));
-        let status = manager.status().map_err(|e| e.to_string())?;
-        if !status.running {
-            break;
+    let rt = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
+    rt.block_on(async {
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            let status = manager.status().map_err(|e| e.to_string())?;
+            if !status.running {
+                break;
+            }
         }
-    }
-
-    Ok(())
+        Ok(())
+    })
 }

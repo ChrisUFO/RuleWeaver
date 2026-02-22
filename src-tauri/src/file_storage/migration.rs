@@ -176,7 +176,8 @@ pub fn migrate_to_file_storage(db: &Database) -> Result<MigrationResult> {
 
 fn create_backup(db: &Database) -> Result<String> {
     let db_path = db.get_database_path()?;
-    let backup_path = format!("{}.migration-backup", db_path);
+    let now = chrono::Local::now().format("%Y%m%d%H%M%S");
+    let backup_path = format!("{}.{}.migration-backup", db_path, now);
 
     fs::copy(&db_path, &backup_path).map_err(|e| AppError::InvalidInput {
         message: format!("Failed to create database backup: {}", e),
@@ -186,7 +187,16 @@ fn create_backup(db: &Database) -> Result<String> {
 }
 
 pub fn rollback_migration(backup_path: &str) -> Result<()> {
-    let db_path = backup_path.trim_end_matches(".migration-backup");
+    // backup_path: /path/to/db.timestamp.migration-backup
+    let db_path = if let Some(stripped) = backup_path.strip_suffix(".migration-backup") {
+        if let Some(last_dot_idx) = stripped.rfind('.') {
+            &stripped[..last_dot_idx]
+        } else {
+            stripped
+        }
+    } else {
+        backup_path
+    };
 
     if !PathBuf::from(backup_path).exists() {
         return Err(AppError::InvalidInput {

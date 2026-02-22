@@ -2,6 +2,7 @@ use chrono::{DateTime, Utc};
 use regex::Regex;
 use serde::Deserialize;
 use std::path::Path;
+use std::sync::OnceLock;
 
 use crate::error::{AppError, Result};
 use crate::models::{AdapterType, Rule, Scope};
@@ -108,11 +109,10 @@ pub fn parse_rule_file(file_path: &Path, raw_content: &str) -> Result<ParsedRule
         });
     }
 
-    let re = Regex::new(r"^---\s*\n([\s\S]*?)\n---\s*\n?([\s\S]*)$").map_err(|e| {
-        AppError::InvalidInput {
-            message: format!("Regex compilation error: {}", e),
-        }
-    })?;
+    static RE: OnceLock<Regex> = OnceLock::new();
+    let re = RE.get_or_init(|| {
+        Regex::new(r"^---\s*\n([\s\S]*?)\n---\s*\n?([\s\S]*)$").expect("Invalid rule regex")
+    });
 
     let caps = re.captures(content).ok_or_else(|| AppError::InvalidInput {
         message: format!(

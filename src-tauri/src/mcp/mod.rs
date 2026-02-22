@@ -1,13 +1,12 @@
-use std::io::{Read, Write};
-use std::net::{TcpListener, TcpStream};
-use std::sync::mpsc::{channel, Receiver, Sender, TryRecvError};
 use std::sync::{Arc, Mutex};
-use std::thread;
 use std::time::{Duration, Instant};
 
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::broadcast;
 
 use crate::database::{Database, ExecutionLogInput};
 use crate::error::{AppError, Result};
@@ -45,10 +44,11 @@ struct McpRuntime {
     port: u16,
     started_at: Option<Instant>,
     logs: Vec<String>,
-    stop_tx: Option<Sender<()>>,
+    stop_tx: Option<broadcast::Sender<()>>,
     commands: Vec<Command>,
     skills: Vec<Skill>,
     invocation_timestamps: Vec<Instant>,
+    db: Option<Arc<Database>>,
 }
 
 #[derive(Clone, Debug)]
@@ -68,6 +68,7 @@ impl McpManager {
                 commands: Vec::new(),
                 skills: Vec::new(),
                 invocation_timestamps: Vec::new(),
+                db: None,
             })),
         }
     }
@@ -81,12 +82,16 @@ impl McpManager {
         Ok(())
     }
 
-    fn snapshot(&self) -> Result<(Vec<Command>, Vec<Skill>)> {
+    fn snapshot(&self) -> Result<(Vec<Command>, Vec<Skill>, Option<Arc<Database>>)> {
         let state = self.inner.lock().map_err(|_| AppError::LockError)?;
-        Ok((state.commands.clone(), state.skills.clone()))
+        Ok((
+            state.commands.clone(),
+            state.skills.clone(),
+            state.db.clone(),
+        ))
     }
 
-    pub fn start(&self, db: &Database) -> Result<()> {
+    pub fn start(&self, db: &Arc<Database>) -> Result<()> {
         self.refresh_commands(db)?;
 
         let port = {
@@ -97,19 +102,21 @@ impl McpManager {
             state.running = true;
             state.started_at = Some(Instant::now());
             state.logs.push("Starting MCP server".to_string());
+            state.db = Some(Arc::clone(db));
             state.port
         };
 
-        let (stop_tx, stop_rx): (Sender<()>, Receiver<()>) = channel();
+        let (stop_tx, _) = broadcast::channel(1);
         {
             let mut state = self.inner.lock().map_err(|_| AppError::LockError)?;
-            state.stop_tx = Some(stop_tx);
+            state.stop_tx = Some(stop_tx.clone());
         }
 
         let manager = self.clone();
-        thread::spawn(move || {
+        let mut stop_rx = stop_tx.subscribe();
+        tokio::spawn(async move {
             let bind_addr = format!("127.0.0.1:{}", port);
-            let listener = match TcpListener::bind(&bind_addr) {
+            let listener = match TcpListener::bind(&bind_addr).await {
                 Ok(listener) => listener,
                 Err(e) => {
                     let _ = manager.log(format!("Failed to bind MCP server {}: {}", bind_addr, e));
@@ -117,26 +124,29 @@ impl McpManager {
                     return;
                 }
             };
-            let _ = listener.set_nonblocking(true);
             let _ = manager.log(format!("MCP server listening on {}", bind_addr));
 
             loop {
-                match stop_rx.try_recv() {
-                    Ok(()) | Err(TryRecvError::Disconnected) => break,
-                    Err(TryRecvError::Empty) => {}
-                }
-
-                match listener.accept() {
-                    Ok((mut stream, addr)) => {
-                        let _ = manager.log(format!("Client connected: {}", addr));
-                        let _ = handle_client(&mut stream, &manager);
+                tokio::select! {
+                    _ = stop_rx.recv() => {
+                        break;
                     }
-                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                        thread::sleep(Duration::from_millis(50));
-                    }
-                    Err(e) => {
-                        let _ = manager.log(format!("Listener error: {}", e));
-                        thread::sleep(Duration::from_millis(200));
+                    accept_res = listener.accept() => {
+                        match accept_res {
+                            Ok((stream, addr)) => {
+                                let _ = manager.log(format!("Client connected: {}", addr));
+                                let manager_clone = manager.clone();
+                                tokio::spawn(async move {
+                                    if let Err(e) = handle_client(stream, &manager_clone).await {
+                                        let _ = manager_clone.log(format!("MCP handler error: {}", e));
+                                    }
+                                });
+                            }
+                            Err(e) => {
+                                let _ = manager.log(format!("Listener error: {}", e));
+                                tokio::time::sleep(Duration::from_millis(200)).await;
+                            }
+                        }
                     }
                 }
             }
@@ -252,8 +262,8 @@ struct JsonRpcRequest {
     params: Option<serde_json::Value>,
 }
 
-fn handle_client(stream: &mut TcpStream, manager: &McpManager) -> Result<()> {
-    let body = read_http_body(stream)?;
+async fn handle_client(mut stream: TcpStream, manager: &McpManager) -> Result<()> {
+    let body = read_http_body(&mut stream).await?;
 
     let request: JsonRpcRequest = match serde_json::from_str(body.trim()) {
         Ok(req) => req,
@@ -263,7 +273,7 @@ fn handle_client(stream: &mut TcpStream, manager: &McpManager) -> Result<()> {
         }
     };
 
-    let (commands, skills) = manager.snapshot()?;
+    let (commands, skills, shared_db) = manager.snapshot()?;
 
     let response = match request.method.as_str() {
         "initialize" => json!({
@@ -433,13 +443,15 @@ fn handle_client(stream: &mut TcpStream, manager: &McpManager) -> Result<()> {
                                 &rendered,
                                 Duration::from_secs(CMD_EXEC_TIMEOUT_SECS),
                                 &envs,
-                            ) {
+                            )
+                            .await
+                            {
                                 Ok((exit_code, stdout, stderr)) => {
                                     let _ = manager.log(format!(
                                         "MCP tools/call '{}' exit code {}",
                                         cmd.name, exit_code
                                     ));
-                                    if let Ok(db) = Database::new_for_cli() {
+                                    if let Some(db) = &shared_db {
                                         let args_json =
                                             serde_json::to_string(&args_map).unwrap_or_default();
                                         let _ = db.add_execution_log(&ExecutionLogInput {
@@ -525,7 +537,9 @@ fn handle_client(stream: &mut TcpStream, manager: &McpManager) -> Result<()> {
                             match execute_shell_with_timeout(
                                 step,
                                 Duration::from_secs(SKILL_EXEC_TIMEOUT_SECS),
-                            ) {
+                            )
+                            .await
+                            {
                                 Ok((exit_code, stdout, stderr)) => {
                                     output.push_str(&format!(
                                         "[step {}] exit_code: {}\nstdout:\n{}\nstderr:\n{}\n\n",
@@ -557,7 +571,7 @@ fn handle_client(stream: &mut TcpStream, manager: &McpManager) -> Result<()> {
                             if is_error { "failed" } else { "succeeded" }
                         ));
 
-                        if let Ok(db) = Database::new_for_cli() {
+                        if let Some(db) = &shared_db {
                             let args_json = serde_json::to_string(&args_map).unwrap_or_default();
                             let skill_name = format!("skill:{}", skill.name);
                             let _ = db.add_execution_log(&ExecutionLogInput {
@@ -613,16 +627,17 @@ fn handle_client(stream: &mut TcpStream, manager: &McpManager) -> Result<()> {
         payload
     );
 
-    stream.write_all(http_response.as_bytes())?;
-    stream.flush()?;
+    stream.write_all(http_response.as_bytes()).await?;
+    stream.flush().await?;
     Ok(())
 }
 
 fn extract_skill_steps(instructions: &str) -> Vec<String> {
-    let re = match Regex::new(r"(?s)```(?:bash|sh|shell|powershell|pwsh|cmd)?\n(.*?)```") {
-        Ok(v) => v,
-        Err(_) => return Vec::new(),
-    };
+    static RE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
+    let re = RE.get_or_init(|| {
+        Regex::new(r"(?s)```(?:bash|sh|shell|powershell|pwsh|cmd)?\n(.*?)```")
+            .expect("Invalid skill steps regex")
+    });
 
     re.captures_iter(instructions)
         .filter_map(|caps| caps.get(1).map(|m| m.as_str().trim().to_string()))
@@ -630,12 +645,12 @@ fn extract_skill_steps(instructions: &str) -> Vec<String> {
         .collect()
 }
 
-fn read_http_body(stream: &mut TcpStream) -> Result<String> {
+async fn read_http_body(stream: &mut TcpStream) -> Result<String> {
     let mut headers_buf = Vec::new();
     let mut temp = [0u8; 4096];
 
     loop {
-        let n = stream.read(&mut temp)?;
+        let n = stream.read(&mut temp).await?;
         if n == 0 {
             break;
         }
@@ -672,7 +687,7 @@ fn read_http_body(stream: &mut TcpStream) -> Result<String> {
         .unwrap_or(body.len());
 
     while body.len() < content_length {
-        let n = stream.read(&mut temp)?;
+        let n = stream.read(&mut temp).await?;
         if n == 0 {
             break;
         }
