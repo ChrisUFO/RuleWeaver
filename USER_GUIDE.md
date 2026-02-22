@@ -52,6 +52,11 @@ Current status:
 - Skills CRUD and UI are available.
 - Advanced MCP skill execution is planned next.
 
+Security note:
+
+- Skills run with your local user permissions.
+- Only enable/import Skills you trust.
+
 ## 4) MCP Server Modes
 
 RuleWeaver supports two MCP runtime modes:

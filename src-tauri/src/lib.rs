@@ -1,6 +1,7 @@
 mod commands;
 mod database;
 mod error;
+mod execution;
 mod file_storage;
 mod mcp;
 mod models;

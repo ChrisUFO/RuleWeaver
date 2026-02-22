@@ -18,6 +18,7 @@ export function Commands() {
   const [exposeViaMcp, setExposeViaMcp] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
+  const [testArgs, setTestArgs] = useState<Record<string, string>>({});
   const [testOutput, setTestOutput] = useState<{
     stdout: string;
     stderr: string;
@@ -76,6 +77,11 @@ export function Commands() {
     setDescription(selected.description);
     setScript(selected.script);
     setExposeViaMcp(Boolean(selected.expose_via_mcp));
+    const nextArgs: Record<string, string> = {};
+    for (const arg of selected.arguments) {
+      nextArgs[arg.name] = arg.default_value ?? "";
+    }
+    setTestArgs(nextArgs);
   }, [selected]);
 
   const handleCreate = async () => {
@@ -148,7 +154,12 @@ export function Commands() {
     if (!selected) return;
     setIsTesting(true);
     try {
-      const result = await api.commands.test(selected.id, {});
+      const payload: Record<string, string> = {};
+      for (const arg of selected.arguments) {
+        payload[arg.name] = testArgs[arg.name] ?? "";
+      }
+
+      const result = await api.commands.test(selected.id, payload);
       setTestOutput({
         stdout: result.stdout,
         stderr: result.stderr,
@@ -287,6 +298,29 @@ export function Commands() {
                 </div>
                 <Switch checked={exposeViaMcp} onCheckedChange={setExposeViaMcp} />
               </div>
+
+              {selected.arguments.length > 0 && (
+                <div className="rounded-md border p-3 space-y-2">
+                  <div className="text-sm font-medium">Test Arguments</div>
+                  {selected.arguments.map((arg) => (
+                    <div key={arg.name} className="grid gap-1">
+                      <label className="text-xs text-muted-foreground">
+                        {arg.name} {arg.required ? "(required)" : "(optional)"}
+                      </label>
+                      <Input
+                        value={testArgs[arg.name] ?? ""}
+                        onChange={(e) =>
+                          setTestArgs((prev) => ({
+                            ...prev,
+                            [arg.name]: e.target.value,
+                          }))
+                        }
+                        placeholder={arg.description || arg.name}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
 
               <div className="flex flex-wrap gap-2">
                 <Button onClick={handleSave} disabled={isSaving}>

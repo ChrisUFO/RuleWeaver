@@ -152,6 +152,10 @@ export function Skills() {
           <CardDescription>Define reusable instructions and workflow context.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
+            Security warning: Skills execute shell commands with your current user privileges. Treat
+            imported or shared skills as trusted code only.
+          </div>
           {!selected ? (
             <p className="text-sm text-muted-foreground">Select a skill or create a new one.</p>
           ) : (

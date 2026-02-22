@@ -1,6 +1,5 @@
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::process::Command as ProcessCommand;
 use std::sync::mpsc::{channel, Receiver, Sender, TryRecvError};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -10,12 +9,21 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use crate::database::Database;
+use crate::database::{Database, ExecutionLogInput};
 use crate::error::{AppError, Result};
+use crate::execution::{
+    argument_env_var_name, contains_disallowed_pattern, execute_shell_with_timeout,
+    execute_shell_with_timeout_env, replace_template_with_env_ref, sanitize_argument_value,
+    slugify,
+};
 use crate::models::{Command, Skill};
 
 const MAX_SKILL_STEPS: usize = 10;
 const MAX_STEP_LENGTH: usize = 4000;
+const CMD_EXEC_TIMEOUT_SECS: u64 = 60;
+const SKILL_EXEC_TIMEOUT_SECS: u64 = 60;
+const MCP_RATE_LIMIT_WINDOW_SECS: u64 = 10;
+const MCP_RATE_LIMIT_MAX_CALLS: usize = 30;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct McpStatus {
@@ -40,6 +48,7 @@ struct McpRuntime {
     stop_tx: Option<Sender<()>>,
     commands: Vec<Command>,
     skills: Vec<Skill>,
+    invocation_timestamps: Vec<Instant>,
 }
 
 #[derive(Clone, Debug)]
@@ -58,6 +67,7 @@ impl McpManager {
                 stop_tx: None,
                 commands: Vec::new(),
                 skills: Vec::new(),
+                invocation_timestamps: Vec::new(),
             })),
         }
     }
@@ -220,6 +230,19 @@ impl McpManager {
         state.started_at = None;
         Ok(())
     }
+
+    fn allow_invocation(&self) -> Result<bool> {
+        let mut state = self.inner.lock().map_err(|_| AppError::LockError)?;
+        let cutoff = Instant::now() - Duration::from_secs(MCP_RATE_LIMIT_WINDOW_SECS);
+        state.invocation_timestamps.retain(|t| *t >= cutoff);
+
+        if state.invocation_timestamps.len() >= MCP_RATE_LIMIT_MAX_CALLS {
+            return Ok(false);
+        }
+
+        state.invocation_timestamps.push(Instant::now());
+        Ok(true)
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -230,18 +253,7 @@ struct JsonRpcRequest {
 }
 
 fn handle_client(stream: &mut TcpStream, manager: &McpManager) -> Result<()> {
-    let mut buffer = vec![0u8; 64 * 1024];
-    let bytes_read = stream.read(&mut buffer)?;
-    if bytes_read == 0 {
-        return Ok(());
-    }
-    let raw = String::from_utf8_lossy(&buffer[..bytes_read]);
-
-    let body = if let Some(idx) = raw.find("\r\n\r\n") {
-        &raw[idx + 4..]
-    } else {
-        raw.as_ref()
-    };
+    let body = read_http_body(stream)?;
 
     let request: JsonRpcRequest = match serde_json::from_str(body.trim()) {
         Ok(req) => req,
@@ -328,202 +340,260 @@ fn handle_client(stream: &mut TcpStream, manager: &McpManager) -> Result<()> {
             })
         }
         "tools/call" => {
-            let params = request.params.unwrap_or_else(|| json!({}));
-            let name = params
-                .get("name")
-                .and_then(|v| v.as_str())
-                .unwrap_or_default()
-                .to_string();
+            if !manager.allow_invocation()? {
+                json!({
+                    "jsonrpc": "2.0",
+                    "id": request.id,
+                    "error": {
+                        "code": -32029,
+                        "message": "Rate limit exceeded. Please retry shortly."
+                    }
+                })
+            } else {
+                let params = request.params.unwrap_or_else(|| json!({}));
+                let name = params
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string();
 
-            let args_map = params
-                .get("arguments")
-                .and_then(|v| v.as_object())
-                .cloned()
-                .unwrap_or_default();
+                let args_map = params
+                    .get("arguments")
+                    .and_then(|v| v.as_object())
+                    .cloned()
+                    .unwrap_or_default();
 
-            if let Some(cmd) = commands.iter().find(|c| c.name == name && c.expose_via_mcp) {
-                let missing_required: Vec<String> = cmd
-                    .arguments
+                if let Some(cmd) = commands.iter().find(|c| c.name == name && c.expose_via_mcp) {
+                    let missing_required: Vec<String> = cmd
+                        .arguments
+                        .iter()
+                        .filter(|arg| {
+                            arg.required
+                                && !args_map.contains_key(&arg.name)
+                                && arg
+                                    .default_value
+                                    .as_ref()
+                                    .map(|v| v.is_empty())
+                                    .unwrap_or(true)
+                        })
+                        .map(|arg| arg.name.clone())
+                        .collect();
+
+                    if !missing_required.is_empty() {
+                        json!({
+                            "jsonrpc": "2.0",
+                            "id": request.id,
+                            "error": {
+                                "code": -32602,
+                                "message": format!("Missing required arguments: {}", missing_required.join(", "))
+                            }
+                        })
+                    } else {
+                        let mut rendered = cmd.script.clone();
+                        let mut envs: Vec<(String, String)> = Vec::new();
+                        let mut invalid_arg_message: Option<String> = None;
+
+                        for arg in &cmd.arguments {
+                            rendered = replace_template_with_env_ref(&rendered, &arg.name);
+
+                            let raw_value = args_map
+                                .get(&arg.name)
+                                .map(|v| {
+                                    if let Some(s) = v.as_str() {
+                                        s.to_string()
+                                    } else {
+                                        v.to_string()
+                                    }
+                                })
+                                .or_else(|| arg.default_value.clone())
+                                .unwrap_or_default();
+
+                            match sanitize_argument_value(&raw_value) {
+                                Ok(safe_value) => {
+                                    envs.push((argument_env_var_name(&arg.name), safe_value));
+                                }
+                                Err(e) => {
+                                    invalid_arg_message = Some(e.to_string());
+                                    break;
+                                }
+                            }
+                        }
+
+                        if let Some(message) = invalid_arg_message {
+                            json!({
+                                "jsonrpc": "2.0",
+                                "id": request.id,
+                                "error": {
+                                    "code": -32602,
+                                    "message": format!("Invalid argument value: {}", message)
+                                }
+                            })
+                        } else {
+                            match execute_shell_with_timeout_env(
+                                &rendered,
+                                Duration::from_secs(CMD_EXEC_TIMEOUT_SECS),
+                                &envs,
+                            ) {
+                                Ok((exit_code, stdout, stderr)) => {
+                                    let _ = manager.log(format!(
+                                        "MCP tools/call '{}' exit code {}",
+                                        cmd.name, exit_code
+                                    ));
+                                    if let Ok(db) = Database::new_for_cli() {
+                                        let args_json =
+                                            serde_json::to_string(&args_map).unwrap_or_default();
+                                        let _ = db.add_execution_log(&ExecutionLogInput {
+                                            command_id: &cmd.id,
+                                            command_name: &cmd.name,
+                                            arguments_json: &args_json,
+                                            stdout: &stdout,
+                                            stderr: &stderr,
+                                            exit_code,
+                                            duration_ms: 0,
+                                            triggered_by: "mcp",
+                                        });
+                                    }
+                                    json!({
+                                        "jsonrpc": "2.0",
+                                        "id": request.id,
+                                        "result": {
+                                            "content": [{
+                                                "type": "text",
+                                                "text": format!("exit_code: {}\n\nstdout:\n{}\n\nstderr:\n{}", exit_code, stdout, stderr)
+                                            }],
+                                            "is_error": exit_code != 0
+                                        }
+                                    })
+                                }
+                                Err(e) => json!({
+                                    "jsonrpc": "2.0",
+                                    "id": request.id,
+                                    "error": {
+                                        "code": -32000,
+                                        "message": format!("Failed to execute command: {}", e)
+                                    }
+                                }),
+                            }
+                        }
+                    }
+                } else if let Some(skill) = skills
                     .iter()
-                    .filter(|arg| {
-                        arg.required
-                            && !args_map.contains_key(&arg.name)
-                            && arg
-                                .default_value
-                                .as_ref()
-                                .map(|v| v.is_empty())
-                                .unwrap_or(true)
-                    })
-                    .map(|arg| arg.name.clone())
-                    .collect();
+                    .find(|s| s.enabled && format!("skill_{}", slugify(&s.name)) == name)
+                {
+                    let input = args_map
+                        .get("input")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or_default()
+                        .to_string();
 
-                if !missing_required.is_empty() {
+                    let rendered = skill.instructions.replace("{{input}}", &input);
+                    let steps = extract_skill_steps(&rendered);
+
+                    if steps.is_empty() {
+                        json!({
+                            "jsonrpc": "2.0",
+                            "id": request.id,
+                            "result": {
+                                "content": [{
+                                    "type": "text",
+                                    "text": rendered
+                                }],
+                                "is_error": false
+                            }
+                        })
+                    } else {
+                        let mut output = String::new();
+                        let mut is_error = false;
+
+                        for (idx, step) in steps.iter().take(MAX_SKILL_STEPS).enumerate() {
+                            if step.len() > MAX_STEP_LENGTH {
+                                is_error = true;
+                                output.push_str(&format!("Step {} rejected: too long\n", idx + 1));
+                                break;
+                            }
+
+                            if let Some(pattern) = contains_disallowed_pattern(step) {
+                                is_error = true;
+                                output.push_str(&format!(
+                                    "Step {} rejected due to unsafe pattern: {}\n",
+                                    idx + 1,
+                                    pattern
+                                ));
+                                break;
+                            }
+
+                            match execute_shell_with_timeout(
+                                step,
+                                Duration::from_secs(SKILL_EXEC_TIMEOUT_SECS),
+                            ) {
+                                Ok((exit_code, stdout, stderr)) => {
+                                    output.push_str(&format!(
+                                        "[step {}] exit_code: {}\nstdout:\n{}\nstderr:\n{}\n\n",
+                                        idx + 1,
+                                        exit_code,
+                                        stdout,
+                                        stderr
+                                    ));
+                                    if exit_code != 0 {
+                                        is_error = true;
+                                        break;
+                                    }
+                                }
+                                Err(e) => {
+                                    is_error = true;
+                                    output.push_str(&format!(
+                                        "[step {}] execution error: {}\n",
+                                        idx + 1,
+                                        e
+                                    ));
+                                    break;
+                                }
+                            }
+                        }
+
+                        let _ = manager.log(format!(
+                            "MCP tools/call '{}' skill execution {}",
+                            skill.name,
+                            if is_error { "failed" } else { "succeeded" }
+                        ));
+
+                        if let Ok(db) = Database::new_for_cli() {
+                            let args_json = serde_json::to_string(&args_map).unwrap_or_default();
+                            let skill_name = format!("skill:{}", skill.name);
+                            let _ = db.add_execution_log(&ExecutionLogInput {
+                                command_id: &skill.id,
+                                command_name: &skill_name,
+                                arguments_json: &args_json,
+                                stdout: &output,
+                                stderr: "",
+                                exit_code: if is_error { 1 } else { 0 },
+                                duration_ms: 0,
+                                triggered_by: "mcp-skill",
+                            });
+                        }
+
+                        json!({
+                            "jsonrpc": "2.0",
+                            "id": request.id,
+                            "result": {
+                                "content": [{
+                                    "type": "text",
+                                    "text": output
+                                }],
+                                "is_error": is_error
+                            }
+                        })
+                    }
+                } else {
                     json!({
                         "jsonrpc": "2.0",
                         "id": request.id,
                         "error": {
                             "code": -32602,
-                            "message": format!("Missing required arguments: {}", missing_required.join(", "))
-                        }
-                    })
-                } else {
-                    let mut rendered = cmd.script.clone();
-                    for arg in &cmd.arguments {
-                        let token = format!("{{{{{}}}}}", arg.name);
-                        let value = args_map
-                            .get(&arg.name)
-                            .map(|v| {
-                                if let Some(s) = v.as_str() {
-                                    s.to_string()
-                                } else {
-                                    v.to_string()
-                                }
-                            })
-                            .or_else(|| arg.default_value.clone())
-                            .unwrap_or_default();
-                        rendered = rendered.replace(&token, &value);
-                    }
-
-                    #[cfg(target_os = "windows")]
-                    let output = std::process::Command::new("cmd")
-                        .args(["/C", &rendered])
-                        .output();
-
-                    #[cfg(not(target_os = "windows"))]
-                    let output = std::process::Command::new("sh")
-                        .args(["-c", &rendered])
-                        .output();
-
-                    match output {
-                        Ok(output) => {
-                            let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-                            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-                            let exit_code = output.status.code().unwrap_or(-1);
-                            let _ = manager.log(format!(
-                                "MCP tools/call '{}' exit code {}",
-                                cmd.name, exit_code
-                            ));
-                            json!({
-                                "jsonrpc": "2.0",
-                                "id": request.id,
-                                "result": {
-                                    "content": [{
-                                        "type": "text",
-                                        "text": format!("exit_code: {}\n\nstdout:\n{}\n\nstderr:\n{}", exit_code, stdout, stderr)
-                                    }],
-                                    "is_error": exit_code != 0
-                                }
-                            })
-                        }
-                        Err(e) => json!({
-                            "jsonrpc": "2.0",
-                            "id": request.id,
-                            "error": {
-                                "code": -32000,
-                                "message": format!("Failed to execute command: {}", e)
-                            }
-                        }),
-                    }
-                }
-            } else if let Some(skill) = skills
-                .iter()
-                .find(|s| s.enabled && format!("skill_{}", slugify(&s.name)) == name)
-            {
-                let input = args_map
-                    .get("input")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or_default()
-                    .to_string();
-
-                let rendered = skill.instructions.replace("{{input}}", &input);
-                let steps = extract_skill_steps(&rendered);
-
-                if steps.is_empty() {
-                    json!({
-                        "jsonrpc": "2.0",
-                        "id": request.id,
-                        "result": {
-                            "content": [{
-                                "type": "text",
-                                "text": rendered
-                            }],
-                            "is_error": false
-                        }
-                    })
-                } else {
-                    let mut output = String::new();
-                    let mut is_error = false;
-
-                    for (idx, step) in steps.iter().take(MAX_SKILL_STEPS).enumerate() {
-                        if step.len() > MAX_STEP_LENGTH {
-                            is_error = true;
-                            output.push_str(&format!("Step {} rejected: too long\n", idx + 1));
-                            break;
-                        }
-
-                        if let Some(pattern) = contains_disallowed_pattern(step) {
-                            is_error = true;
-                            output.push_str(&format!(
-                                "Step {} rejected due to unsafe pattern: {}\n",
-                                idx + 1,
-                                pattern
-                            ));
-                            break;
-                        }
-
-                        match execute_shell(step) {
-                            Ok((exit_code, stdout, stderr)) => {
-                                output.push_str(&format!(
-                                    "[step {}] exit_code: {}\nstdout:\n{}\nstderr:\n{}\n\n",
-                                    idx + 1,
-                                    exit_code,
-                                    stdout,
-                                    stderr
-                                ));
-                                if exit_code != 0 {
-                                    is_error = true;
-                                    break;
-                                }
-                            }
-                            Err(e) => {
-                                is_error = true;
-                                output.push_str(&format!(
-                                    "[step {}] execution error: {}\n",
-                                    idx + 1,
-                                    e
-                                ));
-                                break;
-                            }
-                        }
-                    }
-
-                    let _ = manager.log(format!(
-                        "MCP tools/call '{}' skill execution {}",
-                        skill.name,
-                        if is_error { "failed" } else { "succeeded" }
-                    ));
-
-                    json!({
-                        "jsonrpc": "2.0",
-                        "id": request.id,
-                        "result": {
-                            "content": [{
-                                "type": "text",
-                                "text": output
-                            }],
-                            "is_error": is_error
+                            "message": format!("Unknown or disabled tool: {}", name)
                         }
                     })
                 }
-            } else {
-                json!({
-                    "jsonrpc": "2.0",
-                    "id": request.id,
-                    "error": {
-                        "code": -32602,
-                        "message": format!("Unknown or disabled tool: {}", name)
-                    }
-                })
             }
         }
         _ => json!({
@@ -548,21 +618,6 @@ fn handle_client(stream: &mut TcpStream, manager: &McpManager) -> Result<()> {
     Ok(())
 }
 
-fn slugify(input: &str) -> String {
-    let mut out = String::new();
-    for ch in input.chars() {
-        if ch.is_ascii_alphanumeric() {
-            out.push(ch.to_ascii_lowercase());
-        } else if ch.is_whitespace() || ch == '-' || ch == '_' {
-            out.push('-');
-        }
-    }
-    while out.contains("--") {
-        out = out.replace("--", "-");
-    }
-    out.trim_matches('-').to_string()
-}
-
 fn extract_skill_steps(instructions: &str) -> Vec<String> {
     let re = match Regex::new(r"(?s)```(?:bash|sh|shell|powershell|pwsh|cmd)?\n(.*?)```") {
         Ok(v) => v,
@@ -575,38 +630,61 @@ fn extract_skill_steps(instructions: &str) -> Vec<String> {
         .collect()
 }
 
-fn contains_disallowed_pattern(step: &str) -> Option<&'static str> {
-    let lower = step.to_lowercase();
-    let patterns: [(&str, &str); 8] = [
-        ("rm -rf", "rm -rf"),
-        ("del /f", "del /f"),
-        ("format ", "format"),
-        ("mkfs", "mkfs"),
-        ("shutdown", "shutdown"),
-        ("reboot", "reboot"),
-        ("curl |", "curl pipe"),
-        ("wget |", "wget pipe"),
-    ];
+fn read_http_body(stream: &mut TcpStream) -> Result<String> {
+    let mut headers_buf = Vec::new();
+    let mut temp = [0u8; 4096];
 
-    for (needle, name) in patterns {
-        if lower.contains(needle) {
-            return Some(name);
+    loop {
+        let n = stream.read(&mut temp)?;
+        if n == 0 {
+            break;
+        }
+        headers_buf.extend_from_slice(&temp[..n]);
+        if headers_buf.windows(4).any(|w| w == b"\r\n\r\n") {
+            break;
+        }
+        if headers_buf.len() > 1024 * 1024 {
+            return Err(AppError::InvalidInput {
+                message: "Request headers too large".to_string(),
+            });
         }
     }
 
-    None
-}
+    let raw = String::from_utf8_lossy(&headers_buf);
+    let split_idx = raw.find("\r\n\r\n").ok_or_else(|| AppError::InvalidInput {
+        message: "Malformed HTTP request".to_string(),
+    })?;
+    let headers = &raw[..split_idx];
+    let mut body = headers_buf[(split_idx + 4)..].to_vec();
 
-fn execute_shell(script: &str) -> Result<(i32, String, String)> {
-    #[cfg(target_os = "windows")]
-    let output = ProcessCommand::new("cmd").args(["/C", script]).output()?;
+    let content_length = headers
+        .lines()
+        .find_map(|line| {
+            let lower = line.to_lowercase();
+            if lower.starts_with("content-length:") {
+                line.split(':')
+                    .nth(1)
+                    .and_then(|v| v.trim().parse::<usize>().ok())
+            } else {
+                None
+            }
+        })
+        .unwrap_or(body.len());
 
-    #[cfg(not(target_os = "windows"))]
-    let output = ProcessCommand::new("sh").args(["-c", script]).output()?;
+    while body.len() < content_length {
+        let n = stream.read(&mut temp)?;
+        if n == 0 {
+            break;
+        }
+        body.extend_from_slice(&temp[..n]);
+        if body.len() > 2 * 1024 * 1024 {
+            return Err(AppError::InvalidInput {
+                message: "Request body too large".to_string(),
+            });
+        }
+    }
 
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-    Ok((output.status.code().unwrap_or(-1), stdout, stderr))
+    Ok(String::from_utf8_lossy(&body[..std::cmp::min(body.len(), content_length)]).to_string())
 }
 
 #[cfg(test)]
