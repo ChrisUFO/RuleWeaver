@@ -384,13 +384,13 @@ async fn mcp_handler(
         db: shared_db,
     } = match manager.snapshot().await {
         Ok(s) => s,
-        Err(e) => {
+        Err(_e) => {
             return Json(json!({
                 "jsonrpc": "2.0",
                 "id": request.id,
                 "error": {
                     "code": -32603,
-                    "message": format!("Internal server error: {}", e)
+                    "message": "Internal server error"
                 }
             })).into_response();
         }
@@ -507,13 +507,13 @@ async fn handle_tools_call(
 ) -> serde_json::Value {
     let allow = match manager.allow_invocation().await {
         Ok(a) => a,
-        Err(e) => {
+        Err(_) => {
             return json!({
                 "jsonrpc": "2.0",
                 "id": id,
                 "error": {
                     "code": -32603,
-                    "message": format!("Internal server error: {}", e)
+                    "message": "Internal server error"
                 }
             });
         }

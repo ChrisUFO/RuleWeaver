@@ -60,25 +60,19 @@ pub fn validate_path(path: &str) -> Result<PathBuf> {
 pub fn validate_rule_input(name: &str, content: &str) -> Result<()> {
     let trimmed_name = name.trim();
     if trimmed_name.is_empty() {
-        return Err(AppError::InvalidInput {
-            message: "Rule name cannot be empty".to_string(),
-        });
+        return Err(AppError::Validation("Rule name cannot be empty".to_string()));
     }
     if trimmed_name.len() > MAX_RULE_NAME_LENGTH {
-        return Err(AppError::InvalidInput {
-            message: format!(
-                "Rule name too long (max {} characters)",
-                MAX_RULE_NAME_LENGTH
-            ),
-        });
+        return Err(AppError::Validation(format!(
+            "Rule name too long (max {} characters)",
+            MAX_RULE_NAME_LENGTH
+        )));
     }
     if content.len() > MAX_RULE_CONTENT_LENGTH {
-        return Err(AppError::InvalidInput {
-            message: format!(
-                "Rule content too large (max {} characters)",
-                MAX_RULE_CONTENT_LENGTH
-            ),
-        });
+        return Err(AppError::Validation(format!(
+            "Rule content too large (max {} characters)",
+            MAX_RULE_CONTENT_LENGTH
+        )));
     }
     Ok(())
 }
@@ -86,30 +80,22 @@ pub fn validate_rule_input(name: &str, content: &str) -> Result<()> {
 pub fn validate_command_input(name: &str, script: &str) -> Result<()> {
     let trimmed_name = name.trim();
     if trimmed_name.is_empty() {
-        return Err(AppError::InvalidInput {
-            message: "Command name cannot be empty".to_string(),
-        });
+        return Err(AppError::Validation("Command name cannot be empty".to_string()));
     }
     if trimmed_name.len() > MAX_COMMAND_NAME_LENGTH {
-        return Err(AppError::InvalidInput {
-            message: format!(
-                "Command name too long (max {} characters)",
-                MAX_COMMAND_NAME_LENGTH
-            ),
-        });
+        return Err(AppError::Validation(format!(
+            "Command name too long (max {} characters)",
+            MAX_COMMAND_NAME_LENGTH
+        )));
     }
     if script.trim().is_empty() {
-        return Err(AppError::InvalidInput {
-            message: "Command script cannot be empty".to_string(),
-        });
+        return Err(AppError::Validation("Command script cannot be empty".to_string()));
     }
     if script.len() > MAX_COMMAND_SCRIPT_LENGTH {
-        return Err(AppError::InvalidInput {
-            message: format!(
-                "Command script too long (max {} characters)",
-                MAX_COMMAND_SCRIPT_LENGTH
-            ),
-        });
+        return Err(AppError::Validation(format!(
+            "Command script too long (max {} characters)",
+            MAX_COMMAND_SCRIPT_LENGTH
+        )));
     }
     Ok(())
 }
@@ -117,37 +103,27 @@ pub fn validate_command_input(name: &str, script: &str) -> Result<()> {
 pub fn validate_command_arguments(args: &[crate::models::CommandArgument]) -> Result<()> {
     for arg in args {
         if arg.name.trim().is_empty() {
-            return Err(AppError::InvalidInput {
-                message: "Argument name cannot be empty".to_string(),
-            });
+            return Err(AppError::Validation("Argument name cannot be empty".to_string()));
         }
 
         if matches!(arg.arg_type, crate::models::ArgumentType::Enum) {
             match &arg.options {
                 Some(options) => {
                     if options.is_empty() {
-                        return Err(AppError::InvalidInput {
-                            message: format!("Enum argument '{}' must have at least one option", arg.name),
-                        });
+                        return Err(AppError::Validation(format!("Enum argument '{}' must have at least one option", arg.name)));
                     }
                     let mut seen = std::collections::HashSet::new();
                     for opt in options {
                         if opt.trim().is_empty() {
-                            return Err(AppError::InvalidInput {
-                                message: format!("Enum argument '{}' contains an empty option", arg.name),
-                            });
+                            return Err(AppError::Validation(format!("Enum argument '{}' contains an empty option", arg.name)));
                         }
                         if !seen.insert(opt) {
-                            return Err(AppError::InvalidInput {
-                                message: format!("Enum argument '{}' contains duplicate option: {}", arg.name, opt),
-                            });
+                            return Err(AppError::Validation(format!("Enum argument '{}' contains duplicate option: {}", arg.name, opt)));
                         }
                     }
                 }
                 None => {
-                    return Err(AppError::InvalidInput {
-                        message: format!("Enum argument '{}' must have options defined", arg.name),
-                    });
+                    return Err(AppError::Validation(format!("Enum argument '{}' must have options defined", arg.name)));
                 }
             }
         }
@@ -158,38 +134,28 @@ pub fn validate_command_arguments(args: &[crate::models::CommandArgument]) -> Re
 pub fn validate_skill_input(name: &str, instructions: &str) -> Result<()> {
     let trimmed_name = name.trim();
     if trimmed_name.is_empty() {
-        return Err(AppError::InvalidInput {
-            message: "Skill name cannot be empty".to_string(),
-        });
+        return Err(AppError::Validation("Skill name cannot be empty".to_string()));
     }
     if trimmed_name.len() > MAX_SKILL_NAME_LENGTH {
-        return Err(AppError::InvalidInput {
-            message: format!(
-                "Skill name too long (max {} characters)",
-                MAX_SKILL_NAME_LENGTH
-            ),
-        });
+        return Err(AppError::Validation(format!(
+            "Skill name too long (max {} characters)",
+            MAX_SKILL_NAME_LENGTH
+        )));
     }
     if instructions.trim().is_empty() {
-        return Err(AppError::InvalidInput {
-            message: "Skill instructions cannot be empty".to_string(),
-        });
+        return Err(AppError::Validation("Skill instructions cannot be empty".to_string()));
     }
     if instructions.len() > MAX_SKILL_INSTRUCTIONS_LENGTH {
-        return Err(AppError::InvalidInput {
-            message: format!(
-                "Skill instructions too large (max {} characters)",
-                MAX_SKILL_INSTRUCTIONS_LENGTH
-            ),
-        });
+        return Err(AppError::Validation(format!(
+            "Skill instructions too large (max {} characters)",
+            MAX_SKILL_INSTRUCTIONS_LENGTH
+        )));
     }
 
     // Validate step count
     let steps = extract_skill_steps(instructions);
     if steps.len() > MAX_SKILL_STEPS {
-        return Err(AppError::InvalidInput {
-            message: format!("Skill contains too many shell steps ({} found, max {}). Please consolidate your instructions.", steps.len(), MAX_SKILL_STEPS),
-        });
+        return Err(AppError::Validation(format!("Skill contains too many shell steps ({} found, max {}). Please consolidate your instructions.", steps.len(), MAX_SKILL_STEPS)));
     }
 
     Ok(())

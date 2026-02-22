@@ -125,6 +125,11 @@ pub async fn execute_shell_with_timeout_env(
         });
     }
 
+    // Validate that the current working directory is accessible
+    if let Err(e) = std::env::current_dir() {
+        return Err(AppError::Io(e));
+    }
+
     #[cfg(target_os = "windows")]
     let mut cmd = TokioCommand::new("cmd");
     #[cfg(target_os = "windows")]
