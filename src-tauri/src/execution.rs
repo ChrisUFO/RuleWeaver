@@ -155,32 +155,36 @@ pub async fn execute_shell_with_timeout_env(
     }
 }
 
+pub struct ExecuteAndLogInput<'a> {
+    pub db: Option<&'a Database>,
+    pub command_id: &'a str,
+    pub command_name: &'a str,
+    pub script: &'a str,
+    pub timeout_dur: Duration,
+    pub envs: &'a [(String, String)],
+    pub arguments_json: &'a str,
+    pub triggered_by: &'a str,
+}
+
 pub async fn execute_and_log(
-    db: Option<&Database>,
-    command_id: &str,
-    command_name: &str,
-    script: &str,
-    timeout_dur: Duration,
-    envs: &[(String, String)],
-    arguments_json: &str,
-    triggered_by: &str,
+    input: ExecuteAndLogInput<'_>,
 ) -> Result<(i32, String, String, u64)> {
     let start = std::time::Instant::now();
-    let result = execute_shell_with_timeout_env(script, timeout_dur, envs).await;
+    let result = execute_shell_with_timeout_env(input.script, input.timeout_dur, input.envs).await;
     let duration_ms = start.elapsed().as_millis() as u64;
 
     match result {
         Ok((exit_code, stdout, stderr)) => {
-            if let Some(db) = db {
+            if let Some(db) = input.db {
                 let _ = db.add_execution_log(&ExecutionLogInput {
-                    command_id,
-                    command_name,
-                    arguments_json,
+                    command_id: input.command_id,
+                    command_name: input.command_name,
+                    arguments_json: input.arguments_json,
                     stdout: &stdout,
                     stderr: &stderr,
                     exit_code,
                     duration_ms,
-                    triggered_by,
+                    triggered_by: input.triggered_by,
                 });
             }
             Ok((exit_code, stdout, stderr, duration_ms))

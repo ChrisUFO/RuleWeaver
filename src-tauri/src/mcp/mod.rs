@@ -24,7 +24,8 @@ use crate::database::{Database, ExecutionLogInput};
 use crate::error::{AppError, Result};
 use crate::execution::{
     argument_env_var_name, contains_disallowed_pattern, execute_and_log,
-    execute_shell_with_timeout_env, replace_template_with_env_ref, sanitize_argument_value, slugify,
+    execute_shell_with_timeout_env, ExecuteAndLogInput, replace_template_with_env_ref,
+    sanitize_argument_value, slugify,
 };
 use crate::models::{Command, Skill};
 
@@ -610,16 +611,16 @@ async fn handle_command_call(
         });
     }
 
-    match execute_and_log(
-        shared_db.as_ref().map(|arc| arc.as_ref()),
-        &cmd.id,
-        &cmd.name,
-        &rendered,
-        CMD_EXEC_TIMEOUT,
-        &envs,
-        &serde_json::to_string(&args_map).unwrap_or_default(),
-        "mcp",
-    )
+    match execute_and_log(ExecuteAndLogInput {
+        db: shared_db.as_ref().map(|arc| arc.as_ref()),
+        command_id: &cmd.id,
+        command_name: &cmd.name,
+        script: &rendered,
+        timeout_dur: CMD_EXEC_TIMEOUT,
+        envs: &envs,
+        arguments_json: &serde_json::to_string(&args_map).unwrap_or_default(),
+        triggered_by: "mcp",
+    })
     .await
     {
         Ok((exit_code, stdout, stderr, duration_ms)) => {

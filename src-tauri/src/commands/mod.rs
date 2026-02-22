@@ -6,7 +6,8 @@ use crate::constants::{
 use crate::database::{get_app_data_path, Database};
 use crate::error::{AppError, Result};
 use crate::execution::{
-    argument_env_var_name, replace_template_with_env_ref, sanitize_argument_value, slugify,
+    argument_env_var_name, execute_and_log, replace_template_with_env_ref, sanitize_argument_value,
+    slugify, ExecuteAndLogInput,
 };
 use crate::file_storage;
 use crate::mcp::{extract_skill_steps, McpConnectionInstructions, McpManager, McpStatus};
@@ -595,18 +596,16 @@ pub async fn test_command(
         envs.push((argument_env_var_name(&arg.name), safe_value));
     }
 
-    use crate::execution::execute_and_log;
-
-    let (exit_code, stdout, stderr, duration_ms) = execute_and_log(
-        Some(&db),
-        &cmd.id,
-        &cmd.name,
-        &script,
-        TEST_CMD_TIMEOUT,
-        &envs,
-        &serde_json::to_string(&args).unwrap_or_default(),
-        "test",
-    )
+    let (exit_code, stdout, stderr, duration_ms) = execute_and_log(ExecuteAndLogInput {
+        db: Some(&db),
+        command_id: &cmd.id,
+        command_name: &cmd.name,
+        script: &script,
+        timeout_dur: TEST_CMD_TIMEOUT,
+        envs: &envs,
+        arguments_json: &serde_json::to_string(&args).unwrap_or_default(),
+        triggered_by: "test",
+    })
     .await?;
 
     let success = exit_code == 0;
