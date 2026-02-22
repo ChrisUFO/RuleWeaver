@@ -56,6 +56,12 @@ pub struct McpManager {
     inner: Arc<Mutex<McpRuntime>>,
 }
 
+pub struct McpSnapshot {
+    pub commands: Vec<Command>,
+    pub skills: Vec<Skill>,
+    pub db: Option<Arc<Database>>,
+}
+
 impl McpManager {
     pub fn new(port: u16) -> Self {
         Self {
@@ -82,13 +88,13 @@ impl McpManager {
         Ok(())
     }
 
-    fn snapshot(&self) -> Result<(Vec<Command>, Vec<Skill>, Option<Arc<Database>>)> {
+    fn snapshot(&self) -> Result<McpSnapshot> {
         let state = self.inner.lock().map_err(|_| AppError::LockError)?;
-        Ok((
-            state.commands.clone(),
-            state.skills.clone(),
-            state.db.clone(),
-        ))
+        Ok(McpSnapshot {
+            commands: state.commands.clone(),
+            skills: state.skills.clone(),
+            db: state.db.clone(),
+        })
     }
 
     pub fn start(&self, db: &Arc<Database>) -> Result<()> {
@@ -273,7 +279,11 @@ async fn handle_client(mut stream: TcpStream, manager: &McpManager) -> Result<()
         }
     };
 
-    let (commands, skills, shared_db) = manager.snapshot()?;
+    let McpSnapshot {
+        commands,
+        skills,
+        db: shared_db,
+    } = manager.snapshot()?;
 
     let response = match request.method.as_str() {
         "initialize" => json!({

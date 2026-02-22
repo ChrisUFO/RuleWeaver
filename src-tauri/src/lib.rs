@@ -18,6 +18,8 @@ const MINIMIZE_TO_TRAY_KEY: &str = "minimize_to_tray";
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    log::info!("RuleWeaver application initializing");
+    
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
