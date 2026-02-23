@@ -23,6 +23,7 @@ pub mod limits {
     pub const MAX_COMMAND_SCRIPT_LENGTH: usize = 10_000;
     pub const MAX_SKILL_NAME_LENGTH: usize = 160;
     pub const MAX_SKILL_INSTRUCTIONS_LENGTH: usize = 200_000;
+    pub const MAX_SKILL_OUTPUT_PER_STREAM: usize = 1024 * 1024; // 1MB per step stream
     pub const MCP_SERVER_RETRY_COUNT: u32 = 5;
 }
 

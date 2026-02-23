@@ -41,7 +41,7 @@ pub fn get_bundled_skill_templates() -> Vec<TemplateSkill> {
             files: vec![
                 TemplateFile {
                     filename: "review.py".to_string(),
-                    content: "import os\n\ntarget = os.environ.get('SKILL_PARAM_TARGET_FILE', '')\nprint(f'Starting review on {target}')\nprint('Done.')\n".to_string(),
+                    content: include_str!("review.py").to_string(),
                 }
             ],
         },
@@ -60,7 +60,7 @@ pub fn get_bundled_skill_templates() -> Vec<TemplateSkill> {
             files: vec![
                 TemplateFile {
                     filename: "sysinfo.ps1".to_string(),
-                    content: "Get-ComputerInfo | Select-Object WindowsProductName, WindowsVersion, OsArchitecture | ConvertTo-Json\n".to_string(),
+                    content: include_str!("sysinfo.ps1").to_string(),
                 }
             ],
         }

@@ -452,41 +452,27 @@ fn handle_tools_list(
     commands: &[Command],
     skills: &[Skill],
 ) -> serde_json::Value {
-    let tools: Vec<serde_json::Value> = commands
+    let mut tools: Vec<serde_json::Value> = commands
         .iter()
         .filter(|c| c.expose_via_mcp)
         .map(|c| {
-            let mut props = serde_json::Map::new();
-            let mut required: Vec<String> = Vec::new();
-
-            for arg in &c.arguments {
-                let json_type = match arg.arg_type {
-                    crate::models::ArgumentType::Number => "number",
-                    crate::models::ArgumentType::Boolean => "boolean",
-                    _ => "string",
-                };
-
-                props.insert(
-                    arg.name.clone(),
-                    json!({
-                        "type": json_type,
-                        "description": arg.description,
-                    }),
-                );
-                if arg.required {
-                    required.push(arg.name.clone());
-                }
-            }
-
-            json!({
-                "name": format!("{}-{}", slugify(&c.name), &c.id[..8]),
-                "description": c.description,
-                "inputSchema": {
-                    "type": "object",
-                    "properties": props,
-                    "required": required,
-                }
-            })
+            let params: Vec<_> = c
+                .arguments
+                .iter()
+                .map(|a| {
+                    (
+                        a.name.clone(),
+                        a.description.clone(),
+                        a.required,
+                        a.options.clone(),
+                    )
+                })
+                .collect();
+            build_mcp_tool_schema(
+                &format!("{}-{}", slugify(&c.name), &c.id[..8]),
+                &c.description,
+                &params,
+            )
         })
         .collect();
 
@@ -494,55 +480,70 @@ fn handle_tools_list(
         .iter()
         .filter(|s| s.enabled)
         .map(|s| {
-            let mut props = serde_json::Map::new();
-            let mut required: Vec<String> = Vec::new();
-
-            for arg in &s.input_schema {
-                let json_type = match arg.param_type {
-                    SkillParameterType::Number => "number",
-                    SkillParameterType::Boolean => "boolean",
-                    SkillParameterType::Array => "array",
-                    SkillParameterType::Object => "object",
-                    _ => "string", // String, Enum
-                };
-
-                let mut prop_schema = json!({
-                    "type": json_type,
-                    "description": arg.description,
-                });
-
-                if let Some(enum_vals) = &arg.enum_values {
-                    prop_schema
-                        .as_object_mut()
-                        .unwrap()
-                        .insert("enum".to_string(), json!(enum_vals));
-                }
-
-                props.insert(arg.name.clone(), prop_schema);
-                if arg.required {
-                    required.push(arg.name.clone());
-                }
-            }
-
-            json!({
-                "name": format!("skill_{}-{}", slugify(&s.name), &s.id[..8]),
-                "description": s.description,
-                "inputSchema": {
-                    "type": "object",
-                    "properties": props,
-                    "required": required
-                }
-            })
+            let params: Vec<_> = s
+                .input_schema
+                .iter()
+                .map(|p| {
+                    (
+                        p.name.clone(),
+                        p.description.clone(),
+                        p.required,
+                        p.enum_values.clone(),
+                    )
+                })
+                .collect();
+            build_mcp_tool_schema(
+                &format!("skill_{}-{}", slugify(&s.name), &s.id[..8]),
+                &s.description,
+                &params,
+            )
         })
         .collect();
 
-    let mut all_tools = tools;
-    all_tools.extend(skill_tools);
+    tools.extend(skill_tools);
 
     json!({
         "jsonrpc": "2.0",
         "id": id,
-        "result": { "tools": all_tools }
+        "result": { "tools": tools }
+    })
+}
+
+fn build_mcp_tool_schema(
+    name: &str,
+    description: &str,
+    params: &[(String, String, bool, Option<Vec<String>>)], // name, description, required, enum_values
+) -> serde_json::Value {
+    let mut props = serde_json::Map::new();
+    let mut required: Vec<String> = Vec::new();
+
+    for (p_name, p_desc, p_req, p_enum) in params {
+        let mut prop_schema = json!({
+            "type": "string",
+            "description": p_desc,
+        });
+
+        if let Some(enum_vals) = p_enum {
+            prop_schema
+                .as_object_mut()
+                .unwrap()
+                .insert("enum".to_string(), json!(enum_vals));
+        }
+
+        props.insert(p_name.clone(), prop_schema);
+        if *p_req {
+            required.push(p_name.clone());
+        }
+    }
+
+    json!({
+        "name": name,
+        "description": description,
+        "inputSchema": {
+            "type": "object",
+            "properties": props,
+            "required": required,
+        }
     })
 }
 
@@ -861,12 +862,19 @@ async fn handle_skill_call(
         skill.directory_path.clone(),
     ));
 
-    // Inject all settings as SKILL_SECRET_*
+    // Inject filtered secrets as SKILL_SECRET_*
     if let Some(db) = shared_db {
         if let Ok(settings) = db.get_all_settings() {
             for (k, v) in settings {
-                let env_name = format!("SKILL_SECRET_{}", k.replace('-', "_").to_uppercase());
-                skill_envs.push((env_name, v));
+                let low_k = k.to_lowercase();
+                if low_k.contains("key")
+                    || low_k.contains("token")
+                    || low_k.contains("secret")
+                    || low_k.contains("password")
+                {
+                    let env_name = format!("SKILL_SECRET_{}", k.replace('-', "_").to_uppercase());
+                    skill_envs.push((env_name, v));
+                }
             }
         }
     }
@@ -911,6 +919,41 @@ async fn handle_skill_call(
         });
     }
 
+    // Security: Canonicalize entry point to prevent directory traversal
+    let canonical_skill_dir = match std::fs::canonicalize(&dir) {
+        Ok(p) => p,
+        Err(e) => {
+            return json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "error": { "code": -32603, "message": format!("Failed to canonicalize skill directory: {}", e) }
+            })
+        }
+    };
+
+    let full_entry_path = dir.join(&entry_point);
+    let canonical_entry_path = match std::fs::canonicalize(&full_entry_path) {
+        Ok(p) => p,
+        Err(e) => {
+            return json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "error": { "code": -32603, "message": format!("Entry point not found or invalid: {}", e) }
+            })
+        }
+    };
+
+    if !canonical_entry_path.starts_with(&canonical_skill_dir) {
+        return json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "error": {
+                "code": -32603,
+                "message": "Security Violation: Entry point must be within the skill directory"
+            }
+        });
+    }
+
     match execute_shell_with_timeout_env_dir(
         &entry_point,
         SKILL_EXEC_TIMEOUT,
@@ -920,8 +963,14 @@ async fn handle_skill_call(
     .await
     {
         Ok((exit_code, stdout, stderr)) => {
-            let step_stdout = truncate_output_custom(stdout, 1024 * 1024);
-            let step_stderr = truncate_output_custom(stderr, 1024 * 1024);
+            let step_stdout = truncate_output_custom(
+                stdout,
+                crate::constants::limits::MAX_SKILL_OUTPUT_PER_STREAM,
+            );
+            let step_stderr = truncate_output_custom(
+                stderr,
+                crate::constants::limits::MAX_SKILL_OUTPUT_PER_STREAM,
+            );
 
             output.push_str(&format!(
                 "exit_code: {}\nstdout:\n{}\nstderr:\n{}",

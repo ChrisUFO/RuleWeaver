@@ -3,9 +3,7 @@ use tauri::State;
 
 use crate::database::Database;
 use crate::error::{AppError, Result};
-use crate::file_storage::skills::{
-    delete_skill_from_disk, load_skills_from_disk, save_skill_to_disk,
-};
+use crate::file_storage::skills::{delete_skill_from_disk, save_skill_to_disk};
 use crate::models::{CreateSkillInput, Skill, UpdateSkillInput};
 use crate::templates::skills::{get_bundled_skill_templates, TemplateSkill};
 
@@ -13,21 +11,11 @@ use super::{validate_skill_entry_point, validate_skill_input, validate_skill_sch
 
 #[tauri::command]
 pub fn get_all_skills(db: State<'_, Arc<Database>>) -> Result<Vec<Skill>> {
-    // For now, load from disk directly to act as source of truth, but we could also return DB
-    if let Ok(skills) = load_skills_from_disk() {
-        Ok(skills)
-    } else {
-        db.get_all_skills()
-    }
+    db.get_all_skills()
 }
 
 #[tauri::command]
 pub fn get_skill_by_id(id: String, db: State<'_, Arc<Database>>) -> Result<Skill> {
-    if let Ok(skills) = load_skills_from_disk() {
-        if let Some(skill) = skills.into_iter().find(|s| s.id == id) {
-            return Ok(skill);
-        }
-    }
     db.get_skill_by_id(&id)
 }
 
@@ -41,14 +29,13 @@ pub fn create_skill(input: CreateSkillInput, db: State<'_, Arc<Database>>) -> Re
     let created = db.create_skill(input)?;
 
     // Save to disk
-    if let Ok(path) = save_skill_to_disk(&created) {
-        // Update DB with the directory path we just resolved
-        let update = UpdateSkillInput {
-            directory_path: Some(path.to_string_lossy().to_string()),
-            ..Default::default()
-        };
-        db.update_skill(&created.id, update)?;
-    }
+    let path = save_skill_to_disk(&created)?;
+    // Update DB with the directory path we just resolved
+    let update = UpdateSkillInput {
+        directory_path: Some(path.to_string_lossy().to_string()),
+        ..Default::default()
+    };
+    db.update_skill(&created.id, update)?;
 
     db.get_skill_by_id(&created.id)
 }
@@ -80,7 +67,7 @@ pub fn update_skill(
     }
 
     let updated = db.update_skill(&id, input)?;
-    let _ = save_skill_to_disk(&updated);
+    save_skill_to_disk(&updated)?;
     Ok(updated)
 }
 
@@ -118,38 +105,62 @@ pub fn install_skill_template(template_id: String, db: State<'_, Arc<Database>>)
     // 4. Create in DB first so it generates default timestamps etc (using our prescribed ID)
     let created = db.create_skill(metadata)?;
 
-    // 5. Save the SKILL.md and skill.json to disk (generates directory for us)
-    match save_skill_to_disk(&created) {
-        Ok(path) => {
-            // Write the custom template files
-            for file in template.files {
-                let file_path = path.join(&file.filename);
-                if let Err(e) = std::fs::write(&file_path, &file.content) {
-                    // Rollback DB entry if file write fails
-                    let _ = db.delete_skill(&created.id);
-                    return Err(AppError::Io(e));
+    // Atomic Cleanup Guard
+    struct SkillInstallationGuard<'a> {
+        db: &'a Database,
+        skill_id: String,
+        directory_path: Option<std::path::PathBuf>,
+        defused: bool,
+    }
+
+    impl<'a> Drop for SkillInstallationGuard<'a> {
+        fn drop(&mut self) {
+            if !self.defused {
+                // Rollback DB
+                let _ = self.db.delete_skill(&self.skill_id);
+                // Rollback Disk
+                if let Some(ref path) = self.directory_path {
+                    if path.exists() {
+                        let _ = std::fs::remove_dir_all(path);
+                    }
                 }
             }
-
-            // 6. Update the DB with the absolute directory path that save_skill_to_disk determined
-            let update = UpdateSkillInput {
-                directory_path: Some(path.to_string_lossy().to_string()),
-                ..Default::default()
-            };
-            if let Err(e) = db.update_skill(&created.id, update) {
-                // Rollback DB entry and disk if update fails
-                let _ = delete_skill_from_disk(&created);
-                let _ = db.delete_skill(&created.id);
-                return Err(e);
-            }
-        }
-        Err(e) => {
-            // Rollback DB entry if disk setup fails
-            let _ = db.delete_skill(&created.id);
-            return Err(e);
         }
     }
 
+    let mut guard = SkillInstallationGuard {
+        db: &db,
+        skill_id: created.id.clone(),
+        directory_path: None,
+        defused: false,
+    };
+
+    // 5. Save the SKILL.md and skill.json to disk (generates directory for us)
+    // Propagate disk write errors
+    let path = save_skill_to_disk(&created)?;
+    guard.directory_path = Some(path.clone());
+
+    // Write the custom template files
+    for file in template.files {
+        let file_path = path.join(&file.filename);
+        std::fs::write(&file_path, &file.content).map_err(AppError::Io)?;
+    }
+
+    // 6. Update the DB with the absolute directory path that save_skill_to_disk determined
+    let update = UpdateSkillInput {
+        directory_path: Some(path.to_string_lossy().to_string()),
+        ..Default::default()
+    };
+    db.update_skill(&created.id, update)?;
+
+    // Success! Defuse the guard
+    guard.defused = true;
+
     // Return the latest from DB
     db.get_skill_by_id(&template_id)
+}
+
+#[tauri::command]
+pub fn sync_skills(db: State<'_, Arc<Database>>) -> Result<u32> {
+    crate::file_storage::skills::sync_skills_to_db(&db)
 }

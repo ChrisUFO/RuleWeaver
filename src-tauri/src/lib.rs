@@ -181,6 +181,7 @@ pub fn run() {
             commands::delete_skill,
             commands::get_skill_templates,
             commands::install_skill_template,
+            commands::sync_skills,
             commands::get_mcp_status,
             commands::start_mcp_server,
             commands::stop_mcp_server,
