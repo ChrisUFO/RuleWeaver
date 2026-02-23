@@ -425,33 +425,6 @@ mod tests {
         )
     }
 
-    fn create_test_command_with_args() -> Command {
-        let mut cmd = Command::new(
-            "deploy".to_string(),
-            "Deploy to environment".to_string(),
-            "./scripts/deploy.sh".to_string(),
-        );
-        cmd.arguments = vec![
-            CommandArgument {
-                name: "environment".to_string(),
-                description: "Target environment".to_string(),
-                arg_type: ArgumentType::Enum,
-                required: true,
-                default_value: Some("staging".to_string()),
-                options: Some(vec!["staging".to_string(), "production".to_string()]),
-            },
-            CommandArgument {
-                name: "version".to_string(),
-                description: "Version to deploy".to_string(),
-                arg_type: ArgumentType::String,
-                required: false,
-                default_value: None,
-                options: None,
-            },
-        ];
-        cmd
-    }
-
     #[test]
     fn test_opencode_adapter() {
         let adapter = OpenCodeSlashAdapter;
