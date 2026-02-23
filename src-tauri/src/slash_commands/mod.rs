@@ -44,14 +44,6 @@ pub trait SlashCommandAdapter: Send + Sync {
     }
 }
 
-/// Output structure for a formatted slash command
-pub struct SlashCommandOutput {
-    pub content: String,
-    pub filename: String,
-    pub directory: PathBuf,
-    pub metadata: HashMap<String, String>,
-}
-
 pub mod adapters;
 pub mod commands;
 pub mod sync;

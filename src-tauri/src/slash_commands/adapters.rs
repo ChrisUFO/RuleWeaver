@@ -1,4 +1,8 @@
 use super::SlashCommandAdapter;
+use crate::constants::{
+    ANTIGRAVITY_WORKFLOWS_DIR, CLAUDE_COMMANDS_DIR, CLINE_WORKFLOWS_DIR, CODEX_SKILLS_DIR,
+    CURSOR_COMMANDS_DIR, GEMINI_COMMANDS_DIR, OPENCODE_COMMANDS_DIR, ROO_COMMANDS_DIR,
+};
 use crate::models::Command;
 use std::path::PathBuf;
 
@@ -17,7 +21,7 @@ impl SlashCommandAdapter for OpenCodeSlashAdapter {
     }
 
     fn global_dir(&self) -> &'static str {
-        ".config/opencode/commands"
+        OPENCODE_COMMANDS_DIR
     }
 
     fn local_dir(&self) -> &'static str {
@@ -75,11 +79,11 @@ impl SlashCommandAdapter for ClaudeCodeSlashAdapter {
     }
 
     fn global_dir(&self) -> &'static str {
-        ".claude/commands"
+        CLAUDE_COMMANDS_DIR
     }
 
     fn local_dir(&self) -> &'static str {
-        ".claude/commands"
+        CLAUDE_COMMANDS_DIR
     }
 
     fn format_command(&self, command: &Command) -> String {
@@ -126,18 +130,18 @@ impl SlashCommandAdapter for ClineSlashAdapter {
     }
 
     fn global_dir(&self) -> &'static str {
-        "Documents/Cline/Workflows"
+        CLINE_WORKFLOWS_DIR
     }
 
     fn local_dir(&self) -> &'static str {
-        ".clinerules/workflows"
+        CLINE_WORKFLOWS_DIR
     }
 
     fn format_command(&self, command: &Command) -> String {
         let mut output = String::new();
 
         output.push_str(&format!("# {}\n\n", command.name));
-        output.push_str(&format!("{}", command.description));
+        output.push_str(&command.description);
         output.push_str("\n\n");
         output.push_str(&command.script);
 
@@ -164,11 +168,11 @@ impl SlashCommandAdapter for GeminiSlashAdapter {
     }
 
     fn global_dir(&self) -> &'static str {
-        ".gemini/commands"
+        GEMINI_COMMANDS_DIR
     }
 
     fn local_dir(&self) -> &'static str {
-        ".gemini/commands"
+        GEMINI_COMMANDS_DIR
     }
 
     fn format_command(&self, command: &Command) -> String {
@@ -207,11 +211,11 @@ impl SlashCommandAdapter for CursorSlashAdapter {
     }
 
     fn global_dir(&self) -> &'static str {
-        ".cursor/commands"
+        CURSOR_COMMANDS_DIR
     }
 
     fn local_dir(&self) -> &'static str {
-        ".cursor/commands"
+        CURSOR_COMMANDS_DIR
     }
 
     fn format_command(&self, command: &Command) -> String {
@@ -243,11 +247,11 @@ impl SlashCommandAdapter for RooCodeSlashAdapter {
     }
 
     fn global_dir(&self) -> &'static str {
-        ".roo/commands"
+        ROO_COMMANDS_DIR
     }
 
     fn local_dir(&self) -> &'static str {
-        ".roo/commands"
+        ROO_COMMANDS_DIR
     }
 
     fn format_command(&self, command: &Command) -> String {
@@ -296,7 +300,7 @@ impl SlashCommandAdapter for AntigravitySlashAdapter {
     }
 
     fn global_dir(&self) -> &'static str {
-        ".gemini/antigravity/global_workflows"
+        ANTIGRAVITY_WORKFLOWS_DIR
     }
 
     fn local_dir(&self) -> &'static str {
@@ -338,11 +342,11 @@ impl SlashCommandAdapter for CodexSlashAdapter {
     }
 
     fn global_dir(&self) -> &'static str {
-        ".agents/skills"
+        CODEX_SKILLS_DIR
     }
 
     fn local_dir(&self) -> &'static str {
-        ".agents/skills"
+        CODEX_SKILLS_DIR
     }
 
     fn format_command(&self, command: &Command) -> String {
