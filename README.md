@@ -22,6 +22,7 @@ Different types of AI configurations require different management strategies:
 - **Dual MCP Runtime:** Embedded MCP in app process or standalone `ruleweaver-mcp` process.
 - **Command Manager:** CRUD commands, test runs, MCP exposure toggles, and execution history.
 - **Command Stub Sync:** Generates command files for supported tools (`COMMANDS.toml` / `COMMANDS.md`).
+- **Native Slash Commands:** Generate native `/commandname` triggers for 8 AI tools with automatic file generation and incremental sync.
 - **Background Keep-Alive:** Optional close-to-tray behavior keeps MCP available.
 - **Skills Foundation:** Initial Skills CRUD and UI scaffolding is available.
 - **Priority Tiering:**

@@ -298,12 +298,67 @@ fn calculate_hash(content: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{Command, CreateCommandInput};
+    use crate::models::{ArgumentType, Command, CommandArgument, CreateCommandInput};
 
     #[test]
     fn test_sync_status_enum() {
         assert!(matches!(SyncStatus::Synced, SyncStatus::Synced));
         assert!(matches!(SyncStatus::OutOfDate, SyncStatus::OutOfDate));
         assert!(matches!(SyncStatus::NotSynced, SyncStatus::NotSynced));
+    }
+
+    #[test]
+    fn test_sync_result_success() {
+        let result = SlashCommandSyncResult {
+            files_written: 2,
+            files_removed: 0,
+            errors: vec![],
+            conflicts: vec![],
+        };
+        assert!(result.success());
+        assert_eq!(result.files_written, 2);
+    }
+
+    #[test]
+    fn test_sync_result_failure() {
+        let result = SlashCommandSyncResult {
+            files_written: 0,
+            files_removed: 0,
+            errors: vec!["Error".to_string()],
+            conflicts: vec![],
+        };
+        assert!(!result.success());
+    }
+
+    #[test]
+    fn test_calculate_hash() {
+        let hash1 = calculate_hash("test");
+        let hash2 = calculate_hash("test");
+        let hash3 = calculate_hash("different");
+
+        assert_eq!(hash1, hash2);
+        assert_ne!(hash1, hash3);
+    }
+
+    #[test]
+    fn test_slash_command_conflict_creation() {
+        let conflict = SlashCommandConflict {
+            command_name: "test".to_string(),
+            adapter_name: "opencode".to_string(),
+            file_path: PathBuf::from("/test/path"),
+            message: "Test conflict".to_string(),
+        };
+
+        assert_eq!(conflict.command_name, "test");
+        assert_eq!(conflict.adapter_name, "opencode");
+    }
+
+    #[test]
+    fn test_sync_result_default() {
+        let result = SlashCommandSyncResult::default();
+        assert_eq!(result.files_written, 0);
+        assert_eq!(result.files_removed, 0);
+        assert!(result.errors.is_empty());
+        assert!(result.conflicts.is_empty());
     }
 }

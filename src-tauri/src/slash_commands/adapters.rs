@@ -408,3 +408,129 @@ pub fn get_all_adapters() -> Vec<Box<dyn SlashCommandAdapter>> {
         Box::new(CodexSlashAdapter),
     ]
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::{ArgumentType, Command, CommandArgument};
+
+    fn create_test_command() -> Command {
+        Command::new(
+            "test-cmd".to_string(),
+            "Test command description".to_string(),
+            "npm test".to_string(),
+        )
+    }
+
+    fn create_test_command_with_args() -> Command {
+        let mut cmd = Command::new(
+            "deploy".to_string(),
+            "Deploy to environment".to_string(),
+            "./scripts/deploy.sh".to_string(),
+        );
+        cmd.arguments = vec![
+            CommandArgument {
+                name: "environment".to_string(),
+                description: "Target environment".to_string(),
+                arg_type: ArgumentType::Enum,
+                required: true,
+                default_value: Some("staging".to_string()),
+                options: Some(vec!["staging".to_string(), "production".to_string()]),
+            },
+            CommandArgument {
+                name: "version".to_string(),
+                description: "Version to deploy".to_string(),
+                arg_type: ArgumentType::String,
+                required: false,
+                default_value: None,
+                options: None,
+            },
+        ];
+        cmd
+    }
+
+    #[test]
+    fn test_opencode_adapter() {
+        let adapter = OpenCodeSlashAdapter;
+        assert_eq!(adapter.name(), "opencode");
+        assert_eq!(adapter.file_extension(), "md");
+        assert!(adapter.supports_argument_substitution());
+
+        let command = create_test_command();
+        let content = adapter.format_command(&command);
+        assert!(content.contains("name: test-cmd"));
+        assert!(content.contains("npm test"));
+    }
+
+    #[test]
+    fn test_claude_adapter() {
+        let adapter = ClaudeCodeSlashAdapter;
+        assert_eq!(adapter.name(), "claude-code");
+        assert!(adapter.supports_argument_substitution());
+
+        let command = create_test_command();
+        let content = adapter.format_command(&command);
+        assert!(content.contains("tools:"));
+    }
+
+    #[test]
+    fn test_gemini_adapter_toml_format() {
+        let adapter = GeminiSlashAdapter;
+        assert_eq!(adapter.file_extension(), "toml");
+
+        let command = create_test_command();
+        let content = adapter.format_command(&command);
+        assert!(content.contains("description = "));
+        assert!(content.contains("{{args}}"));
+    }
+
+    #[test]
+    fn test_codex_skill_structure() {
+        let adapter = CodexSlashAdapter;
+        let path = adapter.get_command_path("my-skill", true);
+        let path_str = path.to_string_lossy();
+        assert!(path_str.contains("SKILL.md"));
+    }
+
+    #[test]
+    fn test_all_adapters_produce_content() {
+        let adapters: Vec<Box<dyn SlashCommandAdapter>> = vec![
+            Box::new(OpenCodeSlashAdapter),
+            Box::new(ClaudeCodeSlashAdapter),
+            Box::new(ClineSlashAdapter),
+            Box::new(GeminiSlashAdapter),
+            Box::new(CursorSlashAdapter),
+            Box::new(RooCodeSlashAdapter),
+            Box::new(AntigravitySlashAdapter),
+            Box::new(CodexSlashAdapter),
+        ];
+
+        let command = create_test_command();
+
+        for adapter in adapters {
+            let content = adapter.format_command(&command);
+            assert!(
+                !content.is_empty(),
+                "Adapter {} should produce non-empty content",
+                adapter.name()
+            );
+        }
+    }
+
+    #[test]
+    fn test_adapter_name_uniqueness() {
+        let names = vec![
+            OpenCodeSlashAdapter.name(),
+            ClaudeCodeSlashAdapter.name(),
+            ClineSlashAdapter.name(),
+            GeminiSlashAdapter.name(),
+            CursorSlashAdapter.name(),
+            RooCodeSlashAdapter.name(),
+            AntigravitySlashAdapter.name(),
+            CodexSlashAdapter.name(),
+        ];
+
+        let unique: std::collections::HashSet<_> = names.iter().cloned().collect();
+        assert_eq!(names.len(), unique.len(), "Adapter names must be unique");
+    }
+}

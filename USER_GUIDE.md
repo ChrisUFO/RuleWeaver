@@ -29,8 +29,47 @@ You can switch/migrate in `Settings -> Storage`.
   - script template (supports placeholders like `{{arg}}`)
   - argument definitions
   - `Expose via MCP` toggle
+  - **`Generate Slash Commands`** toggle _(New!)_
+  - **Target AI Tools** multi-select _(New!)_
 - Use `Test Run` to execute locally and inspect stdout/stderr.
 - Use `Sync Command Files` to generate command stubs for client UX.
+- Use **`Sync Slash Commands`** to generate native `/commandname` triggers in supported AI tools.
+
+### Slash Commands
+
+RuleWeaver can generate **native slash commands** that appear in your AI tool's autocomplete when you type `/`.
+
+**Supported Tools (8):**
+
+- OpenCode - `$ARGUMENTS`, `$1-9`
+- Claude Code - `$ARGUMENTS`, `$1-9`
+- Cline - Workflows (natural language)
+- Gemini CLI - `{{args}}`
+- Cursor - Plain markdown
+- Roo Code - `argument-hint`
+- Antigravity - Workflows (natural language)
+- Codex - Skills
+
+**How to enable:**
+
+1. Create or edit a command
+2. Toggle `Generate Slash Commands` ON
+3. Select which AI tools should receive this command
+4. Save the command
+5. Click `Sync Slash Commands`
+
+**File Locations:**
+
+- OpenCode: `~/.config/opencode/commands/{name}.md`
+- Claude Code: `~/.claude/commands/{name}.md`
+- Cline: `.clinerules/workflows/{name}.md`
+- Gemini: `~/.gemini/commands/{name}.toml`
+- Cursor: `~/.cursor/commands/{name}.md`
+- Roo Code: `.roo/commands/{name}.md`
+- Antigravity: `.agents/workflows/{name}.md`
+- Codex: `.agents/skills/{name}/SKILL.md`
+
+**Note:** Windsurf and Kilo Code do not support slash commands.
 
 Generated command files:
 
