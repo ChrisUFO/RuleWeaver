@@ -102,7 +102,7 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
   }, [sortValue]);
 
   const filteredAndSortedRules = useMemo(() => {
-    const result = rules.filter((rule) => {
+    const result = (rules || []).filter((rule) => {
       const matchesSearch =
         rule.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         rule.content.toLowerCase().includes(searchQuery.toLowerCase());

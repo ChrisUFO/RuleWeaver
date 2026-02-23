@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Play, Trash2, Search } from "lucide-react";
+import { Plus, Play, Trash2, Search, CheckCircle, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,6 +10,29 @@ import { api } from "@/lib/tauri";
 import { useToast } from "@/components/ui/toast";
 import { CommandsListSkeleton } from "@/components/ui/skeleton";
 import type { CommandModel, ExecutionLog } from "@/types/command";
+
+const TIER_CONFIG: Record<string, { tier: number; label: string; color: string }> = {
+  opencode: {
+    tier: 1,
+    label: "Stable",
+    color: "bg-green-500/20 text-green-400 border-green-500/30",
+  },
+  "claude-code": {
+    tier: 1,
+    label: "Stable",
+    color: "bg-green-500/20 text-green-400 border-green-500/30",
+  },
+  cline: { tier: 1, label: "Stable", color: "bg-green-500/20 text-green-400 border-green-500/30" },
+  gemini: { tier: 1, label: "Stable", color: "bg-green-500/20 text-green-400 border-green-500/30" },
+  cursor: { tier: 1, label: "Stable", color: "bg-green-500/20 text-green-400 border-green-500/30" },
+  roo: { tier: 1, label: "Stable", color: "bg-green-500/20 text-green-400 border-green-500/30" },
+  antigravity: {
+    tier: 1,
+    label: "Stable",
+    color: "bg-green-500/20 text-green-400 border-green-500/30",
+  },
+  codex: { tier: 1, label: "Stable", color: "bg-green-500/20 text-green-400 border-green-500/30" },
+};
 
 export function Commands() {
   const [commands, setCommands] = useState<CommandModel[]>([]);
@@ -39,13 +62,13 @@ export function Commands() {
   const { addToast } = useToast();
 
   const selected = useMemo(
-    () => commands.find((cmd) => cmd.id === selectedId) ?? null,
+    () => (commands || []).find((cmd) => cmd.id === selectedId) ?? null,
     [commands, selectedId]
   );
 
   const filtered = useMemo(
     () =>
-      commands.filter((cmd) => {
+      (commands || []).filter((cmd) => {
         const q = query.toLowerCase().trim();
         if (!q) return true;
         return cmd.name.toLowerCase().includes(q) || cmd.description.toLowerCase().includes(q);
@@ -239,12 +262,28 @@ export function Commands() {
     setIsSlashCommandSyncing(true);
     try {
       const result = await api.slashCommands.sync(selected.id, true);
-      if (result.errors.length > 0) {
-        throw new Error(result.errors[0]);
+
+      if (result.errors.length > 0 || result.conflicts.length > 0) {
+        const errorMessages = [
+          ...result.errors,
+          ...result.conflicts.map((c) => `${c.adapter_name}: ${c.message}`),
+        ];
+        addToast({
+          title: `Sync completed with ${errorMessages.length} issue${errorMessages.length > 1 ? "s" : ""}`,
+          description:
+            errorMessages.slice(0, 3).join("\n") +
+            (errorMessages.length > 3 ? `\n...and ${errorMessages.length - 3} more` : ""),
+          variant: "error",
+        });
+        return;
       }
+
       addToast({
         title: "Slash Commands Synced",
-        description: `Wrote ${result.files_written} slash command files`,
+        description:
+          result.files_written > 0
+            ? `Successfully wrote ${result.files_written} file${result.files_written > 1 ? "s" : ""}`
+            : "All files were already up to date",
         variant: "success",
       });
     } catch (error) {
@@ -436,33 +475,61 @@ export function Commands() {
                 </div>
 
                 {generateSlashCommands && availableAdapters.length > 0 && (
-                  <div className="space-y-2 pt-2 border-t border-white/5">
-                    <div className="text-xs font-medium text-muted-foreground">Target AI Tools</div>
+                  <div className="space-y-3 pt-2 border-t border-white/5">
+                    <div className="flex items-center justify-between">
+                      <div className="text-xs font-medium text-muted-foreground">
+                        Target AI Tools
+                      </div>
+                      <div className="text-[10px] text-muted-foreground/60">
+                        {slashCommandAdapters.length} selected
+                      </div>
+                    </div>
                     <div className="flex flex-wrap gap-2">
-                      {availableAdapters.map((adapter) => (
-                        <button
-                          key={adapter.name}
-                          onClick={() => {
-                            setSlashCommandAdapters((prev) =>
-                              prev.includes(adapter.name)
-                                ? prev.filter((a) => a !== adapter.name)
-                                : [...prev, adapter.name]
-                            );
-                          }}
-                          className={cn(
-                            "px-3 py-1.5 rounded-full text-xs font-medium transition-colors",
-                            slashCommandAdapters.includes(adapter.name)
-                              ? "bg-primary text-primary-foreground"
-                              : "bg-white/5 text-muted-foreground hover:bg-white/10"
-                          )}
-                        >
-                          {adapter.name}
-                        </button>
-                      ))}
+                      {availableAdapters.map((adapter) => {
+                        const isSelected = slashCommandAdapters.includes(adapter.name);
+                        const tierInfo = TIER_CONFIG[adapter.name] || {
+                          tier: 2,
+                          label: "Beta",
+                          color: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
+                        };
+
+                        return (
+                          <button
+                            key={adapter.name}
+                            onClick={() => {
+                              setSlashCommandAdapters((prev) =>
+                                prev.includes(adapter.name)
+                                  ? prev.filter((a) => a !== adapter.name)
+                                  : [...prev, adapter.name]
+                              );
+                            }}
+                            title={`Will write to: ${adapter.name}/${name || "command"}.md`}
+                            className={cn(
+                              "group flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200",
+                              isSelected
+                                ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20 scale-105"
+                                : "bg-white/5 text-muted-foreground hover:bg-white/15 hover:scale-105 border border-transparent hover:border-white/10"
+                            )}
+                          >
+                            <span>{adapter.name}</span>
+                            {isSelected && (
+                              <Badge
+                                variant="outline"
+                                className={cn(
+                                  "ml-1 text-[9px] px-1 py-0 h-4 border-0",
+                                  tierInfo.color
+                                )}
+                              >
+                                {tierInfo.label}
+                              </Badge>
+                            )}
+                          </button>
+                        );
+                      })}
                     </div>
                     {slashCommandAdapters.length > 0 && (
-                      <div className="text-[10px] text-muted-foreground pt-1">
-                        Selected: {slashCommandAdapters.join(", ")}
+                      <div className="text-[10px] text-muted-foreground/80 bg-white/5 rounded-md p-2">
+                        Files will be created in each tool's commands directory
                       </div>
                     )}
                   </div>
@@ -504,9 +571,19 @@ export function Commands() {
                   <Button
                     variant="outline"
                     onClick={handleSyncSlashCommands}
-                    disabled={isSlashCommandSyncing}
+                    disabled={isSlashCommandSyncing || isSaving}
                   >
-                    {isSlashCommandSyncing ? "Syncing..." : "Sync Slash Commands"}
+                    {isSlashCommandSyncing ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Syncing...
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle className="mr-2 h-4 w-4" />
+                        Sync Slash Commands
+                      </>
+                    )}
                   </Button>
                 )}
                 <Button variant="outline" onClick={handleDelete} disabled={isSaving}>

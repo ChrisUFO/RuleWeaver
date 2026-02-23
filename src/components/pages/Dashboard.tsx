@@ -255,9 +255,9 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     }
   };
 
-  const globalRules = rules.filter((r) => r.scope === "global");
-  const localRules = rules.filter((r) => r.scope === "local");
-  const enabledRules = rules.filter((r) => r.enabled);
+  const globalRules = (rules || []).filter((r) => r.scope === "global");
+  const localRules = (rules || []).filter((r) => r.scope === "local");
+  const enabledRules = (rules || []).filter((r) => r.enabled);
 
   const handleTemplateClick = async (template: Template) => {
     try {

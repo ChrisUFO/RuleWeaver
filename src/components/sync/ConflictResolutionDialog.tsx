@@ -148,7 +148,9 @@ export function ConflictResolutionDialog({
 
         const adapterId =
           ADAPTER_NAME_TO_ID[adapterName] || (adapterName.replace(" ", "-") as AdapterType);
-        const adapterRules = localRules.filter((r) => r.enabledAdapters.includes(adapterId));
+        const adapterRules = (localRules || []).filter((r) =>
+          r.enabledAdapters.includes(adapterId)
+        );
 
         const globalRules = adapterRules.filter((r) => r.scope === "global" && r.enabled);
 

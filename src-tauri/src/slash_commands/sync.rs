@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 
 use sha2::{Digest, Sha256};
 
@@ -8,6 +9,91 @@ use crate::database::Database;
 use crate::error::{AppError, Result};
 use crate::models::Command;
 use crate::slash_commands::{get_adapter, SlashCommandAdapter};
+
+/// Validates a command name to prevent path traversal and other security issues
+pub fn validate_command_name(name: &str) -> Result<String> {
+    if name.trim().is_empty() {
+        return Err(AppError::InvalidInput {
+            message: "Command name cannot be empty".to_string(),
+        });
+    }
+
+    // Check for path traversal attempts
+    if name.contains("..") || name.contains('/') || name.contains('\\') {
+        return Err(AppError::InvalidInput {
+            message: format!(
+                "Command name '{}' contains invalid characters. Path separators are not allowed.",
+                name
+            ),
+        });
+    }
+
+    // Check for null bytes
+    if name.contains('\0') {
+        return Err(AppError::InvalidInput {
+            message: "Command name cannot contain null bytes".to_string(),
+        });
+    }
+
+    // Create a safe slug
+    let slug = name
+        .to_lowercase()
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>();
+
+    // Remove consecutive dashes
+    let mut result = String::new();
+    let mut prev_dash = false;
+    for c in slug.chars() {
+        if c == '-' {
+            if !prev_dash {
+                result.push(c);
+            }
+            prev_dash = true;
+        } else {
+            result.push(c);
+            prev_dash = false;
+        }
+    }
+
+    // Trim leading/trailing dashes
+    let trimmed = result.trim_matches('-').to_string();
+
+    if trimmed.is_empty() {
+        return Err(AppError::InvalidInput {
+            message: format!(
+                "Command name '{}' results in empty slug after sanitization",
+                name
+            ),
+        });
+    }
+
+    Ok(trimmed)
+}
+
+/// Atomically writes content to a file by writing to a temp file first
+pub fn atomic_write(path: &PathBuf, content: &str) -> Result<()> {
+    let temp_path = path.with_extension("tmp");
+
+    // Write to temp file
+    fs::write(&temp_path, content)?;
+
+    // Rename temp to target (atomic on most filesystems)
+    fs::rename(&temp_path, path).map_err(|e| {
+        // Clean up temp file on failure
+        let _ = fs::remove_file(&temp_path);
+        AppError::Io(e)
+    })?;
+
+    Ok(())
+}
 
 /// Represents the result of a slash command sync operation
 #[derive(Debug, Clone, serde::Serialize)]
@@ -46,12 +132,31 @@ pub struct SlashCommandConflict {
 
 /// Engine for syncing slash commands to AI tools
 pub struct SlashCommandSyncEngine {
-    database: std::sync::Arc<Database>,
+    database: Arc<Database>,
+    sync_lock: Arc<Mutex<()>>,
 }
 
 impl SlashCommandSyncEngine {
-    pub fn new(database: std::sync::Arc<Database>) -> Self {
-        Self { database }
+    pub fn new(database: Arc<Database>) -> Self {
+        Self {
+            database,
+            sync_lock: Arc::new(Mutex::new(())),
+        }
+    }
+
+    /// Validates a command before syncing
+    fn validate_command(&self, command: &Command) -> Result<String> {
+        // Validate command name
+        let safe_name = validate_command_name(&command.name)?;
+
+        // Validate script isn't empty
+        if command.script.trim().is_empty() {
+            return Err(AppError::InvalidInput {
+                message: "Command script cannot be empty".to_string(),
+            });
+        }
+
+        Ok(safe_name)
     }
 
     /// Sync slash commands for a specific command
@@ -63,6 +168,15 @@ impl SlashCommandSyncEngine {
         let mut result = SlashCommandSyncResult::new();
 
         if !command.generate_slash_commands {
+            return Ok(result);
+        }
+
+        // Validate command before syncing
+        if let Err(e) = self.validate_command(command) {
+            result.errors.push(format!(
+                "Validation failed for command '{}': {}",
+                command.name, e
+            ));
             return Ok(result);
         }
 
@@ -97,7 +211,9 @@ impl SlashCommandSyncEngine {
         adapter: &dyn SlashCommandAdapter,
         is_global: bool,
     ) -> Result<bool> {
-        let file_path = adapter.get_command_path(&command.name, is_global);
+        // Use safe name for file path
+        let safe_name = validate_command_name(&command.name)?;
+        let file_path = adapter.get_command_path(&safe_name, is_global);
         let content = adapter.format_command(command);
         let content_hash = calculate_hash(&content);
 
@@ -117,14 +233,20 @@ impl SlashCommandSyncEngine {
             }
         }
 
-        // Write the file
-        fs::write(&file_path, content)?;
+        // Write the file atomically
+        atomic_write(&file_path, &content)?;
 
         Ok(true)
     }
 
     /// Sync all commands that have slash commands enabled
     pub fn sync_all_commands(&self, is_global: bool) -> Result<SlashCommandSyncResult> {
+        // Acquire sync lock to prevent concurrent syncs
+        let _lock = self
+            .sync_lock
+            .lock()
+            .map_err(|_| AppError::DatabasePoisoned)?;
+
         let mut result = SlashCommandSyncResult::new();
 
         // Get all commands from database
