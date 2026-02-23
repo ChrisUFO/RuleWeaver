@@ -144,7 +144,9 @@ mod tests {
             conflicts: vec![],
         };
 
-        assert!(result.is_success());
+        // Verify success: no errors and no conflicts
+        assert!(result.errors.is_empty());
+        assert!(result.conflicts.is_empty());
     }
 
     #[test]
@@ -156,7 +158,8 @@ mod tests {
             conflicts: vec![],
         };
 
-        assert!(!result.is_success());
+        // Verify failure: has errors
+        assert!(!result.errors.is_empty());
     }
 
     #[test]
@@ -175,7 +178,8 @@ mod tests {
             }],
         };
 
-        assert!(!result.is_success());
+        // Verify failure: has conflicts
+        assert!(!result.conflicts.is_empty());
     }
         let not_synced = SyncStatus::NotSynced;
         let error = SyncStatus::Error("Test error".to_string());

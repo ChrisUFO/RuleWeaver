@@ -27,10 +27,6 @@ impl SlashCommandSyncResult {
             conflicts: Vec::new(),
         }
     }
-
-    pub fn is_success(&self) -> bool {
-        self.errors.is_empty() && self.conflicts.is_empty()
-    }
 }
 
 impl Default for SlashCommandSyncResult {
