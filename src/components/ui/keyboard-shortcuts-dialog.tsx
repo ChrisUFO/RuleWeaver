@@ -39,15 +39,20 @@ function formatShortcut(shortcut: ShortcutItem): string {
 export function KeyboardShortcutsDialog({ open, onOpenChange }: KeyboardShortcutsDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-md glass-card bg-neutral-900/90 border-white/5 premium-shadow">
         <DialogHeader>
-          <DialogTitle>Keyboard Shortcuts</DialogTitle>
+          <DialogTitle className="text-sm font-semibold tracking-wide uppercase text-muted-foreground/80">
+            Keyboard Shortcuts
+          </DialogTitle>
         </DialogHeader>
-        <div className="space-y-2 py-4">
+        <div className="space-y-1 py-4">
           {shortcutList.map((shortcut, index) => (
-            <div key={index} className="flex items-center justify-between py-2">
-              <span className="text-sm">{shortcut.label}</span>
-              <kbd className="px-2 py-1 text-xs font-mono bg-muted rounded border">
+            <div
+              key={index}
+              className="flex items-center justify-between py-2.5 px-3 rounded-xl transition-colors hover:bg-white/5"
+            >
+              <span className="text-sm font-medium text-foreground/80">{shortcut.label}</span>
+              <kbd className="px-2 py-1 text-[10px] font-mono bg-white/5 text-primary/80 rounded border border-white/10 uppercase tracking-widest shadow-inner">
                 {formatShortcut(shortcut)}
               </kbd>
             </div>

@@ -6,33 +6,33 @@ function Skeleton({ className, ...props }: React.HTMLAttributes<HTMLDivElement>)
 
 function CardSkeleton() {
   return (
-    <div className="rounded-xl border bg-card p-6">
+    <div className="rounded-xl border border-white/5 bg-white/5 p-6 premium-shadow">
       <div className="flex items-center justify-between mb-4">
-        <Skeleton className="h-4 w-24" />
-        <Skeleton className="h-4 w-4 rounded-full" />
+        <Skeleton className="h-4 w-24 bg-white/10" />
+        <Skeleton className="h-4 w-4 rounded-full bg-white/10" />
       </div>
-      <Skeleton className="h-8 w-16" />
+      <Skeleton className="h-8 w-16 bg-white/10" />
     </div>
   );
 }
 
 function RuleCardSkeleton() {
   return (
-    <div className="rounded-xl border bg-card p-4">
+    <div className="rounded-xl border border-white/5 bg-white/5 p-4 premium-shadow">
       <div className="flex items-center gap-4">
-        <Skeleton className="h-5 w-9 rounded-full" />
+        <Skeleton className="h-5 w-9 rounded-full bg-white/10" />
         <div className="flex-1 space-y-2">
           <div className="flex items-center gap-2">
-            <Skeleton className="h-5 w-40" />
-            <Skeleton className="h-5 w-16 rounded-full" />
+            <Skeleton className="h-5 w-40 bg-white/10" />
+            <Skeleton className="h-5 w-16 rounded-full bg-white/10" />
           </div>
-          <Skeleton className="h-4 w-full" />
+          <Skeleton className="h-4 w-full bg-white/10" />
           <div className="flex gap-1">
-            <Skeleton className="h-5 w-16 rounded-full" />
-            <Skeleton className="h-5 w-16 rounded-full" />
+            <Skeleton className="h-5 w-16 rounded-full bg-white/10" />
+            <Skeleton className="h-5 w-16 rounded-full bg-white/10" />
           </div>
         </div>
-        <Skeleton className="h-9 w-9 rounded-md" />
+        <Skeleton className="h-9 w-9 rounded-md bg-white/10" />
       </div>
     </div>
   );

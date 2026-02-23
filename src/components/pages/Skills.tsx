@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Plus, Trash2, FolderOpen } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -145,62 +146,100 @@ export function Skills() {
 
   return (
     <div className="grid gap-6 lg:grid-cols-[320px,1fr]">
-      <Card>
-        <CardHeader>
+      <Card className="glass-card premium-shadow border-none overflow-hidden">
+        <CardHeader className="space-y-4 bg-white/5 pb-6">
           <div className="flex items-center justify-between">
-            <CardTitle>Skills</CardTitle>
+            <CardTitle className="text-sm font-semibold tracking-wide uppercase text-muted-foreground/80">
+              Skills
+            </CardTitle>
             <div className="flex gap-2">
               <TemplateBrowser onInstalled={loadSkills} />
-              <Button size="sm" onClick={createSkill} disabled={isSaving}>
-                <Plus className="mr-2 h-4 w-4" />
+              <Button
+                size="sm"
+                onClick={createSkill}
+                disabled={isSaving}
+                className="glow-primary h-8"
+              >
+                <Plus className="mr-1.5 h-3.5 w-3.5" />
                 New
               </Button>
             </div>
           </div>
-          <CardDescription>Complex multi-step workflows</CardDescription>
+          <CardDescription className="text-xs">Complex multi-step workflows</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-2">
+        <CardContent className="space-y-1.5 pt-4 px-2">
           {skills.map((skill) => (
             <button
               key={skill.id}
-              className={`w-full flex-col items-start rounded-md border px-3 py-2 text-left transition ${
-                selectedId === skill.id ? "border-primary bg-accent" : "hover:bg-accent"
-              }`}
+              className={cn(
+                "w-full group relative overflow-hidden flex flex-col items-start rounded-xl px-4 py-3 text-left transition-all duration-300",
+                selectedId === skill.id
+                  ? "bg-primary/10 border border-primary/20 premium-shadow"
+                  : "hover:bg-white/5 border border-transparent hover:border-white/5"
+              )}
               onClick={() => setSelectedId(skill.id)}
             >
-              <div className="flex w-full items-center justify-between">
-                <div className="font-medium truncate">{skill.name}</div>
-                {!skill.enabled && <Badge variant="secondary">Disabled</Badge>}
+              <div className="flex w-full items-center justify-between gap-2">
+                <div
+                  className={cn(
+                    "truncate font-semibold text-sm transition-colors",
+                    selectedId === skill.id
+                      ? "text-primary"
+                      : "text-foreground group-hover:text-primary/80"
+                  )}
+                >
+                  {skill.name}
+                </div>
+                {!skill.enabled && (
+                  <Badge
+                    variant="secondary"
+                    className="h-4 text-[9px] px-1.5 uppercase font-bold tracking-tighter"
+                  >
+                    Disabled
+                  </Badge>
+                )}
               </div>
-              <div className="text-xs text-muted-foreground truncate opacity-80">
+              <div className="mt-1 truncate text-[11px] text-muted-foreground/60 group-hover:text-muted-foreground/80 opacity-80">
                 {skill.description}
               </div>
             </button>
           ))}
           {skills.length === 0 && (
-            <p className="text-sm text-muted-foreground p-2">No skills installed.</p>
+            <p className="text-xs text-muted-foreground/60 text-center py-8">
+              No skills installed.
+            </p>
           )}
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
+      <Card className="glass-card premium-shadow border-none overflow-hidden">
+        <CardHeader className="bg-white/5 pb-4">
           <div className="flex items-center justify-between">
             <div>
-              <CardTitle>{selected ? "Edit Skill" : "Select a Skill"}</CardTitle>
+              <CardTitle className="text-sm font-semibold tracking-wide uppercase text-primary/80">
+                {selected ? name : "Select a Skill"}
+              </CardTitle>
               <CardDescription>Define reusable instructions and workflow context.</CardDescription>
             </div>
             {selected && selected.directory_path && (
-              <Button variant="outline" size="sm" onClick={openFolder}>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={openFolder}
+                className="glass border-white/5 hover:bg-white/5"
+              >
                 <FolderOpen className="mr-2 h-4 w-4" /> Open Folder
               </Button>
             )}
           </div>
         </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
-            Security warning: Skills execute shell commands with your current user privileges. Treat
-            imported or shared skills as trusted code only.
+        <CardContent className="space-y-6 pt-6">
+          <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 text-[11px] text-amber-200/60 leading-relaxed">
+            <span className="font-bold text-amber-500 uppercase tracking-widest mr-2">
+              Warning:
+            </span>
+            Skills execute shell commands with your current user privileges. Treat imported or
+            shared skills as trusted code only.
           </div>
           {!selected ? (
             <p className="text-sm text-muted-foreground">Select a skill or create a new one.</p>
@@ -234,11 +273,13 @@ export function Skills() {
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium">LLM Instructions (SKILL.md format)</label>
+                <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground/60">
+                  Instructions (SKILL.md)
+                </label>
                 <textarea
                   value={instructions}
                   onChange={(e) => setInstructions(e.target.value)}
-                  className="min-h-48 w-full rounded-md border bg-background p-3 text-sm font-mono shadow-inner"
+                  className="min-h-60 w-full rounded-xl border border-white/5 bg-black/40 p-4 text-[13px] font-mono shadow-inner focus:outline-none focus:ring-1 focus:ring-primary/40 leading-relaxed text-primary/90 selection:bg-primary/20"
                   placeholder="Write detailed workflow instructions for the AI"
                 />
               </div>
