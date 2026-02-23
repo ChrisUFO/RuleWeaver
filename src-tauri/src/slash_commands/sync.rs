@@ -27,20 +27,9 @@ impl SlashCommandSyncResult {
             conflicts: Vec::new(),
         }
     }
-}
-    }
 
-    #[allow(dead_code)]
-    pub fn success(&self) -> bool {
+    pub fn is_success(&self) -> bool {
         self.errors.is_empty() && self.conflicts.is_empty()
-    }
-
-    #[allow(dead_code)]
-    pub fn is_empty(&self) -> bool {
-        self.files_written == 0
-            && self.files_removed == 0
-            && self.errors.is_empty()
-            && self.conflicts.is_empty()
     }
 }
 
