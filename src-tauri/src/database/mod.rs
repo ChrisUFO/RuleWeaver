@@ -810,7 +810,7 @@ impl Database {
         Ok(())
     }
 
-    pub fn import_rule(&self, rule: Rule) -> Result<()> {
+    pub fn import_rule(&self, rule: Rule, mode: crate::models::ImportMode) -> Result<()> {
         let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
         let now = chrono::Utc::now().timestamp();
 
@@ -821,9 +821,20 @@ impl Database {
 
         let enabled_adapters_json = serde_json::to_string(&rule.enabled_adapters)?;
 
+        let sql = match mode {
+            crate::models::ImportMode::Overwrite => {
+                log::info!("Import: Overwriting rule {}", rule.id);
+                "INSERT OR REPLACE INTO rules (id, name, content, scope, target_paths, enabled_adapters, enabled, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            }
+            crate::models::ImportMode::Skip => {
+                "INSERT OR IGNORE INTO rules (id, name, content, scope, target_paths, enabled_adapters, enabled, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            }
+        };
+
         conn.execute(
-            "INSERT OR REPLACE INTO rules (id, name, content, scope, target_paths, enabled_adapters, enabled, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            sql,
             params![
                 rule.id,
                 rule.name,
@@ -839,14 +850,25 @@ impl Database {
         Ok(())
     }
 
-    pub fn import_command(&self, command: Command) -> Result<()> {
+    pub fn import_command(&self, command: Command, mode: crate::models::ImportMode) -> Result<()> {
         let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
         let now = chrono::Utc::now().timestamp();
         let arguments_json = serde_json::to_string(&command.arguments)?;
 
+        let sql = match mode {
+            crate::models::ImportMode::Overwrite => {
+                log::info!("Import: Overwriting command {}", command.id);
+                "INSERT OR REPLACE INTO commands (id, name, description, script, arguments, expose_via_mcp, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+            }
+            crate::models::ImportMode::Skip => {
+                "INSERT OR IGNORE INTO commands (id, name, description, script, arguments, expose_via_mcp, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+            }
+        };
+
         conn.execute(
-            "INSERT OR REPLACE INTO commands (id, name, description, script, arguments, expose_via_mcp, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            sql,
             params![
                 command.id,
                 command.name,
@@ -861,14 +883,25 @@ impl Database {
         Ok(())
     }
 
-    pub fn import_skill(&self, skill: Skill) -> Result<()> {
+    pub fn import_skill(&self, skill: Skill, mode: crate::models::ImportMode) -> Result<()> {
         let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
         let now = chrono::Utc::now().timestamp();
         let input_schema_json = serde_json::to_string(&skill.input_schema)?;
 
+        let sql = match mode {
+            crate::models::ImportMode::Overwrite => {
+                log::info!("Import: Overwriting skill {}", skill.id);
+                "INSERT OR REPLACE INTO skills (id, name, description, instructions, input_schema, enabled, directory_path, entry_point, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            }
+            crate::models::ImportMode::Skip => {
+                "INSERT OR IGNORE INTO skills (id, name, description, instructions, input_schema, enabled, directory_path, entry_point, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            }
+        };
+
         conn.execute(
-            "INSERT OR REPLACE INTO skills (id, name, description, instructions, input_schema, enabled, directory_path, entry_point, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            sql,
             params![
                 skill.id,
                 skill.name,

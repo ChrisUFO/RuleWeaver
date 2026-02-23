@@ -110,6 +110,18 @@ pub async fn export_configuration(path: String, db: State<'_, Arc<Database>>) ->
     Ok(())
 }
 
+fn validate_config_version(config: &crate::models::ExportConfiguration) -> Result<()> {
+    if config.version != "1.0" {
+        return Err(crate::error::AppError::InvalidInput {
+            message: format!(
+                "Unsupported configuration version: {}. Only 1.0 is supported.",
+                config.version
+            ),
+        });
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn preview_import(path: String) -> Result<crate::models::ExportConfiguration> {
     let content = std::fs::read_to_string(path.clone())?;
@@ -123,14 +135,7 @@ pub async fn preview_import(path: String) -> Result<crate::models::ExportConfigu
             serde_json::from_str(&content)?
         };
 
-    if config.version != "1.0" {
-        return Err(crate::error::AppError::InvalidInput {
-            message: format!(
-                "Unsupported configuration version: {}. Only 1.0 is supported.",
-                config.version
-            ),
-        });
-    }
+    validate_config_version(&config)?;
 
     Ok(config)
 }
@@ -138,6 +143,7 @@ pub async fn preview_import(path: String) -> Result<crate::models::ExportConfigu
 #[tauri::command]
 pub async fn import_configuration(
     path: String,
+    mode: crate::models::ImportMode,
     db: State<'_, Arc<Database>>,
     _status: State<'_, crate::GlobalStatus>,
     app: tauri::AppHandle,
@@ -153,29 +159,22 @@ pub async fn import_configuration(
             serde_json::from_str(&content)?
         };
 
-    if config.version != "1.0" {
-        return Err(crate::error::AppError::InvalidInput {
-            message: format!(
-                "Unsupported configuration version: {}. Only 1.0 is supported.",
-                config.version
-            ),
-        });
-    }
+    validate_config_version(&config)?;
 
     let db_clone = Arc::clone(&db);
 
     // Perform DB operations in a blocking task to keep UI responsive
     tokio::task::spawn_blocking(move || -> Result<()> {
         for rule in config.rules {
-            db_clone.import_rule(rule)?;
+            db_clone.import_rule(rule, mode)?;
         }
 
         for command in config.commands {
-            db_clone.import_command(command)?;
+            db_clone.import_command(command, mode)?;
         }
 
         for skill in config.skills {
-            db_clone.import_skill(skill)?;
+            db_clone.import_skill(skill, mode)?;
         }
         Ok(())
     })

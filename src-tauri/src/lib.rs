@@ -47,6 +47,13 @@ impl GlobalStatus {
             }
         }
     }
+
+    pub fn update_mcp_status(&self, status: &str) {
+        {
+            *self.mcp_status.lock() = status.to_string();
+        }
+        self.update_tray();
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -412,6 +419,12 @@ fn handle_external_rule_change(
         
         if has_conflict {
             log::info!("External change conflict detected for rule: {}", rule.name);
+            app.notification()
+                .builder()
+                .title("Sync Conflict Detected")
+                .body(format!("External changes to '{}' conflict with local database. Please resolve manually.", rule.name))
+                .show()
+                .ok();
             let _ = app.emit("rule-conflict", path.to_string_lossy());
             return Ok(());
         }

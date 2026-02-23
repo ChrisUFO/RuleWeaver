@@ -79,7 +79,8 @@ export const api = {
         status: "NotStarted" | "InProgress" | "Completed" | "Failed" | "RolledBack";
       }>("get_file_migration_progress"),
     exportConfiguration: (path: string) => invoke<void>("export_configuration", { path }),
-    importConfiguration: (path: string) => invoke<void>("import_configuration", { path }),
+    importConfiguration: (path: string, mode: "overwrite" | "skip") =>
+      invoke<void>("import_configuration", { path, mode }),
     previewImport: (path: string) =>
       invoke<{
         version: string;

@@ -11,6 +11,13 @@ pub struct ExportConfiguration {
     pub skills: Vec<Skill>,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum ImportMode {
+    Overwrite,
+    Skip,
+}
+
 impl ExportConfiguration {
     pub fn new(rules: Vec<Rule>, commands: Vec<Command>, skills: Vec<Skill>) -> Self {
         Self {

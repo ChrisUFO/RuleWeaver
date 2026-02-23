@@ -19,6 +19,7 @@ import { enable, disable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
@@ -68,6 +69,7 @@ export function Settings() {
     skills: Skill[];
   } | null>(null);
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
+  const [importMode, setImportMode] = useState<"overwrite" | "skip">("overwrite");
 
   const [launchOnStartup, setLaunchOnStartup] = useState(false);
   const [storageMode, setStorageMode] = useState<"sqlite" | "file">("sqlite");
@@ -501,10 +503,10 @@ export function Settings() {
 
     setIsImporting(true);
     try {
-      await api.storage.importConfiguration(importPreview.path);
+      await api.storage.importConfiguration(importPreview.path, importMode);
       addToast({
         title: "Import Successful",
-        description: "Configuration has been imported and synchronized.",
+        description: `Configuration imported using ${importMode} mode.`,
         variant: "success",
       });
       setIsImportDialogOpen(false);
@@ -1003,6 +1005,19 @@ export function Settings() {
             <p className="text-xs text-muted-foreground italic px-1">
               Source: {importPreview?.path.split(/[/\\]/).pop()}
             </p>
+            <div className="flex items-center space-x-2 pt-2 px-1">
+              <Checkbox
+                id="overwrite"
+                checked={importMode === "overwrite"}
+                onChange={(checked) => setImportMode(checked ? "overwrite" : "skip")}
+              />
+              <label
+                htmlFor="overwrite"
+                className="text-xs font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+              >
+                Overwrite existing items with same ID
+              </label>
+            </div>
           </div>
           <DialogFooter>
             <Button

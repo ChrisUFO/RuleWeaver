@@ -16,12 +16,16 @@ pub async fn start_mcp_server(
     mcp: State<'_, McpManager>,
     status: State<'_, crate::GlobalStatus>,
 ) -> Result<()> {
-    mcp.start(&db).await?;
-    {
-        *status.mcp_status.lock() = format!("Running (Port {})", mcp.port());
-        status.update_tray();
+    match mcp.start(&db).await {
+        Ok(_) => {
+            status.update_mcp_status(&format!("Running (Port {})", mcp.port()));
+            Ok(())
+        }
+        Err(e) => {
+            status.update_mcp_status("Error Starting");
+            Err(e)
+        }
     }
-    Ok(())
 }
 
 #[tauri::command]
@@ -29,12 +33,16 @@ pub async fn stop_mcp_server(
     mcp: State<'_, McpManager>,
     status: State<'_, crate::GlobalStatus>,
 ) -> Result<()> {
-    mcp.stop().await?;
-    {
-        *status.mcp_status.lock() = "Stopped".to_string();
-        status.update_tray();
+    match mcp.stop().await {
+        Ok(_) => {
+            status.update_mcp_status("Stopped");
+            Ok(())
+        }
+        Err(e) => {
+            status.update_mcp_status("Error Stopping");
+            Err(e)
+        }
     }
-    Ok(())
 }
 
 #[tauri::command]
@@ -43,13 +51,17 @@ pub async fn restart_mcp_server(
     mcp: State<'_, McpManager>,
     status: State<'_, crate::GlobalStatus>,
 ) -> Result<()> {
-    mcp.stop().await?;
-    mcp.start(&db).await?;
-    {
-        *status.mcp_status.lock() = format!("Running (Port {})", mcp.port());
-        status.update_tray();
+    let _ = mcp.stop().await;
+    match mcp.start(&db).await {
+        Ok(_) => {
+            status.update_mcp_status(&format!("Running (Port {})", mcp.port()));
+            Ok(())
+        }
+        Err(e) => {
+            status.update_mcp_status("Error Restarting");
+            Err(e)
+        }
     }
-    Ok(())
 }
 
 #[tauri::command]
