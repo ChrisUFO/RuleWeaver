@@ -75,6 +75,7 @@ impl AdapterType {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Rule {
     pub id: String,
     pub name: String,
@@ -118,6 +119,7 @@ impl Rule {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CreateRuleInput {
     pub name: String,
     pub content: String,
@@ -134,6 +136,7 @@ fn default_true() -> bool {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct UpdateRuleInput {
     pub name: Option<String>,
     pub content: Option<String>,

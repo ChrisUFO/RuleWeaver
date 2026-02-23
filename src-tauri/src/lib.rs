@@ -356,22 +356,30 @@ fn setup_watcher(
         let app = app_handle_for_callback.clone();
         let db = Arc::clone(&db_for_callback);
 
-        tauri::async_runtime::spawn(async move {
-            match event {
-                crate::file_storage::FileChangeEvent::Created(path)
-                | crate::file_storage::FileChangeEvent::Modified(path) => {
-                    log::info!("File watcher detected change in: {}", path.display());
-                    if let Err(e) = handle_external_rule_change(&app, &db, path) {
+        match event {
+            crate::file_storage::FileChangeEvent::Created(path)
+            | crate::file_storage::FileChangeEvent::Modified(path) => {
+                log::info!("File watcher detected change in: {}", path.display());
+                
+                // Use spawn_blocking for all FS and DB operations
+                let app_clone = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    let result = tokio::task::spawn_blocking(move || {
+                        handle_external_rule_change(&app_clone, &db, path)
+                    }).await;
+                    
+                    if let Err(e) = result {
+                        log::error!("Join error in watcher task: {}", e);
+                    } else if let Ok(Err(e)) = result {
                         log::error!("Failed to handle external rule change: {}", e);
                     }
-                }
-                crate::file_storage::FileChangeEvent::Deleted(path) => {
-                    log::info!("File watcher detected deletion: {}", path.display());
-                    // For now, we don't automatically delete from DB to prevent accidental data loss
-                    let _ = app.emit("rule-file-deleted", path.to_string_lossy());
-                }
+                });
             }
-        });
+            crate::file_storage::FileChangeEvent::Deleted(path) => {
+                log::info!("File watcher detected deletion: {}", path.display());
+                let _ = app.emit("rule-file-deleted", path.to_string_lossy());
+            }
+        }
     });
 
     watcher.start(&global_dir, callback.clone())?;
@@ -404,95 +412,95 @@ fn handle_external_rule_change(
     let status = app.try_state::<GlobalStatus>();
 
     // 1. Load the rule from disk
-    let rule = crate::file_storage::load_rule_from_file(&path)?;
+    let rule_from_disk = crate::file_storage::load_rule_from_file(&path)?;
 
     // 2. Check if it exists in DB
-    let existing_rule = db.get_rule_by_id(&rule.id).ok();
+    let existing_rule = db.get_rule_by_id(&rule_from_disk.id).ok();
 
-    let should_sync = if let Some(_existing) = existing_rule {
-        // If it exists, check if it's actually different using hashes
+    if let Some(existing) = existing_rule {
+        // Compute what we *would* write to disk for this rule if we synced from DB
+        // to see if the external change actually introduced a difference.
         let engine = crate::sync::SyncEngine::new(db);
+        
+        // Check for conflicts using hashes
         let rules = db.get_all_rules()?;
         let preview = engine.preview(rules);
         
-        let has_conflict = preview.conflicts.iter().any(|c| c.file_path == path.to_string_lossy());
+        let conflict = preview.conflicts.iter().find(|c| c.file_path == path.to_string_lossy());
         
-        if has_conflict {
-            log::info!("External change conflict detected for rule: {}", rule.name);
+        if let Some(c) = conflict {
+            // There is a real difference between what's in DB and what's on disk.
+            log::info!("External change conflict detected for rule: {}", rule_from_disk.name);
+            
             app.notification()
                 .builder()
                 .title("Sync Conflict Detected")
-                .body(format!("External changes to '{}' conflict with local database. Please resolve manually.", rule.name))
+                .body(format!(
+                    "External changes to '{}' conflict with local database. Click to resolve.",
+                    rule_from_disk.name
+                ))
                 .show()
                 .ok();
+                
             let _ = app.emit("rule-conflict", path.to_string_lossy());
             return Ok(());
-        }
-
-        // Auto-update DB if no conflict (simple update)
-        db.update_rule(
-            &rule.id,
-            crate::models::UpdateRuleInput {
-                name: Some(rule.name.clone()),
-                content: Some(rule.content.clone()),
-                scope: Some(rule.scope),
-                target_paths: rule.target_paths.clone(),
-                enabled_adapters: Some(rule.enabled_adapters.clone()),
-                enabled: Some(rule.enabled),
-            },
-        )?;
-        true
-    } else {
-        // New rule created externally
-        db.create_rule(crate::models::CreateRuleInput {
-            name: rule.name.clone(),
-            content: rule.content.clone(),
-            scope: rule.scope,
-            target_paths: rule.target_paths.clone(),
-            enabled_adapters: rule.enabled_adapters.clone(),
-            enabled: rule.enabled,
-        })?;
-        true
-    };
-
-    if should_sync {
-        if let Some(ref s) = status {
-            *s.sync_status.lock() = "Syncing...".to_string();
-            s.update_tray();
-        }
-
-        let engine = crate::sync::SyncEngine::new(db);
-        let rules = db.get_all_rules()?;
-        let sync_result = engine.sync_all(rules);
-
-        if let Some(ref s) = status {
-            *s.sync_status.lock() = "Idle".to_string();
-            s.update_tray();
-        }
-
-        if sync_result.success {
-            app.notification()
-                .builder()
-                .title("Rule Auto-Synced")
-                .body(format!(
-                    "External changes to '{}' have been applied.",
-                    rule.name
-                ))
-                .show()
-                .ok();
-            let _ = app.emit("sync-complete", sync_result);
         } else {
-            app.notification()
-                .builder()
-                .title("Sync Warning")
-                .body(format!(
-                    "Detected changes in '{}' but sync had issues.",
-                    rule.name
-                ))
-                .show()
-                .ok();
-            let _ = app.emit("sync-error", sync_result);
+            // No conflict found by SyncEngine. This means the file on disk matches RuleWeaver's last known state.
+            // This event was likely triggered by RuleWeaver itself during a sync.
+            // We return early to avoid an infinite loop of Sync -> Watcher -> Sync.
+            log::debug!("File watcher ignore: No conflict for {}", rule_from_disk.name);
+            return Ok(());
         }
+    } else {
+        // New rule created externally - this is always an update
+        log::info!("New rule detected externally: {}", rule_from_disk.name);
+        db.create_rule(crate::models::CreateRuleInput {
+            name: rule_from_disk.name.clone(),
+            content: rule_from_disk.content.clone(),
+            scope: rule_from_disk.scope,
+            target_paths: rule_from_disk.target_paths.clone(),
+            enabled_adapters: rule_from_disk.enabled_adapters.clone(),
+            enabled: rule_from_disk.enabled,
+        })?;
+    }
+
+    // If we reached here, we need to sync other adapters/files
+    if let Some(ref s) = status {
+        *s.sync_status.lock() = "Syncing...".to_string();
+        s.update_tray();
+    }
+
+    let engine = crate::sync::SyncEngine::new(db);
+    let rules = db.get_all_rules()?;
+    let sync_result = engine.sync_all(rules);
+
+    if let Some(ref s) = status {
+        *s.sync_status.lock() = "Idle".to_string();
+        s.update_tray();
+    }
+
+    if sync_result.success {
+        app.notification()
+            .builder()
+            .title("Rule Auto-Synced")
+            .body(format!(
+                "External changes to '{}' have been applied.",
+                rule_from_disk.name
+            ))
+            .show()
+            .ok();
+        let _ = app.emit("sync-complete", sync_result);
+    } else {
+        app.notification()
+            .builder()
+            .title("Sync Warning")
+            .body(format!(
+                "Detected changes in '{}' but sync had issues.",
+                rule_from_disk.name
+            ))
+            .show()
+            .ok();
+        let _ = app.emit("sync-error", sync_result);
     }
 
     Ok(())

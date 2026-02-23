@@ -60,3 +60,4 @@ plan.md
 *.bak
 .DS_Store
 Thumbs.db
+coverage/

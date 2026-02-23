@@ -106,7 +106,14 @@ pub async fn export_configuration(path: String, db: State<'_, Arc<Database>>) ->
         serde_json::to_string_pretty(&config)?
     };
 
-    std::fs::write(path, content)?;
+    tokio::task::spawn_blocking(move || {
+        std::fs::write(path, content).map_err(crate::error::AppError::Io)
+    })
+    .await
+    .map_err(|e| crate::error::AppError::InvalidInput {
+        message: e.to_string(),
+    })??;
+
     Ok(())
 }
 
@@ -122,20 +129,68 @@ fn validate_config_version(config: &crate::models::ExportConfiguration) -> Resul
     Ok(())
 }
 
+fn validate_config_data(config: &crate::models::ExportConfiguration) -> Result<()> {
+    for rule in &config.rules {
+        if rule.name.trim().is_empty() {
+            return Err(crate::error::AppError::Validation(
+                "Imported rule name cannot be empty".to_string(),
+            ));
+        }
+        if rule.content.trim().is_empty() {
+            return Err(crate::error::AppError::Validation(format!(
+                "Imported rule '{}' has no content",
+                rule.name
+            )));
+        }
+    }
+
+    for cmd in &config.commands {
+        if cmd.name.trim().is_empty() {
+            return Err(crate::error::AppError::Validation(
+                "Imported command name cannot be empty".to_string(),
+            ));
+        }
+        if cmd.script.trim().is_empty() {
+            return Err(crate::error::AppError::Validation(format!(
+                "Imported command '{}' has no script",
+                cmd.name
+            )));
+        }
+    }
+
+    for skill in &config.skills {
+        if skill.name.trim().is_empty() {
+            return Err(crate::error::AppError::Validation(
+                "Imported skill name cannot be empty".to_string(),
+            ));
+        }
+    }
+
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn preview_import(path: String) -> Result<crate::models::ExportConfiguration> {
-    let content = std::fs::read_to_string(path.clone())?;
+    let path_clone = path.clone();
+    let content = tokio::task::spawn_blocking(move || {
+        std::fs::read_to_string(path_clone).map_err(crate::error::AppError::Io)
+    })
+    .await
+    .map_err(|e| crate::error::AppError::InvalidInput {
+        message: e.to_string(),
+    })??;
 
-    let config: crate::models::ExportConfiguration =
-        if path.ends_with(".yaml") || path.ends_with(".yml") {
-            serde_yaml::from_str(&content).map_err(|e| crate::error::AppError::InvalidInput {
-                message: e.to_string(),
-            })?
-        } else {
-            serde_json::from_str(&content)?
-        };
+    let config: crate::models::ExportConfiguration = if path.ends_with(".yaml") || path.ends_with(".yml")
+    {
+        serde_yaml::from_str(&content).map_err(|e| crate::error::AppError::InvalidInput {
+            message: e.to_string(),
+        })?
+    } else {
+        serde_json::from_str(&content)?
+    };
 
     validate_config_version(&config)?;
+    validate_config_data(&config)?;
 
     Ok(config)
 }
@@ -148,7 +203,14 @@ pub async fn import_configuration(
     _status: State<'_, crate::GlobalStatus>,
     app: tauri::AppHandle,
 ) -> Result<()> {
-    let content = std::fs::read_to_string(path.clone())?;
+    let path_clone = path.clone();
+    let content = tokio::task::spawn_blocking(move || {
+        std::fs::read_to_string(path_clone).map_err(crate::error::AppError::Io)
+    })
+    .await
+    .map_err(|e| crate::error::AppError::InvalidInput {
+        message: e.to_string(),
+    })??;
 
     let config: crate::models::ExportConfiguration =
         if path.ends_with(".yaml") || path.ends_with(".yml") {
@@ -160,6 +222,7 @@ pub async fn import_configuration(
         };
 
     validate_config_version(&config)?;
+    validate_config_data(&config)?;
 
     let db_clone = Arc::clone(&db);
 
