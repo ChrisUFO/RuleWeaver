@@ -22,12 +22,12 @@ use std::time::Instant;
 
 use crate::constants::limits::{
     MAX_COMMAND_NAME_LENGTH, MAX_COMMAND_SCRIPT_LENGTH, MAX_RULE_CONTENT_LENGTH,
-    MAX_RULE_NAME_LENGTH, MAX_SKILL_INSTRUCTIONS_LENGTH, MAX_SKILL_NAME_LENGTH,
+    MAX_RULE_NAME_LENGTH,
 };
 use crate::database::Database;
 use crate::error::{AppError, Result};
 use crate::file_storage;
-use crate::models::{Rule, SkillParameter, SkillParameterType};
+use crate::models::Rule;
 
 pub static RUNNING_TESTS: LazyLock<Mutex<HashSet<String>>> =
     LazyLock::new(|| Mutex::new(HashSet::new()));
@@ -151,103 +151,6 @@ pub fn validate_command_arguments(args: &[crate::models::CommandArgument]) -> Re
                 }
             }
         }
-    }
-    Ok(())
-}
-
-pub fn validate_skill_input(name: &str, instructions: &str) -> Result<()> {
-    let trimmed_name = name.trim();
-    if trimmed_name.is_empty() {
-        return Err(AppError::Validation(
-            "Skill name cannot be empty".to_string(),
-        ));
-    }
-    if trimmed_name.len() > MAX_SKILL_NAME_LENGTH {
-        return Err(AppError::Validation(format!(
-            "Skill name too long (max {} characters)",
-            MAX_SKILL_NAME_LENGTH
-        )));
-    }
-    if instructions.trim().is_empty() {
-        // We allow empty instructions if there's an entry point script, but typically it should have something.
-        // Actually, let's just allow empty instructions if they are just running a script natively.
-    } else if instructions.len() > MAX_SKILL_INSTRUCTIONS_LENGTH {
-        return Err(AppError::Validation(format!(
-            "Skill instructions too large (max {} characters)",
-            MAX_SKILL_INSTRUCTIONS_LENGTH
-        )));
-    }
-
-    Ok(())
-}
-
-pub fn validate_skill_schema(schema: &[SkillParameter]) -> Result<()> {
-    let mut names = std::collections::HashSet::new();
-
-    for param in schema {
-        let trimmed_name = param.name.trim();
-        if trimmed_name.is_empty() {
-            return Err(AppError::Validation(
-                "Parameter name cannot be empty".to_string(),
-            ));
-        }
-
-        if !trimmed_name
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '_')
-        {
-            return Err(AppError::Validation(format!(
-                "Parameter name '{}' can only contain alphanumeric characters and underscores",
-                trimmed_name
-            )));
-        }
-
-        if !names.insert(trimmed_name.to_lowercase()) {
-            return Err(AppError::Validation(format!(
-                "Duplicate parameter name: {}",
-                trimmed_name
-            )));
-        }
-
-        if matches!(param.param_type, SkillParameterType::Enum) {
-            let options = param.enum_values.as_ref();
-            if options.is_none() || options.unwrap().is_empty() {
-                return Err(AppError::Validation(format!(
-                    "Parameter '{}' is type Enum but has no enum_values defined",
-                    trimmed_name
-                )));
-            }
-            let options_vec = options.unwrap();
-
-            if let Some(default_val) = &param.default_value {
-                if !options_vec.contains(default_val) {
-                    return Err(AppError::Validation(format!(
-                        "Default value '{}' for Enum parameter '{}' must be one of the enum_values",
-                        default_val, trimmed_name
-                    )));
-                }
-            }
-        }
-    }
-
-    Ok(())
-}
-
-pub fn validate_skill_entry_point(entry_point: &str) -> Result<()> {
-    let trimmed = entry_point.trim();
-    if trimmed.is_empty() {
-        return Err(AppError::Validation(
-            "Entry point cannot be empty".to_string(),
-        ));
-    }
-    if trimmed.contains("..")
-        || trimmed.starts_with('/')
-        || trimmed.starts_with('\\')
-        || trimmed.contains(':')
-    {
-        return Err(AppError::Validation(
-            "Entry point must be a relative path without directory traversal".to_string(),
-        ));
     }
     Ok(())
 }

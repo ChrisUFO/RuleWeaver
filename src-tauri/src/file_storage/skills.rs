@@ -222,10 +222,17 @@ pub fn sync_skills_to_db(db: &Database) -> Result<u32> {
 pub fn delete_skill_from_disk(skill: &Skill) -> Result<()> {
     let skill_dir = PathBuf::from(&skill.directory_path);
     if skill_dir.exists() && skill_dir.is_dir() {
-        // Only delete if it's actually in our global skills dir to be safe
+        // Security: Canonicalize both paths to prevent directory traversal / symlink bypasses
+        let canonical_skill_dir = std::fs::canonicalize(&skill_dir).map_err(AppError::Io)?;
         let global_dir = get_global_skills_dir()?;
-        if skill_dir.starts_with(&global_dir) {
-            fs::remove_dir_all(skill_dir)?;
+        let canonical_global_dir = if global_dir.exists() {
+            std::fs::canonicalize(&global_dir).map_err(AppError::Io)?
+        } else {
+            global_dir
+        };
+
+        if canonical_skill_dir.starts_with(&canonical_global_dir) {
+            fs::remove_dir_all(canonical_skill_dir)?;
         }
     }
     Ok(())

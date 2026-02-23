@@ -27,7 +27,7 @@ use crate::execution::{
     execute_shell_with_timeout_env_dir, replace_template_with_env_ref, sanitize_argument_value,
     slugify, ExecuteAndLogInput,
 };
-use crate::models::{Command, Skill, SkillParameterType};
+use crate::models::{Command, Skill};
 
 fn truncate_output_custom(s: String, max_size: usize) -> String {
     if s.len() > max_size {
@@ -779,101 +779,58 @@ async fn handle_skill_call(
     args_map: serde_json::Map<String, serde_json::Value>,
     shared_db: &Option<Arc<Database>>,
 ) -> serde_json::Value {
-    let mut skill_envs: Vec<(String, String)> = Vec::new();
-    let mut invalid_arg_message: Option<String> = None;
-    let mut missing_required: Vec<String> = Vec::new();
-
-    for param in &skill.input_schema {
-        let raw_value = args_map
-            .get(&param.name)
-            .map(|v| {
-                if let Some(s) = v.as_str() {
-                    s.to_string()
-                } else {
-                    v.to_string()
+    let final_envs = match skill.validate_payload(&args_map) {
+        Ok(envs) => envs,
+        Err(e) => {
+            return json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "error": {
+                    "code": -32602,
+                    "message": e.to_string()
                 }
-            })
-            .or_else(|| param.default_value.clone())
-            .unwrap_or_default();
-
-        if raw_value.is_empty() && param.required {
-            missing_required.push(param.name.clone());
-            continue;
+            });
         }
+    };
 
-        if raw_value.is_empty() {
-            continue;
-        }
+    let mut final_envs = final_envs;
 
-        match sanitize_argument_value(&raw_value) {
-            Ok(safe_value) => {
-                if matches!(param.param_type, SkillParameterType::Enum) {
-                    if let Some(ref options) = param.enum_values {
-                        if !options.contains(&raw_value) {
-                            invalid_arg_message = Some(format!(
-                                "Parameter '{}' must be one of: {}",
-                                param.name,
-                                options.join(", ")
-                            ));
-                            break;
-                        }
-                    }
-                }
-
-                let env_name = format!(
-                    "SKILL_PARAM_{}",
-                    param.name.replace('-', "_").to_uppercase()
-                );
-                skill_envs.push((env_name, safe_value));
-            }
-            Err(e) => {
-                invalid_arg_message = Some(e.to_string());
-                break;
-            }
-        }
-    }
-
-    if !missing_required.is_empty() {
-        return json!({
-            "jsonrpc": "2.0",
-            "id": id,
-            "error": {
-                "code": -32602,
-                "message": format!("Missing required parameters: {}", missing_required.join(", "))
-            }
-        });
-    }
-
-    if let Some(message) = invalid_arg_message {
-        return json!({
-            "jsonrpc": "2.0",
-            "id": id,
-            "error": {
-                "code": -32602,
-                "message": format!("Invalid parameter value: {}", message)
-            }
-        });
-    }
-
-    skill_envs.push(("RULEWEAVER_SKILL_ID".to_string(), skill.id.clone()));
-    skill_envs.push(("RULEWEAVER_SKILL_NAME".to_string(), skill.name.clone()));
-    skill_envs.push((
-        "RULEWEAVER_SKILL_DIR".to_string(),
+    final_envs.push((
+        crate::constants::skills::RULEWEAVER_SKILL_ID.to_string(),
+        skill.id.clone(),
+    ));
+    final_envs.push((
+        crate::constants::skills::RULEWEAVER_SKILL_NAME.to_string(),
+        skill.name.clone(),
+    ));
+    final_envs.push((
+        crate::constants::skills::RULEWEAVER_SKILL_DIR.to_string(),
         skill.directory_path.clone(),
     ));
 
     // Inject filtered secrets as SKILL_SECRET_*
     if let Some(db) = shared_db {
+        let allowlist = db
+            .get_setting("mcp_secrets_allowlist")
+            .ok()
+            .flatten()
+            .unwrap_or_default();
+        let allowed_keys: Vec<String> = allowlist
+            .split(',')
+            .map(|s| s.trim().to_lowercase())
+            .filter(|s| !s.is_empty())
+            .collect();
+
         if let Ok(settings) = db.get_all_settings() {
             for (k, v) in settings {
                 let low_k = k.to_lowercase();
-                if low_k.contains("key")
-                    || low_k.contains("token")
-                    || low_k.contains("secret")
-                    || low_k.contains("password")
-                {
-                    let env_name = format!("SKILL_SECRET_{}", k.replace('-', "_").to_uppercase());
-                    skill_envs.push((env_name, v));
+                if allowed_keys.contains(&low_k) {
+                    let env_name = format!(
+                        "{}{}",
+                        crate::constants::skills::SKILL_SECRET_PREFIX,
+                        k.replace('-', "_").to_uppercase()
+                    );
+                    final_envs.push((env_name, v));
                 }
             }
         }
@@ -882,6 +839,28 @@ async fn handle_skill_call(
     let start = Instant::now();
     let mut output = String::new();
     let mut is_error = false;
+
+    if let Err(e) = crate::models::validate_skill_input(&skill.name, &skill.instructions) {
+        return json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "error": { "code": -32602, "message": e.to_string() }
+        });
+    }
+    if let Err(e) = crate::models::validate_skill_schema(&skill.input_schema) {
+        return json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "error": { "code": -32602, "message": e.to_string() }
+        });
+    }
+    if let Err(e) = crate::models::validate_skill_entry_point(&skill.entry_point) {
+        return json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "error": { "code": -32602, "message": e.to_string() }
+        });
+    }
 
     let entry_point = if skill.entry_point.is_empty() {
         return json!({
@@ -957,7 +936,7 @@ async fn handle_skill_call(
     match execute_shell_with_timeout_env_dir(
         &entry_point,
         SKILL_EXEC_TIMEOUT,
-        &skill_envs,
+        &final_envs,
         Some(dir),
     )
     .await

@@ -7,8 +7,6 @@ use crate::file_storage::skills::{delete_skill_from_disk, save_skill_to_disk};
 use crate::models::{CreateSkillInput, Skill, UpdateSkillInput};
 use crate::templates::skills::{get_bundled_skill_templates, TemplateSkill};
 
-use super::{validate_skill_entry_point, validate_skill_input, validate_skill_schema};
-
 #[tauri::command]
 pub fn get_all_skills(db: State<'_, Arc<Database>>) -> Result<Vec<Skill>> {
     db.get_all_skills()
@@ -21,9 +19,9 @@ pub fn get_skill_by_id(id: String, db: State<'_, Arc<Database>>) -> Result<Skill
 
 #[tauri::command]
 pub fn create_skill(input: CreateSkillInput, db: State<'_, Arc<Database>>) -> Result<Skill> {
-    validate_skill_input(&input.name, &input.instructions)?;
-    validate_skill_schema(&input.input_schema)?;
-    validate_skill_entry_point(&input.entry_point)?;
+    crate::models::validate_skill_input(&input.name, &input.instructions)?;
+    crate::models::validate_skill_schema(&input.input_schema)?;
+    crate::models::validate_skill_entry_point(&input.entry_point)?;
 
     // Create in DB first to get ID and defaults
     let created = db.create_skill(input)?;
@@ -48,22 +46,22 @@ pub fn update_skill(
 ) -> Result<Skill> {
     if let Some(ref name) = input.name {
         if let Some(ref instructions) = input.instructions {
-            validate_skill_input(name, instructions)?;
+            crate::models::validate_skill_input(name, instructions)?;
         } else {
             let existing = db.get_skill_by_id(&id)?;
-            validate_skill_input(name, &existing.instructions)?;
+            crate::models::validate_skill_input(name, &existing.instructions)?;
         }
     } else if let Some(ref instructions) = input.instructions {
         let existing = db.get_skill_by_id(&id)?;
-        validate_skill_input(&existing.name, instructions)?;
+        crate::models::validate_skill_input(&existing.name, instructions)?;
     }
 
     if let Some(ref schema) = input.input_schema {
-        validate_skill_schema(schema)?;
+        crate::models::validate_skill_schema(schema)?;
     }
 
     if let Some(ref ep) = input.entry_point {
-        validate_skill_entry_point(ep)?;
+        crate::models::validate_skill_entry_point(ep)?;
     }
 
     let updated = db.update_skill(&id, input)?;
@@ -142,6 +140,16 @@ pub fn install_skill_template(template_id: String, db: State<'_, Arc<Database>>)
 
     // Write the custom template files
     for file in template.files {
+        // Security: Validate template filenames to prevent path traversal
+        if file.filename.contains("..")
+            || file.filename.contains('/')
+            || file.filename.contains('\\')
+        {
+            return Err(AppError::Validation(format!(
+                "Invalid template filename: {}",
+                file.filename
+            )));
+        }
         let file_path = path.join(&file.filename);
         std::fs::write(&file_path, &file.content).map_err(AppError::Io)?;
     }

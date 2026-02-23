@@ -31,4 +31,12 @@ pub mod security {
     pub const REGEX_DFA_SIZE_LIMIT: usize = 10_000;
 }
 
+pub mod skills {
+    pub const SKILL_PARAM_PREFIX: &str = "SKILL_PARAM_";
+    pub const SKILL_SECRET_PREFIX: &str = "SKILL_SECRET_";
+    pub const RULEWEAVER_SKILL_ID: &str = "RULEWEAVER_SKILL_ID";
+    pub const RULEWEAVER_SKILL_NAME: &str = "RULEWEAVER_SKILL_NAME";
+    pub const RULEWEAVER_SKILL_DIR: &str = "RULEWEAVER_SKILL_DIR";
+}
+
 pub const DEFAULT_MCP_PORT: u16 = 8080;

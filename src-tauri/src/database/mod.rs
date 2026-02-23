@@ -45,8 +45,8 @@ impl Database {
             std::fs::create_dir_all(parent)?;
         }
 
-        let conn = Connection::open(&db_path)?;
-        run_migrations(&conn)?;
+        let mut conn = Connection::open(&db_path)?;
+        run_migrations(&mut conn)?;
         Ok(Self(Mutex::new(conn)))
     }
 
@@ -67,8 +67,8 @@ impl Database {
 
     #[cfg(test)]
     pub fn new_in_memory() -> Result<Self> {
-        let conn = Connection::open_in_memory()?;
-        run_migrations(&conn)?;
+        let mut conn = Connection::open_in_memory()?;
+        run_migrations(&mut conn)?;
         Ok(Self(Mutex::new(conn)))
     }
 
@@ -82,8 +82,8 @@ impl Database {
             PathBuf::from(path)
         };
 
-        let conn = Connection::open(&db_path)?;
-        run_migrations(&conn)?;
+        let mut conn = Connection::open(&db_path)?;
+        run_migrations(&mut conn)?;
 
         let mut guard = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
         *guard = conn;
@@ -541,16 +541,16 @@ impl Database {
             "INSERT INTO skills (id, name, description, instructions, input_schema, enabled, directory_path, entry_point, created_at, updated_at)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             params![
-                id,
-                input.name,
-                input.description,
-                input.instructions,
-                input_schema_json,
-                input.enabled,
-                input.directory_path,
-                input.entry_point,
-                now,
-                now
+                &id,
+                &input.name,
+                &input.description,
+                &input.instructions,
+                &input_schema_json,
+                &input.enabled,
+                &input.directory_path,
+                &input.entry_point,
+                &now,
+                &now
             ],
         )?;
 
@@ -574,7 +574,17 @@ impl Database {
 
         conn.execute(
             "UPDATE skills SET name = ?, description = ?, instructions = ?, input_schema = ?, enabled = ?, directory_path = ?, entry_point = ?, updated_at = ? WHERE id = ?",
-            params![name, description, instructions, input_schema_json, enabled, directory_path, entry_point, now, id],
+            params![
+                &name,
+                &description,
+                &instructions,
+                &input_schema_json,
+                &enabled,
+                &directory_path,
+                &entry_point,
+                &now,
+                &id
+            ],
         )?;
 
         drop(conn);
@@ -810,13 +820,15 @@ impl Database {
     }
 }
 
-fn run_migrations(conn: &Connection) -> Result<()> {
-    let current_version: i32 = conn
+fn run_migrations(conn: &mut Connection) -> Result<()> {
+    let transaction = conn.transaction()?;
+
+    let current_version: i32 = transaction
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap_or(0);
 
     if current_version < 1 {
-        conn.execute(
+        transaction.execute(
             "CREATE TABLE IF NOT EXISTS rules (
                 id TEXT PRIMARY KEY NOT NULL,
                 name TEXT NOT NULL,
@@ -831,7 +843,7 @@ fn run_migrations(conn: &Connection) -> Result<()> {
             [],
         )?;
 
-        conn.execute(
+        transaction.execute(
             "CREATE TABLE IF NOT EXISTS sync_history (
                 file_path TEXT PRIMARY KEY NOT NULL,
                 content_hash TEXT NOT NULL,
@@ -840,7 +852,7 @@ fn run_migrations(conn: &Connection) -> Result<()> {
             [],
         )?;
 
-        conn.execute(
+        transaction.execute(
             "CREATE TABLE IF NOT EXISTS sync_logs (
                 id TEXT PRIMARY KEY NOT NULL,
                 timestamp INTEGER NOT NULL,
@@ -851,7 +863,7 @@ fn run_migrations(conn: &Connection) -> Result<()> {
             [],
         )?;
 
-        conn.execute(
+        transaction.execute(
             "CREATE TABLE IF NOT EXISTS settings (
                 key TEXT PRIMARY KEY NOT NULL,
                 value TEXT NOT NULL
@@ -859,25 +871,21 @@ fn run_migrations(conn: &Connection) -> Result<()> {
             [],
         )?;
 
-        conn.execute(
+        transaction.execute(
             "CREATE INDEX IF NOT EXISTS idx_rules_scope ON rules(scope)",
             [],
         )?;
-
-        conn.execute("PRAGMA user_version = 1", [])?;
     }
 
     if current_version < 2 {
-        conn.execute(
+        transaction.execute(
             "CREATE INDEX IF NOT EXISTS idx_sync_logs_timestamp ON sync_logs(timestamp)",
             [],
         )?;
-
-        conn.execute("PRAGMA user_version = 2", [])?;
     }
 
     if current_version < 3 {
-        conn.execute(
+        transaction.execute(
             "CREATE TABLE IF NOT EXISTS rule_file_index (
                 rule_id TEXT PRIMARY KEY NOT NULL,
                 file_path TEXT NOT NULL,
@@ -887,16 +895,14 @@ fn run_migrations(conn: &Connection) -> Result<()> {
             [],
         )?;
 
-        conn.execute(
+        transaction.execute(
             "CREATE INDEX IF NOT EXISTS idx_rule_file_index_path ON rule_file_index(file_path)",
             [],
         )?;
-
-        conn.execute("PRAGMA user_version = 3", [])?;
     }
 
     if current_version < 4 {
-        conn.execute(
+        transaction.execute(
             "CREATE TABLE IF NOT EXISTS commands (
                 id TEXT PRIMARY KEY NOT NULL,
                 name TEXT NOT NULL,
@@ -910,12 +916,12 @@ fn run_migrations(conn: &Connection) -> Result<()> {
             [],
         )?;
 
-        conn.execute(
+        transaction.execute(
             "CREATE INDEX IF NOT EXISTS idx_commands_updated_at ON commands(updated_at)",
             [],
         )?;
 
-        conn.execute(
+        transaction.execute(
             "CREATE TABLE IF NOT EXISTS execution_logs (
                 id TEXT PRIMARY KEY NOT NULL,
                 command_id TEXT NOT NULL,
@@ -931,16 +937,14 @@ fn run_migrations(conn: &Connection) -> Result<()> {
             [],
         )?;
 
-        conn.execute(
+        transaction.execute(
             "CREATE INDEX IF NOT EXISTS idx_execution_logs_executed_at ON execution_logs(executed_at)",
             [],
         )?;
-
-        conn.execute("PRAGMA user_version = 4", [])?;
     }
 
     if current_version < 5 {
-        conn.execute(
+        transaction.execute(
             "CREATE TABLE IF NOT EXISTS skills (
                 id TEXT PRIMARY KEY NOT NULL,
                 name TEXT NOT NULL,
@@ -953,51 +957,48 @@ fn run_migrations(conn: &Connection) -> Result<()> {
             [],
         )?;
 
-        conn.execute(
+        transaction.execute(
             "CREATE INDEX IF NOT EXISTS idx_skills_updated_at ON skills(updated_at)",
             [],
         )?;
-
-        conn.execute("PRAGMA user_version = 5", [])?;
     }
 
     if current_version < 6 {
-        let mut stmt = conn.prepare("PRAGMA table_info(skills)")?;
+        let mut stmt = transaction.prepare("PRAGMA table_info(skills)")?;
         let cols: Vec<String> = stmt
             .query_map([], |row| row.get(1))?
             .collect::<std::result::Result<Vec<_>, _>>()?;
 
         if !cols.iter().any(|c| c == "input_schema") {
-            conn.execute(
+            transaction.execute(
                 "ALTER TABLE skills ADD COLUMN input_schema TEXT NOT NULL DEFAULT '[]'",
                 [],
             )?;
         }
-
-        conn.execute("PRAGMA user_version = 6", [])?;
     }
 
     if current_version < 7 {
-        let mut stmt = conn.prepare("PRAGMA table_info(skills)")?;
+        let mut stmt = transaction.prepare("PRAGMA table_info(skills)")?;
         let cols: Vec<String> = stmt
             .query_map([], |row| row.get(1))?
             .collect::<std::result::Result<Vec<_>, _>>()?;
 
         if !cols.iter().any(|c| c == "directory_path") {
-            conn.execute(
+            transaction.execute(
                 "ALTER TABLE skills ADD COLUMN directory_path TEXT NOT NULL DEFAULT ''",
                 [],
             )?;
         }
         if !cols.iter().any(|c| c == "entry_point") {
-            conn.execute(
+            transaction.execute(
                 "ALTER TABLE skills ADD COLUMN entry_point TEXT NOT NULL DEFAULT ''",
                 [],
             )?;
         }
-
-        conn.execute("PRAGMA user_version = 7", [])?;
     }
+
+    transaction.execute("PRAGMA user_version = 7", [])?;
+    transaction.commit()?;
 
     Ok(())
 }

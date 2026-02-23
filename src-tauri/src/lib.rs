@@ -14,7 +14,7 @@ use mcp::McpManager;
 use std::sync::Arc;
 use tauri::menu::{MenuBuilder, MenuItemBuilder};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 const MINIMIZE_TO_TRAY_KEY: &str = "minimize_to_tray";
 
@@ -30,6 +30,7 @@ pub fn run() {
             // Sync skills to database on startup
             if let Err(e) = crate::file_storage::skills::sync_skills_to_db(&db) {
                 log::error!("Failed to sync skills on startup: {}", e);
+                let _ = app.emit("startup-sync-error", e.to_string());
             }
 
             let mcp_manager = McpManager::new(crate::constants::DEFAULT_MCP_PORT);
