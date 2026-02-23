@@ -566,6 +566,115 @@ impl<'a> SyncEngine<'a> {
         }
     }
 
+    pub fn sync_rule(&self, rule: Rule) -> SyncResult {
+        let mut files_written = Vec::new();
+        let mut errors = Vec::new();
+        let conflicts = Vec::new();
+
+        let disabled_adapters = self.get_disabled_adapters();
+        let adapters = get_all_adapters();
+
+        let all_rules = match self.db.get_all_rules() {
+            Ok(r) => r,
+            Err(e) => {
+                return SyncResult {
+                    success: false,
+                    files_written: vec![],
+                    errors: vec![SyncError {
+                        file_path: "".to_string(),
+                        adapter_name: "".to_string(),
+                        message: format!("Failed to fetch rules: {}", e),
+                    }],
+                    conflicts: vec![],
+                };
+            }
+        };
+
+        for adapter in &adapters {
+            if disabled_adapters.contains(&adapter.id()) || !rule.enabled_adapters.contains(&adapter.id()) {
+                continue;
+            }
+
+            // For each adapter, we need to sync the file(s) this rule belongs to.
+            // This means re-collecting ALL rules for that target file to ensure its content is correct.
+            
+            if rule.scope == Scope::Global {
+                let path = match adapter.global_path() {
+                    Ok(p) => p,
+                    Err(e) => {
+                        errors.push(SyncError {
+                            file_path: String::new(),
+                            adapter_name: adapter.name().to_string(),
+                            message: e.to_string(),
+                        });
+                        continue;
+                    }
+                };
+                
+                let global_rules: Vec<Rule> = all_rules
+                    .iter()
+                    .filter(|r| r.scope == Scope::Global && r.enabled_adapters.contains(&adapter.id()))
+                    .cloned()
+                    .collect();
+
+                match self.sync_file(adapter.as_ref(), &global_rules, &path) {
+                    Ok(()) => files_written.push(path.to_string_lossy().to_string()),
+                    Err(e) => errors.push(SyncError {
+                        file_path: path.to_string_lossy().to_string(),
+                        adapter_name: adapter.name().to_string(),
+                        message: e.to_string(),
+                    }),
+                }
+            } else if rule.scope == Scope::Local {
+                if let Some(paths) = &rule.target_paths {
+                    for base_path in paths {
+                        if let Ok(_) = validate_target_path(base_path) {
+                            let path = PathBuf::from(base_path).join(adapter.file_name());
+                            
+                            let path_rules: Vec<Rule> = all_rules
+                                .iter()
+                                .filter(|r| {
+                                    r.scope == Scope::Local && 
+                                    r.enabled_adapters.contains(&adapter.id()) &&
+                                    r.target_paths.as_ref().map(|p| p.contains(base_path)).unwrap_or(false)
+                                })
+                                .cloned()
+                                .collect();
+
+                            match self.sync_file(adapter.as_ref(), &path_rules, &path) {
+                                Ok(()) => files_written.push(path.to_string_lossy().to_string()),
+                                Err(e) => errors.push(SyncError {
+                                    file_path: path.to_string_lossy().to_string(),
+                                    adapter_name: adapter.name().to_string(),
+                                    message: e.to_string(),
+                                }),
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        let status = if errors.is_empty() {
+            "success"
+        } else if !files_written.is_empty() {
+            "partial"
+        } else {
+            "failed"
+        };
+
+        let _ = self
+            .db
+            .add_sync_log(files_written.len() as u32, status, "auto");
+
+        SyncResult {
+            success: errors.is_empty(),
+            files_written,
+            errors,
+            conflicts,
+        }
+    }
+
     pub fn preview(&self, rules: Vec<Rule>) -> SyncResult {
         let mut files_written = Vec::new();
         let mut conflicts = Vec::new();

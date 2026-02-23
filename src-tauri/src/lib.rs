@@ -155,41 +155,58 @@ pub fn run() {
                                                         app_handle.try_state::<Arc<Database>>(),
                                                         app_handle.try_state::<GlobalStatus>(),
                                                     ) {
-                                                        {
-                                                            *status.sync_status.lock() = "Syncing...".to_string();
-                                                            status.update_tray();
-                                                        }
-                        
-                                                        let engine = crate::sync::SyncEngine::new(&db);
-                                                        if let Ok(rules) = db.get_all_rules() {
-                                                            let result = engine.sync_all(rules);
-                        
-                                                            {
-                                                                *status.sync_status.lock() = "Idle".to_string();
-                                                                status.update_tray();
-                                                            }
-                                                                        use tauri_plugin_notification::NotificationExt;
-                                                if result.success {
-                                                    app_handle
-                                                        .notification()
-                                                        .builder()
-                                                        .title("Sync Complete")
-                                                        .body(format!(
-                                                            "Successfully synced {} files.",
-                                                            result.files_written.len()
-                                                        ))
-                                                        .show()
-                                                        .ok();
-                                                } else {
-                                                    app_handle
-                                                        .notification()
-                                                        .builder()
-                                                        .title("Sync Failed")
-                                                        .body("Errors occurred during quick sync.")
-                                                        .show()
-                                                        .ok();
-                                                }
-                                            }
+                                                                                        {
+                                                                                            *status.sync_status.lock() = "Syncing...".to_string();
+                                                                                            status.update_tray();
+                                                                                        }
+                                                        
+                                                                                        let db_for_sync = Arc::clone(&db);
+                                                                                        let result = tokio::task::spawn_blocking(move || {
+                                                                                            let engine = crate::sync::SyncEngine::new(&db_for_sync);
+                                                                                            if let Ok(rules) = db_for_sync.get_all_rules() {
+                                                                                                Ok(engine.sync_all(rules))
+                                                                                            } else {
+                                                                                                Err(crate::error::AppError::Internal {
+                                                                                                    message: "Failed to fetch rules".to_string(),
+                                                                                                })
+                                                                                            }
+                                                                                        })
+                                                                                        .await;
+                                                        
+                                                                                        {
+                                                                                            *status.sync_status.lock() = "Idle".to_string();
+                                                                                            status.update_tray();
+                                                                                        }
+                                                        
+                                                                                        match result {
+                                                                                            Ok(Ok(sync_result)) => {
+                                                                                                use tauri_plugin_notification::NotificationExt;
+                                                                                                if sync_result.success {
+                                                                                                    app_handle
+                                                                                                        .notification()
+                                                                                                        .builder()
+                                                                                                        .title("Sync Complete")
+                                                                                                        .body(format!(
+                                                                                                            "Successfully synced {} files.",
+                                                                                                            sync_result.files_written.len()
+                                                                                                        ))
+                                                                                                        .show()
+                                                                                                        .ok();
+                                                                                                } else {
+                                                                                                    app_handle
+                                                                                                        .notification()
+                                                                                                        .builder()
+                                                                                                        .title("Sync Failed")
+                                                                                                        .body("Errors occurred during quick sync.")
+                                                                                                        .show()
+                                                                                                        .ok();
+                                                                                                }
+                                                                                            }
+                                                                                            _ => {
+                                                                                                log::error!("Sync task failed or panicked");
+                                                                                            }
+                                                                                        }
+                                                        
                                         }
                                     });
                                 }
@@ -428,34 +445,40 @@ fn handle_external_rule_change(
 
     let status = app.try_state::<GlobalStatus>();
 
-    // 1. Load the rule from disk
-    let rule_from_disk = crate::file_storage::load_rule_from_file(&path)?;
+    // Canonicalize input path for reliable comparison
+    let canonical_path = std::fs::canonicalize(&path)?;
+    let path_str = canonical_path.to_string_lossy().to_string();
 
-        // 2. Check if it exists in DB
-        let existing_rule = db.get_rule_by_id(&rule_from_disk.id).ok();
-    
-        if let Some(_existing) = existing_rule {
-            // Compute what we *would* write to disk for this rule if we synced from DB
-            // to see if the external change actually introduced a difference.
-            let engine = crate::sync::SyncEngine::new(db);
-    
-            // Check for conflicts using hashes
-            let rules = db.get_all_rules()?;
-            let preview = engine.preview(rules);
-    
-            let conflict = preview
-                .conflicts
-                .iter()
-                .find(|c| c.file_path == path.to_string_lossy());
-    
-            if let Some(_c) = conflict {
-                // There is a real difference between what's in DB and what's on disk.
-                log::info!(
-                    "External change conflict detected for rule: {}",
-                    rule_from_disk.name
-                );
-    
-            
+    // 1. Load the rule from disk
+    let rule_from_disk = crate::file_storage::load_rule_from_file(&canonical_path)?;
+
+    // 2. Check if it exists in DB
+    let existing_rule = db.get_rule_by_id(&rule_from_disk.id).ok();
+
+    if let Some(_existing) = existing_rule {
+        // Compute what we *would* write to disk for this rule if we synced from DB
+        // to see if the external change actually introduced a difference.
+        let engine = crate::sync::SyncEngine::new(db);
+
+        // Check for conflicts using hashes
+        let rules = db.get_all_rules()?;
+        let preview = engine.preview(rules);
+
+        let conflict = preview.conflicts.iter().find(|c| {
+            if let Ok(c_path) = std::fs::canonicalize(std::path::Path::new(&c.file_path)) {
+                c_path == canonical_path
+            } else {
+                false
+            }
+        });
+
+        if let Some(_c) = conflict {
+            // There is a real difference between what's in DB and what's on disk.
+            log::info!(
+                "External change conflict detected for rule: {}",
+                rule_from_disk.name
+            );
+
             app.notification()
                 .builder()
                 .title("Sync Conflict Detected")
@@ -465,14 +488,17 @@ fn handle_external_rule_change(
                 ))
                 .show()
                 .ok();
-                
-            let _ = app.emit("rule-conflict", path.to_string_lossy());
+
+            let _ = app.emit("rule-conflict", path_str);
             return Ok(());
         } else {
             // No conflict found by SyncEngine. This means the file on disk matches RuleWeaver's last known state.
             // This event was likely triggered by RuleWeaver itself during a sync.
             // We return early to avoid an infinite loop of Sync -> Watcher -> Sync.
-            log::debug!("File watcher ignore: No conflict for {}", rule_from_disk.name);
+            log::debug!(
+                "File watcher ignore: No conflict for {}",
+                rule_from_disk.name
+            );
             return Ok(());
         }
     } else {
@@ -488,15 +514,14 @@ fn handle_external_rule_change(
         })?;
     }
 
-    // If we reached here, we need to sync other adapters/files
+    // If we reached here, we need to sync other adapters/files affected by this rule
     if let Some(ref s) = status {
         *s.sync_status.lock() = "Syncing...".to_string();
         s.update_tray();
     }
 
     let engine = crate::sync::SyncEngine::new(db);
-    let rules = db.get_all_rules()?;
-    let sync_result = engine.sync_all(rules);
+    let sync_result = engine.sync_rule(rule_from_disk.clone());
 
     if let Some(ref s) = status {
         *s.sync_status.lock() = "Idle".to_string();
@@ -529,3 +554,4 @@ fn handle_external_rule_change(
 
     Ok(())
 }
+

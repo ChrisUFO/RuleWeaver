@@ -1,11 +1,44 @@
 #!/bin/bash
 
 # RuleWeaver Build Script
-# Builds the production distribution
+# Builds the production distribution with timestamp-based versioning
 
 set -e
 
 echo "🔨 Building RuleWeaver..."
+echo ""
+
+# Generate timestamp version (YYMMDD.HHMM format)
+VERSION=$(date +"%y%m%d.%H%M")
+echo "📅 Setting version to: $VERSION"
+echo ""
+
+# Update package.json version
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    # macOS sed
+    sed -i '' "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" package.json
+else
+    # Linux sed
+    sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" package.json
+fi
+echo "✓ Updated package.json"
+
+# Update Cargo.toml version
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    sed -i '' "s/^version = \"[^\"]*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
+else
+    sed -i "s/^version = \"[^\"]*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
+fi
+echo "✓ Updated Cargo.toml"
+
+# Update tauri.conf.json version
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    sed -i '' "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
+else
+    sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
+fi
+echo "✓ Updated tauri.conf.json"
+
 echo ""
 
 # Check if node_modules exists
@@ -37,5 +70,5 @@ echo "🏗️  Building production bundle..."
 npm run tauri:build
 
 echo ""
-echo "✅ Build complete!"
+echo "✅ Build complete! Version: $VERSION"
 echo "📁 Distribution files are in src-tauri/target/release/bundle/"

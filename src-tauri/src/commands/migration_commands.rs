@@ -42,20 +42,33 @@ pub fn get_file_migration_progress() -> file_storage::MigrationProgress {
 }
 
 #[tauri::command]
-pub fn resolve_conflict(
+pub async fn resolve_conflict(
     file_path: String,
     resolution: String,
     db: State<'_, Arc<Database>>,
 ) -> Result<()> {
     match resolution.as_str() {
         "overwrite" => {
-            let rules = db.get_all_rules()?;
-            let engine = SyncEngine::new(&db);
-            engine.sync_file_by_path(&rules, &file_path)?;
+            let db_clone = Arc::clone(&db);
+            tokio::task::spawn_blocking(move || {
+                let rules = db_clone.get_all_rules()?;
+                let engine = SyncEngine::new(&db_clone);
+                engine.sync_file_by_path(&rules, &file_path)
+            })
+            .await
+            .map_err(|e| crate::error::AppError::Internal {
+                message: e.to_string(),
+            })??;
         }
         "keep-remote" => {
             let validated_path = validate_path(&file_path)?;
-            let content = std::fs::read_to_string(validated_path)?;
+            let content = tokio::task::spawn_blocking(move || {
+                std::fs::read_to_string(validated_path).map_err(crate::error::AppError::Io)
+            })
+            .await
+            .map_err(|e| crate::error::AppError::Internal {
+                message: e.to_string(),
+            })??;
             let hash = crate::sync::compute_content_hash_public(&content);
             db.set_file_hash(&file_path, &hash)?;
         }
@@ -260,9 +273,17 @@ pub async fn import_configuration(
         }
     }
 
-    let engine = SyncEngine::new(&db);
-    let rules = db.get_all_rules()?;
-    let _ = engine.sync_all(rules);
+    let db_for_sync = Arc::clone(&db);
+    tokio::task::spawn_blocking(move || -> Result<()> {
+        let engine = SyncEngine::new(&db_for_sync);
+        let rules = db_for_sync.get_all_rules()?;
+        let _ = engine.sync_all(rules);
+        Ok(())
+    })
+    .await
+    .map_err(|e| crate::error::AppError::Internal {
+        message: e.to_string(),
+    })??;
 
     {
         if let Some(s) = app.try_state::<crate::GlobalStatus>() {
