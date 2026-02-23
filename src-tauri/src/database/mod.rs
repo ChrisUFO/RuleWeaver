@@ -45,8 +45,8 @@ impl Database {
             std::fs::create_dir_all(parent)?;
         }
 
-        let conn = Connection::open(&db_path)?;
-        run_migrations(&conn)?;
+        let mut conn = Connection::open(&db_path)?;
+        run_migrations(&mut conn)?;
         Ok(Self(Mutex::new(conn)))
     }
 
@@ -65,6 +65,13 @@ impl Database {
         Self::new_with_db_path(db_path)
     }
 
+    #[cfg(test)]
+    pub fn new_in_memory() -> Result<Self> {
+        let mut conn = Connection::open_in_memory()?;
+        run_migrations(&mut conn)?;
+        Ok(Self(Mutex::new(conn)))
+    }
+
     /// Re-establishes the database connection and runs migrations.
     /// Useful for recovering from disk disconnections or handling external database modifications.
     #[allow(dead_code)]
@@ -75,8 +82,8 @@ impl Database {
             PathBuf::from(path)
         };
 
-        let conn = Connection::open(&db_path)?;
-        run_migrations(&conn)?;
+        let mut conn = Connection::open(&db_path)?;
+        run_migrations(&mut conn)?;
 
         let mut guard = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
         *guard = conn;
@@ -449,7 +456,7 @@ impl Database {
     pub fn get_all_skills(&self) -> Result<Vec<Skill>> {
         let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
         let mut stmt = conn.prepare(
-            "SELECT id, name, description, instructions, input_schema, enabled, created_at, updated_at
+            "SELECT id, name, description, instructions, input_schema, enabled, created_at, updated_at, directory_path, entry_point
              FROM skills
              ORDER BY updated_at DESC",
         )?;
@@ -474,6 +481,8 @@ impl Database {
                     enabled: row.get(5)?,
                     created_at: parse_timestamp_or_now(row.get(6)?),
                     updated_at: parse_timestamp_or_now(row.get(7)?),
+                    directory_path: row.get(8)?,
+                    entry_point: row.get(9)?,
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -484,7 +493,7 @@ impl Database {
     pub fn get_skill_by_id(&self, id: &str) -> Result<Skill> {
         let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
         let mut stmt = conn.prepare(
-            "SELECT id, name, description, instructions, input_schema, enabled, created_at, updated_at
+            "SELECT id, name, description, instructions, input_schema, enabled, created_at, updated_at, directory_path, entry_point
              FROM skills WHERE id = ?",
         )?;
 
@@ -508,6 +517,8 @@ impl Database {
                     enabled: row.get(5)?,
                     created_at: parse_timestamp_or_now(row.get(6)?),
                     updated_at: parse_timestamp_or_now(row.get(7)?),
+                    directory_path: row.get(8)?,
+                    entry_point: row.get(9)?,
                 })
             })
             .map_err(|e| match e {
@@ -523,21 +534,23 @@ impl Database {
     pub fn create_skill(&self, input: CreateSkillInput) -> Result<Skill> {
         let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
         let now = chrono::Utc::now().timestamp();
-        let id = uuid::Uuid::new_v4().to_string();
+        let id = input.id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
         let input_schema_json = serde_json::to_string(&input.input_schema)?;
 
         conn.execute(
-            "INSERT INTO skills (id, name, description, instructions, input_schema, enabled, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO skills (id, name, description, instructions, input_schema, enabled, directory_path, entry_point, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             params![
-                id,
-                input.name,
-                input.description,
-                input.instructions,
-                input_schema_json,
-                input.enabled,
-                now,
-                now
+                &id,
+                &input.name,
+                &input.description,
+                &input.instructions,
+                &input_schema_json,
+                &input.enabled,
+                &input.directory_path,
+                &input.entry_point,
+                &now,
+                &now
             ],
         )?;
 
@@ -554,12 +567,24 @@ impl Database {
         let instructions = input.instructions.unwrap_or(existing.instructions);
         let input_schema = input.input_schema.unwrap_or(existing.input_schema);
         let enabled = input.enabled.unwrap_or(existing.enabled);
+        let directory_path = input.directory_path.unwrap_or(existing.directory_path);
+        let entry_point = input.entry_point.unwrap_or(existing.entry_point);
         let now = chrono::Utc::now().timestamp();
         let input_schema_json = serde_json::to_string(&input_schema)?;
 
         conn.execute(
-            "UPDATE skills SET name = ?, description = ?, instructions = ?, input_schema = ?, enabled = ?, updated_at = ? WHERE id = ?",
-            params![name, description, instructions, input_schema_json, enabled, now, id],
+            "UPDATE skills SET name = ?, description = ?, instructions = ?, input_schema = ?, enabled = ?, directory_path = ?, entry_point = ?, updated_at = ? WHERE id = ?",
+            params![
+                &name,
+                &description,
+                &instructions,
+                &input_schema_json,
+                &enabled,
+                &directory_path,
+                &entry_point,
+                &now,
+                &id
+            ],
         )?;
 
         drop(conn);
@@ -795,13 +820,15 @@ impl Database {
     }
 }
 
-fn run_migrations(conn: &Connection) -> Result<()> {
-    let current_version: i32 = conn
+fn run_migrations(conn: &mut Connection) -> Result<()> {
+    let transaction = conn.transaction()?;
+
+    let current_version: i32 = transaction
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap_or(0);
 
     if current_version < 1 {
-        conn.execute(
+        transaction.execute(
             "CREATE TABLE IF NOT EXISTS rules (
                 id TEXT PRIMARY KEY NOT NULL,
                 name TEXT NOT NULL,
@@ -816,7 +843,7 @@ fn run_migrations(conn: &Connection) -> Result<()> {
             [],
         )?;
 
-        conn.execute(
+        transaction.execute(
             "CREATE TABLE IF NOT EXISTS sync_history (
                 file_path TEXT PRIMARY KEY NOT NULL,
                 content_hash TEXT NOT NULL,
@@ -825,7 +852,7 @@ fn run_migrations(conn: &Connection) -> Result<()> {
             [],
         )?;
 
-        conn.execute(
+        transaction.execute(
             "CREATE TABLE IF NOT EXISTS sync_logs (
                 id TEXT PRIMARY KEY NOT NULL,
                 timestamp INTEGER NOT NULL,
@@ -836,7 +863,7 @@ fn run_migrations(conn: &Connection) -> Result<()> {
             [],
         )?;
 
-        conn.execute(
+        transaction.execute(
             "CREATE TABLE IF NOT EXISTS settings (
                 key TEXT PRIMARY KEY NOT NULL,
                 value TEXT NOT NULL
@@ -844,25 +871,21 @@ fn run_migrations(conn: &Connection) -> Result<()> {
             [],
         )?;
 
-        conn.execute(
+        transaction.execute(
             "CREATE INDEX IF NOT EXISTS idx_rules_scope ON rules(scope)",
             [],
         )?;
-
-        conn.execute("PRAGMA user_version = 1", [])?;
     }
 
     if current_version < 2 {
-        conn.execute(
+        transaction.execute(
             "CREATE INDEX IF NOT EXISTS idx_sync_logs_timestamp ON sync_logs(timestamp)",
             [],
         )?;
-
-        conn.execute("PRAGMA user_version = 2", [])?;
     }
 
     if current_version < 3 {
-        conn.execute(
+        transaction.execute(
             "CREATE TABLE IF NOT EXISTS rule_file_index (
                 rule_id TEXT PRIMARY KEY NOT NULL,
                 file_path TEXT NOT NULL,
@@ -872,16 +895,14 @@ fn run_migrations(conn: &Connection) -> Result<()> {
             [],
         )?;
 
-        conn.execute(
+        transaction.execute(
             "CREATE INDEX IF NOT EXISTS idx_rule_file_index_path ON rule_file_index(file_path)",
             [],
         )?;
-
-        conn.execute("PRAGMA user_version = 3", [])?;
     }
 
     if current_version < 4 {
-        conn.execute(
+        transaction.execute(
             "CREATE TABLE IF NOT EXISTS commands (
                 id TEXT PRIMARY KEY NOT NULL,
                 name TEXT NOT NULL,
@@ -895,12 +916,12 @@ fn run_migrations(conn: &Connection) -> Result<()> {
             [],
         )?;
 
-        conn.execute(
+        transaction.execute(
             "CREATE INDEX IF NOT EXISTS idx_commands_updated_at ON commands(updated_at)",
             [],
         )?;
 
-        conn.execute(
+        transaction.execute(
             "CREATE TABLE IF NOT EXISTS execution_logs (
                 id TEXT PRIMARY KEY NOT NULL,
                 command_id TEXT NOT NULL,
@@ -916,16 +937,14 @@ fn run_migrations(conn: &Connection) -> Result<()> {
             [],
         )?;
 
-        conn.execute(
+        transaction.execute(
             "CREATE INDEX IF NOT EXISTS idx_execution_logs_executed_at ON execution_logs(executed_at)",
             [],
         )?;
-
-        conn.execute("PRAGMA user_version = 4", [])?;
     }
 
     if current_version < 5 {
-        conn.execute(
+        transaction.execute(
             "CREATE TABLE IF NOT EXISTS skills (
                 id TEXT PRIMARY KEY NOT NULL,
                 name TEXT NOT NULL,
@@ -938,29 +957,48 @@ fn run_migrations(conn: &Connection) -> Result<()> {
             [],
         )?;
 
-        conn.execute(
+        transaction.execute(
             "CREATE INDEX IF NOT EXISTS idx_skills_updated_at ON skills(updated_at)",
             [],
         )?;
-
-        conn.execute("PRAGMA user_version = 5", [])?;
     }
 
     if current_version < 6 {
-        let mut stmt = conn.prepare("PRAGMA table_info(skills)")?;
+        let mut stmt = transaction.prepare("PRAGMA table_info(skills)")?;
         let cols: Vec<String> = stmt
             .query_map([], |row| row.get(1))?
             .collect::<std::result::Result<Vec<_>, _>>()?;
 
         if !cols.iter().any(|c| c == "input_schema") {
-            conn.execute(
+            transaction.execute(
                 "ALTER TABLE skills ADD COLUMN input_schema TEXT NOT NULL DEFAULT '[]'",
                 [],
             )?;
         }
-
-        conn.execute("PRAGMA user_version = 6", [])?;
     }
+
+    if current_version < 7 {
+        let mut stmt = transaction.prepare("PRAGMA table_info(skills)")?;
+        let cols: Vec<String> = stmt
+            .query_map([], |row| row.get(1))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+
+        if !cols.iter().any(|c| c == "directory_path") {
+            transaction.execute(
+                "ALTER TABLE skills ADD COLUMN directory_path TEXT NOT NULL DEFAULT ''",
+                [],
+            )?;
+        }
+        if !cols.iter().any(|c| c == "entry_point") {
+            transaction.execute(
+                "ALTER TABLE skills ADD COLUMN entry_point TEXT NOT NULL DEFAULT ''",
+                [],
+            )?;
+        }
+    }
+
+    transaction.execute("PRAGMA user_version = 7", [])?;
+    transaction.commit()?;
 
     Ok(())
 }
@@ -977,4 +1015,62 @@ pub fn default_app_data_dir() -> Result<PathBuf> {
         .or_else(dirs::data_dir)
         .ok_or_else(|| AppError::Path("Could not determine data directory".to_string()))?;
     Ok(base.join("RuleWeaver"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::{CreateSkillInput, SkillParameter, SkillParameterType, UpdateSkillInput};
+
+    #[test]
+    fn test_skill_crud() {
+        let db = Database::new_in_memory().unwrap();
+
+        // 1. Create
+        let input = CreateSkillInput {
+            id: None,
+            name: "Test Skill".to_string(),
+            description: "A test skill".to_string(),
+            instructions: "echo 'hello'".to_string(),
+            input_schema: vec![SkillParameter {
+                name: "param1".to_string(),
+                description: "desc".to_string(),
+                param_type: SkillParameterType::String,
+                required: true,
+                default_value: None,
+                enum_values: None,
+            }],
+            directory_path: "/test/path".to_string(),
+            entry_point: "main.sh".to_string(),
+            enabled: true,
+        };
+
+        let created = db.create_skill(input.clone()).unwrap();
+        assert_eq!(created.name, "Test Skill");
+        assert_eq!(created.input_schema.len(), 1);
+        assert_eq!(created.directory_path, "/test/path");
+
+        // 2. Read
+        let fetched = db.get_skill_by_id(&created.id).unwrap();
+        assert_eq!(created.id, fetched.id);
+        assert_eq!(fetched.entry_point, "main.sh");
+
+        let all = db.get_all_skills().unwrap();
+        assert_eq!(all.len(), 1);
+
+        // 3. Update
+        let update_input = UpdateSkillInput {
+            name: Some("Updated Skill".to_string()),
+            ..Default::default()
+        };
+        let updated = db.update_skill(&created.id, update_input).unwrap();
+        assert_eq!(updated.name, "Updated Skill");
+        // Ensure other fields remain unchanged
+        assert_eq!(updated.directory_path, "/test/path");
+
+        // 4. Delete
+        db.delete_skill(&created.id).unwrap();
+        assert!(db.get_skill_by_id(&created.id).is_err());
+        assert_eq!(db.get_all_skills().unwrap().len(), 0);
+    }
 }

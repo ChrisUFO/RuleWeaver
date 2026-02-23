@@ -22,12 +22,11 @@ use std::time::Instant;
 
 use crate::constants::limits::{
     MAX_COMMAND_NAME_LENGTH, MAX_COMMAND_SCRIPT_LENGTH, MAX_RULE_CONTENT_LENGTH,
-    MAX_RULE_NAME_LENGTH, MAX_SKILL_INSTRUCTIONS_LENGTH, MAX_SKILL_NAME_LENGTH, MAX_SKILL_STEPS,
+    MAX_RULE_NAME_LENGTH,
 };
 use crate::database::Database;
 use crate::error::{AppError, Result};
 use crate::file_storage;
-use crate::mcp::extract_skill_steps;
 use crate::models::Rule;
 
 pub static RUNNING_TESTS: LazyLock<Mutex<HashSet<String>>> =
@@ -153,40 +152,6 @@ pub fn validate_command_arguments(args: &[crate::models::CommandArgument]) -> Re
             }
         }
     }
-    Ok(())
-}
-
-pub fn validate_skill_input(name: &str, instructions: &str) -> Result<()> {
-    let trimmed_name = name.trim();
-    if trimmed_name.is_empty() {
-        return Err(AppError::Validation(
-            "Skill name cannot be empty".to_string(),
-        ));
-    }
-    if trimmed_name.len() > MAX_SKILL_NAME_LENGTH {
-        return Err(AppError::Validation(format!(
-            "Skill name too long (max {} characters)",
-            MAX_SKILL_NAME_LENGTH
-        )));
-    }
-    if instructions.trim().is_empty() {
-        return Err(AppError::Validation(
-            "Skill instructions cannot be empty".to_string(),
-        ));
-    }
-    if instructions.len() > MAX_SKILL_INSTRUCTIONS_LENGTH {
-        return Err(AppError::Validation(format!(
-            "Skill instructions too large (max {} characters)",
-            MAX_SKILL_INSTRUCTIONS_LENGTH
-        )));
-    }
-
-    // Validate step count
-    let steps = extract_skill_steps(instructions);
-    if steps.len() > MAX_SKILL_STEPS {
-        return Err(AppError::Validation(format!("Skill contains too many shell steps ({} found, max {}). Please consolidate your instructions.", steps.len(), MAX_SKILL_STEPS)));
-    }
-
     Ok(())
 }
 

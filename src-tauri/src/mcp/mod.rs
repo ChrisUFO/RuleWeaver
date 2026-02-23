@@ -5,22 +5,17 @@ use axum::{
     routing::post,
     Json, Router,
 };
+use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::collections::VecDeque;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tower_http::cors::CorsLayer;
-
-use regex::Regex;
-use serde::{Deserialize, Serialize};
-use serde_json::json;
 use tokio::sync::{broadcast, Mutex};
 use tokio::task::JoinHandle;
+use tower_http::cors::CorsLayer;
 
 use crate::constants::{
-    limits::{
-        LOG_LIMIT, MAX_OUTPUT_SIZE, MAX_SKILL_STEPS, MAX_STEP_LENGTH, MCP_RATE_LIMIT_MAX_CALLS,
-        MCP_SERVER_RETRY_COUNT,
-    },
+    limits::{LOG_LIMIT, MAX_OUTPUT_SIZE, MCP_RATE_LIMIT_MAX_CALLS, MCP_SERVER_RETRY_COUNT},
     timing::{
         CMD_EXEC_TIMEOUT, MCP_RATE_LIMIT_WINDOW, MCP_SERVER_BACKOFF_INITIAL_MS, SKILL_EXEC_TIMEOUT,
     },
@@ -29,10 +24,21 @@ use crate::database::{Database, ExecutionLogInput};
 use crate::error::{AppError, Result};
 use crate::execution::{
     argument_env_var_name, contains_disallowed_pattern, execute_and_log,
-    execute_shell_with_timeout_env, replace_template_with_env_ref, sanitize_argument_value,
+    execute_shell_with_timeout_env_dir, replace_template_with_env_ref, sanitize_argument_value,
     slugify, ExecuteAndLogInput,
 };
-use crate::models::{Command, Skill};
+use crate::models::{Command, Skill, SkillParameterType};
+
+fn mcp_error_response(id: serde_json::Value, code: i64, message: &str) -> serde_json::Value {
+    json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "error": {
+            "code": code,
+            "message": message
+        }
+    })
+}
 
 fn truncate_output_custom(s: String, max_size: usize) -> String {
     if s.len() > max_size {
@@ -452,46 +458,52 @@ fn handle_initialize(id: serde_json::Value) -> serde_json::Value {
     })
 }
 
+struct McpToolParameter {
+    name: String,
+    description: String,
+    required: bool,
+    enum_values: Option<Vec<String>>,
+    param_type: SkillParameterType,
+}
+
 fn handle_tools_list(
     id: serde_json::Value,
     commands: &[Command],
     skills: &[Skill],
 ) -> serde_json::Value {
-    let tools: Vec<serde_json::Value> = commands
+    let mut tools: Vec<serde_json::Value> = commands
         .iter()
         .filter(|c| c.expose_via_mcp)
         .map(|c| {
-            let mut props = serde_json::Map::new();
-            let mut required: Vec<String> = Vec::new();
+            let params: Vec<_> = c
+                .arguments
+                .iter()
+                .map(|a| {
+                    let p_type = if let Some(ref opts) = a.options {
+                        if !opts.is_empty() {
+                            SkillParameterType::Enum
+                        } else {
+                            SkillParameterType::String
+                        }
+                    } else {
+                        SkillParameterType::String
+                    };
 
-            for arg in &c.arguments {
-                let json_type = match arg.arg_type {
-                    crate::models::ArgumentType::Number => "number",
-                    crate::models::ArgumentType::Boolean => "boolean",
-                    _ => "string",
-                };
+                    McpToolParameter {
+                        name: a.name.clone(),
+                        description: a.description.clone(),
+                        required: a.required,
+                        enum_values: a.options.clone(),
+                        param_type: p_type,
+                    }
+                })
+                .collect();
 
-                props.insert(
-                    arg.name.clone(),
-                    json!({
-                        "type": json_type,
-                        "description": arg.description,
-                    }),
-                );
-                if arg.required {
-                    required.push(arg.name.clone());
-                }
-            }
-
-            json!({
-                "name": format!("{}-{}", slugify(&c.name), &c.id[..8]),
-                "description": c.description,
-                "inputSchema": {
-                    "type": "object",
-                    "properties": props,
-                    "required": required,
-                }
-            })
+            build_mcp_tool_schema(
+                &format!("{}-{}", slugify(&c.name), &c.id[..8]),
+                &c.description,
+                &params,
+            )
         })
         .collect();
 
@@ -499,30 +511,78 @@ fn handle_tools_list(
         .iter()
         .filter(|s| s.enabled)
         .map(|s| {
-            json!({
-                "name": format!("skill_{}-{}", slugify(&s.name), &s.id[..8]),
-                "description": s.description,
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "input": {
-                            "type": "string",
-                            "description": "Optional free-form input for the skill"
-                        }
-                    },
-                    "required": []
-                }
-            })
+            let params: Vec<_> = s
+                .input_schema
+                .iter()
+                .map(|p| McpToolParameter {
+                    name: p.name.clone(),
+                    description: p.description.clone(),
+                    required: p.required,
+                    enum_values: p.enum_values.clone(),
+                    param_type: p.param_type.clone(),
+                })
+                .collect();
+
+            build_mcp_tool_schema(
+                &format!("skill_{}-{}", slugify(&s.name), &s.id[..8]),
+                &s.description,
+                &params,
+            )
         })
         .collect();
 
-    let mut all_tools = tools;
-    all_tools.extend(skill_tools);
+    tools.extend(skill_tools);
 
     json!({
         "jsonrpc": "2.0",
         "id": id,
-        "result": { "tools": all_tools }
+        "result": { "tools": tools }
+    })
+}
+
+fn build_mcp_tool_schema(
+    name: &str,
+    description: &str,
+    params: &[McpToolParameter],
+) -> serde_json::Value {
+    let mut props = serde_json::Map::new();
+    let mut required: Vec<String> = Vec::new();
+
+    for param in params {
+        let type_str = match param.param_type {
+            SkillParameterType::Number => "number",
+            SkillParameterType::Boolean => "boolean",
+            SkillParameterType::Array => "array",
+            SkillParameterType::Object => "object",
+            _ => "string",
+        };
+
+        let mut prop_schema = json!({
+            "type": type_str,
+            "description": param.description,
+        });
+
+        if let Some(ref enum_vals) = param.enum_values {
+            prop_schema
+                .as_object_mut()
+                .unwrap()
+                .insert("enum".to_string(), json!(enum_vals));
+        }
+
+        props.insert(param.name.clone(), prop_schema);
+        if param.required {
+            required.push(param.name.clone());
+        }
+    }
+
+    json!({
+        "name": name,
+        "description": description,
+        "inputSchema": {
+            "type": "object",
+            "properties": props,
+            "required": required,
+        }
     })
 }
 
@@ -602,14 +662,11 @@ async fn handle_command_call(
     shared_db: &Option<Arc<Database>>,
 ) -> serde_json::Value {
     if let Some(pattern) = contains_disallowed_pattern(&cmd.script) {
-        return json!({
-            "jsonrpc": "2.0",
-            "id": id,
-            "error": {
-                "code": -32602,
-                "message": format!("Command script contains a disallowed pattern: {}", pattern)
-            }
-        });
+        return mcp_error_response(
+            id,
+            -32602,
+            &format!("Command script contains a disallowed pattern: {}", pattern),
+        );
     }
 
     let missing_required: Vec<String> = cmd
@@ -628,14 +685,14 @@ async fn handle_command_call(
         .collect();
 
     if !missing_required.is_empty() {
-        return json!({
-            "jsonrpc": "2.0",
-            "id": id,
-            "error": {
-                "code": -32602,
-                "message": format!("Missing required arguments: {}", missing_required.join(", "))
-            }
-        });
+        return mcp_error_response(
+            id,
+            -32602,
+            &format!(
+                "Missing required arguments: {}",
+                missing_required.join(", ")
+            ),
+        );
     }
 
     let mut rendered = cmd.script.clone();
@@ -682,14 +739,7 @@ async fn handle_command_call(
     }
 
     if let Some(message) = invalid_arg_message {
-        return json!({
-            "jsonrpc": "2.0",
-            "id": id,
-            "error": {
-                "code": -32602,
-                "message": format!("Invalid argument value: {}", message)
-            }
-        });
+        return mcp_error_response(id, -32602, &format!("Invalid argument value: {}", message));
     }
 
     let args_json = match serde_json::to_string(&args_map) {
@@ -758,144 +808,210 @@ async fn handle_skill_call(
     args_map: serde_json::Map<String, serde_json::Value>,
     shared_db: &Option<Arc<Database>>,
 ) -> serde_json::Value {
-    let input = args_map
-        .get("input")
-        .and_then(|v| v.as_str())
-        .unwrap_or_default()
-        .to_string();
+    let final_envs = match skill.validate_payload(&args_map) {
+        Ok(envs) => envs,
+        Err(e) => {
+            return mcp_error_response(id, -32602, &e.to_string());
+        }
+    };
 
-    // Security: DO NOT use string replacement for {{input}} as it leads to command injection.
-    // Instead, we pass the input via environment variables.
-    #[cfg(target_os = "windows")]
-    let rendered = skill.instructions.replace("{{input}}", "%RW_SKILL_INPUT%");
-    #[cfg(not(target_os = "windows"))]
-    let rendered = skill.instructions.replace("{{input}}", "$RW_SKILL_INPUT");
+    let mut final_envs = final_envs;
 
-    let steps = extract_skill_steps(&rendered);
+    final_envs.push((
+        crate::constants::skills::RULEWEAVER_SKILL_ID.to_string(),
+        skill.id.clone(),
+    ));
+    final_envs.push((
+        crate::constants::skills::RULEWEAVER_SKILL_NAME.to_string(),
+        skill.name.clone(),
+    ));
+    final_envs.push((
+        crate::constants::skills::RULEWEAVER_SKILL_DIR.to_string(),
+        skill.directory_path.clone(),
+    ));
 
-    if steps.is_empty() {
-        // If no shell steps, just return the instructions (with input placeholder)
-        // Note: If we really want to return the text with the input replaced,
-        // we should do it safely here ONLY for the returned text, not for execution.
-        let display_text = skill.instructions.replace("{{input}}", &input);
-        json!({
-            "jsonrpc": "2.0",
-            "id": id,
-            "result": {
-                "content": [{
-                    "type": "text",
-                    "text": display_text
-                }],
-                "isError": false
-            }
-        })
-    } else {
-        let mut output = String::new();
-        let mut is_error = false;
+    // Inject filtered secrets as SKILL_SECRET_*
+    if let Some(db) = shared_db {
+        let allowlist = db
+            .get_setting("mcp_secrets_allowlist")
+            .ok()
+            .flatten()
+            .unwrap_or_default();
+        let allowed_keys: Vec<String> = allowlist
+            .split(',')
+            .map(|s| s.trim().to_lowercase())
+            .filter(|s| !s.is_empty())
+            .collect();
 
-        let start = Instant::now();
-        let skill_envs = vec![("RW_SKILL_INPUT".to_string(), input.clone())];
-
-        for (idx, step) in steps.iter().take(MAX_SKILL_STEPS).enumerate() {
-            if step.len() > MAX_STEP_LENGTH {
-                is_error = true;
-                output.push_str(&format!("Step {} rejected: too long\n", idx + 1));
-                break;
-            }
-
-            if let Some(pattern) = contains_disallowed_pattern(step) {
-                is_error = true;
-                output.push_str(&format!(
-                    "Step {} rejected due to unsafe pattern: {}\n",
-                    idx + 1,
-                    pattern
-                ));
-                break;
-            }
-
-            match execute_shell_with_timeout_env(step, SKILL_EXEC_TIMEOUT, &skill_envs).await {
-                Ok((exit_code, stdout, stderr)) => {
-                    let step_stdout = truncate_output_custom(stdout, 1024 * 1024); // 1MB per step
-                    let step_stderr = truncate_output_custom(stderr, 1024 * 1024); // 1MB per step
-
-                    output.push_str(&format!(
-                        "[step {}] exit_code: {}\nstdout:\n{}\nstderr:\n{}\n\n",
-                        idx + 1,
-                        exit_code,
-                        step_stdout,
-                        step_stderr
-                    ));
-                    if exit_code != 0 {
-                        is_error = true;
-                        break;
-                    }
-                }
-                Err(e) => {
-                    is_error = true;
-                    output.push_str(&format!("[step {}] execution error: {}\n", idx + 1, e));
-                    break;
+        if let Ok(settings) = db.get_all_settings() {
+            for (k, v) in settings {
+                let low_k = k.to_lowercase();
+                if allowed_keys.contains(&low_k) {
+                    let env_name = format!(
+                        "{}{}",
+                        crate::constants::skills::SKILL_SECRET_PREFIX,
+                        k.replace('-', "_").to_uppercase()
+                    );
+                    final_envs.push((env_name, v));
                 }
             }
         }
-
-        let duration_ms = start.elapsed().as_millis() as u64;
-        let _ = manager
-            .log(format!(
-                "MCP tools/call '{}' skill execution {} ({}ms)",
-                skill.name,
-                if is_error { "failed" } else { "succeeded" },
-                duration_ms
-            ))
-            .await;
-
-        if let Some(db) = shared_db {
-            let args_json = match serde_json::to_string(&args_map) {
-                Ok(s) => s,
-                Err(e) => {
-                    let _ = manager
-                        .log(format!("Skill execution serialization error: {}", e))
-                        .await;
-                    String::new()
-                }
-            };
-            let skill_name = format!("skill:{}", skill.name);
-            let _ = db.add_execution_log(&ExecutionLogInput {
-                command_id: &skill.id,
-                command_name: &skill_name,
-                arguments_json: &args_json,
-                stdout: &output,
-                stderr: "",
-                exit_code: if is_error { 1 } else { 0 },
-                duration_ms,
-                triggered_by: "mcp-skill",
-            });
-        }
-
-        json!({
-            "jsonrpc": "2.0",
-            "id": id,
-            "result": {
-                "content": [{
-                    "type": "text",
-                    "text": truncate_output(output)
-                }],
-                "isError": is_error
-            }
-        })
     }
-}
 
-pub fn extract_skill_steps(instructions: &str) -> Vec<String> {
-    static RE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
-    let re = RE.get_or_init(|| {
-        Regex::new(r"(?s)```(?:bash|sh|shell|powershell|pwsh|cmd)?\n(.*?)```")
-            .expect("Invalid skill steps regex")
-    });
+    let start = Instant::now();
+    let mut output = String::new();
+    let mut is_error = false;
 
-    re.captures_iter(instructions)
-        .filter_map(|caps| caps.get(1).map(|m| m.as_str().trim().to_string()))
-        .filter(|s| !s.is_empty())
-        .collect()
+    if let Err(e) = crate::models::validate_skill_input(&skill.name, &skill.instructions) {
+        return mcp_error_response(id, -32602, &e.to_string());
+    }
+    if let Err(e) = crate::models::validate_skill_schema(&skill.input_schema) {
+        return mcp_error_response(id, -32602, &e.to_string());
+    }
+    if let Err(e) = crate::models::validate_skill_entry_point(&skill.entry_point) {
+        return mcp_error_response(id, -32602, &e.to_string());
+    }
+
+    let entry_point = if skill.entry_point.is_empty() {
+        return mcp_error_response(id, -32603, "Skill has no entry point defined");
+    } else {
+        skill.entry_point.clone()
+    };
+
+    let dir = std::path::PathBuf::from(&skill.directory_path);
+    if !dir.exists() || !dir.is_dir() {
+        return json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "error": {
+                "code": -32603,
+                "message": format!("Skill directory does not exist: {}", skill.directory_path)
+            }
+        });
+    }
+
+    if let Some(pattern) = contains_disallowed_pattern(&entry_point) {
+        return json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "error": {
+                "code": -32602,
+                "message": format!("Entry point rejected due to unsafe pattern: {}", pattern)
+            }
+        });
+    }
+
+    // Security: Canonicalize entry point to prevent directory traversal
+    let canonical_skill_dir = match std::fs::canonicalize(&dir) {
+        Ok(p) => p,
+        Err(e) => {
+            return json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "error": { "code": -32603, "message": format!("Failed to canonicalize skill directory: {}", e) }
+            })
+        }
+    };
+
+    let full_entry_path = dir.join(&entry_point);
+    let canonical_entry_path = match std::fs::canonicalize(&full_entry_path) {
+        Ok(p) => p,
+        Err(e) => {
+            return json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "error": { "code": -32603, "message": format!("Entry point not found or invalid: {}", e) }
+            })
+        }
+    };
+
+    if !canonical_entry_path.starts_with(&canonical_skill_dir) {
+        return json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "error": {
+                "code": -32603,
+                "message": "Security Violation: Entry point must be within the skill directory"
+            }
+        });
+    }
+
+    match execute_shell_with_timeout_env_dir(
+        &entry_point,
+        SKILL_EXEC_TIMEOUT,
+        &final_envs,
+        Some(dir),
+    )
+    .await
+    {
+        Ok((exit_code, stdout, stderr)) => {
+            let step_stdout = truncate_output_custom(
+                stdout,
+                crate::constants::limits::MAX_SKILL_OUTPUT_PER_STREAM,
+            );
+            let step_stderr = truncate_output_custom(
+                stderr,
+                crate::constants::limits::MAX_SKILL_OUTPUT_PER_STREAM,
+            );
+
+            output.push_str(&format!(
+                "exit_code: {}\nstdout:\n{}\nstderr:\n{}",
+                exit_code, step_stdout, step_stderr
+            ));
+            if exit_code != 0 {
+                is_error = true;
+            }
+        }
+        Err(e) => {
+            is_error = true;
+            output.push_str(&format!("execution error: {}\n", e));
+        }
+    }
+
+    let duration_ms = start.elapsed().as_millis() as u64;
+    let _ = manager
+        .log(format!(
+            "MCP tools/call '{}' skill execution {} ({}ms)",
+            skill.name,
+            if is_error { "failed" } else { "succeeded" },
+            duration_ms
+        ))
+        .await;
+
+    if let Some(db) = shared_db {
+        let args_json = match serde_json::to_string(&args_map) {
+            Ok(s) => s,
+            Err(e) => {
+                let _ = manager
+                    .log(format!("Skill execution serialization error: {}", e))
+                    .await;
+                String::new()
+            }
+        };
+        let skill_name = format!("skill:{}", skill.name);
+        let _ = db.add_execution_log(&ExecutionLogInput {
+            command_id: &skill.id,
+            command_name: &skill_name,
+            arguments_json: &args_json,
+            stdout: &output,
+            stderr: "",
+            exit_code: if is_error { 1 } else { 0 },
+            duration_ms,
+            triggered_by: "mcp-skill",
+        });
+    }
+
+    json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "result": {
+            "content": [{
+                "type": "text",
+                "text": truncate_output(output)
+            }],
+            "isError": is_error
+        }
+    })
 }
 
 #[cfg(test)]
@@ -906,14 +1022,6 @@ mod tests {
     fn test_slugify() {
         assert_eq!(slugify("My Skill"), "my-skill");
         assert_eq!(slugify("Skill__Name"), "skill-name");
-    }
-
-    #[test]
-    fn test_extract_skill_steps() {
-        let text = "before\n```bash\necho one\n```\nmid\n```sh\necho two\n```";
-        let steps = extract_skill_steps(text);
-        assert_eq!(steps.len(), 2);
-        assert!(steps[0].contains("echo one"));
     }
 
     #[test]
