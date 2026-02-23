@@ -237,13 +237,17 @@ mod tests {
     #[test]
     fn test_adapter_type_all() {
         let all = AdapterType::all();
-        assert_eq!(all.len(), 6);
+        assert_eq!(all.len(), 10);
         assert!(all.contains(&AdapterType::Antigravity));
         assert!(all.contains(&AdapterType::Gemini));
         assert!(all.contains(&AdapterType::OpenCode));
         assert!(all.contains(&AdapterType::Cline));
         assert!(all.contains(&AdapterType::ClaudeCode));
         assert!(all.contains(&AdapterType::Codex));
+        assert!(all.contains(&AdapterType::Kilo));
+        assert!(all.contains(&AdapterType::Cursor));
+        assert!(all.contains(&AdapterType::Windsurf));
+        assert!(all.contains(&AdapterType::RooCode));
     }
 
     #[test]
