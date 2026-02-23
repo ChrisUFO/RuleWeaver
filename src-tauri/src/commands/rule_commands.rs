@@ -12,6 +12,43 @@ use super::{
     validate_local_rule_paths, validate_rule_input,
 };
 
+/// Helper function to sync all rules to AI tool locations.
+/// Logs any errors that occur during the sync process.
+fn sync_to_ai_tools(db: &Database) {
+    match db.get_all_rules() {
+        Ok(rules) => {
+            let engine = SyncEngine::new(db);
+            let sync_result = engine.sync_all(rules);
+            if !sync_result.errors.is_empty() {
+                log::error!("AI tool sync failed with errors: {:?}", sync_result.errors);
+            }
+        }
+        Err(e) => {
+            log::error!("Failed to get rules for AI tool sync: {}", e);
+        }
+    }
+}
+
+/// Helper function to delete a rule file from all possible storage locations.
+/// This handles the case where a rule exists only as a file and not in the database.
+fn delete_rule_from_all_locations(id: &str, db: &Database) -> Result<()> {
+    // First try global
+    file_storage::delete_rule_file(id, &file_storage::StorageLocation::Global, Some(db))?;
+
+    // Then try all local paths
+    if let Ok(local_roots) = get_local_rule_roots(db) {
+        for root in local_roots {
+            file_storage::delete_rule_file(
+                id,
+                &file_storage::StorageLocation::Local(root),
+                Some(db),
+            )?;
+        }
+    }
+
+    Ok(())
+}
+
 #[tauri::command]
 pub fn get_all_rules(db: State<'_, Arc<Database>>) -> Result<Vec<Rule>> {
     if use_file_storage(&db) {
@@ -52,6 +89,9 @@ pub fn create_rule(input: CreateRuleInput, db: State<'_, Arc<Database>>) -> Resu
         register_local_rule_paths(&db, &created)?;
     }
 
+    // Sync to AI tool locations
+    sync_to_ai_tools(&db);
+
     Ok(created)
 }
 
@@ -84,19 +124,31 @@ pub fn update_rule(
         register_local_rule_paths(&db, &updated)?;
     }
 
+    // Sync to AI tool locations
+    sync_to_ai_tools(&db);
+
     Ok(updated)
 }
 
 #[tauri::command]
 pub fn delete_rule(id: String, db: State<'_, Arc<Database>>) -> Result<()> {
     if use_file_storage(&db) {
+        // Try to get the rule from DB to determine storage location
         if let Ok(existing) = db.get_rule_by_id(&id) {
             let location = storage_location_for_rule(&existing);
             file_storage::delete_rule_file(&id, &location, Some(&db))?;
             db.remove_rule_file_index(&id)?;
+        } else {
+            // Rule not in DB but might exist as file - try to delete from all locations
+            delete_rule_from_all_locations(&id, &db)?;
         }
     }
-    db.delete_rule(&id)
+    db.delete_rule(&id)?;
+
+    // Sync to AI tool locations to remove deleted rule from adapters
+    sync_to_ai_tools(&db);
+
+    Ok(())
 }
 
 #[tauri::command]
@@ -109,10 +161,17 @@ pub fn bulk_delete_rules(ids: Vec<String>, db: State<'_, Arc<Database>>) -> Resu
                 let location = storage_location_for_rule(&existing);
                 let _ = file_storage::delete_rule_file(&id, &location, Some(&db));
                 let _ = db.remove_rule_file_index(&id);
+            } else {
+                // Rule not in DB but might exist as file - try to delete from all locations
+                // Note: We intentionally ignore errors here to continue deleting other rules
+                let _ = delete_rule_from_all_locations(&id, &db);
             }
         }
         db.delete_rule(&id)?;
     }
+
+    // Sync to AI tool locations to remove deleted rules from adapters
+    sync_to_ai_tools(&db);
 
     Ok(())
 }
@@ -127,6 +186,9 @@ pub fn toggle_rule(id: String, enabled: bool, db: State<'_, Arc<Database>>) -> R
         db.update_rule_file_index(&toggled.id, &location)?;
         register_local_rule_paths(&db, &toggled)?;
     }
+
+    // Sync to AI tool locations - enabled/disabled status affects adapter files
+    sync_to_ai_tools(&db);
 
     Ok(toggled)
 }
