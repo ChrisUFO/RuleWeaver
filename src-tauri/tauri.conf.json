@@ -42,7 +42,7 @@
   "plugins": {
     "updater": {
       "endpoints": ["https://github.com/ChrisUFO/RuleWeaver/releases/latest/download/updater.json"],
-      "pubkey": "DWYtm9clv8t...PLACEHOLDER...key"
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQ2RDBGODcwQkJGNzJDOTAKUldTUUxQZTdjUGpRUnNyWTYzTGR4Qm04Y2V3UkpkbHNIeFJWSXYvam1oQVE5ZDh0SkF2NnNwVjUK"
     }
   }
 }
