@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import {
   LayoutDashboard,
@@ -25,6 +26,19 @@ const navItems = [
 ];
 
 export function Sidebar({ collapsed, onCollapsedChange, activeView, onViewChange }: SidebarProps) {
+  const [appVersion, setAppVersion] = useState<string>("0.0.0");
+
+  useEffect(() => {
+    // Fetch version from version.json
+    fetch("/version.json")
+      .then((res) => res.json())
+      .then((data) => {
+        setAppVersion(data.version || "0.0.0");
+      })
+      .catch(() => {
+        setAppVersion("0.0.0");
+      });
+  }, []);
   return (
     <aside
       className={cn(
@@ -91,7 +105,7 @@ export function Sidebar({ collapsed, onCollapsedChange, activeView, onViewChange
       <div className="border-t border-white/5 p-4">
         {!collapsed && (
           <div className="px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/50">
-            Version 0.1.0
+            Version {appVersion}
           </div>
         )}
       </div>
