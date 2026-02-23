@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Play, Trash2 } from "lucide-react";
+import { Plus, Play, Trash2, Search } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -218,54 +219,101 @@ export function Commands() {
 
   return (
     <div className="grid gap-6 lg:grid-cols-[320px,1fr]">
-      <Card>
-        <CardHeader className="space-y-3">
+      <Card className="glass-card premium-shadow border-none overflow-hidden">
+        <CardHeader className="space-y-4 bg-white/5 pb-6">
           <div className="flex items-center justify-between">
-            <CardTitle>Commands</CardTitle>
-            <Button size="sm" onClick={handleCreate} disabled={isSaving}>
-              <Plus className="mr-2 h-4 w-4" />
+            <CardTitle className="text-sm font-semibold tracking-wide uppercase text-muted-foreground/80">
+              Commands
+            </CardTitle>
+            <Button
+              size="sm"
+              onClick={handleCreate}
+              disabled={isSaving}
+              className="glow-primary h-8"
+            >
+              <Plus className="mr-1.5 h-3.5 w-3.5" />
               New
             </Button>
           </div>
-          <Button variant="outline" size="sm" onClick={handleSyncCommands} disabled={isSyncing}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleSyncCommands}
+            disabled={isSyncing}
+            className="w-full glass border-white/5 hover:bg-white/5 text-xs"
+          >
             {isSyncing ? "Syncing..." : "Sync Command Files"}
           </Button>
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search commands"
-          />
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/60" />
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Filter..."
+              className="pl-9 h-9 bg-black/20 border-white/5 focus-visible:ring-primary/40 rounded-lg text-sm"
+            />
+          </div>
         </CardHeader>
-        <CardContent className="space-y-2">
+        <CardContent className="space-y-2 pt-4 px-2">
           {filtered.map((cmd) => (
             <button
               key={cmd.id}
-              className={`w-full rounded-md border px-3 py-2 text-left transition ${
-                selectedId === cmd.id ? "border-primary bg-accent" : "hover:bg-accent"
-              }`}
+              className={cn(
+                "w-full group relative overflow-hidden flex flex-col items-start rounded-xl px-4 py-3 text-left transition-all duration-300",
+                selectedId === cmd.id
+                  ? "bg-primary/10 border border-primary/20 premium-shadow"
+                  : "hover:bg-white/5 border border-transparent hover:border-white/5"
+              )}
               onClick={() => setSelectedId(cmd.id)}
             >
-              <div className="flex items-center justify-between gap-2">
-                <div className="truncate font-medium">{cmd.name}</div>
-                {cmd.expose_via_mcp ? <Badge>MCP</Badge> : <Badge variant="outline">Local</Badge>}
+              <div className="flex w-full items-center justify-between gap-2">
+                <div
+                  className={cn(
+                    "truncate font-semibold text-sm transition-colors",
+                    selectedId === cmd.id
+                      ? "text-primary"
+                      : "text-foreground group-hover:text-primary/80"
+                  )}
+                >
+                  {cmd.name}
+                </div>
+                {cmd.expose_via_mcp ? (
+                  <Badge
+                    variant="default"
+                    className="h-4 text-[9px] px-1.5 uppercase font-bold tracking-tighter bg-primary/20 text-primary border-primary/20"
+                  >
+                    MCP
+                  </Badge>
+                ) : (
+                  <Badge
+                    variant="outline"
+                    className="h-4 text-[9px] px-1.5 uppercase font-bold tracking-tighter border-white/10 text-muted-foreground/60"
+                  >
+                    Local
+                  </Badge>
+                )}
               </div>
-              <div className="mt-1 truncate text-xs text-muted-foreground">{cmd.description}</div>
+              <div className="mt-1 truncate text-[11px] text-muted-foreground/60 group-hover:text-muted-foreground/80">
+                {cmd.description}
+              </div>
             </button>
           ))}
           {filtered.length === 0 && (
-            <p className="text-sm text-muted-foreground">No commands found.</p>
+            <p className="text-xs text-muted-foreground/60 text-center py-8">No commands found.</p>
           )}
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>{selected ? "Edit Command" : "Select a Command"}</CardTitle>
+      <Card className="glass-card premium-shadow border-none overflow-hidden">
+        <CardHeader className="bg-white/5 pb-4">
+          <CardTitle className="text-sm font-semibold tracking-wide uppercase text-primary/80">
+            {selected ? name : "Select a Command"}
+          </CardTitle>
           <CardDescription>
             Define script-based commands and expose them to MCP clients.
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-6 pt-6">
           {!selected ? (
             <p className="text-sm text-muted-foreground">
               Choose a command from the list or create a new one.
@@ -297,22 +345,25 @@ export function Commands() {
               </div>
 
               <div className="grid gap-2">
-                <label htmlFor="command-script" className="text-sm font-medium">
+                <label
+                  htmlFor="command-script"
+                  className="text-xs font-bold uppercase tracking-widest text-muted-foreground/60"
+                >
                   Script
                 </label>
                 <textarea
                   id="command-script"
                   value={script}
                   onChange={(e) => setScript(e.target.value)}
-                  className="min-h-36 rounded-md border bg-background p-3 text-sm"
+                  className="min-h-48 rounded-xl border border-white/5 bg-black/40 p-4 text-[13px] font-mono shadow-inner focus:outline-none focus:ring-1 focus:ring-primary/40 leading-relaxed text-primary/90 selection:bg-primary/20"
                   placeholder="echo hello"
                 />
               </div>
 
-              <div className="flex items-center justify-between rounded-md border p-3">
+              <div className="flex items-center justify-between rounded-xl border border-white/5 bg-white/5 p-4 transition-colors hover:bg-white/10">
                 <div>
-                  <div className="font-medium">Expose via MCP</div>
-                  <div className="text-xs text-muted-foreground">
+                  <div className="font-semibold text-sm">Expose via MCP</div>
+                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground/60">
                     Enable this command in tools/list responses.
                   </div>
                 </div>

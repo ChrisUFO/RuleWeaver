@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo, useRef } from "react";
+import { cn } from "@/lib/utils";
 import {
   Plus,
   Search,
@@ -284,17 +285,17 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
         </Button>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3 p-4 glass rounded-xl border border-white/5 premium-shadow">
         <div className="relative flex-1 min-w-[200px] max-w-md">
           <Search
-            className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+            className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/60"
             aria-hidden="true"
           />
           <Input
             placeholder="Search rules..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9"
+            className="pl-9 bg-white/5 border-white/5 focus-visible:ring-primary/40 rounded-lg"
             aria-label="Search rules"
           />
         </div>
@@ -303,7 +304,7 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
           value={sortValue}
           onChange={setSortValue}
           options={SORT_OPTIONS}
-          className="w-44"
+          className="w-44 bg-white/5 border-white/5 rounded-lg"
           aria-label="Sort rules"
         />
 
@@ -311,31 +312,47 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
           value={adapterFilter}
           onChange={setAdapterFilter}
           options={ADAPTER_FILTER_OPTIONS}
-          className="w-40"
+          className="w-40 bg-white/5 border-white/5 rounded-lg"
           aria-label="Filter by adapter"
         />
 
-        <div className="flex items-center gap-2" role="group" aria-label="Filter by scope">
+        <div
+          className="flex items-center gap-1.5 p-1 glass border border-white/5 rounded-lg"
+          role="group"
+          aria-label="Filter by scope"
+        >
           <Button
-            variant={scopeFilter === "all" ? "default" : "outline"}
+            variant={scopeFilter === "all" ? "default" : "ghost"}
             size="sm"
             onClick={() => setScopeFilter("all")}
+            className={cn(
+              "h-8 px-3 rounded-md transition-all",
+              scopeFilter === "all" ? "glow-active shadow-sm" : "text-muted-foreground"
+            )}
             aria-pressed={scopeFilter === "all"}
           >
             All
           </Button>
           <Button
-            variant={scopeFilter === "global" ? "default" : "outline"}
+            variant={scopeFilter === "global" ? "default" : "ghost"}
             size="sm"
             onClick={() => setScopeFilter("global")}
+            className={cn(
+              "h-8 px-3 rounded-md transition-all",
+              scopeFilter === "global" ? "glow-active shadow-sm" : "text-muted-foreground"
+            )}
             aria-pressed={scopeFilter === "global"}
           >
             Global
           </Button>
           <Button
-            variant={scopeFilter === "local" ? "default" : "outline"}
+            variant={scopeFilter === "local" ? "default" : "ghost"}
             size="sm"
             onClick={() => setScopeFilter("local")}
+            className={cn(
+              "h-8 px-3 rounded-md transition-all",
+              scopeFilter === "local" ? "glow-active shadow-sm" : "text-muted-foreground"
+            )}
             aria-pressed={scopeFilter === "local"}
           >
             Local
@@ -343,7 +360,12 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
         </div>
 
         {hasActiveFilters && (
-          <Button variant="ghost" size="sm" onClick={clearFilters}>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={clearFilters}
+            className="text-muted-foreground hover:text-foreground"
+          >
             <X className="mr-1 h-3 w-3" />
             Clear
           </Button>
@@ -387,7 +409,13 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
           {filteredAndSortedRules.map((rule) => (
             <li key={rule.id}>
               <Card
-                className={`cursor-pointer transition-colors hover:bg-accent/50 focus-within:ring-2 focus-within:ring-ring ${selectedIds.has(rule.id) ? "ring-2 ring-primary" : ""}`}
+                className={cn(
+                  "group relative overflow-hidden transition-all duration-300",
+                  "glass-card border-white/5 hover:bg-white/10 hover:translate-x-1 premium-shadow",
+                  selectedIds.has(rule.id)
+                    ? "ring-2 ring-primary bg-primary/5"
+                    : "hover:border-primary/20"
+                )}
               >
                 <CardContent className="flex items-center gap-4 p-4">
                   <div onClick={(e) => e.stopPropagation()}>

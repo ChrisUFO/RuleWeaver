@@ -80,6 +80,14 @@ export const api = {
       }>("get_file_migration_progress"),
     exportConfiguration: (path: string) => invoke<void>("export_configuration", { path }),
     importConfiguration: (path: string) => invoke<void>("import_configuration", { path }),
+    previewImport: (path: string) =>
+      invoke<{
+        version: string;
+        exported_at: string;
+        rules: Rule[];
+        commands: CommandModel[];
+        skills: Skill[];
+      }>("preview_import", { path }),
   },
 
   commands: {

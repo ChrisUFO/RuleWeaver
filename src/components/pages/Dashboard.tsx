@@ -297,13 +297,14 @@ export function Dashboard({ onNavigate }: DashboardProps) {
               variant="outline"
               onClick={handleSyncClick}
               disabled={isPreviewing || isSyncing}
+              className="glass glow-active hover:bg-primary/5 border-white/10"
             >
               <RefreshCw
                 className={`mr-2 h-4 w-4 ${isPreviewing || isSyncing ? "animate-spin" : ""}`}
               />
               Sync All
             </Button>
-            <Button onClick={() => onNavigate("rules")}>
+            <Button onClick={() => onNavigate("rules")} className="glow-primary">
               <Plus className="mr-2 h-4 w-4" />
               New Rule
             </Button>
@@ -311,7 +312,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
         </div>
 
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <Card>
+          <Card className="glass-card premium-shadow border-none">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Total Rules</CardTitle>
               <FileText className="h-4 w-4 text-muted-foreground" />
@@ -322,7 +323,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="glass-card premium-shadow border-none">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Global Rules</CardTitle>
               <Globe className="h-4 w-4 text-muted-foreground" />
@@ -332,7 +333,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="glass-card premium-shadow border-none">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Local Rules</CardTitle>
               <FolderOpen className="h-4 w-4 text-muted-foreground" />
@@ -342,7 +343,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="glass-card premium-shadow border-none">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Last Sync</CardTitle>
               <Clock className="h-4 w-4 text-muted-foreground" />
@@ -370,24 +371,28 @@ export function Dashboard({ onNavigate }: DashboardProps) {
         )}
 
         {rules.length > 0 && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Quick Start Templates</CardTitle>
+          <Card className="glass-card premium-shadow border-none overflow-hidden">
+            <CardHeader className="bg-white/5 pb-4">
+              <CardTitle className="text-sm font-semibold tracking-wide uppercase text-muted-foreground/80">
+                Quick Start Templates
+              </CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="pt-6">
               <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
                 {TEMPLATES.map((template) => (
                   <button
                     key={template.name}
                     onClick={() => handleTemplateClick(template)}
-                    className="flex items-center gap-3 rounded-md border p-3 text-left transition-colors hover:bg-accent focus:outline-none focus:ring-2 focus:ring-ring"
+                    className="flex items-center gap-3 rounded-xl border border-white/5 bg-white/5 p-3 text-left transition-all duration-300 hover:bg-white/10 hover:translate-y-[-2px] hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-primary/40 group"
                   >
-                    <div className="flex h-10 w-10 items-center justify-center rounded-md bg-primary/10 text-primary font-mono text-sm">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/15 text-primary font-bold text-sm transition-transform duration-300 group-hover:scale-110">
                       {template.icon}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <span className="text-sm font-medium block truncate">{template.name}</span>
-                      <span className="text-xs text-muted-foreground">
+                      <span className="text-sm font-semibold block truncate group-hover:text-primary transition-colors">
+                        {template.name}
+                      </span>
+                      <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60">
                         {template.adapters.length} adapters
                       </span>
                     </div>
@@ -399,14 +404,14 @@ export function Dashboard({ onNavigate }: DashboardProps) {
         )}
 
         {syncHistory.length > 0 && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <History className="h-5 w-5" />
+          <Card className="glass-card premium-shadow border-none overflow-hidden">
+            <CardHeader className="bg-white/5 pb-4">
+              <CardTitle className="flex items-center gap-2 text-sm font-semibold tracking-wide uppercase text-muted-foreground/80">
+                <History className="h-4 w-4" />
                 Recent Sync History
               </CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="pt-2">
               <div className="space-y-2">
                 {syncHistory.map((entry) => (
                   <div

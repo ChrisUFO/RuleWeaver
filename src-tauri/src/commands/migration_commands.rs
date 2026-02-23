@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use tauri::State;
+use tauri::{Manager, State};
 
 use crate::database::Database;
 use crate::error::Result;
@@ -111,7 +111,7 @@ pub async fn export_configuration(path: String, db: State<'_, Arc<Database>>) ->
 }
 
 #[tauri::command]
-pub async fn import_configuration(path: String, db: State<'_, Arc<Database>>) -> Result<()> {
+pub async fn preview_import(path: String) -> Result<crate::models::ExportConfiguration> {
     let content = std::fs::read_to_string(path.clone())?;
 
     let config: crate::models::ExportConfiguration =
@@ -123,22 +123,85 @@ pub async fn import_configuration(path: String, db: State<'_, Arc<Database>>) ->
             serde_json::from_str(&content)?
         };
 
-    for rule in config.rules {
-        db.import_rule(rule)?;
+    if config.version != "1.0" {
+        return Err(crate::error::AppError::InvalidInput {
+            message: format!(
+                "Unsupported configuration version: {}. Only 1.0 is supported.",
+                config.version
+            ),
+        });
     }
 
-    for command in config.commands {
-        db.import_command(command)?;
+    Ok(config)
+}
+
+#[tauri::command]
+pub async fn import_configuration(
+    path: String,
+    db: State<'_, Arc<Database>>,
+    _status: State<'_, crate::GlobalStatus>,
+    app: tauri::AppHandle,
+) -> Result<()> {
+    let content = std::fs::read_to_string(path.clone())?;
+
+    let config: crate::models::ExportConfiguration =
+        if path.ends_with(".yaml") || path.ends_with(".yml") {
+            serde_yaml::from_str(&content).map_err(|e| crate::error::AppError::InvalidInput {
+                message: e.to_string(),
+            })?
+        } else {
+            serde_json::from_str(&content)?
+        };
+
+    if config.version != "1.0" {
+        return Err(crate::error::AppError::InvalidInput {
+            message: format!(
+                "Unsupported configuration version: {}. Only 1.0 is supported.",
+                config.version
+            ),
+        });
     }
 
-    for skill in config.skills {
-        db.import_skill(skill)?;
-    }
+    let db_clone = Arc::clone(&db);
+
+    // Perform DB operations in a blocking task to keep UI responsive
+    tokio::task::spawn_blocking(move || -> Result<()> {
+        for rule in config.rules {
+            db_clone.import_rule(rule)?;
+        }
+
+        for command in config.commands {
+            db_clone.import_command(command)?;
+        }
+
+        for skill in config.skills {
+            db_clone.import_skill(skill)?;
+        }
+        Ok(())
+    })
+    .await
+    .map_err(|e| crate::error::AppError::InvalidInput {
+        message: e.to_string(),
+    })??;
 
     // Trigger sync after import
+    {
+        if let Some(s) = app.try_state::<crate::GlobalStatus>() {
+            *s.sync_status.lock() = "Syncing...".to_string();
+            s.update_tray();
+        }
+    }
+
     let engine = SyncEngine::new(&db);
     let rules = db.get_all_rules()?;
     let _ = engine.sync_all(rules);
+
+    {
+        if let Some(s) = app.try_state::<crate::GlobalStatus>() {
+            *s.sync_status.lock() = "Idle".to_string();
+            s.update_tray();
+        }
+    }
 
     Ok(())
 }
