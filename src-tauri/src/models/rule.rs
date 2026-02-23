@@ -27,7 +27,7 @@ impl Scope {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "lowercase")]
 pub enum AdapterType {
     Antigravity,
     Gemini,
@@ -264,5 +264,80 @@ mod tests {
         assert!(matches!(parsed.scope, Scope::Global));
         assert_eq!(parsed.enabled_adapters.len(), 2);
         assert_eq!(parsed.enabled, true);
+    }
+
+    #[test]
+    fn test_create_rule_input_camel_case_from_frontend() {
+        // This is the key test - simulating JSON from frontend with camelCase
+        // Adapter types use lowercase (OpenCode -> opencode)
+        let json = r#"{
+            "name": "Test Rule",
+            "content": "Test content",
+            "scope": "global",
+            "targetPaths": ["/path/to/repo"],
+            "enabledAdapters": ["gemini", "opencode"],
+            "enabled": true
+        }"#;
+
+        let parsed: CreateRuleInput = serde_json::from_str(json).unwrap();
+
+        assert_eq!(parsed.name, "Test Rule");
+        assert_eq!(parsed.content, "Test content");
+        assert!(matches!(parsed.scope, Scope::Global));
+        assert_eq!(parsed.target_paths, Some(vec!["/path/to/repo".to_string()]));
+        assert_eq!(parsed.enabled_adapters.len(), 2);
+        assert!(parsed.enabled);
+    }
+
+    #[test]
+    fn test_update_rule_input_camel_case_from_frontend() {
+        // Testing UpdateRuleInput with camelCase from frontend
+        let json = r#"{
+            "name": "Updated Name",
+            "content": "Updated content",
+            "scope": "local",
+            "targetPaths": ["/new/path"],
+            "enabledAdapters": ["cline"],
+            "enabled": false
+        }"#;
+
+        let parsed: UpdateRuleInput = serde_json::from_str(json).unwrap();
+
+        assert_eq!(parsed.name, Some("Updated Name".to_string()));
+        assert_eq!(parsed.content, Some("Updated content".to_string()));
+        assert!(matches!(parsed.scope, Some(Scope::Local)));
+        assert_eq!(parsed.target_paths, Some(vec!["/new/path".to_string()]));
+        assert_eq!(parsed.enabled_adapters, Some(vec![AdapterType::Cline]));
+        assert_eq!(parsed.enabled, Some(false));
+    }
+
+    #[test]
+    fn test_rule_output_camel_case_to_frontend() {
+        // Test that Rule serializes to camelCase for frontend
+        let rule = Rule {
+            id: "test-id".to_string(),
+            name: "Test Rule".to_string(),
+            content: "Content".to_string(),
+            scope: Scope::Global,
+            target_paths: Some(vec!["/path".to_string()]),
+            enabled_adapters: vec![AdapterType::Gemini],
+            enabled: true,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        };
+
+        let json = serde_json::to_string(&rule).unwrap();
+
+        // Should contain camelCase keys
+        assert!(json.contains("\"name\":\"Test Rule\""));
+        assert!(json.contains("\"scope\":\"global\""));
+        assert!(json.contains("\"enabledAdapters\""));
+        assert!(json.contains("\"targetPaths\""));
+        assert!(json.contains("\"createdAt\""));
+        assert!(json.contains("\"updatedAt\""));
+
+        // Should NOT contain snake_case
+        assert!(!json.contains("\"enabled_adapters\""));
+        assert!(!json.contains("\"target_paths\""));
     }
 }
