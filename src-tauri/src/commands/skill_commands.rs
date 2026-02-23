@@ -48,10 +48,7 @@ pub fn create_skill(input: CreateSkillInput, db: State<'_, Arc<Database>>) -> Re
     };
 
     // Save to disk
-    let path = match save_skill_to_disk(&created) {
-        Ok(p) => p,
-        Err(e) => return Err(e), // Guard will drop and delete from DB
-    };
+    let path = save_skill_to_disk(&created)?;
 
     // Update DB with the directory path
     let update = UpdateSkillInput {
