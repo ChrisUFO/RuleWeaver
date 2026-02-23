@@ -107,18 +107,6 @@ impl Skill {
 
         Ok(skill_envs)
     }
-
-    pub fn validate_metadata(&self) -> Result<()> {
-        validate_skill_input(&self.name, &self.instructions)?;
-        validate_skill_schema(&self.input_schema)?;
-        validate_skill_entry_point(&self.entry_point)?;
-        if self.directory_path.trim().is_empty() {
-            return Err(AppError::Validation(
-                "directory_path cannot be empty".to_string(),
-            ));
-        }
-        Ok(())
-    }
 }
 
 pub fn validate_skill_input(name: &str, instructions: &str) -> Result<()> {
