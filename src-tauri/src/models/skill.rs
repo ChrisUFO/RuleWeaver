@@ -87,7 +87,8 @@ impl Skill {
                 if let Some(ref options) = param.enum_values {
                     if !options.contains(&raw_value) {
                         return Err(AppError::Validation(format!(
-                            "Parameter '{}' must be one of: {}",
+                            "Invalid value '{}' for parameter '{}'. Must be one of: {}",
+                            raw_value,
                             param.name,
                             options.join(", ")
                         )));

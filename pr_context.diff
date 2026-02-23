@@ -1,0 +1,4843 @@
+diff --git a/PLAN.md b/PLAN.md
+index 4279f4d..a21e08c 100644
+--- a/PLAN.md
++++ b/PLAN.md
+@@ -1,1965 +1,87 @@
+-# Project Strategy: RuleWeaver Phase 2 - Custom Commands & MCP
++# Project Strategy: RuleWeaver
+ 
+ ## 1. High-Level Strategy
+ 
+-**Objective:** Transform RuleWeaver from a rule management tool into a complete MCP (Model Context Protocol) server platform. Users will be able to define custom shell commands and expose them as MCP tools to AI assistants like Claude Code and OpenCode.
++The objective of Milestone 3 is to introduce and fully implement the "Skills" functionality. A Skill is a complex multi-file workflow, encapsulated in a directory with a `SKILL.md` description and executable helper scripts (e.g., Python, Node.js, Shell).
++The strategy involves four main pillars, plus a cross-cutting security pillar:
+ 
+-**Core Deliverables:**
+-
+-1. **File-First Storage Architecture (#14)** - Migrate from SQLite-primary to markdown files with YAML frontmatter for git-native, transparent rule storage
+-2. **MCP Server Foundation (#5)** - Embed an MCP server in the Tauri app that starts automatically and serves tools
+-3. **Command Management System (#6)** - Full CRUD for custom commands with script templates, arguments, and in-app testing
+-4. **Command Execution Engine (#7)** - Wire commands to MCP server with secure process spawning and output capture
+-
+-**Architecture Alignment:**
+-This plan implements Phase 2 of the roadmap: "Custom Commands MVP & MCP Integration". It follows the three-layer architecture (Presentation Layer, Core Logic Layer, Target Layer) defined in `architecture.md`. Note: Skills are defined in the architecture but will be implemented in Phase 3 (not part of this milestone).
+-
+-**Strategic Approach:**
+-
+-- **Issue #14 first** - File-first storage is marked high priority and provides a better foundation for the rest of Phase 2
+-- **Parallel tracks** - MCP Server (#5) and Command Model (#6) can proceed in parallel after #14
+-- **Integration** - Issue #7 ties everything together, connecting commands to the MCP server
+-
+----
++1. **Skill Architecture & Management (Tier 3.1):** Building the core Rust data models, SQLite storage, Tauri IPC commands, and frontend UI to import, create, and manage skills.
++2. **Advanced MCP Execution (Tier 3.2):** Securely exposing these skills as MCP tools, injecting necessary environment variables, handling sandboxed execution across different runtimes, and capturing structured output.
++3. **Skill Input Schema & Runtime Validation (Tier 3.4):** Enforcing rich input schemas (JSON Schema styles) for skill parameters, strongly typed MCP argument validation, execution policies, and timeout constraints.
++4. **Skill Templates Library (Tier 3.3):** Shipping built-in, production-ready skill templates that users can install/enable with a single click, complete with idempotent updates and versioning.
++5. **Security & Secrets Management (Cross-cutting):** Given the execution of multi-language scripts, ensuring we have secure secrets passing (e.g. API keys for templates), user-approved execution policies (allowlist/denylist), and strict logging of all stdout/stderr and validation failures.
+ 
+ ## 2. Implementation Plan
+ 
+-### Phase 2.0: Project Setup (PREREQUISITE)
+-
+-**Goal:** Create feature branch and ensure all tooling is ready.
+-
+-- [ ] Create feature branch: `git checkout -b feature/phase-2-mcp-commands`
+-- [ ] Verify all Phase 1 tests pass
+-- [ ] Run lint and typecheck to establish baseline
+-- [ ] Review and update any outdated dependencies
+-- [ ] Ensure CI/CD pipeline is green
+-
+----
+-
+-### Phase 2.1: File-First Storage Architecture (Issue #14) - HIGH PRIORITY
+-
+-**Goal:** Replace SQLite as primary storage with markdown files containing YAML frontmatter, keeping SQLite only for indexing/cache.
+-
+-**Why This First:**
+-
+-- Rules become git-versionable automatically
+-- Users can edit `.ruleweaver/rules/*.md` in any editor
+-- Portable, transparent, emergency-accessible
+-- Better developer experience (review rule changes in PRs)
+-- Aligns with architecture.md: "Database: SQLite (Embedded via Rust) or `serde_json` file storage"
+-
+-#### Backend Implementation
+-
+-**File Structure:**
+-
+-```
+-~/.ruleweaver/rules/              # Global rules
+-  ├── 000-global-coding.md
+-  └── 001-security-guidelines.md
+-
+-{repo}/.ruleweaver/rules/         # Local rules (per project)
+-  ├── 000-project-specific.md
+-  └── ...
+-```
+-
+-**File Format (YAML + Markdown):**
+-
+-```markdown
+----
+-id: abc-123
+-name: "TypeScript Rules"
+-scope: local
+-targetPaths: ["/src"]
+-enabledAdapters: [gemini, opencode, cline]
+-enabled: true
+-createdAt: 2024-01-15T10:30:00Z
+-updatedAt: 2024-01-15T10:30:00Z
+----
+-
+-## TypeScript Guidelines
+-
+-- Use strict mode
+-- Prefer interfaces over types
+-```
+-
+-**Rust Module Structure:**
+-
+-```
+-src-tauri/src/
+-├── file_storage/
+-│   ├── mod.rs           # Public API
+-│   ├── parser.rs        # YAML frontmatter parsing
+-│   ├── serializer.rs    # YAML frontmatter generation
+-│   ├── watcher.rs       # File system watching
+-│   └── migration.rs     # SQLite to files migration
+-```
+-
+-**Rust Implementation Tasks:**
+-
+-- Add dependencies to `Cargo.toml`: `serde_yaml`, `notify` (file watcher), `glob`
+-- Create `src-tauri/src/file_storage/mod.rs` module
+-- Implement YAML frontmatter parser with error handling
+-- Implement YAML frontmatter generator
+-- Create `RuleFile` struct for file-based rule representation
+-- Implement `load_rules_from_disk()` function with directory traversal
+-- Implement `save_rule_to_disk()` function with atomic writes
+-- Handle global rules directory (`~/.ruleweaver/rules/`)
+-- Handle local rules directories (`{repo}/.ruleweaver/rules/`)
+-- Create file watcher using `notify` crate for external changes
+-- Update SQLite schema - migration v3 to remove content field
+-- Keep SQLite as index/cache (id, file_path, content_hash, last_sync_at, modified_at)
+-- Implement backward compatibility (fallback to SQLite if files don't exist)
+-- Create `migrate_to_file_storage()` IPC command with progress reporting
+-- Create `verify_file_storage_integrity()` health check
+-- Implement `rollback_migration()` for safety
+-- Update `Database` to work with file-based rules
+-- Update all existing IPC commands to use file storage
+-- Handle edge cases:
+-  - File permission errors (readable/writable check)
+-  - Concurrent editing (file vs app) with conflict detection
+-  - Large files (>1MB) with chunked reading
+-  - Special characters in rule content (Unicode handling)
+-  - Duplicate IDs across different directories
+-  - Orphaned files (no matching rule in index)
+-  - Git merge conflicts in rule files
+-
+-#### Frontend Implementation
+-
+-**New UI Components:**
+-
+-- `FileStorageStatus` - Shows current storage mode
+-- `MigrationDialog` - Migration progress and status
+-- `FilePathDisplay` - Shows file path with copy button
+-- `RevealInExplorerButton` - Opens file location
+-
+-**Frontend Tasks:**
+-
+-- Add "Open in Editor" button to rule cards
+-- Show file path in rule detail view
+-- Display file timestamps (created/modified)
+-- Implement "Reveal in Explorer" for rule files
+-- Add file system health indicators
+-- Show migration status/progress dialog
+-- Add storage mode indicator in settings
+-- Create migration UI with:
+-  - Progress bar
+-  - Current file being migrated
+-  - Error display
+-  - Rollback option
+-
+-#### Error Handling
+-
+-| Error Type         | User Message                                                       | Recovery                                 |
+-| ------------------ | ------------------------------------------------------------------ | ---------------------------------------- |
+-| File permissions   | "Cannot read/write rule file at {path}. Check folder permissions." | "Open folder" button + "Retry"           |
+-| YAML parse error   | "Invalid YAML frontmatter in {filename}"                           | "View file" button + "Reset to default"  |
+-| File not found     | "Rule file not found at expected path"                             | "Locate file" or "Recreate"              |
+-| Concurrent edit    | "Rule file was modified externally"                                | "Reload from disk" or "Overwrite"        |
+-| Git merge conflict | "Merge conflict detected in {filename}"                            | Show conflict markers, manual resolution |
+-| Large file         | "Rule file exceeds size limit (1MB)"                               | "Split into smaller rules"               |
+-| Orphaned file      | "File has no matching rule in database"                            | "Import" or "Delete file"                |
+-| Duplicate ID       | "Multiple files have the same rule ID"                             | "Resolve duplicates" wizard              |
+-
+-#### Documentation Tasks
+-
+-- [ ] Update README.md with new file-based architecture
+-- [ ] Document `.ruleweaver/rules/` directory structure
+-- [ ] Document YAML frontmatter schema
+-- [ ] Add migration guide for existing users
+-- [ ] Document file watching behavior
+-- [ ] Document manual editing best practices
+-
+-#### Tests
+-
+-**Unit Tests (Rust):**
+-
+-- [ ] `test_yaml_frontmatter_parse_success` - Happy path
+-- [ ] `test_yaml_frontmatter_parse_invalid_yaml` - Failure path
+-- [ ] `test_yaml_frontmatter_parse_missing_required_fields` - Validation
+-- [ ] `test_yaml_frontmatter_generate` - Serialization
+-- [ ] `test_load_rules_from_disk_empty_directory` - Edge case
+-- [ ] `test_load_rules_from_disk_mixed_files` - Multiple rules
+-- [ ] `test_load_rules_from_disk_special_characters` - Unicode content
+-- [ ] `test_save_rule_to_disk_atomic_write` - File safety
+-- [ ] `test_save_rule_to_disk_overwrite_existing` - Update scenario
+-- [ ] `test_file_watcher_detects_external_change` - External edits
+-- [ ] `test_migration_preserves_all_data` - Data integrity
+-- [ ] `test_migration_rollback` - Safety mechanism
+-- [ ] `test_backward_compatibility_sqlite_fallback` - Compatibility
+-- [ ] `test_concurrent_edit_detection` - Race conditions
+-
+-**Integration Tests:**
+-
+-- [ ] `test_full_migration_flow` - End-to-end migration
+-- [ ] `test_file_watcher_integration` - Real file system events
+-- [ ] `test_git_workflow_compatibility` - Commit, pull, merge
+-
+-**Frontend Tests:**
+-
+-- [ ] Test MigrationDialog renders progress correctly
+-- [ ] Test FileStorageStatus shows correct state
+-- [ ] Test "Open in Editor" button functionality
+-
+-**Coverage Target:** 80%+ (high-value tests only, no trivial getter/setter tests)
+-
+----
+-
+-### Phase 2.2: MCP Server Foundation (Issue #5)
+-
+-**Goal:** Research, integrate, and boot an MCP server within the Tauri application.
+-
+-#### Research & Architecture
+-
+-**MCP Protocol Basics:**
+-
+-- JSON-RPC 2.0 over stdio or HTTP
+-- Key endpoints: `tools/list` (returns available tools), `tools/call` (executes tool)
+-- Transport: Start with stdio (simpler), consider HTTP later
+-
+-**Rust SDK Options to Evaluate:**
+-
+-1. `rmcp` crate (if available)
+-2. Custom JSON-RPC implementation using `tokio` and `tower`
+-3. `jsonrpc-core` crate
+-
+-**Selection Criteria:**
+-
+-- Active maintenance
+-- Tauri compatibility
+-- Async support
+-- Error handling quality
+-
+-#### Backend Implementation
+-
+-**Rust Module Structure:**
+-
+-```
+-src-tauri/src/
+-├── mcp/
+-│   ├── mod.rs           # Public API
+-│   ├── server.rs        # Server lifecycle
+-│   ├── protocol.rs      # JSON-RPC types
+-│   ├── handlers.rs      # Endpoint handlers
+-│   └── transport.rs     # Stdio/HTTP transport
+-```
+-
+-**Server Implementation:**
+-
+-```rust
+-pub struct McpServer {
+-    port: u16,
+-    running: Arc<AtomicBool>,
+-    commands: Arc<RwLock<Vec<Command>>>,
+-    transport: Box<dyn Transport>,
+-}
+-
+-impl McpServer {
+-    pub fn new(port: u16) -> Result<Self>;
+-    pub async fn start(&self) -> Result<()>;
+-    pub async fn stop(&self) -> Result<()>;
+-    pub fn is_running(&self) -> bool;
+-    pub fn get_status(&self) -> ServerStatus;
+-}
+-
+-pub enum ServerStatus {
+-    Running { port: u16, uptime: Duration },
+-    Stopped,
+-    Error(String),
+-    Starting,
+-}
+-```
+-
+-**Tasks:**
+-
+-- Add `tokio` and `serde_json` dependencies to `Cargo.toml`
+-- Evaluate and integrate chosen MCP SDK (or custom impl)
+-- Create `src-tauri/src/mcp/mod.rs` module
+-- Define JSON-RPC request/response types
+-- Implement `McpServer` struct with state management
+-- Implement `start()` method with configurable port binding
+-- Implement `stop()` method with graceful shutdown
+-- Implement basic `tools/list` endpoint (empty list initially)
+-- Implement `initialize` endpoint (MCP protocol handshake)
+-- Add server status tracking (running/stopped/error/starting)
+-- Handle graceful shutdown on app close (Tauri lifecycle hook)
+-- Add MCP server configuration persistence (port, auto-start)
+-- Implement stdio transport layer
+-- Implement connection logging
+-
+-**IPC Commands:**
+-
+-- `get_mcp_status` - Returns server status, port, uptime
+-- `start_mcp_server` - Manually start server (returns error if already running)
+-- `stop_mcp_server` - Manually stop server
+-- `restart_mcp_server` - Stop then start
+-- `get_mcp_connection_instructions` - Get setup instructions for clients
+-- `get_mcp_logs` - Get recent connection logs
+-
+-**Configuration:**
+-
+-```rust
+-pub struct McpConfig {
+-    pub enabled: bool,
+-    pub port: u16,
+-    pub auto_start: bool,
+-    pub log_level: LogLevel,
+-    pub max_connections: u32,
+-}
+-```
+-
+-#### Frontend Implementation
+-
+-**New UI Components:**
+-
+-- `McpStatusIndicator` - Green/red status light with tooltip
+-- `McpConnectionPanel` - Full connection details
+-- `ConnectionInstructions` - Copy-able config snippets
+-- `McpSettingsSection` - Configuration UI
+-- `McpLogsViewer` - Connection history
+-
+-**MCP Status Page:**
+-
+-- Server status indicator (Running/Stopped/Error/Starting)
+-- Current port display
+-- Uptime counter
+-- Connection count (active clients)
+-- Recent activity log
+-- Start/Stop/Restart buttons
+-- Error message display
+-
+-**Connection Instructions:**
+-
+-- Claude Code config (`claude_desktop_config.json`):
+-  ```json
+-  {
+-    "mcpServers": {
+-      "ruleweaver": {
+-        "command": "ruleweaver-mcp",
+-        "args": ["--port", "8080"]
+-      }
+-    }
+-  }
+-  ```
+-- OpenCode config (`~/.opencode/config.json`):
+-  ```json
+-  {
+-    "mcp": {
+-      "servers": [
+-        {
+-          "name": "ruleweaver",
+-          "url": "http://localhost:8080"
+-        }
+-      ]
+-    }
+-  }
+-  ```
+-- Copy buttons for each config
+-- Step-by-step setup wizard
+-
+-**Settings Page Updates:**
+-
+-- MCP Server section with:
+-  - Enable/disable toggle
+-  - Port input with validation (1024-65535)
+-  - Port conflict detection
+-  - Auto-start on app launch toggle
+-  - Max connections setting
+-  - Log level selector
+-  - Connection instructions link
+-
+-#### Error Handling
+-
+-| Error Type        | User Message                                           | Recovery                               |
+-| ----------------- | ------------------------------------------------------ | -------------------------------------- |
+-| Port in use       | "Port {port} is already in use by another application" | "Use different port" suggestion        |
+-| Bind error        | "Cannot bind to {port}. Check firewall settings."      | "Try different port" or "Run as admin" |
+-| Protocol error    | "Invalid MCP message received"                         | Log error, continue                    |
+-| Transport error   | "Connection error: {details}"                          | Auto-restart server                    |
+-| Client disconnect | Silent (expected)                                      | None                                   |
+-
+-#### Documentation Tasks
+-
+-- [ ] Document MCP protocol support
+-- [ ] Document connection setup for Claude Code
+-- [ ] Document connection setup for OpenCode
+-- [ ] Document MCP troubleshooting
+-- [ ] Add MCP architecture diagram
+-
+-#### Tests
+-
+-**Unit Tests (Rust):**
+-
+-- [ ] `test_server_initialization` - Happy path
+-- [ ] `test_server_start_success` - Server starts
+-- [ ] `test_server_stop_success` - Server stops gracefully
+-- [ ] `test_server_double_start_fails` - Error handling
+-- [ ] `test_server_port_already_in_use` - Port conflict
+-- [ ] `test_jsonrpc_initialize_request` - Protocol handshake
+-- [ ] `test_jsonrpc_tools_list_request` - Tools endpoint
+-- [ ] `test_jsonrpc_invalid_request` - Error handling
+-- [ ] `test_graceful_shutdown` - Cleanup
+-- [ ] `test_status_tracking` - State machine
+-
+-**Integration Tests:**
+-
+-- [ ] `test_mcp_server_lifecycle` - Full start/stop flow
+-- [ ] `test_mcp_client_connection` - Real client connection
+-- [ ] `test_concurrent_client_connections` - Multi-client
+-- [ ] `test_port_conflict_handling` - Real port binding
+-
+-**Frontend Tests:**
+-
+-- [ ] Test McpStatusIndicator shows correct colors
+-- [ ] Test ConnectionInstructions copy buttons work
+-- [ ] Test port validation in settings
+-
+----
+-
+-### Phase 2.3: Command Management System (Issue #6)
+-
+-**Goal:** Create full CRUD system for custom commands with script templates, dynamic arguments, and in-app testing.
+-
+-#### Backend Implementation
+-
+-**Data Model:**
+-
+-```rust
+-// src-tauri/src/models/command.rs
+-pub struct Command {
+-    pub id: String,
+-    pub name: String,
+-    pub description: String,
+-    pub script: String,           // Template with {{arg}} placeholders
+-    pub arguments: Vec<CommandArgument>,
+-    pub expose_via_mcp: bool,
+-    pub working_directory: Option<String>,  // Optional cwd
+-    pub environment_variables: HashMap<String, String>,  // Optional env vars
+-    pub timeout_seconds: u32,     // Default 60
+-    pub created_at: i64,
+-    pub updated_at: i64,
+-}
+-
+-pub struct CommandArgument {
+-    pub name: String,
+-    pub description: String,
+-    pub arg_type: ArgumentType,   // string, number, boolean, enum
+-    pub required: bool,
+-    pub default_value: Option<String>,
+-    pub enum_values: Option<Vec<String>>,  // For enum type
+-}
+-
+-pub enum ArgumentType {
+-    String,
+-    Number,
+-    Boolean,
+-    Enum(Vec<String>),
+-}
+-```
+-
+-**File Storage (YAML + Markdown, same pattern as Rules):**
+-
+-```
+-~/.ruleweaver/commands/
+-  ├── 000-format-code.md
+-  └── 001-run-tests.md
+-```
+-
+-**File Format:**
+-
+-```markdown
+----
+-id: cmd-123
+-name: "Format Code"
+-description: "Run prettier on the specified files"
+-script: "npx prettier --write {{files}}"
+-arguments:
+-  - name: files
+-    description: "Files to format"
+-    type: string
+-    required: true
+-exposeViaMcp: true
+-workingDirectory: null
+-environmentVariables: {}
+-timeoutSeconds: 60
+-createdAt: 2024-01-15T10:30:00Z
+-updatedAt: 2024-01-15T10:30:00Z
+----
+-
+-Additional documentation about this command...
+-```
+-
+-**Rust Module Structure:**
+-
+-```
+-src-tauri/src/
+-├── commands/
+-│   ├── mod.rs           # Existing rule commands
+-│   └── command_commands.rs  # New command CRUD
+-├── models/
+-│   ├── mod.rs
+-│   ├── rule.rs
+-│   └── command.rs       # New
+-```
+-
+-**Tasks:**
+-
+-- Create `src-tauri/src/models/command.rs` module
+-- Define `Command` and `CommandArgument` structs with serde
+-- Define `ArgumentType` enum with JSON Schema conversion
+-- Add `commands` table to SQLite (for index/cache only)
+-- Implement `load_commands_from_disk()` using file storage
+-- Implement `save_command_to_disk()` with YAML frontmatter
+-- Create commands directory structure (`~/.ruleweaver/commands/`)
+-- Implement IPC command: `get_all_commands`
+-- Implement IPC command: `get_command_by_id`
+-- Implement IPC command: `create_command`
+-- Implement IPC command: `update_command`
+-- Implement IPC command: `delete_command`
+-- Implement script template parser (find `{{arg}}` placeholders)
+-- Implement template argument validator (ensure all args have definitions)
+-- Implement script injection prevention:
+-  - Escape shell metacharacters in arguments
+-  - Validate argument values against type
+-  - Block dangerous patterns (rm -rf, etc.)
+-- Implement IPC command: `test_command` with process spawn
+-- Implement timeout handling for test execution
+-- Capture stdout/stderr with size limits (max 10MB)
+-- Return structured test result with exit code, output, duration
+-
+-**Script Template Engine:**
+-
+-```rust
+-pub struct TemplateEngine;
+-
+-impl TemplateEngine {
+-    pub fn extract_placeholders(script: &str) -> Vec<String>;
+-    pub fn validate_template(script: &str, args: &[CommandArgument]) -> Result<()>;
+-    pub fn render_script(script: &str, values: &HashMap<String, String>) -> Result<String>;
+-    pub fn escape_shell_arg(value: &str) -> String;
+-    pub fn detect_dangerous_patterns(script: &str) -> Vec<String>;
+-}
+-```
+-
+-**Security Measures:**
+-
+-- Escape all arguments before shell execution
+-- Validate argument types (string, number, boolean, enum)
+-- Block dangerous patterns: `rm -rf`, `> /dev/null`, `|`, `;`, `&&`, `` ` ``, `$()`
+-- Timeout all executions
+-- Size limit on output (prevent memory exhaustion)
+-
+-#### Frontend Implementation
+-
+-**New UI Components:**
+-
+-- `CommandsPage` - Main commands list
+-- `CommandCard` - Individual command display
+-- `CommandEditor` - Full editor
+-- `ScriptEditor` - Code editor for scripts
+-- `ArgumentBuilder` - Dynamic argument form builder
+-- `ArgumentTypeSelector` - Type selection dropdown
+-- `McpSchemaPreview` - JSON schema preview
+-- `CommandTester` - In-app testing panel
+-- `TestOutputViewer` - Stdout/stderr display
+-- `ExecutionTimeDisplay` - Duration formatting
+-
+-**Commands Page:**
+-
+-- Similar layout to Rules page
+-- List view with: name, description, MCP badge, argument count, last modified
+-- Search bar with debounced filtering
+-- Sort dropdown: Name (A-Z, Z-A), Date Modified, Has Arguments
+-- Filter chips: Exposed via MCP, Has Arguments, Recently Used
+-- Enable/disable toggle per command
+-- Quick test button (opens test panel)
+-- Overflow menu: Edit, Duplicate, Delete, View History
+-- Bulk selection with bulk actions
+-
+-**Command Editor:**
+-
+-- **Header:** Name input, description textarea
+-- **Script Section:**
+-  - Monaco/CodeMirror editor with shell syntax highlighting
+-  - Placeholder highlighting (`{{arg}}` in different color)
+-  - Line numbers
+-  - Placeholder validation (underlines undefined placeholders)
+-- **Arguments Section:**
+-  - Dynamic list of argument definitions
+-  - Add/Remove/Drag to reorder
+-  - Each argument card:
+-    - Name input (must match placeholder)
+-    - Description textarea
+-    - Type selector (String, Number, Boolean, Enum)
+-    - Required checkbox
+-    - Default value input (type-specific)
+-    - Enum values textarea (for enum type)
+-- **Settings Section:**
+-  - MCP exposure toggle
+-  - Working directory input (optional)
+-  - Environment variables key-value pairs
+-  - Timeout slider (5-300 seconds)
+-- **MCP Schema Preview Panel:**
+-  - Read-only JSON preview of generated tool schema
+-  - Copy button
+-  - Validates in real-time
+-- **Test Panel:**
+-  - Input fields for each argument (dynamic based on type)
+-  - "Test Run" button with loading state
+-  - Output display:
+-    - Exit code badge (green for 0, red for non-zero)
+-    - Execution time
+-    - Stdout tab (with syntax highlighting if detectable)
+-    - Stderr tab
+-    - Copy output buttons
+-  - Clear output button
+-
+-**TypeScript Types:**
+-
+-```typescript
+-// types/command.ts
+-export type ArgumentType = "string" | "number" | "boolean" | "enum";
+-
+-export interface CommandArgument {
+-  name: string;
+-  description: string;
+-  type: ArgumentType;
+-  required: boolean;
+-  defaultValue?: string;
+-  enumValues?: string[];
+-}
+-
+-export interface Command {
+-  id: string;
+-  name: string;
+-  description: string;
+-  script: string;
+-  arguments: CommandArgument[];
+-  exposeViaMcp: boolean;
+-  workingDirectory: string | null;
+-  environmentVariables: Record<string, string>;
+-  timeoutSeconds: number;
+-  createdAt: number;
+-  updatedAt: number;
+-}
+-
+-export interface TestCommandResult {
+-  success: boolean;
+-  exitCode: number;
+-  stdout: string;
+-  stderr: string;
+-  durationMs: number;
+-  error?: string;
+-}
+-```
+-
+-**State Management:**
+-
+-```typescript
+-// stores/commandsStore.ts
+-interface CommandsState {
+-  commands: Command[];
+-  selectedCommand: Command | null;
+-  isLoading: boolean;
+-  error: string | null;
+-  testResults: Map<string, TestCommandResult>;
+-
+-  fetchCommands: () => Promise<void>;
+-  createCommand: (input: CreateCommandInput) => Promise<void>;
+-  updateCommand: (id: string, input: UpdateCommandInput) => Promise<void>;
+-  deleteCommand: (id: string) => Promise<void>;
+-  testCommand: (id: string, args: Record<string, unknown>) => Promise<TestCommandResult>;
+-  selectCommand: (command: Command | null) => void;
+-}
+-```
+-
+-#### Sync Adapter Updates for Commands
+-
+-Extend `SyncAdapter` trait:
+-
+-```rust
+-pub trait SyncAdapter: Send + Sync {
+-    // Existing rule methods...
+-
+-    // New command methods
+-    fn format_commands_content(&self, commands: &[Command]) -> String;
+-    fn get_command_file_name(&self) -> &str;
+-    fn get_command_global_path(&self) -> Result<PathBuf>;
+-}
+-```
+-
+-**Command Sync Output:**
+-
+-Gemini CLI (`~/.gemini/COMMANDS.toml`):
+-
+-```toml
+-# Generated by RuleWeaver - Do not edit manually
+-# Last synced: 2024-01-15T10:30:00Z
+-
+-[[command]]
+-name = "format-code"
+-description = "Run prettier on files"
+-script = "npx prettier --write {{files}}"
+-
+-[command.arguments]
+-files = { type = "string", required = true }
+-```
+-
+-Claude Code (`~/.claude/COMMANDS.md`):
+-
+-```markdown
+-<!-- Generated by RuleWeaver - Do not edit manually -->
+-<!-- Last synced: 2024-01-15T10:30:00Z -->
+-
+-## format-code
+-
+-**Description:** Run prettier on files
+-
+-**Usage:**
+-```
+-
+-/format-code files=<path>
+-
+-```
+-
+-**Arguments:**
+-- `files` (string, required): Files to format
+-```
+-
+-OpenCode (`~/.opencode/COMMANDS.md`):
+-
+-```markdown
+-# RuleWeaver Commands
+-
+-## format-code
+-
+-Run prettier on files.
+-
+-**Command:** `npx prettier --write {{files}}`
+-
+-**Parameters:**
+-
+-- `files` (string, required)
+-```
+-
+-**Tasks:**
+-
+-- Extend `SyncAdapter` trait with command methods
+-- Implement `format_commands_content()` for each adapter
+-- Implement `get_command_file_name()` for each adapter
+-- Implement `get_command_global_path()` for each adapter
+-- Update `SyncEngine` to sync commands alongside rules
+-- Add command file generation to sync process
+-
+-#### Error Handling
+-
+-| Error Type                | User Message                                       | Recovery                  |
+-| ------------------------- | -------------------------------------------------- | ------------------------- |
+-| Template syntax error     | "Invalid placeholder syntax: {{invalid}}"          | Highlight error location  |
+-| Undefined placeholder     | "Placeholder {{arg}} not defined in arguments"     | "Add argument" quick fix  |
+-| Unused argument           | "Argument 'foo' is defined but not used in script" | Warning only              |
+-| Script injection detected | "Dangerous pattern detected in script"             | Block save, show patterns |
+-| Type mismatch             | "Expected string, got number for argument 'foo'"   | Validation error          |
+-| Timeout                   | "Command exceeded timeout of {X}s"                 | Show partial output       |
+-| Command not found         | "Script interpreter not found"                     | Check PATH settings       |
+-| Permission denied         | "Cannot execute script: permission denied"         | "Open folder" button      |
+-
+-#### Documentation Tasks
+-
+-- [ ] Document Command file format (YAML frontmatter)
+-- [ ] Document script template syntax
+-- [ ] Document available argument types
+-- [ ] Document security restrictions
+-- [ ] Add command examples and best practices
+-- [ ] Document MCP tool naming conventions
+-
+-#### Tests
+-
+-**Unit Tests (Rust):**
+-
+-- [ ] `test_command_serialization` - Round-trip
+-- [ ] `test_extract_placeholders_simple` - Basic case
+-- [ ] `test_extract_placeholders_multiple` - Multiple args
+-- [ ] `test_extract_placeholders_nested` - Complex case
+-- [ ] `test_validate_template_success` - Happy path
+-- [ ] `test_validate_template_undefined_placeholder` - Error case
+-- [ ] `test_render_script_success` - Template rendering
+-- [ ] `test_render_script_escaping` - Injection prevention
+-- [ ] `test_escape_shell_arg_special_chars` - Security
+-- [ ] `test_detect_dangerous_patterns_rm_rf` - Security
+-- [ ] `test_detect_dangerous_patterns_pipes` - Security
+-- [ ] `test_test_command_success` - Happy path
+-- [ ] `test_test_command_failure` - Non-zero exit
+-- [ ] `test_test_command_timeout` - Timeout handling
+-- [ ] `test_test_command_large_output` - Size limits
+-- [ ] `test_crud_create_command` - Create
+-- [ ] `test_crud_update_command` - Update
+-- [ ] `test_crud_delete_command` - Delete
+-- [ ] `test_adapter_format_commands_gemini` - Gemini format
+-- [ ] `test_adapter_format_commands_opencode` - OpenCode format
+-
+-**Integration Tests:**
+-
+-- [ ] `test_command_full_lifecycle` - Create, test, delete
+-- [ ] `test_command_sync_to_files` - File generation
+-- [ ] `test_command_security_boundaries` - Injection attempts
+-- [ ] `test_concurrent_command_editing` - Race conditions
+-
+-**Frontend Tests:**
+-
+-- [ ] Test CommandEditor renders all fields
+-- [ ] Test placeholder validation in ScriptEditor
+-- [ ] Test ArgumentBuilder add/remove/reorder
+-- [ ] Test MCP schema preview updates
+-- [ ] Test CommandTester executes and displays output
+-- [ ] Test type-specific input fields
+-
+----
+-
+-### Phase 2.4: Command Execution & MCP Integration (Issue #7)
+-
+-**Goal:** Wire saved commands to the MCP server's `tools/list` and implement secure `tools/call` execution.
+-
+-#### Backend Implementation
+-
+-**MCP Tool Schema Generation:**
+-
+-```rust
+-impl Command {
+-    pub fn to_tool_schema(&self) -> ToolSchema {
+-        ToolSchema {
+-            name: self.name.to_snake_case(),
+-            description: self.description.clone(),
+-            input_schema: self.build_input_schema(),
+-        }
+-    }
+-
+-    fn build_input_schema(&self) -> Value {
+-        let mut properties = Map::new();
+-        let mut required = Vec::new();
+-
+-        for arg in &self.arguments {
+-            let property = match arg.arg_type {
+-                ArgumentType::String => json!({
+-                    "type": "string",
+-                    "description": arg.description
+-                }),
+-                ArgumentType::Number => json!({
+-                    "type": "number",
+-                    "description": arg.description
+-                }),
+-                ArgumentType::Boolean => json!({
+-                    "type": "boolean",
+-                    "description": arg.description
+-                }),
+-                ArgumentType::Enum(values) => json!({
+-                    "type": "string",
+-                    "description": arg.description,
+-                    "enum": values
+-                }),
+-            };
+-
+-            properties.insert(arg.name.clone(), property);
+-
+-            if arg.required {
+-                required.push(json!(arg.name.clone()));
+-            }
+-        }
+-
+-        json!({
+-            "type": "object",
+-            "properties": properties,
+-            "required": required
+-        })
+-    }
+-}
+-```
+-
+-**MCP Server Integration:**
+-
+-```rust
+-impl McpServer {
+-    pub fn register_commands(&self, commands: Vec<Command>) {
+-        let mut cmds = self.commands.write().unwrap();
+-        *cmds = commands.into_iter()
+-            .filter(|c| c.expose_via_mcp)
+-            .collect();
+-    }
+-
+-    pub fn list_tools(&self) -> Vec<ToolSchema> {
+-        let cmds = self.commands.read().unwrap();
+-        cmds.iter().map(|c| c.to_tool_schema()).collect()
+-    }
+-
+-    pub async fn call_tool(&self, name: &str, args: Value) -> Result<CallToolResult> {
+-        // 1. Find command by snake_case name
+-        let command = self.find_command(name)?;
+-
+-        // 2. Validate arguments against schema
+-        self.validate_args(&command, &args)?;
+-
+-        // 3. Convert args to HashMap<String, String>
+-        let arg_map = self.extract_args(&args)?;
+-
+-        // 4. Render script with arguments
+-        let script = TemplateEngine::render_script(&command.script, &arg_map)?;
+-
+-        // 5. Execute with timeout and capture output
+-        let output = self.execute_script(&script, &command).await?;
+-
+-        // 6. Log execution
+-        self.log_execution(&command, &args, &output).await?;
+-
+-        // 7. Return MCP-compliant result
+-        Ok(CallToolResult {
+-            content: vec![TextContent {
+-                text: format!("Exit code: {}\n\nstdout:\n{}\n\nstderr:\n{}",
+-                    output.exit_code,
+-                    output.stdout,
+-                    output.stderr
+-                ),
+-            }],
+-            is_error: output.exit_code != 0,
+-        })
+-    }
+-}
+-```
+-
+-**Secure Execution Engine:**
+-
+-```rust
+-pub struct ExecutionEngine;
+-
+-impl ExecutionEngine {
+-    pub async fn execute(
+-        script: &str,
+-        working_dir: Option<&str>,
+-        env_vars: &HashMap<String, String>,
+-        timeout_secs: u32,
+-    ) -> Result<ExecutionOutput> {
+-        let mut cmd = if cfg!(target_os = "windows") {
+-            let mut c = std::process::Command::new("cmd");
+-            c.arg("/C").arg(script);
+-            c
+-        } else {
+-            let mut c = std::process::Command::new("sh");
+-            c.arg("-c").arg(script);
+-            c
+-        };
+-
+-        // Set working directory
+-        if let Some(dir) = working_dir {
+-            cmd.current_dir(dir);
+-        }
+-
+-        // Set environment variables
+-        cmd.envs(env_vars);
+-
+-        // Execute with timeout
+-        let output = tokio::time::timeout(
+-            Duration::from_secs(timeout_secs as u64),
+-            cmd.output()
+-        ).await.map_err(|_| AppError::ExecutionTimeout)?;
+-
+-        let output = output?;
+-
+-        // Limit output size
+-        let stdout = String::from_utf8_lossy(&output.stdout)
+-            .into_owned()
+-            .chars()
+-            .take(10_000)
+-            .collect();
+-
+-        let stderr = String::from_utf8_lossy(&output.stderr)
+-            .into_owned()
+-            .chars()
+-            .take(10_000)
+-            .collect();
++### Phase 0: Setup & Preparation
+ 
+-        Ok(ExecutionOutput {
+-            exit_code: output.status.code().unwrap_or(-1),
+-            stdout,
+-            stderr,
+-        })
+-    }
+-}
+-```
++- Initialize feature branch: `feature/milestone-3-skills`.
++- Verify current test suite passes (`npm run test`, `cargo test`, `npm run lint`).
+ 
+-**Execution Logging:**
++### Phase 1: Core Architecture, Schema & UI (Tier 3.1 & Tier 3.4 Schemas)
+ 
+-```rust
+-pub struct ExecutionLog {
+-    pub id: String,
+-    pub command_id: String,
+-    pub command_name: String,
+-    pub arguments: Value,           // JSON
+-    pub script_rendered: String,    // Script with args injected
+-    pub stdout: String,
+-    pub stderr: String,
+-    pub exit_code: i32,
+-    pub duration_ms: u64,
+-    pub executed_at: DateTime<Utc>,
+-    pub triggered_by: String,       // "mcp" or "test"
+-    pub client_info: Option<String>, // MCP client identifier
+-}
++- Define the `Skill` struct in Rust and the SQLite database schema fields for indexing, adding properties for schemas and constraints (max args size, max output size, runtime environments).
++- Implement File Storage synchronization (`src-tauri/src/file_storage/skills.rs`) so that the file system (`SKILL.md`/`skill.json`) acts as the source of truth, matching the hybrid architecture used for rules and commands.
++- Include schema definition fields (for Tier 3.4) such as expected parameters, types (string/number/boolean/enum/array/object), defaults, and requirements.
++- Implement Tauri IPC commands (`get_all_skills`, `get_skill_by_id`, `create_skill`, `import_skill`, `update_skill`, `delete_skill`, `validate_skill`).
++- Build the Frontend UI components to list, create, edit, and validate skills. Provide intuitive editing of skill metadata and parameter schemas.
++- **Testing:** Unit tests for Rust models, SQLite CRUD operations, and schema validation logic.
+ 
+-// Database schema
+-CREATE TABLE execution_logs (
+-    id TEXT PRIMARY KEY NOT NULL,
+-    command_id TEXT NOT NULL,
+-    command_name TEXT NOT NULL,
+-    arguments TEXT NOT NULL,
+-    script_rendered TEXT NOT NULL,
+-    stdout TEXT,
+-    stderr TEXT,
+-    exit_code INTEGER NOT NULL,
+-    duration_ms INTEGER NOT NULL,
+-    executed_at INTEGER NOT NULL,
+-    triggered_by TEXT NOT NULL,
+-    client_info TEXT
+-);
++### Phase 2: Execution Engine, Validation & Sandboxing (Tier 3.2 & Tier 3.4 Execution)
+ 
+-CREATE INDEX idx_execution_logs_command_id ON execution_logs(command_id);
+-CREATE INDEX idx_execution_logs_executed_at ON execution_logs(executed_at);
+-```
++- Expose skills dynamically in the MCP `tools/list` endpoint by mapping the skill parameter schema to MCP JSON-RPC tool schemas.
++- Implement the comprehensive execution engine in Rust (`src-tauri/src/execution.rs`) to route and run skills based on runtime (Node.js, Python, Bash, PowerShell).
++- Implement strict runtime validation using the defined schemas _before_ execution. Return structured validation errors on failure.
++- Inject environment variables (`RULEWEAVER_SKILL_ID`, `RULEWEAVER_SKILL_NAME`, `RULEWEAVER_SKILL_DIR`) and set the working directory context to the skill root.
++- Implement execution security: Allowlist/denylist policies per skill.
++- Implement runtime constraints: enforce max output size truncation and strict skill-specific timeout policies.
++- Implement structured output capture and centralized execution logging (recording args, stdout, stderr, exit codes).
++- **Testing:** Integration tests for successful execution, multi-stage scripts, timeouts, schema validation failures, and policy denials. Coverage must include both happy and failure paths.
+ 
+-**IPC Commands:**
++### Phase 3: Template Library, Polish & Secrets (Tier 3.3)
+ 
+-- `get_execution_history` - Get paginated execution logs
+-- `get_execution_by_id` - Get single execution details
+-- `clear_execution_history` - Delete old logs (with confirmation)
+-- `get_command_execution_stats` - Stats per command (success rate, avg duration)
+-
+-#### Frontend Implementation
+-
+-**New UI Components:**
+-
+-- `ExecutionHistoryPage` - Full history view
+-- `ExecutionLogTable` - Paginated table
+-- `ExecutionLogDetail` - Expanded view with full output
+-- `ExecutionStats` - Charts/graphs of command usage
+-- `McpConnectionStatus` - Real-time connection indicator
+-- `RecentExecutions` - Live feed of recent calls
+-
+-**Execution History Page:**
+-
+-- Table columns: Timestamp, Command, Arguments, Exit Code, Duration, Triggered By
+-- Expandable rows showing full output
+-- Filter by: Command, Date Range, Success/Failure, Trigger Source
+-- Export to CSV/JSON
+-- Bulk delete old logs
+-- Pagination (25/50/100 per page)
+-
+-**Dashboard Updates:**
+-
+-- Recent executions widget (last 10)
+-- MCP connection status indicator
+-- Commands exposed via MCP count
+-- Total executions today
+-- Success rate chart
+-
+-**Real-Time Updates:**
+-
+-- WebSocket or polling for live execution feed
+-- Toast notifications for new MCP invocations
+-- Sound notification option (configurable)
+-
+-#### Error Handling
+-
+-| Error Type        | User Message                                        | Recovery                |
+-| ----------------- | --------------------------------------------------- | ----------------------- |
+-| Command not found | "Command '{name}' not found or not exposed via MCP" | Return error to client  |
+-| Invalid arguments | "Invalid arguments: {validation_errors}"            | Return schema to client |
+-| Execution timeout | "Command timed out after {X}s"                      | Return partial output   |
+-| Execution error   | "Command failed with exit code {N}"                 | Return stderr to client |
+-| Output too large  | "Output truncated (exceeded 10MB limit)"            | Return first/last 5MB   |
+-| Logging error     | "Failed to log execution"                           | Continue without log    |
+-| Client disconnect | Silent (expected during long execution)             | Continue execution      |
+-
+-#### Documentation Tasks
+-
+-- [ ] Document MCP tool execution flow
+-- [ ] Document execution logging
+-- [ ] Document error handling from client perspective
+-- [ ] Add troubleshooting guide for MCP connections
+-- [ ] Document performance considerations (timeouts, output limits)
+-
+-#### Tests
+-
+-**Unit Tests (Rust):**
+-
+-- [ ] `test_to_tool_schema_simple` - Basic schema
+-- [ ] `test_to_tool_schema_all_types` - All argument types
+-- [ ] `test_to_tool_schema_required_optional` - Required fields
+-- [ ] `test_find_command_by_name` - Lookup
+-- [ ] `test_validate_args_success` - Valid args
+-- [ ] `test_validate_args_missing_required` - Validation error
+-- [ ] `test_validate_args_wrong_type` - Type error
+-- [ ] `test_extract_args_conversion` - Arg extraction
+-- [ ] `test_execute_success` - Happy path
+-- [ ] `test_execute_failure` - Non-zero exit
+-- [ ] `test_execute_timeout` - Timeout
+-- [ ] `test_execute_large_output` - Truncation
+-- [ ] `test_log_execution` - Audit trail
+-- [ ] `test_windows_command` - Windows shell
+-- [ ] `test_unix_command` - Unix shell
+-
+-**Integration Tests:**
+-
+-- [ ] `test_mcp_full_execution_flow` - End-to-end
+-- [ ] `test_mcp_concurrent_executions` - Parallel commands
+-- [ ] `test_mcp_client_reconnect` - Resilience
+-- [ ] `test_execution_history_persistence` - Database
+-
+-**Frontend Tests:**
+-
+-- [ ] Test ExecutionHistoryPage renders correctly
+-- [ ] Test filtering and pagination
+-- [ ] Test real-time updates
+-- [ ] Test export functionality
+-
+----
+-
+-### Phase 2.5: GUI Polish & World-Class UX
+-
+-**Goal:** Ensure the UI meets "world-class UI/UX" standards per our rules.
+-
+-#### Visual Polish
+-
+-- [ ] Verify NO hardcoded colors (use Tailwind tokens/CSS variables)
+-- [ ] Audit all components for color consistency
+-- [ ] Ensure responsive design (1024px minimum, mobile-friendly where applicable)
+-- [ ] Verify dark mode support throughout
+-- [ ] Add smooth transitions/animations (respect reduced-motion)
+-- [ ] Ensure consistent spacing (use design tokens)
+-- [ ] Verify typography hierarchy
+-
+-#### Accessibility
+-
+-- [ ] All interactive elements keyboard accessible
+-- [ ] Focus visible outlines on all focusable elements
+-- [ ] ARIA labels for all icons and non-text buttons
+-- [ ] Screen reader announcements for toasts and status changes
+-- [ ] Color contrast WCAG AA compliance (use contrast checker)
+-- [ ] Skip navigation links
+-- [ ] Form field labels and error associations
+-- [ ] Modal/dialog focus trapping
+-
+-#### Keyboard Shortcuts
+-
+-- [ ] `Ctrl/Cmd + N` - New rule
+-- [ ] `Ctrl/Cmd + Shift + N` - New command
+-- [ ] `Ctrl/Cmd + S` - Save current item
+-- [ ] `Ctrl/Cmd + Shift + S` - Sync all
+-- [ ] `Ctrl/Cmd + F` - Focus search
+-- [ ] `Ctrl/Cmd + ,` - Open settings
+-- [ ] `Ctrl/Cmd + 1` - Go to Dashboard
+-- [ ] `Ctrl/Cmd + 2` - Go to Rules
+-- [ ] `Ctrl/Cmd + 3` - Go to Commands
+-- [ ] `Escape` - Close dialogs/cancel
+-- [ ] `?` - Show keyboard shortcuts help
+-
+-#### Feedback & Loading States
+-
+-- [ ] Skeleton loaders for all async data fetching
+-- [ ] Loading spinners for actions
+-- [ ] Progress indicators for long operations
+-- [ ] Optimistic UI updates where appropriate
+-- [ ] Error boundaries with friendly error messages
+-- [ ] Toast notifications for all CRUD operations
+-- [ ] Undo functionality for delete operations
+-
+-#### UI Component Inventory
+-
+-**Phase 2 New Components:**
+-
+-| Component              | Purpose                | Location             |
+-| ---------------------- | ---------------------- | -------------------- |
+-| FileStorageStatus      | Storage mode indicator | Header               |
+-| MigrationDialog        | Migration UI           | Dialog               |
+-| FilePathDisplay        | File path with copy    | Rule cards           |
+-| McpStatusIndicator     | MCP connection status  | Header/Dashboard     |
+-| McpConnectionPanel     | Connection details     | Settings             |
+-| ConnectionInstructions | Setup guide            | Settings             |
+-| McpLogsViewer          | Connection logs        | Settings             |
+-| CommandsPage           | Commands list          | Page                 |
+-| CommandCard            | Command display        | CommandsPage         |
+-| CommandEditor          | Full command editor    | Page                 |
+-| ScriptEditor           | Code editor            | CommandEditor        |
+-| ArgumentBuilder        | Dynamic args form      | CommandEditor        |
+-| ArgumentTypeSelector   | Type dropdown          | ArgumentBuilder      |
+-| McpSchemaPreview       | JSON preview           | CommandEditor        |
+-| CommandTester          | Test panel             | CommandEditor        |
+-| TestOutputViewer       | Output display         | CommandTester        |
+-| ExecutionHistoryPage   | History view           | Page                 |
+-| ExecutionLogTable      | Paginated table        | ExecutionHistoryPage |
+-| ExecutionLogDetail     | Expanded view          | ExecutionLogTable    |
+-| ExecutionStats         | Usage charts           | Dashboard            |
+-| RecentExecutions       | Live feed              | Dashboard            |
+-
+----
++- Create a registry of built-in skill templates (e.g., `lint-and-fix`, `test-generation`, `code-review`).
++- Build Frontend Template Browser UI in the Skills page to allow 1-click install, enable, and disable of templates.
++- Implement idempotent install/update logic in Rust to prevent duplicates and respect user overrides across versions.
++- Handle Secrets: Implement secure parameter overriding so users can safely supply credentials (if required by templates) without committing them to the skill definition.
++- Polish: Ensure all UI components adhere to RuleWeaver's premium standard (glassmorphism, excellent loading states, no unhandled exceptions).
++- Produce user documentation for skill authoring, schema definition, and template usage.
++- **Testing:** Unit and integration tests for template registry loading, idempotency during re-install, and version migrations.
+ 
+ ## 3. Execution Checklist
+ 
+-### Phase 2.0: Project Setup
+-
+-- [ ] Create feature branch `feature/phase-2-mcp-commands`
+-- [ ] Run all Phase 1 tests to establish baseline
+-- [ ] Run lint and typecheck (should pass)
+-- [ ] Verify CI/CD pipeline is green
+-- [ ] Review and update any outdated dependencies
+-
+-### Phase 2.1: File-First Storage (Issue #14)
+-
+-**Backend:**
+-
+-- [ ] Add `serde_yaml`, `notify`, `glob` to Cargo.toml
+-- [ ] Create `src-tauri/src/file_storage/mod.rs`
+-- [ ] Create `src-tauri/src/file_storage/parser.rs` - YAML parsing
+-- [ ] Create `src-tauri/src/file_storage/serializer.rs` - YAML generation
+-- [ ] Create `src-tauri/src/file_storage/watcher.rs` - File watching
+-- [ ] Create `src-tauri/src/file_storage/migration.rs` - Migration logic
+-- [ ] Implement `load_rules_from_disk()` with directory traversal
+-- [ ] Implement `save_rule_to_disk()` with atomic writes
+-- [ ] Implement file watcher with debounced events
+-- [ ] Create database migration v3 (remove content field from rules)
+-- [ ] Update SQLite schema for index-only storage
+-- [ ] Create `migrate_to_file_storage()` IPC command
+-- [ ] Create `verify_file_storage_integrity()` health check
+-- [ ] Implement `rollback_migration()` for safety
+-- [ ] Update all existing rule IPC commands
+-- [ ] Handle file permission errors
+-- [ ] Handle concurrent editing conflicts
+-- [ ] Handle large files with chunked reading
+-- [ ] Handle special characters and Unicode
+-- [ ] Handle duplicate IDs across directories
+-- [ ] Handle orphaned files
+-- [ ] Handle git merge conflicts
+-
+-**Frontend:**
+-
+-- [ ] Create `FileStorageStatus` component
+-- [ ] Create `MigrationDialog` component with progress
+-- [ ] Create `FilePathDisplay` component
+-- [ ] Create `RevealInExplorerButton` component
+-- [ ] Add "Open in Editor" button to rule cards
+-- [ ] Show file path in rule detail view
+-- [ ] Display file timestamps in UI
+-- [ ] Add file system health indicators
+-- [ ] Add storage mode indicator in settings
+-
+-**Documentation:**
+-
+-- [ ] Update README.md with file-based architecture
+-- [ ] Document `.ruleweaver/rules/` directory structure
+-- [ ] Document YAML frontmatter schema
+-- [ ] Add migration guide for existing users
+-- [ ] Document file watching behavior
+-- [ ] Document manual editing best practices
+-
+-**Tests:**
+-
+-- [ ] Unit tests for YAML parsing (happy path, invalid, missing fields)
+-- [ ] Unit tests for file I/O operations
+-- [ ] Unit tests for migration (forward and rollback)
+-- [ ] Unit tests for file watcher
+-- [ ] Unit tests for edge cases (permissions, large files, Unicode)
+-- [ ] Integration tests for full migration flow
+-- [ ] Integration tests for git workflow compatibility
+-- [ ] Frontend component tests
+-- [ ] 80% coverage target (high-value tests only)
+-
+-### Phase 2.2: MCP Server (Issue #5)
+-
+-**Backend:**
+-
+-- [ ] Research and select MCP SDK (or custom implementation)
+-- [ ] Add `tokio` dependency to Cargo.toml
+-- [ ] Create `src-tauri/src/mcp/mod.rs`
+-- [ ] Create `src-tauri/src/mcp/server.rs`
+-- [ ] Create `src-tauri/src/mcp/protocol.rs` - JSON-RPC types
+-- [ ] Create `src-tauri/src/mcp/handlers.rs` - Endpoint handlers
+-- [ ] Create `src-tauri/src/mcp/transport.rs` - Stdio transport
+-- [ ] Define JSON-RPC request/response types
+-- [ ] Implement `McpServer` struct with state management
+-- [ ] Implement `start()` with port binding
+-- [ ] Implement `stop()` with graceful shutdown
+-- [ ] Implement `initialize` endpoint
+-- [ ] Implement `tools/list` endpoint (initially empty)
+-- [ ] Implement connection logging
+-- [ ] Add MCP configuration persistence
+-- [ ] Create IPC commands: get_mcp_status, start_mcp_server, stop_mcp_server
+-- [ ] Create IPC commands: restart_mcp_server, get_mcp_connection_instructions
+-- [ ] Create IPC commands: get_mcp_logs
+-- [ ] Implement port conflict detection
+-- [ ] Handle graceful shutdown on app close
+-
+-**Frontend:**
+-
+-- [ ] Create `McpStatusIndicator` component
+-- [ ] Create `McpConnectionPanel` component
+-- [ ] Create `ConnectionInstructions` component
+-- [ ] Create `McpLogsViewer` component
+-- [ ] Create `McpSettingsSection` component
+-- [ ] Build MCP status page with controls
+-- [ ] Build connection instructions panel
+-- [ ] Add MCP settings to Settings page
+-- [ ] Add port configuration with validation
+-- [ ] Add auto-start toggle
+-- [ ] Add log level selector
+-- [ ] Create copy buttons for client configs
+-
+-**Documentation:**
+-
+-- [ ] Document MCP protocol support
+-- [ ] Document connection setup for Claude Code
+-- [ ] Document connection setup for OpenCode
+-- [ ] Document MCP troubleshooting
+-- [ ] Add MCP architecture diagram
+-
+-**Tests:**
+-
+-- [ ] Unit tests for server initialization
+-- [ ] Unit tests for start/stop lifecycle
+-- [ ] Unit tests for JSON-RPC message handling
+-- [ ] Unit tests for error handling
+-- [ ] Integration tests for server lifecycle
+-- [ ] Integration tests for client connection
+-- [ ] Integration tests for concurrent clients
+-- [ ] Integration tests for port conflicts
+-- [ ] Frontend component tests
+-- [ ] 80% coverage target
+-
+-### Phase 2.3: Command Management (Issue #6)
+-
+-**Backend:**
+-
+-- [ ] Create `src-tauri/src/models/command.rs`
+-- [ ] Define `Command` struct with all fields
+-- [ ] Define `CommandArgument` struct
+-- [ ] Define `ArgumentType` enum
+-- [ ] Add `commands` table to SQLite (index only)
+-- [ ] Implement `load_commands_from_disk()`
+-- [ ] Implement `save_command_to_disk()`
+-- [ ] Create commands directory structure
+-- [ ] Implement IPC: get_all_commands
+-- [ ] Implement IPC: get_command_by_id
+-- [ ] Implement IPC: create_command
+-- [ ] Implement IPC: update_command
+-- [ ] Implement IPC: delete_command
+-- [ ] Create `TemplateEngine` struct
+-- [ ] Implement `extract_placeholders()`
+-- [ ] Implement `validate_template()`
+-- [ ] Implement `render_script()`
+-- [ ] Implement `escape_shell_arg()`
+-- [ ] Implement `detect_dangerous_patterns()`
+-- [ ] Block dangerous patterns (rm -rf, pipes, etc.)
+-- [ ] Implement IPC: test_command
+-- [ ] Implement timeout handling
+-- [ ] Capture stdout/stderr with size limits
+-- [ ] Extend `SyncAdapter` trait for commands
+-- [ ] Implement command sync for Gemini (TOML)
+-- [ ] Implement command sync for OpenCode (MD)
+-- [ ] Implement command sync for Claude Code (MD)
+-- [ ] Implement command sync for Cline (MD)
+-
+-**Frontend:**
+-
+-- [ ] Create TypeScript types for Command model
+-- [ ] Create `commandsStore.ts` with Zustand
+-- [ ] Create `CommandsPage` component
+-- [ ] Create `CommandCard` component
+-- [ ] Create `CommandEditor` component
+-- [ ] Create `ScriptEditor` component (Monaco/CodeMirror)
+-- [ ] Create `ArgumentBuilder` component
+-- [ ] Create `ArgumentTypeSelector` component
+-- [ ] Create `McpSchemaPreview` component
+-- [ ] Create `CommandTester` component
+-- [ ] Create `TestOutputViewer` component
+-- [ ] Implement commands list view with search/sort/filter
+-- [ ] Implement command editor with all sections
+-- [ ] Implement dynamic argument builder
+-- [ ] Implement script template validation
+-- [ ] Implement MCP schema preview
+-- [ ] Implement in-app testing with output display
+-- [ ] Add TypeScript types for all components
+-
+-**Documentation:**
+-
+-- [ ] Document Command file format (YAML frontmatter)
+-- [ ] Document script template syntax
+-- [ ] Document available argument types
+-- [ ] Document security restrictions
+-- [ ] Add command examples and best practices
+-- [ ] Document MCP tool naming conventions
+-
+-**Tests:**
+-
+-- [ ] Unit tests for Command model serialization
+-- [ ] Unit tests for template parsing
+-- [ ] Unit tests for template validation
+-- [ ] Unit tests for script rendering
+-- [ ] Unit tests for shell argument escaping
+-- [ ] Unit tests for dangerous pattern detection
+-- [ ] Unit tests for test execution (happy path)
+-- [ ] Unit tests for test execution (failure paths)
+-- [ ] Unit tests for timeout handling
+-- [ ] Unit tests for CRUD operations
+-- [ ] Unit tests for sync adapter extensions
+-- [ ] Integration tests for full command lifecycle
+-- [ ] Integration tests for security boundaries
+-- [ ] Frontend component tests
+-- [ ] 80% coverage target
+-
+-### Phase 2.4: MCP Execution (Issue #7)
+-
+-**Backend:**
+-
+-- [ ] Implement `to_tool_schema()` for Command
+-- [ ] Implement `build_input_schema()` for JSON Schema
+-- [ ] Implement `register_commands()` in McpServer
+-- [ ] Implement `list_tools()` in McpServer
+-- [ ] Implement `find_command_by_name()`
+-- [ ] Implement argument validation against schema
+-- [ ] Implement `extract_args()` for MCP requests
+-- [ ] Implement `call_tool()` handler
+-- [ ] Create `ExecutionEngine` struct
+-- [ ] Implement `execute()` with Windows/Unix support
+-- [ ] Implement working directory handling
+-- [ ] Implement environment variable handling
+-- [ ] Implement execution timeout
+-- [ ] Implement stdout/stderr capture
+-- [ ] Implement output size limiting
+-- [ ] Create `execution_logs` table in SQLite
+-- [ ] Implement execution logging
+-- [ ] Create IPC: get_execution_history
+-- [ ] Create IPC: get_execution_by_id
+-- [ ] Create IPC: clear_execution_history
+-- [ ] Create IPC: get_command_execution_stats
+-- [ ] Handle execution errors gracefully
+-- [ ] Return structured MCP responses
+-
+-**Frontend:**
+-
+-- [ ] Create `ExecutionHistoryPage` component
+-- [ ] Create `ExecutionLogTable` component
+-- [ ] Create `ExecutionLogDetail` component
+-- [ ] Create `ExecutionStats` component
+-- [ ] Create `McpConnectionStatus` component
+-- [ ] Create `RecentExecutions` component
+-- [ ] Build execution history page
+-- [ ] Build paginated log table
+-- [ ] Build expanded detail view
+-- [ ] Build stats/charts for command usage
+-- [ ] Add recent executions to Dashboard
+-- [ ] Implement real-time updates
+-- [ ] Add toast notifications for executions
+-
+-**Documentation:**
+-
+-- [ ] Document MCP tool execution flow
+-- [ ] Document execution logging
+-- [ ] Document error handling from client perspective
+-- [ ] Add troubleshooting guide for MCP connections
+-- [ ] Document performance considerations
+-
+-**Tests:**
+-
+-- [ ] Unit tests for tool schema generation
+-- [ ] Unit tests for JSON Schema building
+-- [ ] Unit tests for argument validation
+-- [ ] Unit tests for argument extraction
+-- [ ] Unit tests for script rendering with args
+-- [ ] Unit tests for execution engine
+-- [ ] Unit tests for Windows shell execution
+-- [ ] Unit tests for Unix shell execution
+-- [ ] Unit tests for timeout handling
+-- [ ] Unit tests for output limiting
+-- [ ] Unit tests for execution logging
+-- [ ] Integration tests for full MCP execution flow
+-- [ ] Integration tests for concurrent executions
+-- [ ] Integration tests for client reconnection
+-- [ ] Frontend component tests
+-- [ ] 80% coverage target
+-
+-### Phase 2.5: Polish & Verification
+-
+-**Visual Polish:**
+-
+-- [ ] Verify NO hardcoded colors anywhere
+-- [ ] Audit all components for color consistency
+-- [ ] Verify responsive design (1024px minimum)
+-- [ ] Verify dark mode support throughout
+-- [ ] Add smooth transitions (respect reduced-motion)
+-- [ ] Ensure consistent spacing
+-- [ ] Verify typography hierarchy
+-
+-**Accessibility:**
+-
+-- [ ] Keyboard accessibility audit
+-- [ ] Focus visible on all elements
+-- [ ] ARIA labels for icons
+-- [ ] Screen reader announcements
+-- [ ] Color contrast WCAG AA check
+-- [ ] Skip navigation links
+-- [ ] Form labels and errors
+-- [ ] Modal focus trapping
+-
+-**Keyboard Shortcuts:**
+-
+-- [ ] Implement Ctrl/Cmd + N (New rule)
+-- [ ] Implement Ctrl/Cmd + Shift + N (New command)
+-- [ ] Implement Ctrl/Cmd + S (Save)
+-- [ ] Implement Ctrl/Cmd + Shift + S (Sync)
+-- [ ] Implement Ctrl/Cmd + F (Search)
+-- [ ] Implement Ctrl/Cmd + , (Settings)
+-- [ ] Implement Ctrl/Cmd + 1/2/3 (Navigation)
+-- [ ] Implement Escape (Close)
+-- [ ] Implement ? (Shortcuts help)
+-
+-**Feedback & Loading:**
+-
+-- [ ] Skeleton loaders for async data
+-- [ ] Loading spinners for actions
+-- [ ] Progress indicators for long ops
+-- [ ] Optimistic UI updates
+-- [ ] Error boundaries
+-- [ ] Toast notifications
+-- [ ] Undo for delete
+-
+-**Quality Assurance:**
+-
+-- [ ] Run `npm run lint` - no warnings
+-- [ ] Run `npm run typecheck` - no errors
+-- [ ] Run `npm run lint:rust` - no warnings
+-- [ ] Run `npm run test` - all passing
+-- [ ] Run `npm run test:rust` - all passing
+-- [ ] Verify 80% test coverage on new code
+-- [ ] Manual testing on Windows
+-- [ ] Test file migration from SQLite to files
+-- [ ] Test MCP server connection from Claude Code
+-- [ ] Test MCP server connection from OpenCode
+-- [ ] Test command execution via MCP
+-- [ ] Test in-app command testing
+-- [ ] Test execution history and logging
+-- [ ] Test sync of commands to files
+-- [ ] Test all keyboard shortcuts
+-- [ ] Test accessibility (keyboard-only navigation)
+-- [ ] Test responsive design
+-- [ ] Test dark mode
+-- [ ] Test error scenarios
+-- [ ] Verify all edge cases handled
+-- [ ] Review UI consistency
+-- [ ] Verify no hardcoded colors
+-- [ ] Accessibility audit with screen reader
+-
+-**Documentation:**
+-
+-- [ ] Update main README.md with Phase 2 features
+-- [ ] Document breaking changes
+-- [ ] Update architecture diagram
+-- [ ] Add troubleshooting section
+-- [ ] Add FAQ for common issues
+-- [ ] Update screenshots/GIFs
+-
+----
+-
+-## 4. Technical Specifications
+-
+-### Dependencies (Rust)
+-
+-```toml
+-# Add to src-tauri/Cargo.toml
+-
+-# File Storage
+-serde_yaml = "0.9"              # YAML serialization
+-notify = "6"                    # File system watching
+-glob = "0.3"                    # File pattern matching
+-
+-# MCP Server
+-tokio = { version = "1", features = ["full"] }  # Async runtime
+-# Option 1: rmcp = "0.1"        # Rust MCP SDK (if available)
+-# Option 2: jsonrpc-core = "18" # JSON-RPC framework
+-# Option 3: Custom implementation with hyper/axum
+-
+-# Additional utilities
+-indexmap = "2"                  # Ordered HashMap for YAML
+-unicode-segmentation = "1"      # Unicode handling
+-```
+-
+-### Dependencies (Frontend)
+-
+-```json
+-// package.json additions
+-{
+-  "dependencies": {
+-    "@monaco-editor/react": "^4.6.0" // For script editing (optional)
+-  }
+-}
+-```
+-
+-### File Locations
+-
+-```
+-# Rule Files (Global)
+-~/.ruleweaver/rules/                    # User home directory
+-  ├── 000-global-coding.md
+-  └── 001-security-guidelines.md
+-
+-# Rule Files (Local - per project)
+-{project}/.ruleweaver/rules/            # Project root
+-  ├── 000-project-specific.md
+-  └── ...
+-
+-# Command Files (Global only for now)
+-~/.ruleweaver/commands/                 # User home directory
+-  ├── 000-format-code.md
+-  └── 001-run-tests.md
+-
+-# Database (Index/Cache only)
+-%APPDATA%/RuleWeaver/ruleweaver.db      # Windows
+-~/.local/share/RuleWeaver/ruleweaver.db # Linux
+-~/Library/Application Support/RuleWeaver/ruleweaver.db # macOS
+-
+-# Synced Rule Outputs
+-~/.gemini/GEMINI.md                     # Gemini CLI rules
+-~/.opencode/AGENTS.md                   # OpenCode rules
+-~/.clinerules                           # Cline rules
+-~/.claude/CLAUDE.md                     # Claude Code rules
+-~/.codex/CODEX.md                       # Codex rules
+-~/.antigravity/ANTIGRAVITY.md           # Antigravity rules
+-
+-# Synced Command Outputs
+-~/.gemini/COMMANDS.toml                 # Gemini CLI commands
+-~/.opencode/COMMANDS.md                 # OpenCode commands
+-~/.claude/COMMANDS.md                   # Claude Code commands
+-```
+-
+-### YAML Frontmatter Schema
+-
+-**Rules:**
+-
+-```yaml
+----
+-id: string (UUID)              # Required: unique identifier
+-name: string                   # Required: display name
+-scope: "global" | "local"      # Required: scope type
+-targetPaths: string[]          # Optional: for local scope
+-enabledAdapters: string[]      # Required: gemini, opencode, cline, etc.
+-enabled: boolean               # Required: active status
+-createdAt: ISO8601             # Required: creation timestamp
+-updatedAt: ISO8601             # Required: last modified
+----
+-```
+-
+-**Commands:**
+-
+-```yaml
+----
+-id: string (UUID) # Required: unique identifier
+-name: string # Required: display name
+-description: string # Required: command description
+-script: string # Required: script template
+-arguments: # Required: argument definitions
+-  - name: string
+-    description: string
+-    type: string | number | boolean | enum
+-    required: boolean
+-    defaultValue: string # Optional
+-    enumValues: string[] # Optional (for enum type)
+-exposeViaMcp: boolean # Required: expose as MCP tool
+-workingDirectory: string # Optional: default working dir
+-environmentVariables: # Optional: env vars
+-  KEY: value
+-timeoutSeconds: number # Required: default 60
+-createdAt: ISO8601 # Required: creation timestamp
+-updatedAt: ISO8601 # Required: last modified
+----
+-```
+-
+-### IPC Commands Reference
+-
+-**File Storage:**
+-
+-- `migrate_to_file_storage() -> Result<MigrationReport>` - One-time migration
+-- `verify_file_storage_integrity() -> Result<HealthReport>` - Health check
+-- `rollback_migration() -> Result<()>` - Rollback to SQLite
+-- `get_storage_type() -> StorageType` - "file" or "sqlite"
+-
+-**MCP Server:**
+-
+-- `get_mcp_status() -> McpStatus` - Server status, port, uptime
+-- `start_mcp_server() -> Result<()>` - Start server
+-- `stop_mcp_server() -> Result<()>` - Stop server
+-- `restart_mcp_server() -> Result<()>` - Restart server
+-- `get_mcp_connection_instructions() -> ConnectionInstructions` - Setup guide
+-- `get_mcp_logs(limit: u32) -> Vec<McpLogEntry>` - Connection logs
+-
+-**Commands:**
+-
+-- `get_all_commands() -> Vec<Command>` - List all commands
+-- `get_command_by_id(id: String) -> Command` - Get single command
+-- `create_command(input: CreateCommandInput) -> Command` - Create command
+-- `update_command(id: String, input: UpdateCommandInput) -> Command` - Update command
+-- `delete_command(id: String) -> Result<()>` - Delete command
+-- `test_command(id: String, args: Value) -> TestCommandResult` - Test execute
+-
+-**Execution:**
+-
+-- `get_execution_history(limit: u32, offset: u32) -> Vec<ExecutionLog>` - Paginated history
+-- `get_execution_by_id(id: String) -> ExecutionLog` - Single execution details
+-- `clear_execution_history(before: Option<DateTime>) -> Result<()>` - Delete old logs
+-- `get_command_execution_stats(command_id: String) -> CommandStats` - Usage stats
+-
+-### Security Checklist
+-
+-**File System:**
+-
+-- [ ] All file paths validated before operations
+-- [ ] Path traversal prevention (only allow within .ruleweaver directories)
+-- [ ] File permission checks before read/write
+-- [ ] Atomic file writes (write to temp, then rename)
+-
+-**Command Execution:**
+-
+-- [ ] All arguments escaped before shell execution
+-- [ ] Dangerous patterns blocked (rm -rf, pipes, redirections, command substitution)
+-- [ ] Timeout on all executions (configurable, max 5 minutes)
+-- [ ] Output size limits (prevent memory exhaustion)
+-- [ ] Working directory validation
+-- [ ] Environment variable sanitization
+-
+-**MCP Protocol:**
+-
+-- [ ] Server binds to localhost only (127.0.0.1)
+-- [ ] No external network exposure
+-- [ ] Input validation on all JSON-RPC messages
+-- [ ] Rate limiting on tool calls (prevent abuse)
+-- [ ] Execution logging for audit trail
+-
+-**Input Validation:**
+-
+-- [ ] Command names: alphanumeric, dashes, underscores only
+-- [ ] Argument names: same restrictions
+-- [ ] Script length limit (10,000 chars)
+-- [ ] Argument count limit (20 per command)
+-- [ ] Description length limit (500 chars)
+-
+----
+-
+-## 5. Implementation Order & Dependencies
+-
+-```
+-Phase 2.0: Project Setup
+-    │
+-    ▼
+-Phase 2.1: File-First Storage (#14)
+-    │
+-    ├──► Phase 2.2: MCP Server (#5) ──┐
+-    │                                  │
+-    └──► Phase 2.3: Commands (#6) ─────┤
+-                                       │
+-                                       ▼
+-                            Phase 2.4: MCP Execution (#7)
+-                                       │
+-                                       ▼
+-                            Phase 2.5: Polish & Verification
+-```
+-
+-### Dependency Notes
+-
+-- **#14 must complete before #6** - Commands use same file storage pattern
+-- **#5 and #6 can run in parallel** after #14
+-- **#7 requires both #5 and #6** - Connects commands to MCP server
+-- **#5 can start research early** - SDK selection doesn't depend on #14
+-
+-### Timeline Estimate
+-
+-| Phase | Issue  | Priority | Duration | Dependencies  |
+-| ----- | ------ | -------- | -------- | ------------- |
+-| 2.0   | Setup  | HIGH     | 0.5 day  | None          |
+-| 2.1   | #14    | HIGH     | 4-5 days | 2.0           |
+-| 2.2   | #5     | MEDIUM   | 3-4 days | 2.1 (partial) |
+-| 2.3   | #6     | MEDIUM   | 4-5 days | 2.1           |
+-| 2.4   | #7     | MEDIUM   | 3-4 days | 2.2, 2.3      |
+-| 2.5   | Polish | HIGH     | 2-3 days | 2.4           |
+-
+-**Total: ~17-22 days** with parallelization on #5 and #6.
+-
+----
+-
+-## 6. Risk Assessment & Mitigation
+-
+-| Risk                             | Likelihood | Impact   | Mitigation                                            |
+-| -------------------------------- | ---------- | -------- | ----------------------------------------------------- |
+-| MCP SDK not mature               | Medium     | High     | Build custom JSON-RPC implementation as fallback      |
+-| File watcher performance         | Low        | Medium   | Use debouncing, test with large directories           |
+-| Migration data loss              | Low        | Critical | Backup SQLite before migration, implement rollback    |
+-| Script injection vulnerability   | Low        | Critical | Thorough security review, dangerous pattern detection |
+-| Cross-platform shell differences | Medium     | Medium   | Test on Windows, macOS, Linux; use appropriate shells |
+-| Large output memory issues       | Medium     | Medium   | Implement output size limits and streaming            |
+-| Concurrent edit conflicts        | Medium     | Low      | Clear UI warnings, conflict resolution options        |
+-
+----
+-
+-## 7. Definition of Done
+-
+-Each issue (#14, #5, #6, #7) is complete when:
+-
+-### Code Completeness
+-
+-- [ ] All features implemented per specifications
+-- [ ] No TODO, FIXME, or placeholder comments
+-- [ ] All error cases handled with user-friendly messages
+-- [ ] No unwrap() or expect() in production code (use proper error handling)
+-- [ ] All edge cases addressed
+-
+-### Testing
+-
+-- [ ] All unit tests passing
+-- [ ] All integration tests passing
+-- [ ] 80%+ test coverage (high-value tests only)
+-- [ ] Happy paths tested
+-- [ ] Failure paths tested
+-- [ ] Edge cases tested
+-- [ ] Security boundaries tested
+-
+-### Quality
+-
+-- [ ] Lint and typecheck passing with no warnings
+-- [ ] No hardcoded colors (using design tokens)
+-- [ ] Responsive design verified
+-- [ ] Dark mode support verified
+-- [ ] Accessibility audit passed
+-- [ ] Keyboard shortcuts working
+-- [ ] Performance acceptable (no obvious lag)
+-
+-### Documentation
+-
+-- [ ] README updated
+-- [ ] Architecture docs updated if changed
+-- [ ] User-facing documentation complete
+-- [ ] Code comments for complex logic
+-- [ ] API documentation (IPC commands)
+-
+-### Manual Verification
+-
+-- [ ] Manual testing completed on Windows
+-- [ ] All features work end-to-end
+-- [ ] Error scenarios tested manually
+-- [ ] UI polish verified
+-- [ ] No console errors
+-
+----
+-
+-## 8. Future Work (Phase 3+ Acknowledgment)
+-
+-Per `architecture.md` and `roadmap.md`, the following are **acknowledged but NOT in this plan**:
+-
+-### Phase 3: Skills MVP (Roadmap)
+-
+-- Support for complex, multi-file execution environments
+-- "Skills Manager" UI for bundled workflows
+-- Skills as directories with SKILL.md and auxiliary scripts
+-- Multi-stage python/bash script execution
+-- Templates for common skills
+-
+-### Phase 4: Polish & Extensibility (Roadmap)
+-
+-- System tray icon for background operation
+-- Enhanced conflict resolution
+-- Import/export configurations
+-
+-### Phase 5: Advanced Ecosystem (Roadmap)
+-
+-- **Secrets & Vault Management** - NIST SP 800-63B password security compliance
+-- Live execution logging dashboard
+-- Community Hub / Registry for sharing rules
+-
+-These are explicitly out of scope for Milestone #2 but acknowledged in the architecture.
+-
+----
+-
+-## 9. Notes
+-
+-### Why File-First Storage is Critical
+-
+-Issue #14 is marked HIGH PRIORITY because:
+-
+-1. Git-native version control for rules
+-2. Transparency - users can edit files directly
+-3. Portability - no database export needed
+-4. Emergency access - rules remain readable even if app breaks
+-5. Developer-friendly - review rule changes in PRs
+-6. Aligns with architecture flexibility (SQLite OR file storage)
+-
+-### MCP Transport Decision
+-
+-Start with **stdio transport** (simpler, no port conflicts):
+-
+-- Claude Code and OpenCode support stdio MCP servers
+-- HTTP can be added later as enhancement
+-- stdio is more secure (no network exposure)
+-
+-### Security First
+-
+-Command execution is the highest security risk:
+-
+-- All user input must be escaped
+-- Dangerous patterns must be blocked
+-- Timeouts prevent runaway processes
+-- Audit logging for accountability
+-- Principle of least privilege (minimal permissions)
+-
+-### Testing Philosophy
+-
+-Per our rules:
+-
+-- High-value tests > coverage metrics
+-- No low-value tests (getters/setters, trivial functions)
+-- Both happy and failure paths
+-- If 80% coverage requires low-value tests, stop at lower percentage
+-
+-### Documentation Standards
+-
+-- Update README.md for user-facing changes
+-- Document architecture decisions in comments
+-- Keep AGENTS.md updated (if exists)
+-- Screenshots/GIFs for major UI changes
+-
+----
+-
+-## 10. Robust MCP Mode Addendum
+-
+-To make MCP reliable for daily workflows and tool reconnects, we add a dual-mode runtime:
+-
+-### A. Embedded MCP (Desktop App Runtime)
+-
+-- Keep MCP server embedded in Tauri for integrated UX and settings controls.
+-- Add `mcp_auto_start` setting so MCP can start automatically when app launches.
+-- Expose status/start/stop/restart and connection instructions in Settings.
+-
+-### B. Standalone MCP Binary (`ruleweaver-mcp`)
+-
+-- Ship a separate CLI/EXE entrypoint that starts MCP without opening the desktop UI.
+-- Command shape: `ruleweaver-mcp --port <PORT>`.
+-- Reuse the same database and command registry as the desktop app.
+-- Include standalone launch snippet in MCP connection instructions so AI tools can call it directly.
+-
+-### C. Process & Background Expectations
+-
+-- Embedded mode requires RuleWeaver app process alive.
+-- Standalone mode requires `ruleweaver-mcp` process alive.
+-- No Docker container is required.
+-
+-### D. Remaining hardening after implementation
+-
+-- Add system tray/background mode to keep embedded MCP alive when window closes.
+-- Add startup conflict handling between embedded MCP and standalone MCP on same port.
+-- Add reconnect-resilience tests for long-lived MCP clients.
+-
+-### E. Implementation status in current branch
+-
+-- Tray/background mode implemented (`minimize_to_tray` + tray menu controls).
+-- Standalone MCP binary implemented (`ruleweaver-mcp`).
+-- Command stub sync implemented (`sync_commands` for Gemini/OpenCode/Claude Code files).
+-- Phase 3 foundation started: Skills CRUD backend + initial Skills page/navigation.
++### Phase 0
++
++- [ ] `git checkout -b feature/milestone-3-skills`
++- [ ] Run base tests and linters to verify clean state
++
++### Phase 1
++
++- [ ] Define Rust `Skill` data model, schema constraints, and SQLite schema for indexing.
++- [ ] Implement File Storage parsing and DB synchronization for Skills.
++- [ ] Implement Rust database queries and Skill CRUD IPC commands.
++- [ ] Build Frontend "Skills Manager" UI for listing/viewing.
++- [ ] Build Frontend UI to import, create, and edit Skill metadata/schema.
++- [ ] Implement Skill Schema validation logic in Rust.
++- [ ] Write DB and CRUD unit tests for Rust.
++- [ ] Write component tests for Skills UI.
++
++### Phase 2
++
++- [ ] Expose Skills dynamically via MCP `tools/list`.
++- [ ] Implement multi-runtime Skill Execution Engine (Python/Node/Shell/Pwsh).
++- [ ] Implement pre-execution argument validation against Skill schema.
++- [ ] Implement execution constraints (Sandboxing, timeouts, max output size).
++- [ ] Implement execution policies (Allowlist/denylist execution blocking).
++- [ ] Implement comprehensive logging (args, stdout, stderr, policy blocks).
++- [ ] Write execution and schema validation integration tests (happy & failure paths).
++
++### Phase 3
++
++- [ ] Create built-in Skill templates registry with curated examples.
++- [ ] Build Template Browser UI with one-click install/enable functionality.
++- [ ] Implement idempotent template installation and update migration behavior.
++- [ ] Add Secrets/Credentials input handling for Skills requiring keys.
++- [ ] Add User docs for template usage, schema authoring, and lifecycle.
++- [ ] Run full test suite (`cargo test`, `vitest`, `cargo clippy`, `eslint`).
++- [ ] Final UI/UX Polish and QA review.
+diff --git a/package.json b/package.json
+index e4804a5..49cf37d 100644
+--- a/package.json
++++ b/package.json
+@@ -52,6 +52,7 @@
+     "@tauri-apps/cli": "^2",
+     "@testing-library/jest-dom": "^6.6.3",
+     "@testing-library/react": "^16.2.0",
++    "@testing-library/user-event": "^14.6.1",
+     "@types/node": "^22.13.5",
+     "@types/react": "^19.1.8",
+     "@types/react-dom": "^19.1.6",
+diff --git a/src-tauri/src/commands/mod.rs b/src-tauri/src/commands/mod.rs
+index cb69c49..ac4345b 100644
+--- a/src-tauri/src/commands/mod.rs
++++ b/src-tauri/src/commands/mod.rs
+@@ -22,12 +22,11 @@ use std::time::Instant;
+ 
+ use crate::constants::limits::{
+     MAX_COMMAND_NAME_LENGTH, MAX_COMMAND_SCRIPT_LENGTH, MAX_RULE_CONTENT_LENGTH,
+-    MAX_RULE_NAME_LENGTH, MAX_SKILL_INSTRUCTIONS_LENGTH, MAX_SKILL_NAME_LENGTH, MAX_SKILL_STEPS,
++    MAX_RULE_NAME_LENGTH,
+ };
+ use crate::database::Database;
+ use crate::error::{AppError, Result};
+ use crate::file_storage;
+-use crate::mcp::extract_skill_steps;
+ use crate::models::Rule;
+ 
+ pub static RUNNING_TESTS: LazyLock<Mutex<HashSet<String>>> =
+@@ -156,40 +155,6 @@ pub fn validate_command_arguments(args: &[crate::models::CommandArgument]) -> Re
+     Ok(())
+ }
+ 
+-pub fn validate_skill_input(name: &str, instructions: &str) -> Result<()> {
+-    let trimmed_name = name.trim();
+-    if trimmed_name.is_empty() {
+-        return Err(AppError::Validation(
+-            "Skill name cannot be empty".to_string(),
+-        ));
+-    }
+-    if trimmed_name.len() > MAX_SKILL_NAME_LENGTH {
+-        return Err(AppError::Validation(format!(
+-            "Skill name too long (max {} characters)",
+-            MAX_SKILL_NAME_LENGTH
+-        )));
+-    }
+-    if instructions.trim().is_empty() {
+-        return Err(AppError::Validation(
+-            "Skill instructions cannot be empty".to_string(),
+-        ));
+-    }
+-    if instructions.len() > MAX_SKILL_INSTRUCTIONS_LENGTH {
+-        return Err(AppError::Validation(format!(
+-            "Skill instructions too large (max {} characters)",
+-            MAX_SKILL_INSTRUCTIONS_LENGTH
+-        )));
+-    }
+-
+-    // Validate step count
+-    let steps = extract_skill_steps(instructions);
+-    if steps.len() > MAX_SKILL_STEPS {
+-        return Err(AppError::Validation(format!("Skill contains too many shell steps ({} found, max {}). Please consolidate your instructions.", steps.len(), MAX_SKILL_STEPS)));
+-    }
+-
+-    Ok(())
+-}
+-
+ pub fn markdown_escape_inline(input: &str) -> String {
+     input.replace('`', "\\`")
+ }
+diff --git a/src-tauri/src/commands/skill_commands.rs b/src-tauri/src/commands/skill_commands.rs
+index 3d72925..8dc0b0e 100644
+--- a/src-tauri/src/commands/skill_commands.rs
++++ b/src-tauri/src/commands/skill_commands.rs
+@@ -2,10 +2,10 @@ use std::sync::Arc;
+ use tauri::State;
+ 
+ use crate::database::Database;
+-use crate::error::Result;
++use crate::error::{AppError, Result};
++use crate::file_storage::skills::{delete_skill_from_disk, save_skill_to_disk};
+ use crate::models::{CreateSkillInput, Skill, UpdateSkillInput};
+-
+-use super::validate_skill_input;
++use crate::templates::skills::{get_bundled_skill_templates, TemplateSkill};
+ 
+ #[tauri::command]
+ pub fn get_all_skills(db: State<'_, Arc<Database>>) -> Result<Vec<Skill>> {
+@@ -19,28 +19,184 @@ pub fn get_skill_by_id(id: String, db: State<'_, Arc<Database>>) -> Result<Skill
+ 
+ #[tauri::command]
+ pub fn create_skill(input: CreateSkillInput, db: State<'_, Arc<Database>>) -> Result<Skill> {
+-    validate_skill_input(&input.name, &input.instructions)?;
+-    db.create_skill(input)
++    crate::models::validate_skill_input(&input.name, &input.instructions)?;
++    crate::models::validate_skill_schema(&input.input_schema)?;
++    crate::models::validate_skill_entry_point(&input.entry_point)?;
++
++    // Create in DB first
++    let created = db.create_skill(input)?;
++
++    // Atomic Cleanup Guard for DB
++    struct SkillCreationGuard<'a> {
++        db: &'a Database,
++        skill_id: String,
++        defused: bool,
++    }
++
++    impl<'a> Drop for SkillCreationGuard<'a> {
++        fn drop(&mut self) {
++            if !self.defused {
++                let _ = self.db.delete_skill(&self.skill_id);
++            }
++        }
++    }
++
++    let mut guard = SkillCreationGuard {
++        db: &db,
++        skill_id: created.id.clone(),
++        defused: false,
++    };
++
++    // Save to disk
++    let path = save_skill_to_disk(&created)?;
++
++    // Update DB with the directory path
++    let update = UpdateSkillInput {
++        directory_path: Some(path.to_string_lossy().to_string()),
++        ..Default::default()
++    };
++
++    if let Err(e) = db.update_skill(&created.id, update) {
++        // Attempt to cleanup disk if DB update fails
++        let _ = std::fs::remove_dir_all(&path);
++        return Err(e);
++    }
++
++    guard.defused = true;
++    db.get_skill_by_id(&created.id)
+ }
+ 
+ #[tauri::command]
+-pub fn update_skill(id: String, input: UpdateSkillInput, db: State<'_, Arc<Database>>) -> Result<Skill> {
++pub fn update_skill(
++    id: String,
++    input: UpdateSkillInput,
++    db: State<'_, Arc<Database>>,
++) -> Result<Skill> {
+     if let Some(ref name) = input.name {
+         if let Some(ref instructions) = input.instructions {
+-            validate_skill_input(name, instructions)?;
++            crate::models::validate_skill_input(name, instructions)?;
+         } else {
+             let existing = db.get_skill_by_id(&id)?;
+-            validate_skill_input(name, &existing.instructions)?;
++            crate::models::validate_skill_input(name, &existing.instructions)?;
+         }
+     } else if let Some(ref instructions) = input.instructions {
+         let existing = db.get_skill_by_id(&id)?;
+-        validate_skill_input(&existing.name, instructions)?;
++        crate::models::validate_skill_input(&existing.name, instructions)?;
++    }
++
++    if let Some(ref schema) = input.input_schema {
++        crate::models::validate_skill_schema(schema)?;
++    }
++
++    if let Some(ref ep) = input.entry_point {
++        crate::models::validate_skill_entry_point(ep)?;
+     }
+ 
+-    db.update_skill(&id, input)
++    let updated = db.update_skill(&id, input)?;
++    save_skill_to_disk(&updated)?;
++    Ok(updated)
+ }
+ 
+ #[tauri::command]
+ pub fn delete_skill(id: String, db: State<'_, Arc<Database>>) -> Result<()> {
++    if let Ok(existing) = db.get_skill_by_id(&id) {
++        let _ = delete_skill_from_disk(&existing);
++    }
+     db.delete_skill(&id)
+ }
++
++#[tauri::command]
++pub fn get_skill_templates() -> Result<Vec<TemplateSkill>> {
++    Ok(get_bundled_skill_templates())
++}
++
++#[tauri::command]
++pub fn install_skill_template(template_id: String, db: State<'_, Arc<Database>>) -> Result<Skill> {
++    // 1. Check idempotency: is it already installed?
++    if let Ok(existing) = db.get_skill_by_id(&template_id) {
++        return Ok(existing);
++    }
++
++    // 2. Find template
++    let templates = get_bundled_skill_templates();
++    let template = templates
++        .into_iter()
++        .find(|t| t.template_id == template_id)
++        .ok_or_else(|| AppError::Validation(format!("Template '{}' not found", template_id)))?;
++
++    // 3. Ensure the metadata uses our specific template ID
++    let mut metadata = template.metadata.clone();
++    metadata.id = Some(template_id.clone());
++
++    // 4. Create in DB first so it generates default timestamps etc (using our prescribed ID)
++    let created = db.create_skill(metadata)?;
++
++    // Atomic Cleanup Guard
++    struct SkillInstallationGuard<'a> {
++        db: &'a Database,
++        skill_id: String,
++        directory_path: Option<std::path::PathBuf>,
++        defused: bool,
++    }
++
++    impl<'a> Drop for SkillInstallationGuard<'a> {
++        fn drop(&mut self) {
++            if !self.defused {
++                // Rollback DB
++                let _ = self.db.delete_skill(&self.skill_id);
++                // Rollback Disk
++                if let Some(ref path) = self.directory_path {
++                    if path.exists() {
++                        let _ = std::fs::remove_dir_all(path);
++                    }
++                }
++            }
++        }
++    }
++
++    let mut guard = SkillInstallationGuard {
++        db: &db,
++        skill_id: created.id.clone(),
++        directory_path: None,
++        defused: false,
++    };
++
++    // 5. Save the SKILL.md and skill.json to disk (generates directory for us)
++    // Propagate disk write errors
++    let path = save_skill_to_disk(&created)?;
++    guard.directory_path = Some(path.clone());
++
++    // Write the custom template files
++    for file in template.files {
++        // Security: Validate template filenames to prevent path traversal
++        if file.filename.contains("..")
++            || file.filename.contains('/')
++            || file.filename.contains('\\')
++        {
++            return Err(AppError::Validation(format!(
++                "Invalid template filename: {}",
++                file.filename
++            )));
++        }
++        let file_path = path.join(&file.filename);
++        std::fs::write(&file_path, &file.content).map_err(AppError::Io)?;
++    }
++
++    // 6. Update the DB with the absolute directory path that save_skill_to_disk determined
++    let update = UpdateSkillInput {
++        directory_path: Some(path.to_string_lossy().to_string()),
++        ..Default::default()
++    };
++    db.update_skill(&created.id, update)?;
++
++    // Success! Defuse the guard
++    guard.defused = true;
++
++    // Return the latest from DB
++    db.get_skill_by_id(&template_id)
++}
++
++#[tauri::command]
++pub fn sync_skills(db: State<'_, Arc<Database>>) -> Result<u32> {
++    crate::file_storage::skills::sync_skills_to_db(&db)
++}
+diff --git a/src-tauri/src/constants.rs b/src-tauri/src/constants.rs
+index dd12857..d7c0568 100644
+--- a/src-tauri/src/constants.rs
++++ b/src-tauri/src/constants.rs
+@@ -11,8 +11,6 @@ pub mod timing {
+ }
+ 
+ pub mod limits {
+-    pub const MAX_SKILL_STEPS: usize = 10;
+-    pub const MAX_STEP_LENGTH: usize = 4000;
+     pub const MAX_ARG_LENGTH: usize = 2000;
+     pub const MAX_SCRIPT_LENGTH: usize = 20000;
+     pub const MAX_OUTPUT_SIZE: usize = 10 * 1024 * 1024; // 10MB
+@@ -25,6 +23,7 @@ pub mod limits {
+     pub const MAX_COMMAND_SCRIPT_LENGTH: usize = 10_000;
+     pub const MAX_SKILL_NAME_LENGTH: usize = 160;
+     pub const MAX_SKILL_INSTRUCTIONS_LENGTH: usize = 200_000;
++    pub const MAX_SKILL_OUTPUT_PER_STREAM: usize = 1024 * 1024; // 1MB per step stream
+     pub const MCP_SERVER_RETRY_COUNT: u32 = 5;
+ }
+ 
+@@ -32,4 +31,12 @@ pub mod security {
+     pub const REGEX_DFA_SIZE_LIMIT: usize = 10_000;
+ }
+ 
++pub mod skills {
++    pub const SKILL_PARAM_PREFIX: &str = "SKILL_PARAM_";
++    pub const SKILL_SECRET_PREFIX: &str = "SKILL_SECRET_";
++    pub const RULEWEAVER_SKILL_ID: &str = "RULEWEAVER_SKILL_ID";
++    pub const RULEWEAVER_SKILL_NAME: &str = "RULEWEAVER_SKILL_NAME";
++    pub const RULEWEAVER_SKILL_DIR: &str = "RULEWEAVER_SKILL_DIR";
++}
++
+ pub const DEFAULT_MCP_PORT: u16 = 8080;
+diff --git a/src-tauri/src/database/mod.rs b/src-tauri/src/database/mod.rs
+index 3b05d12..2391553 100644
+--- a/src-tauri/src/database/mod.rs
++++ b/src-tauri/src/database/mod.rs
+@@ -45,8 +45,8 @@ impl Database {
+             std::fs::create_dir_all(parent)?;
+         }
+ 
+-        let conn = Connection::open(&db_path)?;
+-        run_migrations(&conn)?;
++        let mut conn = Connection::open(&db_path)?;
++        run_migrations(&mut conn)?;
+         Ok(Self(Mutex::new(conn)))
+     }
+ 
+@@ -65,6 +65,13 @@ impl Database {
+         Self::new_with_db_path(db_path)
+     }
+ 
++    #[cfg(test)]
++    pub fn new_in_memory() -> Result<Self> {
++        let mut conn = Connection::open_in_memory()?;
++        run_migrations(&mut conn)?;
++        Ok(Self(Mutex::new(conn)))
++    }
++
+     /// Re-establishes the database connection and runs migrations.
+     /// Useful for recovering from disk disconnections or handling external database modifications.
+     #[allow(dead_code)]
+@@ -75,8 +82,8 @@ impl Database {
+             PathBuf::from(path)
+         };
+ 
+-        let conn = Connection::open(&db_path)?;
+-        run_migrations(&conn)?;
++        let mut conn = Connection::open(&db_path)?;
++        run_migrations(&mut conn)?;
+ 
+         let mut guard = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
+         *guard = conn;
+@@ -449,7 +456,7 @@ impl Database {
+     pub fn get_all_skills(&self) -> Result<Vec<Skill>> {
+         let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
+         let mut stmt = conn.prepare(
+-            "SELECT id, name, description, instructions, input_schema, enabled, created_at, updated_at
++            "SELECT id, name, description, instructions, input_schema, enabled, created_at, updated_at, directory_path, entry_point
+              FROM skills
+              ORDER BY updated_at DESC",
+         )?;
+@@ -474,6 +481,8 @@ impl Database {
+                     enabled: row.get(5)?,
+                     created_at: parse_timestamp_or_now(row.get(6)?),
+                     updated_at: parse_timestamp_or_now(row.get(7)?),
++                    directory_path: row.get(8)?,
++                    entry_point: row.get(9)?,
+                 })
+             })?
+             .collect::<std::result::Result<Vec<_>, _>>()?;
+@@ -484,7 +493,7 @@ impl Database {
+     pub fn get_skill_by_id(&self, id: &str) -> Result<Skill> {
+         let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
+         let mut stmt = conn.prepare(
+-            "SELECT id, name, description, instructions, input_schema, enabled, created_at, updated_at
++            "SELECT id, name, description, instructions, input_schema, enabled, created_at, updated_at, directory_path, entry_point
+              FROM skills WHERE id = ?",
+         )?;
+ 
+@@ -508,6 +517,8 @@ impl Database {
+                     enabled: row.get(5)?,
+                     created_at: parse_timestamp_or_now(row.get(6)?),
+                     updated_at: parse_timestamp_or_now(row.get(7)?),
++                    directory_path: row.get(8)?,
++                    entry_point: row.get(9)?,
+                 })
+             })
+             .map_err(|e| match e {
+@@ -523,21 +534,23 @@ impl Database {
+     pub fn create_skill(&self, input: CreateSkillInput) -> Result<Skill> {
+         let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
+         let now = chrono::Utc::now().timestamp();
+-        let id = uuid::Uuid::new_v4().to_string();
++        let id = input.id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+         let input_schema_json = serde_json::to_string(&input.input_schema)?;
+ 
+         conn.execute(
+-            "INSERT INTO skills (id, name, description, instructions, input_schema, enabled, created_at, updated_at)
+-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
++            "INSERT INTO skills (id, name, description, instructions, input_schema, enabled, directory_path, entry_point, created_at, updated_at)
++             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+             params![
+-                id,
+-                input.name,
+-                input.description,
+-                input.instructions,
+-                input_schema_json,
+-                input.enabled,
+-                now,
+-                now
++                &id,
++                &input.name,
++                &input.description,
++                &input.instructions,
++                &input_schema_json,
++                &input.enabled,
++                &input.directory_path,
++                &input.entry_point,
++                &now,
++                &now
+             ],
+         )?;
+ 
+@@ -554,12 +567,24 @@ impl Database {
+         let instructions = input.instructions.unwrap_or(existing.instructions);
+         let input_schema = input.input_schema.unwrap_or(existing.input_schema);
+         let enabled = input.enabled.unwrap_or(existing.enabled);
++        let directory_path = input.directory_path.unwrap_or(existing.directory_path);
++        let entry_point = input.entry_point.unwrap_or(existing.entry_point);
+         let now = chrono::Utc::now().timestamp();
+         let input_schema_json = serde_json::to_string(&input_schema)?;
+ 
+         conn.execute(
+-            "UPDATE skills SET name = ?, description = ?, instructions = ?, input_schema = ?, enabled = ?, updated_at = ? WHERE id = ?",
+-            params![name, description, instructions, input_schema_json, enabled, now, id],
++            "UPDATE skills SET name = ?, description = ?, instructions = ?, input_schema = ?, enabled = ?, directory_path = ?, entry_point = ?, updated_at = ? WHERE id = ?",
++            params![
++                &name,
++                &description,
++                &instructions,
++                &input_schema_json,
++                &enabled,
++                &directory_path,
++                &entry_point,
++                &now,
++                &id
++            ],
+         )?;
+ 
+         drop(conn);
+@@ -795,13 +820,15 @@ impl Database {
+     }
+ }
+ 
+-fn run_migrations(conn: &Connection) -> Result<()> {
+-    let current_version: i32 = conn
++fn run_migrations(conn: &mut Connection) -> Result<()> {
++    let transaction = conn.transaction()?;
++
++    let current_version: i32 = transaction
+         .query_row("PRAGMA user_version", [], |row| row.get(0))
+         .unwrap_or(0);
+ 
+     if current_version < 1 {
+-        conn.execute(
++        transaction.execute(
+             "CREATE TABLE IF NOT EXISTS rules (
+                 id TEXT PRIMARY KEY NOT NULL,
+                 name TEXT NOT NULL,
+@@ -816,7 +843,7 @@ fn run_migrations(conn: &Connection) -> Result<()> {
+             [],
+         )?;
+ 
+-        conn.execute(
++        transaction.execute(
+             "CREATE TABLE IF NOT EXISTS sync_history (
+                 file_path TEXT PRIMARY KEY NOT NULL,
+                 content_hash TEXT NOT NULL,
+@@ -825,7 +852,7 @@ fn run_migrations(conn: &Connection) -> Result<()> {
+             [],
+         )?;
+ 
+-        conn.execute(
++        transaction.execute(
+             "CREATE TABLE IF NOT EXISTS sync_logs (
+                 id TEXT PRIMARY KEY NOT NULL,
+                 timestamp INTEGER NOT NULL,
+@@ -836,7 +863,7 @@ fn run_migrations(conn: &Connection) -> Result<()> {
+             [],
+         )?;
+ 
+-        conn.execute(
++        transaction.execute(
+             "CREATE TABLE IF NOT EXISTS settings (
+                 key TEXT PRIMARY KEY NOT NULL,
+                 value TEXT NOT NULL
+@@ -844,25 +871,21 @@ fn run_migrations(conn: &Connection) -> Result<()> {
+             [],
+         )?;
+ 
+-        conn.execute(
++        transaction.execute(
+             "CREATE INDEX IF NOT EXISTS idx_rules_scope ON rules(scope)",
+             [],
+         )?;
+-
+-        conn.execute("PRAGMA user_version = 1", [])?;
+     }
+ 
+     if current_version < 2 {
+-        conn.execute(
++        transaction.execute(
+             "CREATE INDEX IF NOT EXISTS idx_sync_logs_timestamp ON sync_logs(timestamp)",
+             [],
+         )?;
+-
+-        conn.execute("PRAGMA user_version = 2", [])?;
+     }
+ 
+     if current_version < 3 {
+-        conn.execute(
++        transaction.execute(
+             "CREATE TABLE IF NOT EXISTS rule_file_index (
+                 rule_id TEXT PRIMARY KEY NOT NULL,
+                 file_path TEXT NOT NULL,
+@@ -872,16 +895,14 @@ fn run_migrations(conn: &Connection) -> Result<()> {
+             [],
+         )?;
+ 
+-        conn.execute(
++        transaction.execute(
+             "CREATE INDEX IF NOT EXISTS idx_rule_file_index_path ON rule_file_index(file_path)",
+             [],
+         )?;
+-
+-        conn.execute("PRAGMA user_version = 3", [])?;
+     }
+ 
+     if current_version < 4 {
+-        conn.execute(
++        transaction.execute(
+             "CREATE TABLE IF NOT EXISTS commands (
+                 id TEXT PRIMARY KEY NOT NULL,
+                 name TEXT NOT NULL,
+@@ -895,12 +916,12 @@ fn run_migrations(conn: &Connection) -> Result<()> {
+             [],
+         )?;
+ 
+-        conn.execute(
++        transaction.execute(
+             "CREATE INDEX IF NOT EXISTS idx_commands_updated_at ON commands(updated_at)",
+             [],
+         )?;
+ 
+-        conn.execute(
++        transaction.execute(
+             "CREATE TABLE IF NOT EXISTS execution_logs (
+                 id TEXT PRIMARY KEY NOT NULL,
+                 command_id TEXT NOT NULL,
+@@ -916,16 +937,14 @@ fn run_migrations(conn: &Connection) -> Result<()> {
+             [],
+         )?;
+ 
+-        conn.execute(
++        transaction.execute(
+             "CREATE INDEX IF NOT EXISTS idx_execution_logs_executed_at ON execution_logs(executed_at)",
+             [],
+         )?;
+-
+-        conn.execute("PRAGMA user_version = 4", [])?;
+     }
+ 
+     if current_version < 5 {
+-        conn.execute(
++        transaction.execute(
+             "CREATE TABLE IF NOT EXISTS skills (
+                 id TEXT PRIMARY KEY NOT NULL,
+                 name TEXT NOT NULL,
+@@ -938,30 +957,49 @@ fn run_migrations(conn: &Connection) -> Result<()> {
+             [],
+         )?;
+ 
+-        conn.execute(
++        transaction.execute(
+             "CREATE INDEX IF NOT EXISTS idx_skills_updated_at ON skills(updated_at)",
+             [],
+         )?;
+-
+-        conn.execute("PRAGMA user_version = 5", [])?;
+     }
+ 
+     if current_version < 6 {
+-        let mut stmt = conn.prepare("PRAGMA table_info(skills)")?;
++        let mut stmt = transaction.prepare("PRAGMA table_info(skills)")?;
+         let cols: Vec<String> = stmt
+             .query_map([], |row| row.get(1))?
+             .collect::<std::result::Result<Vec<_>, _>>()?;
+ 
+         if !cols.iter().any(|c| c == "input_schema") {
+-            conn.execute(
++            transaction.execute(
+                 "ALTER TABLE skills ADD COLUMN input_schema TEXT NOT NULL DEFAULT '[]'",
+                 [],
+             )?;
+         }
++    }
+ 
+-        conn.execute("PRAGMA user_version = 6", [])?;
++    if current_version < 7 {
++        let mut stmt = transaction.prepare("PRAGMA table_info(skills)")?;
++        let cols: Vec<String> = stmt
++            .query_map([], |row| row.get(1))?
++            .collect::<std::result::Result<Vec<_>, _>>()?;
++
++        if !cols.iter().any(|c| c == "directory_path") {
++            transaction.execute(
++                "ALTER TABLE skills ADD COLUMN directory_path TEXT NOT NULL DEFAULT ''",
++                [],
++            )?;
++        }
++        if !cols.iter().any(|c| c == "entry_point") {
++            transaction.execute(
++                "ALTER TABLE skills ADD COLUMN entry_point TEXT NOT NULL DEFAULT ''",
++                [],
++            )?;
++        }
+     }
+ 
++    transaction.execute("PRAGMA user_version = 7", [])?;
++    transaction.commit()?;
++
+     Ok(())
+ }
+ 
+@@ -978,3 +1016,61 @@ pub fn default_app_data_dir() -> Result<PathBuf> {
+         .ok_or_else(|| AppError::Path("Could not determine data directory".to_string()))?;
+     Ok(base.join("RuleWeaver"))
+ }
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use crate::models::{CreateSkillInput, SkillParameter, SkillParameterType, UpdateSkillInput};
++
++    #[test]
++    fn test_skill_crud() {
++        let db = Database::new_in_memory().unwrap();
++
++        // 1. Create
++        let input = CreateSkillInput {
++            id: None,
++            name: "Test Skill".to_string(),
++            description: "A test skill".to_string(),
++            instructions: "echo 'hello'".to_string(),
++            input_schema: vec![SkillParameter {
++                name: "param1".to_string(),
++                description: "desc".to_string(),
++                param_type: SkillParameterType::String,
++                required: true,
++                default_value: None,
++                enum_values: None,
++            }],
++            directory_path: "/test/path".to_string(),
++            entry_point: "main.sh".to_string(),
++            enabled: true,
++        };
++
++        let created = db.create_skill(input.clone()).unwrap();
++        assert_eq!(created.name, "Test Skill");
++        assert_eq!(created.input_schema.len(), 1);
++        assert_eq!(created.directory_path, "/test/path");
++
++        // 2. Read
++        let fetched = db.get_skill_by_id(&created.id).unwrap();
++        assert_eq!(created.id, fetched.id);
++        assert_eq!(fetched.entry_point, "main.sh");
++
++        let all = db.get_all_skills().unwrap();
++        assert_eq!(all.len(), 1);
++
++        // 3. Update
++        let update_input = UpdateSkillInput {
++            name: Some("Updated Skill".to_string()),
++            ..Default::default()
++        };
++        let updated = db.update_skill(&created.id, update_input).unwrap();
++        assert_eq!(updated.name, "Updated Skill");
++        // Ensure other fields remain unchanged
++        assert_eq!(updated.directory_path, "/test/path");
++
++        // 4. Delete
++        db.delete_skill(&created.id).unwrap();
++        assert!(db.get_skill_by_id(&created.id).is_err());
++        assert_eq!(db.get_all_skills().unwrap().len(), 0);
++    }
++}
+diff --git a/src-tauri/src/execution.rs b/src-tauri/src/execution.rs
+index 862b0ca..9341e22 100644
+--- a/src-tauri/src/execution.rs
++++ b/src-tauri/src/execution.rs
+@@ -144,6 +144,15 @@ pub async fn execute_shell_with_timeout_env(
+     script: &str,
+     timeout_dur: Duration,
+     envs: &[(String, String)],
++) -> Result<(i32, String, String)> {
++    execute_shell_with_timeout_env_dir(script, timeout_dur, envs, None).await
++}
++
++pub async fn execute_shell_with_timeout_env_dir(
++    script: &str,
++    timeout_dur: Duration,
++    envs: &[(String, String)],
++    dir: Option<std::path::PathBuf>,
+ ) -> Result<(i32, String, String)> {
+     if script.trim().is_empty() {
+         return Err(AppError::InvalidInput {
+@@ -174,6 +183,10 @@ pub async fn execute_shell_with_timeout_env(
+ 
+     cmd.envs(envs.iter().cloned());
+ 
++    if let Some(d) = dir {
++        cmd.current_dir(d);
++    }
++
+     let future = cmd.output();
+ 
+     match timeout(timeout_dur, future).await {
+diff --git a/src-tauri/src/file_storage/mod.rs b/src-tauri/src/file_storage/mod.rs
+index 912d78c..4865b55 100644
+--- a/src-tauri/src/file_storage/mod.rs
++++ b/src-tauri/src/file_storage/mod.rs
+@@ -1,6 +1,7 @@
+ mod migration;
+ mod parser;
+ mod serializer;
++pub mod skills;
+ pub mod watcher;
+ 
+ #[allow(unused_imports)]
+diff --git a/src-tauri/src/file_storage/skills.rs b/src-tauri/src/file_storage/skills.rs
+new file mode 100644
+index 0000000..e13c88f
+--- /dev/null
++++ b/src-tauri/src/file_storage/skills.rs
+@@ -0,0 +1,239 @@
++use chrono::Utc;
++use serde::{Deserialize, Serialize};
++use std::fs;
++use std::path::{Path, PathBuf};
++use walkdir::WalkDir;
++
++use crate::database::Database;
++use crate::error::{AppError, Result};
++use crate::models::{CreateSkillInput, Skill, SkillParameter, UpdateSkillInput};
++
++pub const SKILLS_DIR_NAME: &str = "skills";
++pub const SKILL_METADATA_FILE: &str = "skill.json";
++pub const SKILL_INSTRUCTIONS_FILE: &str = "SKILL.md";
++
++#[derive(Debug, Clone, Deserialize, Serialize)]
++pub struct SkillMetadata {
++    pub id: Option<String>,
++    pub name: String,
++    pub description: Option<String>,
++    pub entry_point: String,
++    #[serde(default)]
++    pub input_schema: Vec<SkillParameter>,
++    #[serde(default = "default_true")]
++    pub enabled: bool,
++    #[serde(default)]
++    pub created_at: Option<String>,
++    #[serde(default)]
++    pub updated_at: Option<String>,
++}
++
++fn default_true() -> bool {
++    true
++}
++
++pub fn get_global_skills_dir() -> Result<PathBuf> {
++    let base = dirs::data_local_dir()
++        .or_else(dirs::data_dir)
++        .ok_or_else(|| AppError::Path("Could not determine data directory".to_string()))?;
++    Ok(base.join("RuleWeaver").join(SKILLS_DIR_NAME))
++}
++
++pub fn load_skills_from_disk() -> Result<Vec<Skill>> {
++    let global_dir = get_global_skills_dir()?;
++    let mut skills = Vec::new();
++
++    if !global_dir.exists() {
++        return Ok(skills);
++    }
++
++    for entry in WalkDir::new(&global_dir).min_depth(1).max_depth(1) {
++        let entry = match entry {
++            Ok(e) => e,
++            Err(_) => continue,
++        };
++
++        let path = entry.path();
++        if path.is_dir() {
++            if let Ok(skill) = load_skill_from_directory(path) {
++                skills.push(skill);
++            }
++        }
++    }
++
++    Ok(skills)
++}
++
++pub fn load_skill_from_directory(dir: &Path) -> Result<Skill> {
++    let metadata_path = dir.join(SKILL_METADATA_FILE);
++    let instructions_path = dir.join(SKILL_INSTRUCTIONS_FILE);
++
++    if !metadata_path.exists() {
++        return Err(AppError::InvalidInput {
++            message: format!("Missing {} in skill directory", SKILL_METADATA_FILE),
++        });
++    }
++
++    let metadata_content = fs::read_to_string(&metadata_path)?;
++    let metadata: SkillMetadata =
++        serde_json::from_str(&metadata_content).map_err(|e| AppError::InvalidInput {
++            message: format!("Failed to parse {}: {}", SKILL_METADATA_FILE, e),
++        })?;
++
++    let instructions = if instructions_path.exists() {
++        fs::read_to_string(&instructions_path)?
++    } else {
++        String::new()
++    };
++
++    let entry_point_path = dir.join(&metadata.entry_point);
++    if !entry_point_path.exists() {
++        return Err(AppError::InvalidInput {
++            message: format!("Entry point '{}' does not exist", metadata.entry_point),
++        });
++    }
++
++    let now = Utc::now();
++    let id = metadata
++        .id
++        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
++
++    // Convert created_at/updated_at or generate new
++    let created_at = metadata
++        .created_at
++        .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
++        .map(|dt| dt.with_timezone(&Utc))
++        .unwrap_or(now);
++
++    let updated_at = metadata
++        .updated_at
++        .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
++        .map(|dt| dt.with_timezone(&Utc))
++        .unwrap_or(now);
++
++    Ok(Skill {
++        id,
++        name: metadata.name,
++        description: metadata.description.unwrap_or_default(),
++        instructions,
++        input_schema: metadata.input_schema,
++        enabled: metadata.enabled,
++        directory_path: dir.to_string_lossy().to_string(),
++        entry_point: metadata.entry_point,
++        created_at,
++        updated_at,
++    })
++}
++
++pub fn save_skill_to_disk(skill: &Skill) -> Result<PathBuf> {
++    let global_dir = get_global_skills_dir()?;
++    if !global_dir.exists() {
++        fs::create_dir_all(&global_dir)?;
++    }
++
++    let skill_dir = PathBuf::from(&skill.directory_path);
++    let skill_dir = if skill_dir.is_absolute() {
++        skill_dir
++    } else {
++        // Sanitize name for directory
++        let safe_name = skill
++            .name
++            .to_lowercase()
++            .replace(|c: char| !c.is_alphanumeric(), "-")
++            .split('-')
++            .filter(|s| !s.is_empty())
++            .collect::<Vec<_>>()
++            .join("-");
++
++        let mut dir = global_dir.join(&safe_name);
++
++        // Handle collisions
++        let mut counter = 1;
++        while dir.exists() {
++            dir = global_dir.join(format!("{}-{}", safe_name, counter));
++            counter += 1;
++        }
++        dir
++    };
++
++    if !skill_dir.exists() {
++        fs::create_dir_all(&skill_dir)?;
++    }
++
++    // Write SKILL.md
++    let instructions_path = skill_dir.join(SKILL_INSTRUCTIONS_FILE);
++    fs::write(&instructions_path, &skill.instructions)?;
++
++    // Write skill.json
++    let metadata = SkillMetadata {
++        id: Some(skill.id.clone()),
++        name: skill.name.clone(),
++        description: Some(skill.description.clone()),
++        entry_point: skill.entry_point.clone(),
++        input_schema: skill.input_schema.clone(),
++        enabled: skill.enabled,
++        created_at: Some(skill.created_at.to_rfc3339()),
++        updated_at: Some(skill.updated_at.to_rfc3339()),
++    };
++
++    let metadata_path = skill_dir.join(SKILL_METADATA_FILE);
++    let json_content = serde_json::to_string_pretty(&metadata)?;
++    fs::write(&metadata_path, &json_content)?;
++
++    Ok(skill_dir)
++}
++
++pub fn sync_skills_to_db(db: &Database) -> Result<u32> {
++    let skills = load_skills_from_disk()?;
++    let mut count = 0;
++
++    for skill in skills {
++        // Try to update, if not found, create
++        if db.get_skill_by_id(&skill.id).is_ok() {
++            let update_input = UpdateSkillInput {
++                name: Some(skill.name.clone()),
++                description: Some(skill.description.clone()),
++                instructions: Some(skill.instructions.clone()),
++                input_schema: Some(skill.input_schema.clone()),
++                directory_path: Some(skill.directory_path.clone()),
++                entry_point: Some(skill.entry_point.clone()),
++                enabled: Some(skill.enabled),
++            };
++            db.update_skill(&skill.id, update_input)?;
++        } else {
++            let create_input = CreateSkillInput {
++                id: Some(skill.id.clone()),
++                name: skill.name.clone(),
++                description: skill.description.clone(),
++                instructions: skill.instructions.clone(),
++                input_schema: skill.input_schema.clone(),
++                directory_path: skill.directory_path.clone(),
++                entry_point: skill.entry_point.clone(),
++                enabled: skill.enabled,
++            };
++            db.create_skill(create_input)?;
++        }
++        count += 1;
++    }
++
++    Ok(count)
++}
++
++pub fn delete_skill_from_disk(skill: &Skill) -> Result<()> {
++    let skill_dir = PathBuf::from(&skill.directory_path);
++    if skill_dir.exists() && skill_dir.is_dir() {
++        // Security: Canonicalize both paths to prevent directory traversal / symlink bypasses
++        let canonical_skill_dir = std::fs::canonicalize(&skill_dir).map_err(AppError::Io)?;
++        let global_dir = get_global_skills_dir()?;
++        let canonical_global_dir = if global_dir.exists() {
++            std::fs::canonicalize(&global_dir).map_err(AppError::Io)?
++        } else {
++            global_dir
++        };
++
++        if canonical_skill_dir.starts_with(&canonical_global_dir) {
++            fs::remove_dir_all(canonical_skill_dir)?;
++        }
++    }
++    Ok(())
++}
+diff --git a/src-tauri/src/lib.rs b/src-tauri/src/lib.rs
+index d2382ee..77de21f 100644
+--- a/src-tauri/src/lib.rs
++++ b/src-tauri/src/lib.rs
+@@ -7,24 +7,32 @@ mod file_storage;
+ mod mcp;
+ mod models;
+ mod sync;
++pub mod templates;
+ 
+ use database::Database;
+ use mcp::McpManager;
+ use std::sync::Arc;
+ use tauri::menu::{MenuBuilder, MenuItemBuilder};
+ use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+-use tauri::Manager;
++use tauri::{Emitter, Manager};
+ 
+ const MINIMIZE_TO_TRAY_KEY: &str = "minimize_to_tray";
+ 
+ #[cfg_attr(mobile, tauri::mobile_entry_point)]
+ pub fn run() {
+     log::info!("RuleWeaver application initializing");
+-    
++
+     tauri::Builder::default()
+         .plugin(tauri_plugin_opener::init())
+         .setup(|app| {
+             let db = Arc::new(Database::new(app.handle())?);
++
++            // Sync skills to database on startup
++            if let Err(e) = crate::file_storage::skills::sync_skills_to_db(&db) {
++                log::error!("Failed to sync skills on startup: {}", e);
++                let _ = app.emit("startup-sync-error", e.to_string());
++            }
++
+             let mcp_manager = McpManager::new(crate::constants::DEFAULT_MCP_PORT);
+ 
+             let auto_start_mcp = db
+@@ -172,6 +180,9 @@ pub fn run() {
+             commands::create_skill,
+             commands::update_skill,
+             commands::delete_skill,
++            commands::get_skill_templates,
++            commands::install_skill_template,
++            commands::sync_skills,
+             commands::get_mcp_status,
+             commands::start_mcp_server,
+             commands::stop_mcp_server,
+@@ -187,7 +198,7 @@ pub fn run() {
+ pub fn run_mcp_cli(port: u16, token: Option<String>) -> std::result::Result<(), String> {
+     let db = Arc::new(Database::new_for_cli().map_err(|e| e.to_string())?);
+     let manager = McpManager::new(port);
+-    
++
+     let rt = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
+     rt.block_on(async {
+         if let Some(t) = token {
+@@ -195,7 +206,10 @@ pub fn run_mcp_cli(port: u16, token: Option<String>) -> std::result::Result<(),
+         }
+ 
+         manager.start(&db).await.map_err(|e| e.to_string())?;
+-        manager.wait_until_stopped().await.map_err(|e| e.to_string())?;
++        manager
++            .wait_until_stopped()
++            .await
++            .map_err(|e| e.to_string())?;
+         Ok(())
+     })
+ }
+diff --git a/src-tauri/src/mcp/mod.rs b/src-tauri/src/mcp/mod.rs
+index 1b7b363..adf3b8f 100644
+--- a/src-tauri/src/mcp/mod.rs
++++ b/src-tauri/src/mcp/mod.rs
+@@ -5,22 +5,17 @@ use axum::{
+     routing::post,
+     Json, Router,
+ };
++use serde::{Deserialize, Serialize};
++use serde_json::json;
+ use std::collections::VecDeque;
+ use std::sync::Arc;
+ use std::time::{Duration, Instant};
+-use tower_http::cors::CorsLayer;
+-
+-use regex::Regex;
+-use serde::{Deserialize, Serialize};
+-use serde_json::json;
+ use tokio::sync::{broadcast, Mutex};
+ use tokio::task::JoinHandle;
++use tower_http::cors::CorsLayer;
+ 
+ use crate::constants::{
+-    limits::{
+-        LOG_LIMIT, MAX_OUTPUT_SIZE, MAX_SKILL_STEPS, MAX_STEP_LENGTH, MCP_RATE_LIMIT_MAX_CALLS,
+-        MCP_SERVER_RETRY_COUNT,
+-    },
++    limits::{LOG_LIMIT, MAX_OUTPUT_SIZE, MCP_RATE_LIMIT_MAX_CALLS, MCP_SERVER_RETRY_COUNT},
+     timing::{
+         CMD_EXEC_TIMEOUT, MCP_RATE_LIMIT_WINDOW, MCP_SERVER_BACKOFF_INITIAL_MS, SKILL_EXEC_TIMEOUT,
+     },
+@@ -29,10 +24,10 @@ use crate::database::{Database, ExecutionLogInput};
+ use crate::error::{AppError, Result};
+ use crate::execution::{
+     argument_env_var_name, contains_disallowed_pattern, execute_and_log,
+-    execute_shell_with_timeout_env, replace_template_with_env_ref, sanitize_argument_value,
++    execute_shell_with_timeout_env_dir, replace_template_with_env_ref, sanitize_argument_value,
+     slugify, ExecuteAndLogInput,
+ };
+-use crate::models::{Command, Skill};
++use crate::models::{Command, Skill, SkillParameterType};
+ 
+ fn truncate_output_custom(s: String, max_size: usize) -> String {
+     if s.len() > max_size {
+@@ -452,46 +447,52 @@ fn handle_initialize(id: serde_json::Value) -> serde_json::Value {
+     })
+ }
+ 
++struct McpToolParameter {
++    name: String,
++    description: String,
++    required: bool,
++    enum_values: Option<Vec<String>>,
++    param_type: SkillParameterType,
++}
++
+ fn handle_tools_list(
+     id: serde_json::Value,
+     commands: &[Command],
+     skills: &[Skill],
+ ) -> serde_json::Value {
+-    let tools: Vec<serde_json::Value> = commands
++    let mut tools: Vec<serde_json::Value> = commands
+         .iter()
+         .filter(|c| c.expose_via_mcp)
+         .map(|c| {
+-            let mut props = serde_json::Map::new();
+-            let mut required: Vec<String> = Vec::new();
+-
+-            for arg in &c.arguments {
+-                let json_type = match arg.arg_type {
+-                    crate::models::ArgumentType::Number => "number",
+-                    crate::models::ArgumentType::Boolean => "boolean",
+-                    _ => "string",
+-                };
+-
+-                props.insert(
+-                    arg.name.clone(),
+-                    json!({
+-                        "type": json_type,
+-                        "description": arg.description,
+-                    }),
+-                );
+-                if arg.required {
+-                    required.push(arg.name.clone());
+-                }
+-            }
++            let params: Vec<_> = c
++                .arguments
++                .iter()
++                .map(|a| {
++                    let p_type = if let Some(ref opts) = a.options {
++                        if !opts.is_empty() {
++                            SkillParameterType::Enum
++                        } else {
++                            SkillParameterType::String
++                        }
++                    } else {
++                        SkillParameterType::String
++                    };
++
++                    McpToolParameter {
++                        name: a.name.clone(),
++                        description: a.description.clone(),
++                        required: a.required,
++                        enum_values: a.options.clone(),
++                        param_type: p_type,
++                    }
++                })
++                .collect();
+ 
+-            json!({
+-                "name": format!("{}-{}", slugify(&c.name), &c.id[..8]),
+-                "description": c.description,
+-                "inputSchema": {
+-                    "type": "object",
+-                    "properties": props,
+-                    "required": required,
+-                }
+-            })
++            build_mcp_tool_schema(
++                &format!("{}-{}", slugify(&c.name), &c.id[..8]),
++                &c.description,
++                &params,
++            )
+         })
+         .collect();
+ 
+@@ -499,30 +500,78 @@ fn handle_tools_list(
+         .iter()
+         .filter(|s| s.enabled)
+         .map(|s| {
+-            json!({
+-                "name": format!("skill_{}-{}", slugify(&s.name), &s.id[..8]),
+-                "description": s.description,
+-                "inputSchema": {
+-                    "type": "object",
+-                    "properties": {
+-                        "input": {
+-                            "type": "string",
+-                            "description": "Optional free-form input for the skill"
+-                        }
+-                    },
+-                    "required": []
+-                }
+-            })
++            let params: Vec<_> = s
++                .input_schema
++                .iter()
++                .map(|p| McpToolParameter {
++                    name: p.name.clone(),
++                    description: p.description.clone(),
++                    required: p.required,
++                    enum_values: p.enum_values.clone(),
++                    param_type: p.param_type.clone(),
++                })
++                .collect();
++
++            build_mcp_tool_schema(
++                &format!("skill_{}-{}", slugify(&s.name), &s.id[..8]),
++                &s.description,
++                &params,
++            )
+         })
+         .collect();
+ 
+-    let mut all_tools = tools;
+-    all_tools.extend(skill_tools);
++    tools.extend(skill_tools);
+ 
+     json!({
+         "jsonrpc": "2.0",
+         "id": id,
+-        "result": { "tools": all_tools }
++        "result": { "tools": tools }
++    })
++}
++
++fn build_mcp_tool_schema(
++    name: &str,
++    description: &str,
++    params: &[McpToolParameter],
++) -> serde_json::Value {
++    let mut props = serde_json::Map::new();
++    let mut required: Vec<String> = Vec::new();
++
++    for param in params {
++        let type_str = match param.param_type {
++            SkillParameterType::Number => "number",
++            SkillParameterType::Boolean => "boolean",
++            SkillParameterType::Array => "array",
++            SkillParameterType::Object => "object",
++            _ => "string",
++        };
++
++        let mut prop_schema = json!({
++            "type": type_str,
++            "description": param.description,
++        });
++
++        if let Some(ref enum_vals) = param.enum_values {
++            prop_schema
++                .as_object_mut()
++                .unwrap()
++                .insert("enum".to_string(), json!(enum_vals));
++        }
++
++        props.insert(param.name.clone(), prop_schema);
++        if param.required {
++            required.push(param.name.clone());
++        }
++    }
++
++    json!({
++        "name": name,
++        "description": description,
++        "inputSchema": {
++            "type": "object",
++            "properties": props,
++            "required": required,
++        }
+     })
+ }
+ 
+@@ -758,144 +807,236 @@ async fn handle_skill_call(
+     args_map: serde_json::Map<String, serde_json::Value>,
+     shared_db: &Option<Arc<Database>>,
+ ) -> serde_json::Value {
+-    let input = args_map
+-        .get("input")
+-        .and_then(|v| v.as_str())
+-        .unwrap_or_default()
+-        .to_string();
++    let final_envs = match skill.validate_payload(&args_map) {
++        Ok(envs) => envs,
++        Err(e) => {
++            return json!({
++                "jsonrpc": "2.0",
++                "id": id,
++                "error": {
++                    "code": -32602,
++                    "message": e.to_string()
++                }
++            });
++        }
++    };
+ 
+-    // Security: DO NOT use string replacement for {{input}} as it leads to command injection.
+-    // Instead, we pass the input via environment variables.
+-    #[cfg(target_os = "windows")]
+-    let rendered = skill.instructions.replace("{{input}}", "%RW_SKILL_INPUT%");
+-    #[cfg(not(target_os = "windows"))]
+-    let rendered = skill.instructions.replace("{{input}}", "$RW_SKILL_INPUT");
++    let mut final_envs = final_envs;
++
++    final_envs.push((
++        crate::constants::skills::RULEWEAVER_SKILL_ID.to_string(),
++        skill.id.clone(),
++    ));
++    final_envs.push((
++        crate::constants::skills::RULEWEAVER_SKILL_NAME.to_string(),
++        skill.name.clone(),
++    ));
++    final_envs.push((
++        crate::constants::skills::RULEWEAVER_SKILL_DIR.to_string(),
++        skill.directory_path.clone(),
++    ));
++
++    // Inject filtered secrets as SKILL_SECRET_*
++    if let Some(db) = shared_db {
++        let allowlist = db
++            .get_setting("mcp_secrets_allowlist")
++            .ok()
++            .flatten()
++            .unwrap_or_default();
++        let allowed_keys: Vec<String> = allowlist
++            .split(',')
++            .map(|s| s.trim().to_lowercase())
++            .filter(|s| !s.is_empty())
++            .collect();
++
++        if let Ok(settings) = db.get_all_settings() {
++            for (k, v) in settings {
++                let low_k = k.to_lowercase();
++                if allowed_keys.contains(&low_k) {
++                    let env_name = format!(
++                        "{}{}",
++                        crate::constants::skills::SKILL_SECRET_PREFIX,
++                        k.replace('-', "_").to_uppercase()
++                    );
++                    final_envs.push((env_name, v));
++                }
++            }
++        }
++    }
+ 
+-    let steps = extract_skill_steps(&rendered);
++    let start = Instant::now();
++    let mut output = String::new();
++    let mut is_error = false;
+ 
+-    if steps.is_empty() {
+-        // If no shell steps, just return the instructions (with input placeholder)
+-        // Note: If we really want to return the text with the input replaced,
+-        // we should do it safely here ONLY for the returned text, not for execution.
+-        let display_text = skill.instructions.replace("{{input}}", &input);
+-        json!({
++    if let Err(e) = crate::models::validate_skill_input(&skill.name, &skill.instructions) {
++        return json!({
+             "jsonrpc": "2.0",
+             "id": id,
+-            "result": {
+-                "content": [{
+-                    "type": "text",
+-                    "text": display_text
+-                }],
+-                "isError": false
++            "error": { "code": -32602, "message": e.to_string() }
++        });
++    }
++    if let Err(e) = crate::models::validate_skill_schema(&skill.input_schema) {
++        return json!({
++            "jsonrpc": "2.0",
++            "id": id,
++            "error": { "code": -32602, "message": e.to_string() }
++        });
++    }
++    if let Err(e) = crate::models::validate_skill_entry_point(&skill.entry_point) {
++        return json!({
++            "jsonrpc": "2.0",
++            "id": id,
++            "error": { "code": -32602, "message": e.to_string() }
++        });
++    }
++
++    let entry_point = if skill.entry_point.is_empty() {
++        return json!({
++            "jsonrpc": "2.0",
++            "id": id,
++            "error": {
++                "code": -32603,
++                "message": "Skill has no entry point defined"
+             }
+-        })
++        });
+     } else {
+-        let mut output = String::new();
+-        let mut is_error = false;
+-
+-        let start = Instant::now();
+-        let skill_envs = vec![("RW_SKILL_INPUT".to_string(), input.clone())];
++        skill.entry_point.clone()
++    };
+ 
+-        for (idx, step) in steps.iter().take(MAX_SKILL_STEPS).enumerate() {
+-            if step.len() > MAX_STEP_LENGTH {
+-                is_error = true;
+-                output.push_str(&format!("Step {} rejected: too long\n", idx + 1));
+-                break;
++    let dir = std::path::PathBuf::from(&skill.directory_path);
++    if !dir.exists() || !dir.is_dir() {
++        return json!({
++            "jsonrpc": "2.0",
++            "id": id,
++            "error": {
++                "code": -32603,
++                "message": format!("Skill directory does not exist: {}", skill.directory_path)
+             }
++        });
++    }
+ 
+-            if let Some(pattern) = contains_disallowed_pattern(step) {
+-                is_error = true;
+-                output.push_str(&format!(
+-                    "Step {} rejected due to unsafe pattern: {}\n",
+-                    idx + 1,
+-                    pattern
+-                ));
+-                break;
++    if let Some(pattern) = contains_disallowed_pattern(&entry_point) {
++        return json!({
++            "jsonrpc": "2.0",
++            "id": id,
++            "error": {
++                "code": -32602,
++                "message": format!("Entry point rejected due to unsafe pattern: {}", pattern)
+             }
++        });
++    }
+ 
+-            match execute_shell_with_timeout_env(step, SKILL_EXEC_TIMEOUT, &skill_envs).await {
+-                Ok((exit_code, stdout, stderr)) => {
+-                    let step_stdout = truncate_output_custom(stdout, 1024 * 1024); // 1MB per step
+-                    let step_stderr = truncate_output_custom(stderr, 1024 * 1024); // 1MB per step
+-
+-                    output.push_str(&format!(
+-                        "[step {}] exit_code: {}\nstdout:\n{}\nstderr:\n{}\n\n",
+-                        idx + 1,
+-                        exit_code,
+-                        step_stdout,
+-                        step_stderr
+-                    ));
+-                    if exit_code != 0 {
+-                        is_error = true;
+-                        break;
+-                    }
+-                }
+-                Err(e) => {
+-                    is_error = true;
+-                    output.push_str(&format!("[step {}] execution error: {}\n", idx + 1, e));
+-                    break;
+-                }
+-            }
++    // Security: Canonicalize entry point to prevent directory traversal
++    let canonical_skill_dir = match std::fs::canonicalize(&dir) {
++        Ok(p) => p,
++        Err(e) => {
++            return json!({
++                "jsonrpc": "2.0",
++                "id": id,
++                "error": { "code": -32603, "message": format!("Failed to canonicalize skill directory: {}", e) }
++            })
+         }
++    };
+ 
+-        let duration_ms = start.elapsed().as_millis() as u64;
+-        let _ = manager
+-            .log(format!(
+-                "MCP tools/call '{}' skill execution {} ({}ms)",
+-                skill.name,
+-                if is_error { "failed" } else { "succeeded" },
+-                duration_ms
+-            ))
+-            .await;
+-
+-        if let Some(db) = shared_db {
+-            let args_json = match serde_json::to_string(&args_map) {
+-                Ok(s) => s,
+-                Err(e) => {
+-                    let _ = manager
+-                        .log(format!("Skill execution serialization error: {}", e))
+-                        .await;
+-                    String::new()
+-                }
+-            };
+-            let skill_name = format!("skill:{}", skill.name);
+-            let _ = db.add_execution_log(&ExecutionLogInput {
+-                command_id: &skill.id,
+-                command_name: &skill_name,
+-                arguments_json: &args_json,
+-                stdout: &output,
+-                stderr: "",
+-                exit_code: if is_error { 1 } else { 0 },
+-                duration_ms,
+-                triggered_by: "mcp-skill",
+-            });
++    let full_entry_path = dir.join(&entry_point);
++    let canonical_entry_path = match std::fs::canonicalize(&full_entry_path) {
++        Ok(p) => p,
++        Err(e) => {
++            return json!({
++                "jsonrpc": "2.0",
++                "id": id,
++                "error": { "code": -32603, "message": format!("Entry point not found or invalid: {}", e) }
++            })
+         }
++    };
+ 
+-        json!({
++    if !canonical_entry_path.starts_with(&canonical_skill_dir) {
++        return json!({
+             "jsonrpc": "2.0",
+             "id": id,
+-            "result": {
+-                "content": [{
+-                    "type": "text",
+-                    "text": truncate_output(output)
+-                }],
+-                "isError": is_error
++            "error": {
++                "code": -32603,
++                "message": "Security Violation: Entry point must be within the skill directory"
+             }
+-        })
++        });
++    }
++
++    match execute_shell_with_timeout_env_dir(
++        &entry_point,
++        SKILL_EXEC_TIMEOUT,
++        &final_envs,
++        Some(dir),
++    )
++    .await
++    {
++        Ok((exit_code, stdout, stderr)) => {
++            let step_stdout = truncate_output_custom(
++                stdout,
++                crate::constants::limits::MAX_SKILL_OUTPUT_PER_STREAM,
++            );
++            let step_stderr = truncate_output_custom(
++                stderr,
++                crate::constants::limits::MAX_SKILL_OUTPUT_PER_STREAM,
++            );
++
++            output.push_str(&format!(
++                "exit_code: {}\nstdout:\n{}\nstderr:\n{}",
++                exit_code, step_stdout, step_stderr
++            ));
++            if exit_code != 0 {
++                is_error = true;
++            }
++        }
++        Err(e) => {
++            is_error = true;
++            output.push_str(&format!("execution error: {}\n", e));
++        }
++    }
++
++    let duration_ms = start.elapsed().as_millis() as u64;
++    let _ = manager
++        .log(format!(
++            "MCP tools/call '{}' skill execution {} ({}ms)",
++            skill.name,
++            if is_error { "failed" } else { "succeeded" },
++            duration_ms
++        ))
++        .await;
++
++    if let Some(db) = shared_db {
++        let args_json = match serde_json::to_string(&args_map) {
++            Ok(s) => s,
++            Err(e) => {
++                let _ = manager
++                    .log(format!("Skill execution serialization error: {}", e))
++                    .await;
++                String::new()
++            }
++        };
++        let skill_name = format!("skill:{}", skill.name);
++        let _ = db.add_execution_log(&ExecutionLogInput {
++            command_id: &skill.id,
++            command_name: &skill_name,
++            arguments_json: &args_json,
++            stdout: &output,
++            stderr: "",
++            exit_code: if is_error { 1 } else { 0 },
++            duration_ms,
++            triggered_by: "mcp-skill",
++        });
+     }
+-}
+ 
+-pub fn extract_skill_steps(instructions: &str) -> Vec<String> {
+-    static RE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
+-    let re = RE.get_or_init(|| {
+-        Regex::new(r"(?s)```(?:bash|sh|shell|powershell|pwsh|cmd)?\n(.*?)```")
+-            .expect("Invalid skill steps regex")
+-    });
+-
+-    re.captures_iter(instructions)
+-        .filter_map(|caps| caps.get(1).map(|m| m.as_str().trim().to_string()))
+-        .filter(|s| !s.is_empty())
+-        .collect()
++    json!({
++        "jsonrpc": "2.0",
++        "id": id,
++        "result": {
++            "content": [{
++                "type": "text",
++                "text": truncate_output(output)
++            }],
++            "isError": is_error
++        }
++    })
+ }
+ 
+ #[cfg(test)]
+@@ -908,14 +1049,6 @@ mod tests {
+         assert_eq!(slugify("Skill__Name"), "skill-name");
+     }
+ 
+-    #[test]
+-    fn test_extract_skill_steps() {
+-        let text = "before\n```bash\necho one\n```\nmid\n```sh\necho two\n```";
+-        let steps = extract_skill_steps(text);
+-        assert_eq!(steps.len(), 2);
+-        assert!(steps[0].contains("echo one"));
+-    }
+-
+     #[test]
+     fn test_disallowed_patterns() {
+         assert!(contains_disallowed_pattern("rm -rf /").is_some());
+diff --git a/src-tauri/src/models/skill.rs b/src-tauri/src/models/skill.rs
+index eacf376..e931587 100644
+--- a/src-tauri/src/models/skill.rs
++++ b/src-tauri/src/models/skill.rs
+@@ -1,3 +1,4 @@
++use crate::error::{AppError, Result};
+ use chrono::{DateTime, Utc};
+ use serde::{Deserialize, Serialize};
+ 
+@@ -10,6 +11,8 @@ pub struct Skill {
+     #[serde(default)]
+     pub input_schema: Vec<SkillParameter>,
+     pub enabled: bool,
++    pub directory_path: String,
++    pub entry_point: String,
+     #[serde(with = "crate::models::timestamp")]
+     pub created_at: DateTime<Utc>,
+     #[serde(with = "crate::models::timestamp")]
+@@ -26,6 +29,8 @@ pub struct SkillParameter {
+     pub required: bool,
+     #[serde(default)]
+     pub default_value: Option<String>,
++    #[serde(default)]
++    pub enum_values: Option<Vec<String>>,
+ }
+ 
+ #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+@@ -34,19 +39,183 @@ pub enum SkillParameterType {
+     String,
+     Number,
+     Boolean,
++    Enum,
++    Array,
++    Object,
+ }
+ 
+ fn default_skill_param_type() -> SkillParameterType {
+     SkillParameterType::String
+ }
+ 
++impl Skill {
++    pub fn validate_payload(
++        &self,
++        args_map: &serde_json::Map<String, serde_json::Value>,
++    ) -> Result<Vec<(String, String)>> {
++        let mut skill_envs: Vec<(String, String)> = Vec::new();
++        let mut missing_required: Vec<String> = Vec::new();
++
++        for param in &self.input_schema {
++            let mut raw_value = args_map
++                .get(&param.name)
++                .map(|v| {
++                    if let Some(s) = v.as_str() {
++                        s.to_string()
++                    } else {
++                        v.to_string()
++                    }
++                })
++                .unwrap_or_default();
++
++            if raw_value.is_empty() {
++                if let Some(ref default) = param.default_value {
++                    raw_value = default.clone();
++                }
++            }
++
++            if raw_value.is_empty() && param.required {
++                missing_required.push(param.name.clone());
++                continue;
++            }
++
++            if raw_value.is_empty() {
++                continue;
++            }
++
++            if matches!(param.param_type, SkillParameterType::Enum) {
++                if let Some(ref options) = param.enum_values {
++                    if !options.contains(&raw_value) {
++                        return Err(AppError::Validation(format!(
++                            "Parameter '{}' must be one of: {}",
++                            param.name,
++                            options.join(", ")
++                        )));
++                    }
++                }
++            }
++
++            let env_name = format!(
++                "{}{}",
++                crate::constants::skills::SKILL_PARAM_PREFIX,
++                param.name.replace('-', "_").to_uppercase()
++            );
++            skill_envs.push((env_name, raw_value));
++        }
++
++        if !missing_required.is_empty() {
++            return Err(AppError::Validation(format!(
++                "Missing required parameters: {}",
++                missing_required.join(", ")
++            )));
++        }
++
++        Ok(skill_envs)
++    }
++}
++
++pub fn validate_skill_input(name: &str, instructions: &str) -> Result<()> {
++    if name.trim().is_empty() {
++        return Err(AppError::Validation(
++            "Skill name cannot be empty".to_string(),
++        ));
++    }
++    if name.len() > crate::constants::limits::MAX_SKILL_NAME_LENGTH {
++        return Err(AppError::Validation(format!(
++            "Skill name too long (max {} characters)",
++            crate::constants::limits::MAX_SKILL_NAME_LENGTH
++        )));
++    }
++    if instructions.len() > crate::constants::limits::MAX_SKILL_INSTRUCTIONS_LENGTH {
++        return Err(AppError::Validation(format!(
++            "Skill instructions too large (max {} characters)",
++            crate::constants::limits::MAX_SKILL_INSTRUCTIONS_LENGTH
++        )));
++    }
++    Ok(())
++}
++
++pub fn validate_skill_schema(schema: &[SkillParameter]) -> Result<()> {
++    let mut names = std::collections::HashSet::new();
++
++    for param in schema {
++        let trimmed_name = param.name.trim();
++        if trimmed_name.is_empty() {
++            return Err(AppError::Validation(
++                "Parameter name cannot be empty".to_string(),
++            ));
++        }
++
++        if !trimmed_name
++            .chars()
++            .all(|c| c.is_ascii_alphanumeric() || c == '_')
++        {
++            return Err(AppError::Validation(format!(
++                "Parameter name '{}' can only contain alphanumeric characters and underscores",
++                trimmed_name
++            )));
++        }
++
++        if !names.insert(trimmed_name.to_lowercase()) {
++            return Err(AppError::Validation(format!(
++                "Duplicate parameter name: {}",
++                trimmed_name
++            )));
++        }
++
++        if matches!(param.param_type, SkillParameterType::Enum) {
++            let options = param.enum_values.as_ref();
++            if options.is_none() || options.unwrap().is_empty() {
++                return Err(AppError::Validation(format!(
++                    "Parameter '{}' is type Enum but has no enum_values defined",
++                    trimmed_name
++                )));
++            }
++            let options_vec = options.unwrap();
++
++            if let Some(default_val) = &param.default_value {
++                if !options_vec.contains(default_val) {
++                    return Err(AppError::Validation(format!(
++                        "Default value '{}' for Enum parameter '{}' must be one of the enum_values",
++                        default_val, trimmed_name
++                    )));
++                }
++            }
++        }
++    }
++
++    Ok(())
++}
++
++pub fn validate_skill_entry_point(entry_point: &str) -> Result<()> {
++    let trimmed = entry_point.trim();
++    if trimmed.is_empty() {
++        return Err(AppError::Validation(
++            "Entry point cannot be empty".to_string(),
++        ));
++    }
++    if trimmed.contains("..")
++        || trimmed.starts_with('/')
++        || trimmed.starts_with('\\')
++        || trimmed.contains(':')
++    {
++        return Err(AppError::Validation(
++            "Entry point must be a relative path without directory traversal".to_string(),
++        ));
++    }
++    Ok(())
++}
++
+ #[derive(Debug, Clone, Serialize, Deserialize)]
+ pub struct CreateSkillInput {
++    pub id: Option<String>,
+     pub name: String,
+     pub description: String,
+     pub instructions: String,
+     #[serde(default)]
+     pub input_schema: Vec<SkillParameter>,
++    pub directory_path: String,
++    pub entry_point: String,
+     #[serde(default = "default_true")]
+     pub enabled: bool,
+ }
+@@ -61,5 +230,7 @@ pub struct UpdateSkillInput {
+     pub description: Option<String>,
+     pub instructions: Option<String>,
+     pub input_schema: Option<Vec<SkillParameter>>,
++    pub directory_path: Option<String>,
++    pub entry_point: Option<String>,
+     pub enabled: Option<bool>,
+ }
+diff --git a/src-tauri/src/templates/mod.rs b/src-tauri/src/templates/mod.rs
+new file mode 100644
+index 0000000..da1e94d
+--- /dev/null
++++ b/src-tauri/src/templates/mod.rs
+@@ -0,0 +1 @@
++pub mod skills;
+diff --git a/src-tauri/src/templates/review.py b/src-tauri/src/templates/review.py
+new file mode 100644
+index 0000000..46ee08d
+--- /dev/null
++++ b/src-tauri/src/templates/review.py
+@@ -0,0 +1,5 @@
++import os
++
++target = os.environ.get('SKILL_PARAM_TARGET_FILE', '')
++print(f'Starting review on {target}')
++print('Done.')
+diff --git a/src-tauri/src/templates/skills.rs b/src-tauri/src/templates/skills.rs
+new file mode 100644
+index 0000000..c33344a
+--- /dev/null
++++ b/src-tauri/src/templates/skills.rs
+@@ -0,0 +1,68 @@
++use crate::models::{CreateSkillInput, SkillParameter, SkillParameterType};
++use serde::{Deserialize, Serialize};
++
++#[derive(Debug, Clone, Serialize, Deserialize)]
++pub struct TemplateFile {
++    pub filename: String,
++    pub content: String,
++}
++
++#[derive(Debug, Clone, Serialize, Deserialize)]
++pub struct TemplateSkill {
++    pub template_id: String,
++    pub metadata: CreateSkillInput,
++    pub files: Vec<TemplateFile>,
++}
++
++pub fn get_bundled_skill_templates() -> Vec<TemplateSkill> {
++    vec![
++        TemplateSkill {
++            template_id: "tmpl_code_review".to_string(),
++            metadata: CreateSkillInput {
++                id: None,
++                name: "Basic Code Reviewer".to_string(),
++                description: "A Python skill that reviews code files for simple anti-patterns.".to_string(),
++                // Display instructions with placeholders for input
++                instructions: "Review the target code file for security flaws.\n\n```bash\npython review.py\n```".to_string(),
++                input_schema: vec![
++                    SkillParameter {
++                        name: "target_file".to_string(),
++                        description: "The target file to review".to_string(),
++                        param_type: SkillParameterType::String,
++                        required: true,
++                        default_value: None,
++                        enum_values: None,
++                    }
++                ],
++                directory_path: "".to_string(),
++                entry_point: "python review.py".to_string(),
++                enabled: true,
++            },
++            files: vec![
++                TemplateFile {
++                    filename: "review.py".to_string(),
++                    content: include_str!("review.py").to_string(),
++                }
++            ],
++        },
++        TemplateSkill {
++            template_id: "tmpl_system_info".to_string(),
++            metadata: CreateSkillInput {
++                id: None,
++                name: "System Information".to_string(),
++                description: "A Powershell script to dump basic system information.".to_string(),
++                instructions: "Dumps system information.\n\n```powershell\n.\\sysinfo.ps1\n```".to_string(),
++                input_schema: vec![],
++                directory_path: "".to_string(),
++                entry_point: "pwsh -File ./sysinfo.ps1".to_string(),
++                enabled: true,
++            },
++            files: vec![
++                TemplateFile {
++                    filename: "sysinfo.ps1".to_string(),
++                    content: include_str!("sysinfo.ps1").to_string(),
++                }
++            ],
++        }
++    ]
++}
+diff --git a/src-tauri/src/templates/sysinfo.ps1 b/src-tauri/src/templates/sysinfo.ps1
+new file mode 100644
+index 0000000..198b30f
+--- /dev/null
++++ b/src-tauri/src/templates/sysinfo.ps1
+@@ -0,0 +1 @@
++Get-ComputerInfo | Select-Object WindowsProductName, WindowsVersion, OsArchitecture | ConvertTo-Json
+diff --git a/src/__tests__/components/pages/Skills.test.tsx b/src/__tests__/components/pages/Skills.test.tsx
+new file mode 100644
+index 0000000..2b8cd01
+--- /dev/null
++++ b/src/__tests__/components/pages/Skills.test.tsx
+@@ -0,0 +1,224 @@
++import { describe, it, expect, vi, beforeEach } from "vitest";
++import { render, screen, waitFor } from "@testing-library/react";
++import userEvent from "@testing-library/user-event";
++import { Skills } from "../../../components/pages/Skills";
++import { api } from "../../../lib/tauri";
++import { ToastProvider } from "../../../components/ui/toast";
++import { Skill, SkillParameterType } from "../../../types/skill";
++
++// Mock Tauri API
++vi.mock("../../../lib/tauri", () => ({
++  api: {
++    skills: {
++      getAll: vi.fn(),
++      create: vi.fn(),
++      update: vi.fn(),
++      delete: vi.fn(),
++    },
++    app: {
++      openInExplorer: vi.fn(),
++    },
++  },
++}));
++
++// Provide Toast Context for tests
++const renderWithProviders = (ui: React.ReactElement) => {
++  return render(<ToastProvider>{ui}</ToastProvider>);
++};
++
++const mockSkills: Skill[] = [
++  {
++    id: "skill-1",
++    name: "Test Skill 1",
++    description: "A test description",
++    instructions: "Do a thing",
++    input_schema: [
++      {
++        name: "param1",
++        description: "Test param",
++        param_type: SkillParameterType.String,
++        required: true,
++      },
++    ],
++    directory_path: "/test/path",
++    entry_point: "run.sh",
++    enabled: true,
++    created_at: Date.now(),
++    updated_at: Date.now(),
++  },
++  {
++    id: "skill-2",
++    name: "Disabled Skill",
++    description: "Another test",
++    instructions: "Do another thing",
++    input_schema: [],
++    directory_path: "/test/path2",
++    entry_point: "main.py",
++    enabled: false,
++    created_at: Date.now(),
++    updated_at: Date.now(),
++  },
++];
++
++describe("Skills Component", () => {
++  beforeEach(() => {
++    vi.clearAllMocks();
++  });
++
++  it("loads and displays skills on mount", async () => {
++    vi.mocked(api.skills.getAll).mockResolvedValue(mockSkills);
++    renderWithProviders(<Skills />);
++
++    await waitFor(() => {
++      expect(api.skills.getAll).toHaveBeenCalled();
++    });
++
++    expect(screen.getByText("Test Skill 1")).toBeInTheDocument();
++    expect(screen.getByText("A test description")).toBeInTheDocument();
++
++    expect(screen.getByText("Disabled Skill")).toBeInTheDocument();
++    expect(screen.getByText("Disabled")).toBeInTheDocument(); // Badge for disabled skill
++  });
++
++  it("shows 'No skills installed' when the list is empty", async () => {
++    vi.mocked(api.skills.getAll).mockResolvedValue([]);
++    renderWithProviders(<Skills />);
++
++    await waitFor(() => {
++      expect(screen.getByText("No skills installed.")).toBeInTheDocument();
++    });
++  });
++
++  it("creates a new skill when New button is clicked", async () => {
++    const user = userEvent.setup();
++    vi.mocked(api.skills.getAll).mockResolvedValue([]);
++
++    const newSkill: Skill = {
++      id: "new-skill-id",
++      name: "New Skill",
++      description: "Describe this workflow",
++      instructions: "Step 1\nStep 2",
++      input_schema: [],
++      directory_path: "/new/path",
++      entry_point: "run.sh",
++      enabled: true,
++      created_at: Date.now(),
++      updated_at: Date.now(),
++    };
++
++    vi.mocked(api.skills.create).mockResolvedValue(newSkill);
++    vi.mocked(api.skills.getAll).mockResolvedValueOnce([]).mockResolvedValueOnce([newSkill]);
++
++    renderWithProviders(<Skills />);
++
++    // Wait for initial load
++    await waitFor(() => {
++      expect(screen.queryByText("No skills installed.")).toBeInTheDocument();
++    });
++
++    const newBtn = screen.getByRole("button", { name: /new/i });
++    await user.click(newBtn);
++
++    await waitFor(() => {
++      expect(api.skills.create).toHaveBeenCalledWith(
++        expect.objectContaining({
++          name: "New Skill",
++        })
++      );
++    });
++
++    // Should refresh list and select the new skill
++    expect(api.skills.getAll).toHaveBeenCalledTimes(2);
++    expect(screen.getByDisplayValue("New Skill")).toBeInTheDocument();
++  });
++
++  it("allows selecting and editing a skill", async () => {
++    const user = userEvent.setup();
++    vi.mocked(api.skills.getAll).mockResolvedValue(mockSkills);
++    renderWithProviders(<Skills />);
++
++    await waitFor(() => {
++      expect(screen.getByText("Test Skill 1")).toBeInTheDocument();
++    });
++
++    await user.click(screen.getByText("Test Skill 1"));
++
++    // Form should populate
++    expect(screen.getByDisplayValue("Test Skill 1")).toBeInTheDocument();
++    expect(screen.getByDisplayValue("A test description")).toBeInTheDocument();
++    expect(screen.getByDisplayValue("run.sh")).toBeInTheDocument();
++
++    // Check schema editor renders the param
++    expect(screen.getByDisplayValue("param1")).toBeInTheDocument();
++
++    // Edit and save
++    const nameInput = screen.getByDisplayValue("Test Skill 1");
++    await user.clear(nameInput);
++    await user.type(nameInput, "Updated Name");
++
++    vi.mocked(api.skills.update).mockResolvedValue({
++      ...mockSkills[0],
++      name: "Updated Name",
++    });
++
++    const saveBtn = screen.getByRole("button", { name: /save changes/i });
++    await user.click(saveBtn);
++
++    await waitFor(() => {
++      expect(api.skills.update).toHaveBeenCalledWith(
++        "skill-1",
++        expect.objectContaining({
++          name: "Updated Name",
++        })
++      );
++    });
++  });
++
++  it("allows deleting a skill", async () => {
++    const user = userEvent.setup();
++    vi.mocked(api.skills.getAll).mockResolvedValue(mockSkills);
++    renderWithProviders(<Skills />);
++
++    await waitFor(() => {
++      expect(screen.getByText("Test Skill 1")).toBeInTheDocument();
++    });
++
++    await user.click(screen.getByText("Test Skill 1"));
++
++    vi.mocked(api.skills.delete).mockResolvedValue();
++
++    const deleteBtn = screen.getByRole("button", { name: /delete skill/i });
++    await user.click(deleteBtn);
++
++    await waitFor(() => {
++      expect(api.skills.delete).toHaveBeenCalledWith("skill-1");
++    });
++
++    // Skill should disappear from list
++    await waitFor(() => {
++      const btns = screen
++        .queryAllByRole("button")
++        .filter((b) => b.textContent?.includes("Test Skill 1"));
++      expect(btns.length).toBe(0);
++    });
++  });
++
++  it("opens folder in explorer", async () => {
++    const user = userEvent.setup();
++    vi.mocked(api.skills.getAll).mockResolvedValue(mockSkills);
++    vi.mocked(api.app.openInExplorer).mockResolvedValue();
++
++    renderWithProviders(<Skills />);
++
++    await waitFor(() => {
++      expect(screen.getByText("Test Skill 1")).toBeInTheDocument();
++    });
++
++    await user.click(screen.getByText("Test Skill 1"));
++
++    const openFolderBtn = screen.getByRole("button", { name: /open folder/i });
++    await user.click(openFolderBtn);
++
++    expect(api.app.openInExplorer).toHaveBeenCalledWith("/test/path");
++  });
++});
+diff --git a/src/components/pages/Skills.tsx b/src/components/pages/Skills.tsx
+index e06b71b..ae49942 100644
+--- a/src/components/pages/Skills.tsx
++++ b/src/components/pages/Skills.tsx
+@@ -1,12 +1,15 @@
+ import { useEffect, useMemo, useState } from "react";
+-import { Plus, Trash2 } from "lucide-react";
++import { Plus, Trash2, FolderOpen } from "lucide-react";
+ import { Button } from "@/components/ui/button";
+ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+ import { Input } from "@/components/ui/input";
+ import { Switch } from "@/components/ui/switch";
++import { Badge } from "@/components/ui/badge";
+ import { api } from "@/lib/tauri";
+ import { useToast } from "@/components/ui/toast";
+-import type { Skill } from "@/types/skill";
++import type { Skill, SkillParameter } from "@/types/skill";
++import { SkillSchemaEditor } from "@/components/skills/SkillSchemaEditor";
++import { TemplateBrowser } from "@/components/skills/TemplateBrowser";
+ 
+ export function Skills() {
+   const [skills, setSkills] = useState<Skill[]>([]);
+@@ -14,6 +17,8 @@ export function Skills() {
+   const [name, setName] = useState("");
+   const [description, setDescription] = useState("");
+   const [instructions, setInstructions] = useState("");
++  const [inputSchema, setInputSchema] = useState<SkillParameter[]>([]);
++  const [entryPoint, setEntryPoint] = useState("");
+   const [enabled, setEnabled] = useState(true);
+   const [isSaving, setIsSaving] = useState(false);
+   const { addToast } = useToast();
+@@ -43,12 +48,16 @@ export function Skills() {
+       setName("");
+       setDescription("");
+       setInstructions("");
++      setInputSchema([]);
++      setEntryPoint("");
+       setEnabled(true);
+       return;
+     }
+     setName(selected.name);
+     setDescription(selected.description);
+     setInstructions(selected.instructions);
++    setInputSchema(selected.input_schema || []);
++    setEntryPoint(selected.entry_point || "");
+     setEnabled(selected.enabled);
+   }, [selected]);
+ 
+@@ -59,6 +68,8 @@ export function Skills() {
+         name: "New Skill",
+         description: "Describe this workflow",
+         instructions: "Step 1\nStep 2",
++        input_schema: [],
++        entry_point: "run.sh",
+         enabled: true,
+       });
+       await loadSkills();
+@@ -83,6 +94,8 @@ export function Skills() {
+         name,
+         description,
+         instructions,
++        input_schema: inputSchema,
++        entry_point: entryPoint,
+         enabled,
+       });
+       setSkills((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
+@@ -117,16 +130,32 @@ export function Skills() {
+     }
+   };
+ 
++  const openFolder = async () => {
++    if (!selected?.directory_path) return;
++    try {
++      await api.app.openInExplorer(selected.directory_path);
++    } catch {
++      addToast({
++        title: "Failed to Open",
++        description: "Could not open directory",
++        variant: "error",
++      });
++    }
++  };
++
+   return (
+     <div className="grid gap-6 lg:grid-cols-[320px,1fr]">
+       <Card>
+         <CardHeader>
+           <div className="flex items-center justify-between">
+             <CardTitle>Skills</CardTitle>
+-            <Button size="sm" onClick={createSkill} disabled={isSaving}>
+-              <Plus className="mr-2 h-4 w-4" />
+-              New
+-            </Button>
++            <div className="flex gap-2">
++              <TemplateBrowser onInstalled={loadSkills} />
++              <Button size="sm" onClick={createSkill} disabled={isSaving}>
++                <Plus className="mr-2 h-4 w-4" />
++                New
++              </Button>
++            </div>
+           </div>
+           <CardDescription>Complex multi-step workflows</CardDescription>
+         </CardHeader>
+@@ -134,24 +163,41 @@ export function Skills() {
+           {skills.map((skill) => (
+             <button
+               key={skill.id}
+-              className={`w-full rounded-md border px-3 py-2 text-left transition ${
++              className={`w-full flex-col items-start rounded-md border px-3 py-2 text-left transition ${
+                 selectedId === skill.id ? "border-primary bg-accent" : "hover:bg-accent"
+               }`}
+               onClick={() => setSelectedId(skill.id)}
+             >
+-              <div className="font-medium truncate">{skill.name}</div>
+-              <div className="text-xs text-muted-foreground truncate">{skill.description}</div>
++              <div className="flex w-full items-center justify-between">
++                <div className="font-medium truncate">{skill.name}</div>
++                {!skill.enabled && <Badge variant="secondary">Disabled</Badge>}
++              </div>
++              <div className="text-xs text-muted-foreground truncate opacity-80">
++                {skill.description}
++              </div>
+             </button>
+           ))}
++          {skills.length === 0 && (
++            <p className="text-sm text-muted-foreground p-2">No skills installed.</p>
++          )}
+         </CardContent>
+       </Card>
+ 
+       <Card>
+         <CardHeader>
+-          <CardTitle>{selected ? "Edit Skill" : "Select a Skill"}</CardTitle>
+-          <CardDescription>Define reusable instructions and workflow context.</CardDescription>
++          <div className="flex items-center justify-between">
++            <div>
++              <CardTitle>{selected ? "Edit Skill" : "Select a Skill"}</CardTitle>
++              <CardDescription>Define reusable instructions and workflow context.</CardDescription>
++            </div>
++            {selected && selected.directory_path && (
++              <Button variant="outline" size="sm" onClick={openFolder}>
++                <FolderOpen className="mr-2 h-4 w-4" /> Open Folder
++              </Button>
++            )}
++          </div>
+         </CardHeader>
+-        <CardContent className="space-y-4">
++        <CardContent className="space-y-6">
+           <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
+             Security warning: Skills execute shell commands with your current user privileges. Treat
+             imported or shared skills as trusted code only.
+@@ -160,33 +206,61 @@ export function Skills() {
+             <p className="text-sm text-muted-foreground">Select a skill or create a new one.</p>
+           ) : (
+             <>
+-              <Input
+-                value={name}
+-                onChange={(e) => setName(e.target.value)}
+-                placeholder="Skill name"
+-              />
+-              <Input
+-                value={description}
+-                onChange={(e) => setDescription(e.target.value)}
+-                placeholder="Description"
+-              />
+-              <textarea
+-                value={instructions}
+-                onChange={(e) => setInstructions(e.target.value)}
+-                className="min-h-48 rounded-md border bg-background p-3 text-sm"
+-                placeholder="Write workflow instructions..."
+-              />
+-              <div className="flex items-center justify-between rounded-md border p-3">
+-                <span className="text-sm">Enabled</span>
++              <div className="grid gap-4 md:grid-cols-2">
++                <div className="space-y-2">
++                  <label className="text-sm font-medium">Name</label>
++                  <Input
++                    value={name}
++                    onChange={(e) => setName(e.target.value)}
++                    placeholder="Skill name"
++                  />
++                </div>
++                <div className="space-y-2">
++                  <label className="text-sm font-medium">Entry Point (e.g. run.sh, index.js)</label>
++                  <Input
++                    value={entryPoint}
++                    onChange={(e) => setEntryPoint(e.target.value)}
++                    placeholder="main.sh"
++                  />
++                </div>
++                <div className="space-y-2 md:col-span-2">
++                  <label className="text-sm font-medium">Description</label>
++                  <Input
++                    value={description}
++                    onChange={(e) => setDescription(e.target.value)}
++                    placeholder="What does this do?"
++                  />
++                </div>
++              </div>
++
++              <div className="space-y-2">
++                <label className="text-sm font-medium">LLM Instructions (SKILL.md format)</label>
++                <textarea
++                  value={instructions}
++                  onChange={(e) => setInstructions(e.target.value)}
++                  className="min-h-48 w-full rounded-md border bg-background p-3 text-sm font-mono shadow-inner"
++                  placeholder="Write detailed workflow instructions for the AI"
++                />
++              </div>
++
++              <SkillSchemaEditor schema={inputSchema} onChange={setInputSchema} />
++
++              <div className="flex items-center justify-between rounded-md border p-4 bg-muted/20">
++                <div className="space-y-0.5">
++                  <div className="text-sm font-medium">Enable Skill</div>
++                  <div className="text-xs text-muted-foreground">
++                    Allow this skill to be used by the MCP server
++                  </div>
++                </div>
+                 <Switch checked={enabled} onCheckedChange={setEnabled} />
+               </div>
+-              <div className="flex gap-2">
++              <div className="flex gap-2 pt-2 border-t">
+                 <Button onClick={saveSkill} disabled={isSaving}>
+-                  {isSaving ? "Saving..." : "Save"}
++                  {isSaving ? "Saving..." : "Save Changes"}
+                 </Button>
+                 <Button variant="outline" onClick={deleteSkill} disabled={isSaving}>
+                   <Trash2 className="mr-2 h-4 w-4" />
+-                  Delete
++                  Delete Skill
+                 </Button>
+               </div>
+             </>
+diff --git a/src/components/skills/SkillSchemaEditor.tsx b/src/components/skills/SkillSchemaEditor.tsx
+new file mode 100644
+index 0000000..626de1e
+--- /dev/null
++++ b/src/components/skills/SkillSchemaEditor.tsx
+@@ -0,0 +1,135 @@
++import { Plus, Trash2 } from "lucide-react";
++import { Button } from "@/components/ui/button";
++import { Input } from "@/components/ui/input";
++import { Switch } from "@/components/ui/switch";
++import { SkillParameter, SkillParameterType } from "@/types/skill";
++
++export function SkillSchemaEditor({
++  schema,
++  onChange,
++}: {
++  schema: SkillParameter[];
++  onChange: (schema: SkillParameter[]) => void;
++}) {
++  const addParam = () => {
++    onChange([
++      ...schema,
++      {
++        name: "",
++        description: "",
++        param_type: SkillParameterType.String,
++        required: true,
++      },
++    ]);
++  };
++
++  const updateParam = (index: number, updates: Partial<SkillParameter>) => {
++    const next = [...schema];
++    next[index] = { ...next[index], ...updates };
++    onChange(next);
++  };
++
++  const removeParam = (index: number) => {
++    onChange(schema.filter((_, i) => i !== index));
++  };
++
++  return (
++    <div className="space-y-4 rounded-md border p-4">
++      <div className="flex items-center justify-between">
++        <h3 className="text-sm font-medium">Input Schema Parameters</h3>
++        <Button variant="outline" size="sm" onClick={addParam}>
++          <Plus className="mr-2 h-4 w-4" /> Add Parameter
++        </Button>
++      </div>
++
++      {schema.length === 0 ? (
++        <p className="text-xs text-muted-foreground">
++          No parameters defined. The skill will run without arguments.
++        </p>
++      ) : (
++        <div className="space-y-4">
++          {schema.map((param, i) => (
++            <div key={i} className="grid gap-3 rounded-md border border-muted bg-muted/30 p-3">
++              <div className="flex items-start justify-between gap-4">
++                <div className="grid flex-1 gap-2 sm:grid-cols-2">
++                  <div className="space-y-1">
++                    <label className="text-xs font-medium">Name</label>
++                    <Input
++                      size={1}
++                      placeholder="e.g. file_path"
++                      value={param.name}
++                      onChange={(e) => updateParam(i, { name: e.target.value })}
++                    />
++                  </div>
++                  <div className="space-y-1">
++                    <label className="text-xs font-medium">Type</label>
++                    <select
++                      className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
++                      value={param.param_type}
++                      onChange={(e) =>
++                        updateParam(i, { param_type: e.target.value as SkillParameterType })
++                      }
++                    >
++                      {Object.values(SkillParameterType).map((t) => (
++                        <option key={t} value={t}>
++                          {t}
++                        </option>
++                      ))}
++                    </select>
++                  </div>
++                  <div className="sm:col-span-2 space-y-1">
++                    <label className="text-xs font-medium">Description</label>
++                    <Input
++                      placeholder="Explain what this parameter does"
++                      value={param.description}
++                      onChange={(e) => updateParam(i, { description: e.target.value })}
++                    />
++                  </div>
++
++                  {param.param_type === SkillParameterType.Enum && (
++                    <div className="sm:col-span-2 space-y-1">
++                      <label className="text-xs font-medium">Enum Values (comma separated)</label>
++                      <Input
++                        placeholder="Option1, Option2, Option3"
++                        value={param.enum_values?.join(", ") ?? ""}
++                        onChange={(e) => {
++                          const vals = e.target.value
++                            .split(",")
++                            .map((s) => s.trim())
++                            .filter(Boolean);
++                          updateParam(i, { enum_values: vals.length > 0 ? vals : null });
++                        }}
++                      />
++                    </div>
++                  )}
++
++                  <div className="space-y-1">
++                    <label className="text-xs font-medium">Default (optional)</label>
++                    <Input
++                      placeholder="Leave blank for no default"
++                      value={param.default_value ?? ""}
++                      onChange={(e) => updateParam(i, { default_value: e.target.value || null })}
++                    />
++                  </div>
++                </div>
++
++                <div className="flex flex-col items-end gap-3">
++                  <Button variant="ghost" size="icon" onClick={() => removeParam(i)}>
++                    <Trash2 className="h-4 w-4 text-destructive" />
++                  </Button>
++                  <div className="flex items-center gap-2">
++                    <span className="text-xs">Required</span>
++                    <Switch
++                      checked={param.required}
++                      onCheckedChange={(c) => updateParam(i, { required: c })}
++                    />
++                  </div>
++                </div>
++              </div>
++            </div>
++          ))}
++        </div>
++      )}
++    </div>
++  );
++}
+diff --git a/src/components/skills/TemplateBrowser.tsx b/src/components/skills/TemplateBrowser.tsx
+new file mode 100644
+index 0000000..4b14970
+--- /dev/null
++++ b/src/components/skills/TemplateBrowser.tsx
+@@ -0,0 +1,137 @@
++import { useState, useEffect } from "react";
++import { Download, Library, Loader2 } from "lucide-react";
++import {
++  Dialog,
++  DialogContent,
++  DialogDescription,
++  DialogHeader,
++  DialogTitle,
++} from "@/components/ui/dialog";
++import { Button } from "@/components/ui/button";
++import { Skeleton } from "@/components/ui/skeleton";
++import { api } from "@/lib/tauri";
++import { useToast } from "@/components/ui/toast";
++import type { TemplateSkill } from "@/types/skill";
++
++interface TemplateBrowserProps {
++  onInstalled: () => void;
++}
++
++export function TemplateBrowser({ onInstalled }: TemplateBrowserProps) {
++  const [templates, setTemplates] = useState<TemplateSkill[]>([]);
++  const [isOpen, setIsOpen] = useState(false);
++  const [isLoading, setIsLoading] = useState(false);
++  const [installingId, setInstallingId] = useState<string | null>(null);
++  const { addToast } = useToast();
++
++  useEffect(() => {
++    if (isOpen) {
++      setIsLoading(true);
++      api.skills
++        .getTemplates()
++        .then(setTemplates)
++        .catch((e) => {
++          console.error("Failed to load templates:", e);
++          addToast({
++            title: "Failed to load templates",
++            description: String(e),
++            variant: "error",
++          });
++        })
++        .finally(() => setIsLoading(false));
++    }
++  }, [isOpen, addToast]);
++
++  const install = async (id: string) => {
++    setInstallingId(id);
++    try {
++      await api.skills.installTemplate(id);
++      addToast({ title: "Template Installed", variant: "success" });
++      onInstalled();
++      setIsOpen(false);
++    } catch (e) {
++      addToast({
++        title: "Install Failed",
++        description: e instanceof Error ? e.message : String(e),
++        variant: "error",
++      });
++    } finally {
++      setInstallingId(null);
++    }
++  };
++
++  return (
++    <>
++      <Button variant="outline" size="sm" onClick={() => setIsOpen(true)}>
++        <Library className="mr-2 h-4 w-4" />
++        Browse Templates
++      </Button>
++      <Dialog open={isOpen} onOpenChange={setIsOpen}>
++        <DialogContent className="sm:max-w-[500px]" onClose={() => setIsOpen(false)}>
++          <DialogHeader>
++            <DialogTitle>Skill Templates</DialogTitle>
++            <DialogDescription>
++              Install built-in skill templates to quickly add new workflows. Wait for the skill to
++              compile.
++            </DialogDescription>
++          </DialogHeader>
++          <div className="flex flex-col gap-4 py-4 max-h-[60vh] overflow-y-auto">
++            {isLoading ? (
++              Array.from({ length: 3 }).map((_, i) => (
++                <div
++                  key={i}
++                  className="flex items-center justify-between p-4 border rounded-md bg-card"
++                >
++                  <div className="flex-1 space-y-2">
++                    <Skeleton className="h-5 w-32" />
++                    <Skeleton className="h-4 w-full" />
++                    <Skeleton className="h-4 w-20" />
++                  </div>
++                  <Skeleton className="h-9 w-20 ml-4" />
++                </div>
++              ))
++            ) : templates.length === 0 ? (
++              <div className="text-center text-sm text-muted-foreground py-8">
++                No templates found.
++              </div>
++            ) : (
++              templates.map((t) => (
++                <div
++                  key={t.template_id}
++                  className="flex items-center justify-between p-4 border rounded-md bg-card"
++                >
++                  <div className="flex-1 pr-4">
++                    <h4 className="font-semibold">{t.metadata.name}</h4>
++                    <p className="text-sm text-muted-foreground mt-1">{t.metadata.description}</p>
++                    {t.metadata.input_schema.length > 0 && (
++                      <div className="text-xs text-muted-foreground mt-2">
++                        Takes {t.metadata.input_schema.length} parameter
++                        {t.metadata.input_schema.length !== 1 ? "s" : ""}
++                      </div>
++                    )}
++                  </div>
++                  <Button
++                    size="sm"
++                    onClick={() => install(t.template_id)}
++                    disabled={installingId !== null}
++                  >
++                    {installingId === t.template_id ? (
++                      <span className="flex items-center">
++                        <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Installing...
++                      </span>
++                    ) : (
++                      <>
++                        <Download className="mr-2 h-4 w-4" />
++                        Install
++                      </>
++                    )}
++                  </Button>
++                </div>
++              ))
++            )}
++          </div>
++        </DialogContent>
++      </Dialog>
++    </>
++  );
++}
+diff --git a/src/lib/tauri.ts b/src/lib/tauri.ts
+index 435b999..41ae391 100644
+--- a/src/lib/tauri.ts
++++ b/src/lib/tauri.ts
+@@ -16,7 +16,7 @@ import type {
+   McpConnectionInstructions,
+   ExecutionLog,
+ } from "@/types/command";
+-import type { CreateSkillInput, Skill, UpdateSkillInput } from "@/types/skill";
++import type { CreateSkillInput, Skill, UpdateSkillInput, TemplateSkill } from "@/types/skill";
+ 
+ export const api = {
+   rules: {
+@@ -98,6 +98,9 @@ export const api = {
+     create: (input: CreateSkillInput) => invoke<Skill>("create_skill", { input }),
+     update: (id: string, input: UpdateSkillInput) => invoke<Skill>("update_skill", { id, input }),
+     delete: (id: string) => invoke<void>("delete_skill", { id }),
++    getTemplates: () => invoke<TemplateSkill[]>("get_skill_templates"),
++    installTemplate: (templateId: string) =>
++      invoke<Skill>("install_skill_template", { templateId }),
+   },
+ 
+   mcp: {
+diff --git a/src/types/skill.ts b/src/types/skill.ts
+index 5f15612..191cb70 100644
+--- a/src/types/skill.ts
++++ b/src/types/skill.ts
+@@ -1,8 +1,29 @@
++export enum SkillParameterType {
++  String = "String",
++  Number = "Number",
++  Boolean = "Boolean",
++  Enum = "Enum",
++  Array = "Array",
++  Object = "Object",
++}
++
++export interface SkillParameter {
++  name: string;
++  description: string;
++  param_type: SkillParameterType | string;
++  required: boolean;
++  default_value?: string | null;
++  enum_values?: string[] | null;
++}
++
+ export interface Skill {
+   id: string;
+   name: string;
+   description: string;
+   instructions: string;
++  input_schema: SkillParameter[];
++  directory_path: string;
++  entry_point: string;
+   enabled: boolean;
+   created_at: number;
+   updated_at: number;
+@@ -12,6 +33,9 @@ export interface CreateSkillInput {
+   name: string;
+   description: string;
+   instructions: string;
++  input_schema: SkillParameter[];
++  directory_path?: string;
++  entry_point?: string;
+   enabled?: boolean;
+ }
+ 
+@@ -19,5 +43,19 @@ export interface UpdateSkillInput {
+   name?: string;
+   description?: string;
+   instructions?: string;
++  input_schema?: SkillParameter[];
++  directory_path?: string;
++  entry_point?: string;
+   enabled?: boolean;
+ }
++
++export interface TemplateFile {
++  filename: string;
++  content: string;
++}
++
++export interface TemplateSkill {
++  template_id: string;
++  metadata: CreateSkillInput;
++  files: TemplateFile[];
++}
