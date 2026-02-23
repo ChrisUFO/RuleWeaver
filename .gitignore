@@ -48,10 +48,15 @@ logs
 *.log
 
 # Review files
-review*.md
-review*.txt
-review*.log
-review*.json
+review*
+*.jsonson
 
 # Temporary plan files
 PLAN.md
+plan.md
+
+# Common temp/local files
+*.tmp
+*.bak
+.DS_Store
+Thumbs.db
