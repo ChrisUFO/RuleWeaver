@@ -57,7 +57,7 @@ impl Skill {
         let mut missing_required: Vec<String> = Vec::new();
 
         for param in &self.input_schema {
-            let raw_value = args_map
+            let mut raw_value = args_map
                 .get(&param.name)
                 .map(|v| {
                     if let Some(s) = v.as_str() {
@@ -66,8 +66,13 @@ impl Skill {
                         v.to_string()
                     }
                 })
-                .or_else(|| param.default_value.clone())
                 .unwrap_or_default();
+
+            if raw_value.is_empty() {
+                if let Some(ref default) = param.default_value {
+                    raw_value = default.clone();
+                }
+            }
 
             if raw_value.is_empty() && param.required {
                 missing_required.push(param.name.clone());

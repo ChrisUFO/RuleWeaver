@@ -27,7 +27,7 @@ use crate::execution::{
     execute_shell_with_timeout_env_dir, replace_template_with_env_ref, sanitize_argument_value,
     slugify, ExecuteAndLogInput,
 };
-use crate::models::{Command, Skill};
+use crate::models::{Command, Skill, SkillParameterType};
 
 fn truncate_output_custom(s: String, max_size: usize) -> String {
     if s.len() > max_size {
@@ -460,14 +460,26 @@ fn handle_tools_list(
                 .arguments
                 .iter()
                 .map(|a| {
+                    let p_type = if let Some(ref opts) = a.options {
+                        if !opts.is_empty() {
+                            SkillParameterType::Enum
+                        } else {
+                            SkillParameterType::String
+                        }
+                    } else {
+                        SkillParameterType::String
+                    };
+
                     (
                         a.name.clone(),
                         a.description.clone(),
                         a.required,
                         a.options.clone(),
+                        p_type,
                     )
                 })
                 .collect();
+
             build_mcp_tool_schema(
                 &format!("{}-{}", slugify(&c.name), &c.id[..8]),
                 &c.description,
@@ -489,6 +501,7 @@ fn handle_tools_list(
                         p.description.clone(),
                         p.required,
                         p.enum_values.clone(),
+                        p.param_type.clone(),
                     )
                 })
                 .collect();
@@ -512,14 +525,28 @@ fn handle_tools_list(
 fn build_mcp_tool_schema(
     name: &str,
     description: &str,
-    params: &[(String, String, bool, Option<Vec<String>>)], // name, description, required, enum_values
+    params: &[(
+        String,
+        String,
+        bool,
+        Option<Vec<String>>,
+        SkillParameterType,
+    )], // name, description, required, enum_values, type
 ) -> serde_json::Value {
     let mut props = serde_json::Map::new();
     let mut required: Vec<String> = Vec::new();
 
-    for (p_name, p_desc, p_req, p_enum) in params {
+    for (p_name, p_desc, p_req, p_enum, p_type) in params {
+        let type_str = match p_type {
+            SkillParameterType::Number => "number",
+            SkillParameterType::Boolean => "boolean",
+            SkillParameterType::Array => "array",
+            SkillParameterType::Object => "object",
+            _ => "string",
+        };
+
         let mut prop_schema = json!({
-            "type": "string",
+            "type": type_str,
             "description": p_desc,
         });
 

@@ -23,18 +23,49 @@ pub fn create_skill(input: CreateSkillInput, db: State<'_, Arc<Database>>) -> Re
     crate::models::validate_skill_schema(&input.input_schema)?;
     crate::models::validate_skill_entry_point(&input.entry_point)?;
 
-    // Create in DB first to get ID and defaults
+    // Create in DB first
     let created = db.create_skill(input)?;
 
+    // Atomic Cleanup Guard for DB
+    struct SkillCreationGuard<'a> {
+        db: &'a Database,
+        skill_id: String,
+        defused: bool,
+    }
+
+    impl<'a> Drop for SkillCreationGuard<'a> {
+        fn drop(&mut self) {
+            if !self.defused {
+                let _ = self.db.delete_skill(&self.skill_id);
+            }
+        }
+    }
+
+    let mut guard = SkillCreationGuard {
+        db: &db,
+        skill_id: created.id.clone(),
+        defused: false,
+    };
+
     // Save to disk
-    let path = save_skill_to_disk(&created)?;
-    // Update DB with the directory path we just resolved
+    let path = match save_skill_to_disk(&created) {
+        Ok(p) => p,
+        Err(e) => return Err(e), // Guard will drop and delete from DB
+    };
+
+    // Update DB with the directory path
     let update = UpdateSkillInput {
         directory_path: Some(path.to_string_lossy().to_string()),
         ..Default::default()
     };
-    db.update_skill(&created.id, update)?;
 
+    if let Err(e) = db.update_skill(&created.id, update) {
+        // Attempt to cleanup disk if DB update fails
+        let _ = std::fs::remove_dir_all(&path);
+        return Err(e);
+    }
+
+    guard.defused = true;
     db.get_skill_by_id(&created.id)
 }
 
