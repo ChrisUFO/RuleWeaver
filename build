@@ -1,11 +1,84 @@
 #!/bin/bash
 
 # RuleWeaver Build Script
-# Builds the production distribution
+# Builds the production distribution with auto-increment versioning
 
 set -e
 
 echo "🔨 Building RuleWeaver..."
+echo ""
+
+# Get current version from package.json and auto-increment patch
+CURRENT_VERSION=$(grep '"version"' package.json | head -1 | sed 's/.*"version": "\(.*\)".*/\1/')
+
+# Extract version components (handles both simple and prerelease versions)
+BASE_VERSION=$(echo "$CURRENT_VERSION" | sed 's/-.*//')
+MAJOR=$(echo "$BASE_VERSION" | cut -d. -f1)
+MINOR=$(echo "$BASE_VERSION" | cut -d. -f2)
+PATCH=$(echo "$BASE_VERSION" | cut -d. -f3)
+
+# Default to 0.0.0 if parsing fails
+if [ -z "$MAJOR" ]; then MAJOR=0; fi
+if [ -z "$MINOR" ]; then MINOR=0; fi
+if [ -z "$PATCH" ]; then PATCH=0; fi
+
+# Increment patch with rollover logic (max 255 per component for Windows compatibility)
+PATCH=$((PATCH + 1))
+if [ $PATCH -gt 255 ]; then
+    PATCH=0
+    MINOR=$((MINOR + 1))
+    if [ $MINOR -gt 255 ]; then
+        MINOR=0
+        MAJOR=$((MAJOR + 1))
+        if [ $MAJOR -gt 255 ]; then
+            echo "❌ Error: Major version exceeded 255"
+            exit 1
+        fi
+    fi
+fi
+
+# Generate timestamps
+FULL_TIMESTAMP=$(date +"%y%m%d%H%M")  # For filename: YYMMDDHHMM
+PRERELEASE=$(date +"%d%m")               # For version: DDMM (max 3112, fits in 65535)
+
+# Final version with prerelease: 0.0.X-DDMM
+VERSION="$MAJOR.$MINOR.$PATCH-$PRERELEASE"
+
+echo "📦 Current: $CURRENT_VERSION"
+echo "📅 New version: $VERSION"
+echo ""
+
+# Update package.json version
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    # macOS sed
+    sed -i '' "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" package.json
+else
+    # Linux sed
+    sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" package.json
+fi
+echo "✓ Updated package.json"
+
+# Update Cargo.toml version
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    sed -i '' "s/^version = \"[^\"]*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
+else
+    sed -i "s/^version = \"[^\"]*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
+fi
+echo "✓ Updated Cargo.toml"
+
+# Update tauri.conf.json version
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    sed -i '' "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
+else
+    sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
+fi
+echo "✓ Updated tauri.conf.json"
+
+# Create/update version.json for frontend access
+TIMESTAMP=$(date +"%Y-%m-%d %H:%M:%S")
+echo "{ \"version\": \"$VERSION\", \"timestamp\": \"$TIMESTAMP\" }" > public/version.json
+echo "✓ Updated public/version.json"
+
 echo ""
 
 # Check if node_modules exists
@@ -36,6 +109,16 @@ echo ""
 echo "🏗️  Building production bundle..."
 npm run tauri:build
 
+# Rename installers with full timestamp
 echo ""
-echo "✅ Build complete!"
+echo "🏷️  Renaming installers with full timestamp..."
+if [ -f "scripts/rename-installer" ]; then
+    chmod +x scripts/rename-installer
+    ./scripts/rename-installer
+else
+    echo "⚠️  rename-installer script not found"
+fi
+
+echo ""
+echo "✅ Build complete! Version: $VERSION"
 echo "📁 Distribution files are in src-tauri/target/release/bundle/"

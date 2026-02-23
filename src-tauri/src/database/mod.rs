@@ -810,6 +810,133 @@ impl Database {
         Ok(())
     }
 
+    pub fn import_rule(&self, rule: Rule, mode: crate::models::ImportMode) -> Result<()> {
+        let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
+        let now = chrono::Utc::now().timestamp();
+
+        let target_paths_json = rule
+            .target_paths
+            .as_ref()
+            .map(|p| serde_json::to_string(p).unwrap_or_default());
+
+        let enabled_adapters_json = serde_json::to_string(&rule.enabled_adapters)?;
+
+        let sql = match mode {
+            crate::models::ImportMode::Overwrite => {
+                log::info!("Import: Overwriting rule {}", rule.id);
+                "INSERT OR REPLACE INTO rules (id, name, content, scope, target_paths, enabled_adapters, enabled, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            }
+            crate::models::ImportMode::Skip => {
+                "INSERT OR IGNORE INTO rules (id, name, content, scope, target_paths, enabled_adapters, enabled, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            }
+        };
+
+        conn.execute(
+            sql,
+            params![
+                rule.id,
+                rule.name,
+                rule.content,
+                rule.scope.as_str(),
+                target_paths_json,
+                enabled_adapters_json,
+                rule.enabled,
+                rule.created_at.timestamp(),
+                now
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn import_command(&self, command: Command, mode: crate::models::ImportMode) -> Result<()> {
+        let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
+        let now = chrono::Utc::now().timestamp();
+        let arguments_json = serde_json::to_string(&command.arguments)?;
+
+        let sql = match mode {
+            crate::models::ImportMode::Overwrite => {
+                log::info!("Import: Overwriting command {}", command.id);
+                "INSERT OR REPLACE INTO commands (id, name, description, script, arguments, expose_via_mcp, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+            }
+            crate::models::ImportMode::Skip => {
+                "INSERT OR IGNORE INTO commands (id, name, description, script, arguments, expose_via_mcp, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+            }
+        };
+
+        conn.execute(
+            sql,
+            params![
+                command.id,
+                command.name,
+                command.description,
+                command.script,
+                arguments_json,
+                command.expose_via_mcp,
+                command.created_at.timestamp(),
+                now
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn import_skill(&self, skill: Skill, mode: crate::models::ImportMode) -> Result<()> {
+        let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
+        let now = chrono::Utc::now().timestamp();
+        let input_schema_json = serde_json::to_string(&skill.input_schema)?;
+
+        let sql = match mode {
+            crate::models::ImportMode::Overwrite => {
+                log::info!("Import: Overwriting skill {}", skill.id);
+                "INSERT OR REPLACE INTO skills (id, name, description, instructions, input_schema, enabled, directory_path, entry_point, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            }
+            crate::models::ImportMode::Skip => {
+                "INSERT OR IGNORE INTO skills (id, name, description, instructions, input_schema, enabled, directory_path, entry_point, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            }
+        };
+
+        conn.execute(
+            sql,
+            params![
+                skill.id,
+                skill.name,
+                skill.description,
+                skill.instructions,
+                input_schema_json,
+                skill.enabled,
+                skill.directory_path,
+                skill.entry_point,
+                skill.created_at.timestamp(),
+                now
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn import_configuration(
+        &self,
+        config: crate::models::ExportConfiguration,
+        mode: crate::models::ImportMode,
+    ) -> Result<()> {
+        for rule in config.rules {
+            self.import_rule(rule, mode)?;
+        }
+
+        for command in config.commands {
+            self.import_command(command, mode)?;
+        }
+
+        for skill in config.skills {
+            self.import_skill(skill, mode)?;
+        }
+        Ok(())
+    }
+
     pub fn get_storage_mode(&self) -> Result<String> {
         let mode = self.get_setting("storage_mode")?;
         Ok(mode.unwrap_or_else(|| "sqlite".to_string()))

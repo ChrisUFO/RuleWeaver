@@ -1,0 +1,49 @@
+#!/bin/bash
+# Set timestamp-based version across all config files
+# Usage: ./scripts/set-version [version]
+# If no version provided, uses current timestamp (YYMMDD.HHMM)
+
+set -e
+
+if [ -z "$1" ]; then
+    # Generate timestamp version (YYMM.HH.MM format for semver compatibility)
+    # Format: YearMonth.Hour.Minute (e.g., 2502.14.30)
+    # This keeps all version components under 255 as required by Tauri bundler
+    VERSION=$(date +"%y%m.%H.%M")
+else
+    VERSION="$1"
+fi
+
+echo "📅 Setting version to: $VERSION"
+
+# Update package.json version
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    sed -i '' "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" package.json
+else
+    sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" package.json
+fi
+echo "✓ Updated package.json"
+
+# Update Cargo.toml version
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    sed -i '' "s/^version = \"[^\"]*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
+else
+    sed -i "s/^version = \"[^\"]*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
+fi
+echo "✓ Updated Cargo.toml"
+
+# Update tauri.conf.json version
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    sed -i '' "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
+else
+    sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
+fi
+echo "✓ Updated tauri.conf.json"
+
+# Create/update version.json for frontend access
+TIMESTAMP=$(date +"%Y-%m-%d %H:%M:%S")
+echo "{ \"version\": \"$VERSION\", \"timestamp\": \"$TIMESTAMP\" }" > public/version.json
+echo "✓ Updated public/version.json"
+
+echo ""
+echo "✅ Version set to $VERSION"

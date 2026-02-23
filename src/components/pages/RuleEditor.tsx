@@ -1,5 +1,15 @@
-import { useState, useEffect, useCallback } from "react";
-import { ArrowLeft, Save, Eye, Check, Loader2, ExternalLink } from "lucide-react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import {
+  ArrowLeft,
+  Save,
+  Eye,
+  Check,
+  Loader2,
+  ExternalLink,
+  FileText,
+  History as HistoryIcon,
+} from "lucide-react";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -42,6 +52,7 @@ export function RuleEditor({ rule, onBack, isNew = false }: RuleEditorProps) {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [previewAdapter, setPreviewAdapter] = useState<AdapterType>("gemini");
   const [newPath, setNewPath] = useState("");
+  const isInitialized = useRef(false);
 
   const wordCount = getWordCount(content);
   const characterCount = getCharacterCount(content);
@@ -54,15 +65,21 @@ export function RuleEditor({ rule, onBack, isNew = false }: RuleEditorProps) {
         if (savedDefaults) {
           const parsed = JSON.parse(savedDefaults);
           setDefaultAdapters(parsed);
+        } else {
+          // Fallback if no settings found yet
+          setDefaultAdapters(["gemini", "opencode"]);
         }
       } catch {
         console.error("Failed to load default adapters from database");
+        setDefaultAdapters(["gemini", "opencode"]);
       }
     };
     loadDefaultAdapters();
   }, []);
 
   useEffect(() => {
+    if (isInitialized.current) return;
+
     if (rule) {
       setName(rule.name);
       setContent(rule.content);
@@ -70,16 +87,19 @@ export function RuleEditor({ rule, onBack, isNew = false }: RuleEditorProps) {
       setTargetPaths(rule.targetPaths || []);
       setEnabledAdapters(rule.enabledAdapters);
       setPreviewAdapter(rule.enabledAdapters[0] || "gemini");
-    } else if (isNew && enabledAdapters.length === 0) {
-      const initialAdapters =
-        defaultAdapters.length > 0 ? defaultAdapters : (["gemini", "opencode"] as AdapterType[]);
-      setEnabledAdapters(initialAdapters);
-      setPreviewAdapter(initialAdapters[0]);
+      isInitialized.current = true;
+    } else if (isNew && defaultAdapters.length > 0) {
+      setEnabledAdapters(defaultAdapters);
+      setPreviewAdapter(defaultAdapters[0]);
+      isInitialized.current = true;
     }
-  }, [rule, isNew, defaultAdapters, enabledAdapters.length]);
+  }, [rule, isNew, defaultAdapters]);
 
   useEffect(() => {
-    setHasUnsavedChanges(true);
+    // Only set unsaved changes if we've finished initializing
+    if (isInitialized.current) {
+      setHasUnsavedChanges(true);
+    }
   }, [name, content, scope, targetPaths, enabledAdapters]);
 
   const handleSave = useCallback(async () => {
@@ -154,7 +174,12 @@ export function RuleEditor({ rule, onBack, isNew = false }: RuleEditorProps) {
     } catch (error) {
       addToast({
         title: "Save Failed",
-        description: error instanceof Error ? error.message : "Unknown error",
+        description:
+          typeof error === "string"
+            ? error
+            : error instanceof Error
+              ? error.message
+              : "Unknown error",
         variant: "error",
       });
     } finally {
@@ -183,17 +208,23 @@ export function RuleEditor({ rule, onBack, isNew = false }: RuleEditorProps) {
     ],
   });
 
-  const toggleAdapter = (adapter: AdapterType) => {
-    if (enabledAdapters.includes(adapter)) {
-      const newAdapters = enabledAdapters.filter((a) => a !== adapter);
-      setEnabledAdapters(newAdapters);
-      if (newAdapters.length > 0 && !newAdapters.includes(previewAdapter)) {
-        setPreviewAdapter(newAdapters[0]);
-      }
-    } else {
-      setEnabledAdapters([...enabledAdapters, adapter]);
-    }
-  };
+  const toggleAdapter = useCallback(
+    (adapter: AdapterType) => {
+      setEnabledAdapters((prev) => {
+        if (prev.includes(adapter)) {
+          const next = prev.filter((a) => a !== adapter);
+          // If the current preview adapter was removed, switch to another one
+          if (next.length > 0 && adapter === previewAdapter) {
+            setPreviewAdapter(next[0]);
+          }
+          return next;
+        } else {
+          return [...prev, adapter];
+        }
+      });
+    },
+    [previewAdapter]
+  );
 
   const addPath = () => {
     if (newPath.trim() && !targetPaths.includes(newPath.trim())) {
@@ -280,16 +311,16 @@ export function RuleEditor({ rule, onBack, isNew = false }: RuleEditorProps) {
         </div>
         <div className="flex items-center gap-4">
           {getSaveStatus()}
-          <Button onClick={handleSave} disabled={saving}>
+          <Button onClick={handleSave} disabled={saving} className="glow-primary">
             <Save className="mr-2 h-4 w-4" />
-            {saving ? "Saving..." : "Save"}
+            {saving ? "Saving..." : "Save Selection"}
           </Button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 flex-1 min-h-0">
-        <div className="lg:col-span-2 flex flex-col gap-4 min-h-0">
-          <Card className="flex-1 flex flex-col min-h-0">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1 min-h-0">
+        <div className="lg:col-span-2 flex flex-col gap-6 min-h-0">
+          <Card className="flex-1 flex flex-col min-h-0 glass-card premium-shadow border-none overflow-hidden">
             <CardHeader className="pb-2">
               <Input
                 placeholder="Rule name..."
@@ -303,59 +334,74 @@ export function RuleEditor({ rule, onBack, isNew = false }: RuleEditorProps) {
               <MarkdownEditor
                 value={content}
                 onChange={setContent}
-                className="flex-1 border-0 rounded-none"
+                className="flex-1 border-0 rounded-none bg-transparent"
               />
-              <div className="flex items-center justify-between px-3 py-2 border-t text-xs text-muted-foreground">
-                <div className="flex gap-4">
-                  <span>{wordCount} words</span>
-                  <span>{characterCount} characters</span>
+              <div className="flex items-center justify-between px-4 py-3 bg-white/5 border-t border-white/5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">
+                <div className="flex gap-6">
+                  <span className="flex items-center gap-1.5">
+                    <FileText className="h-3 w-3" /> {wordCount} words
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <HistoryIcon className="h-3 w-3" /> {characterCount} chars
+                  </span>
                 </div>
-                <span className="text-xs">
-                  Press <kbd className="px-1 py-0.5 bg-muted rounded text-xs">Ctrl+S</kbd> to save
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="opacity-60">Shortcut:</span>
+                  <kbd className="px-1.5 py-0.5 bg-white/5 border border-white/10 rounded text-xs lowercase">
+                    Ctrl+S
+                  </kbd>
+                </div>
               </div>
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm flex items-center gap-2">
-                <Eye className="h-4 w-4" />
+          <Card className="glass-card premium-shadow border-none overflow-hidden">
+            <CardHeader className="bg-white/5 pb-4">
+              <CardTitle className="text-sm font-semibold tracking-wide uppercase text-muted-foreground/80 flex items-center gap-2">
+                <Eye className="h-4 w-4 text-primary" />
                 Preview
               </CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="pt-6">
               {enabledAdapters.length > 0 && (
-                <div className="flex items-center gap-2 mb-3 flex-wrap">
+                <div className="flex items-center gap-1.5 mb-4 p-1 glass border border-white/5 rounded-lg w-fit">
                   {enabledAdapters.map((adapter) => (
                     <Button
                       key={adapter}
-                      variant={previewAdapter === adapter ? "default" : "outline"}
+                      variant={previewAdapter === adapter ? "default" : "ghost"}
                       size="sm"
                       onClick={() => setPreviewAdapter(adapter)}
+                      className={cn(
+                        "h-8 px-3 rounded-md transition-all",
+                        previewAdapter === adapter
+                          ? "glow-active shadow-sm"
+                          : "text-muted-foreground"
+                      )}
                     >
                       {ADAPTERS.find((a) => a.id === adapter)?.name}
                     </Button>
                   ))}
                 </div>
               )}
-              <pre className="p-3 rounded-md bg-muted text-xs overflow-auto max-h-40 font-mono">
+              <pre className="p-4 rounded-xl bg-black/40 border border-white/5 text-[11px] overflow-auto max-h-60 font-mono text-primary/80 selection:bg-primary/20">
                 {generatePreview()}
               </pre>
-              <div className="flex items-center justify-between mt-2">
-                <p className="text-xs text-muted-foreground">
-                  Will write to:{" "}
-                  <code className="bg-muted px-1 rounded">{getAdapterPath(previewAdapter)}</code>
+              <div className="flex items-center justify-between mt-4">
+                <p className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground/40">
+                  Target:{" "}
+                  <span className="text-muted-foreground/80 lowercase font-normal">
+                    {getAdapterPath(previewAdapter)}
+                  </span>
                 </p>
                 {getAdapterPath(previewAdapter) && (
                   <Button
                     variant="ghost"
                     size="sm"
                     onClick={() => handleOpenFolder(previewAdapter)}
-                    className="h-7 text-xs"
+                    className="h-7 text-[10px] uppercase font-bold tracking-widest text-primary/60 hover:text-primary hover:bg-primary/5"
                   >
-                    <ExternalLink className="mr-1 h-3 w-3" />
-                    Open folder
+                    <ExternalLink className="mr-1.5 h-3 w-3" />
+                    Explorer
                   </Button>
                 )}
               </div>
@@ -363,11 +409,13 @@ export function RuleEditor({ rule, onBack, isNew = false }: RuleEditorProps) {
           </Card>
         </div>
 
-        <Card className="h-fit">
-          <CardHeader>
-            <CardTitle className="text-sm">Settings</CardTitle>
+        <Card className="h-fit glass-card premium-shadow border-none overflow-hidden">
+          <CardHeader className="bg-white/5 pb-4">
+            <CardTitle className="text-sm font-semibold tracking-wide uppercase text-muted-foreground/80">
+              Settings
+            </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-6">
+          <CardContent className="space-y-6 pt-6">
             <div className="space-y-2">
               <label className="text-sm font-medium">Scope</label>
               <div className="flex items-center gap-4">
@@ -438,9 +486,10 @@ export function RuleEditor({ rule, onBack, isNew = false }: RuleEditorProps) {
               </p>
               <div className="space-y-2">
                 {ADAPTERS.map((adapter) => (
-                  <label
+                  <div
                     key={adapter.id}
-                    className="flex items-center justify-between p-2 rounded-md hover:bg-accent cursor-pointer"
+                    className="flex items-center justify-between p-2 rounded-md hover:bg-accent cursor-pointer transition-colors"
+                    onClick={() => toggleAdapter(adapter.id)}
                   >
                     <div className="flex items-center gap-2">
                       <Switch
@@ -453,7 +502,7 @@ export function RuleEditor({ rule, onBack, isNew = false }: RuleEditorProps) {
                         <div className="text-xs text-muted-foreground">{adapter.fileName}</div>
                       </div>
                     </div>
-                  </label>
+                  </div>
                 ))}
               </div>
             </div>

@@ -26,9 +26,15 @@ pub fn get_sync_history(
 }
 
 #[tauri::command]
-pub fn read_file_content(path: String) -> Result<String> {
+pub async fn read_file_content(path: String) -> Result<String> {
     let validated_path = validate_path(&path)?;
-    let content = fs::read_to_string(validated_path)?;
+    let content = tokio::task::spawn_blocking(move || {
+        fs::read_to_string(validated_path).map_err(crate::error::AppError::Io)
+    })
+    .await
+    .map_err(|e| crate::error::AppError::InvalidInput {
+        message: e.to_string(),
+    })??;
     Ok(content)
 }
 

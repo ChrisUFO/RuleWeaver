@@ -19,9 +19,14 @@ const DIFF_PREVIEW_LINES = 50;
 const ADAPTER_NAME_TO_ID: Record<string, AdapterType> = {
   antigravity: "antigravity",
   "gemini cli": "gemini",
+  gemini: "gemini",
   opencode: "opencode",
+  agents: "opencode",
   cline: "cline",
+  clinerules: "cline",
+  ".clinerules": "cline",
   "claude code": "claude-code",
+  claude: "claude-code",
   codex: "codex",
 };
 
@@ -135,7 +140,12 @@ export function ConflictResolutionDialog({
         const remote = await api.sync.readFileContent(conflict.filePath);
         setRemoteContent(remote);
 
-        const adapterName = conflict.adapterName.toLowerCase();
+        const fileName = conflict.filePath.split(/[/\\]/).pop() || "";
+        const adapterName =
+          conflict.adapterName === "Detected Adapter"
+            ? Object.keys(ADAPTER_NAME_TO_ID).find((k) => k === fileName.toLowerCase()) || fileName
+            : conflict.adapterName.toLowerCase();
+
         const adapterId =
           ADAPTER_NAME_TO_ID[adapterName] || (adapterName.replace(" ", "-") as AdapterType);
         const adapterRules = localRules.filter((r) => r.enabledAdapters.includes(adapterId));

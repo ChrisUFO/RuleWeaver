@@ -262,6 +262,13 @@ impl McpManager {
         Ok(())
     }
 
+    pub fn port(&self) -> u16 {
+        // We use a blocking lock here for simplicity as it's just a u16 read
+        // In a real high-concurrency app we'd use a separate atomic or RWLock
+        let state = self.inner.blocking_lock();
+        state.port
+    }
+
     pub async fn wait_until_stopped(&self) -> Result<()> {
         let handle = {
             let mut state = self.inner.lock().await;

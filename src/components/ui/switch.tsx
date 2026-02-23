@@ -11,7 +11,8 @@ interface SwitchProps {
 
 const Switch = React.forwardRef<HTMLButtonElement, SwitchProps>(
   ({ className, onCheckedChange, checked = false, disabled, id }, _ref) => {
-    const handleToggle = () => {
+    const handleToggle = (e: React.MouseEvent) => {
+      e.stopPropagation();
       if (!disabled) {
         onCheckedChange?.(!checked);
       }

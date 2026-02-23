@@ -4,9 +4,7 @@ use tauri::State;
 use crate::database::Database;
 use crate::error::{AppError, Result};
 use crate::file_storage;
-use crate::models::{
-    CreateRuleInput, Rule, SyncResult, UpdateRuleInput,
-};
+use crate::models::{CreateRuleInput, Rule, SyncResult, UpdateRuleInput};
 use crate::sync::SyncEngine;
 
 use super::{
@@ -58,7 +56,11 @@ pub fn create_rule(input: CreateRuleInput, db: State<'_, Arc<Database>>) -> Resu
 }
 
 #[tauri::command]
-pub fn update_rule(id: String, input: UpdateRuleInput, db: State<'_, Arc<Database>>) -> Result<Rule> {
+pub fn update_rule(
+    id: String,
+    input: UpdateRuleInput,
+    db: State<'_, Arc<Database>>,
+) -> Result<Rule> {
     if let Some(ref name) = input.name {
         if let Some(ref content) = input.content {
             validate_rule_input(name, content)?;

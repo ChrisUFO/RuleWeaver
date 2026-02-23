@@ -29,7 +29,7 @@ export function MainLayout({ children, activeView, onViewChange }: MainLayoutPro
   }, [theme]);
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-background">
+    <div className="flex h-screen w-full overflow-hidden bg-background bg-[radial-gradient(circle_at_50%_0%,rgba(59,130,246,0.05),transparent_40%)]">
       <Sidebar
         collapsed={sidebarCollapsed}
         onCollapsedChange={setSidebarCollapsed}

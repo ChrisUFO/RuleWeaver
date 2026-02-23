@@ -62,11 +62,11 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 }
 
 const variantStyles: Record<ToastVariant, string> = {
-  default: "bg-background border",
-  success: "bg-success/10 border-success/20 text-success",
-  error: "bg-destructive/10 border-destructive/20 text-destructive",
-  warning: "bg-warning/10 border-warning/20 text-warning",
-  info: "bg-primary/10 border-primary/20 text-primary",
+  default: "glass-card bg-neutral-900/80 border-white/10",
+  success: "glass-card bg-success/20 border-success/30 text-success-foreground",
+  error: "glass-card bg-destructive/20 border-destructive/30 text-destructive-foreground",
+  warning: "glass-card bg-warning/20 border-warning/30 text-warning-foreground",
+  info: "glass-card bg-primary/20 border-primary/30 text-primary-foreground",
 };
 
 const variantIcons: Record<ToastVariant, React.ReactNode> = {
@@ -86,7 +86,7 @@ function Toaster() {
         <div
           key={toast.id}
           className={cn(
-            "group pointer-events-auto relative flex w-full items-center justify-between space-x-2 overflow-hidden rounded-md border p-4 pr-6 shadow-lg transition-all data-[swipe=cancel]:translate-x-0 data-[swipe=end]:translate-x-[var(--radix-toast-swipe-end-x)] data-[swipe=move]:translate-x-[var(--radix-toast-swipe-move-x)] data-[swipe=move]:transition-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[swipe=end]:animate-out data-[state=closed]:fade-out-80 data-[state=closed]:slide-out-to-right-full data-[state=open]:slide-in-from-bottom-full mb-2",
+            "group pointer-events-auto relative flex w-full items-center justify-between space-x-2 overflow-hidden rounded-xl border p-4 pr-6 premium-shadow shadow-2xl transition-all data-[swipe=cancel]:translate-x-0 data-[swipe=end]:translate-x-[var(--radix-toast-swipe-end-x)] data-[swipe=move]:translate-x-[var(--radix-toast-swipe-move-x)] data-[swipe=move]:transition-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[swipe=end]:animate-out data-[state=closed]:fade-out-80 data-[state=closed]:slide-out-to-right-full data-[state=open]:slide-in-from-bottom-full mb-2",
             variantStyles[toast.variant ?? "default"]
           )}
         >

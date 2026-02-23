@@ -8,14 +8,33 @@ import {
   ShieldCheck,
   Server,
   RefreshCw,
+  Download,
+  Upload,
+  ShieldAlert,
+  Zap,
 } from "lucide-react";
+import { save, open } from "@tauri-apps/plugin-dialog";
+import { check, type Update } from "@tauri-apps/plugin-updater";
+import { enable, disable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { api } from "@/lib/tauri";
+import { cn } from "@/lib/utils";
 import { useToast } from "@/components/ui/toast";
-import { ADAPTERS, type AdapterType } from "@/types/rule";
+import { ADAPTERS, type AdapterType, type Rule } from "@/types/rule";
+import type { CommandModel } from "@/types/command";
+import type { Skill } from "@/types/skill";
 
 const ADAPTER_SETTINGS_KEY = "adapter_settings";
 
@@ -36,6 +55,23 @@ export function Settings() {
   const [hasChanges, setHasChanges] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [isExporting, setIsExporting] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const [isCheckingUpdates, setIsCheckingUpdates] = useState(false);
+  const [updateData, setUpdateData] = useState<Update | null>(null);
+  const [isUpdateDialogOpen, setIsUpdateDialogOpen] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
+
+  const [importPreview, setImportPreview] = useState<{
+    path: string;
+    rules: Rule[];
+    commands: CommandModel[];
+    skills: Skill[];
+  } | null>(null);
+  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
+  const [importMode, setImportMode] = useState<"overwrite" | "skip">("overwrite");
+
+  const [launchOnStartup, setLaunchOnStartup] = useState(false);
   const [storageMode, setStorageMode] = useState<"sqlite" | "file">("sqlite");
   const [storageInfo, setStorageInfo] = useState<Record<string, string> | null>(null);
   const [isMigratingStorage, setIsMigratingStorage] = useState(false);
@@ -80,6 +116,7 @@ export function Settings() {
           mcpAutoStartSetting,
           minimizeToTraySetting,
           mcpLogsInitial,
+          autoStartEnabled,
         ] = await Promise.all([
           api.app.getAppDataPath(),
           api.app.getVersion(),
@@ -92,9 +129,21 @@ export function Settings() {
           api.settings.get("mcp_auto_start"),
           api.settings.get("minimize_to_tray"),
           api.mcp.getLogs(20),
+          isEnabled(),
         ]);
         setAppDataPath(path);
-        setAppVersion(version);
+        // Try to get version from version.json first, fallback to API
+        try {
+          const versionResponse = await fetch("/version.json");
+          if (versionResponse.ok) {
+            const versionData = await versionResponse.json();
+            setAppVersion(versionData.version || version);
+          } else {
+            setAppVersion(version);
+          }
+        } catch {
+          setAppVersion(version);
+        }
         setStorageMode(mode === "file" ? "file" : "sqlite");
         setStorageInfo(info);
         setBackupPath(savedBackupPath ?? "");
@@ -103,6 +152,7 @@ export function Settings() {
         setMcpAutoStart(mcpAutoStartSetting === "true");
         setMinimizeToTray(minimizeToTraySetting !== "false");
         setMcpLogs(mcpLogsInitial);
+        setLaunchOnStartup(autoStartEnabled);
 
         if (settingsJson) {
           try {
@@ -375,6 +425,153 @@ export function Settings() {
     }
   };
 
+  const toggleLaunchOnStartup = async (enabled: boolean) => {
+    setLaunchOnStartup(enabled);
+    try {
+      if (enabled) {
+        await enable();
+      } else {
+        await disable();
+      }
+      addToast({
+        title: "Startup Preference Saved",
+        description: enabled
+          ? "RuleWeaver will now launch on startup"
+          : "RuleWeaver will no longer launch on startup",
+        variant: "success",
+      });
+    } catch (error) {
+      setLaunchOnStartup(!enabled);
+      addToast({
+        title: "Setting Failed",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "error",
+      });
+    }
+  };
+
+  const handleExport = async () => {
+    try {
+      const selected = await save({
+        filters: [
+          { name: "JSON", extensions: ["json"] },
+          { name: "YAML", extensions: ["yaml", "yml"] },
+        ],
+        defaultPath: `ruleweaver-config-${new Date().toISOString().split("T")[0]}.json`,
+      });
+
+      if (!selected) return;
+
+      setIsExporting(true);
+      await api.storage.exportConfiguration(selected);
+      addToast({
+        title: "Export Successful",
+        description: `Configuration exported to ${selected}`,
+        variant: "success",
+      });
+    } catch (error) {
+      addToast({
+        title: "Export Failed",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "error",
+      });
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleImport = async () => {
+    try {
+      const selected = await open({
+        filters: [{ name: "Configuration", extensions: ["json", "yaml", "yml"] }],
+        multiple: false,
+      });
+
+      if (!selected) return;
+
+      setIsImporting(true);
+      const preview = await api.storage.previewImport(selected as string);
+      setImportPreview({
+        path: selected as string,
+        rules: preview.rules,
+        commands: preview.commands,
+        skills: preview.skills,
+      });
+      setIsImportDialogOpen(true);
+    } catch (error) {
+      addToast({
+        title: "Import Error",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "error",
+      });
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  const executeImport = async () => {
+    if (!importPreview) return;
+
+    setIsImporting(true);
+    try {
+      await api.storage.importConfiguration(importPreview.path, importMode);
+      addToast({
+        title: "Import Successful",
+        description: `Configuration imported using ${importMode} mode.`,
+        variant: "success",
+      });
+      setIsImportDialogOpen(false);
+      setImportPreview(null);
+    } catch (error) {
+      addToast({
+        title: "Import Failed",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "error",
+      });
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  const handleCheckUpdates = async () => {
+    setIsCheckingUpdates(true);
+    try {
+      const update = await check();
+      if (update) {
+        setUpdateData(update);
+        setIsUpdateDialogOpen(true);
+      } else {
+        addToast({
+          title: "No Updates",
+          description: "You are already using the latest version.",
+        });
+      }
+    } catch (error) {
+      addToast({
+        title: "Update Check Failed",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "error",
+      });
+    } finally {
+      setIsCheckingUpdates(false);
+    }
+  };
+
+  const confirmUpdate = async () => {
+    if (!updateData) return;
+    setIsUpdating(true);
+    try {
+      await updateData.downloadAndInstall();
+    } catch (error) {
+      addToast({
+        title: "Update Failed",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "error",
+      });
+      setIsUpdating(false);
+    }
+  };
+
   return (
     <div className="space-y-6 max-w-3xl">
       <div className="flex items-center justify-between">
@@ -390,16 +587,18 @@ export function Settings() {
         )}
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>App Data</CardTitle>
+      <Card className="glass-card premium-shadow border-none overflow-hidden">
+        <CardHeader className="bg-white/5 pb-4">
+          <CardTitle className="text-sm font-semibold tracking-wide uppercase text-muted-foreground/80">
+            App Data
+          </CardTitle>
           <CardDescription>
             Location where RuleWeaver stores its database and configuration
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="pt-6">
           <div className="flex items-center gap-2">
-            <code className="flex-1 p-2 rounded-md bg-muted text-sm truncate">
+            <code className="flex-1 p-2.5 rounded-lg bg-black/20 border border-white/5 text-xs font-mono truncate">
               {isLoading ? "Loading..." : appDataPath || "Not available"}
             </code>
             <Button
@@ -407,6 +606,7 @@ export function Settings() {
               size="icon"
               onClick={handleOpenAppData}
               disabled={isLoading}
+              className="glass border-white/5 hover:bg-white/5"
               aria-label="Open app data folder"
             >
               <FolderOpen className="h-4 w-4" aria-hidden="true" />
@@ -415,25 +615,39 @@ export function Settings() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>MCP Server</CardTitle>
+      <Card className="glass-card premium-shadow border-none overflow-hidden">
+        <CardHeader className="bg-white/5 pb-4">
+          <CardTitle className="text-sm font-semibold tracking-wide uppercase text-muted-foreground/80">
+            MCP Server
+          </CardTitle>
           <CardDescription>
             Start and manage the local MCP server for tool integration
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex items-center justify-between rounded-md border p-3">
-            <div className="flex items-center gap-2">
-              <Server className="h-4 w-4" />
+        <CardContent className="space-y-4 pt-6">
+          <div className="flex items-center justify-between rounded-xl border border-white/5 bg-white/5 p-4">
+            <div className="flex items-center gap-3">
+              <div
+                className={cn(
+                  "p-2 rounded-lg",
+                  mcpStatus?.running
+                    ? "bg-primary/10 text-primary"
+                    : "bg-muted text-muted-foreground"
+                )}
+              >
+                <Server className="h-4 w-4" />
+              </div>
               <div>
-                <div className="font-medium">Status</div>
-                <div className="text-sm text-muted-foreground">
+                <div className="font-semibold text-sm">Status</div>
+                <div className="text-xs text-muted-foreground">
                   {mcpStatus?.running ? `Running on port ${mcpStatus.port}` : "Stopped"}
                 </div>
               </div>
             </div>
-            <Badge variant={mcpStatus?.running ? "default" : "outline"}>
+            <Badge
+              variant={mcpStatus?.running ? "default" : "outline"}
+              className={cn(mcpStatus?.running && "glow-active border-primary/20")}
+            >
               {mcpStatus?.running ? "Running" : "Stopped"}
             </Badge>
           </div>
@@ -443,18 +657,28 @@ export function Settings() {
           )}
 
           <div className="flex flex-wrap gap-2">
-            <Button onClick={startMcp} disabled={isMcpLoading || !!mcpStatus?.running}>
-              Start
+            <Button
+              onClick={startMcp}
+              disabled={isMcpLoading || !!mcpStatus?.running}
+              className="glow-primary"
+            >
+              Start Server
             </Button>
             <Button
               variant="outline"
               onClick={stopMcp}
               disabled={isMcpLoading || !mcpStatus?.running}
+              className="glass border-white/5"
             >
               Stop
             </Button>
-            <Button variant="outline" onClick={refreshMcpStatus} disabled={isMcpLoading}>
-              <RefreshCw className="mr-2 h-4 w-4" />
+            <Button
+              variant="ghost"
+              onClick={refreshMcpStatus}
+              disabled={isMcpLoading}
+              className="text-muted-foreground"
+            >
+              <RefreshCw className={cn("mr-2 h-4 w-4", isMcpLoading && "animate-spin")} />
               Refresh
             </Button>
           </div>
@@ -477,6 +701,16 @@ export function Settings() {
               </div>
             </div>
             <Switch checked={minimizeToTray} onCheckedChange={toggleMinimizeToTray} />
+          </div>
+
+          <div className="flex items-center justify-between rounded-xl border border-white/5 bg-white/5 p-4 transition-colors hover:bg-white/10">
+            <div>
+              <div className="font-medium text-sm">Launch on startup</div>
+              <div className="text-[10px] uppercase tracking-wider text-muted-foreground/60">
+                Automatically start RuleWeaver when you log in
+              </div>
+            </div>
+            <Switch checked={launchOnStartup} onCheckedChange={toggleLaunchOnStartup} />
           </div>
 
           {mcpInstructions && (
@@ -507,14 +741,16 @@ export function Settings() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Storage</CardTitle>
+      <Card className="glass-card premium-shadow border-none overflow-hidden">
+        <CardHeader className="bg-white/5 pb-4">
+          <CardTitle className="text-sm font-semibold tracking-wide uppercase text-muted-foreground/80">
+            Storage
+          </CardTitle>
           <CardDescription>
             Manage where rules are stored: legacy SQLite or file-based markdown storage
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-4 pt-6">
           <div className="flex items-center justify-between rounded-md border p-3">
             <div>
               <div className="font-medium">Current Mode</div>
@@ -583,14 +819,16 @@ export function Settings() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Adapters</CardTitle>
+      <Card className="glass-card premium-shadow border-none overflow-hidden">
+        <CardHeader className="bg-white/5 pb-4">
+          <CardTitle className="text-sm font-semibold tracking-wide uppercase text-muted-foreground/80">
+            Adapters
+          </CardTitle>
           <CardDescription>
             Enable or disable adapters for syncing rules to different AI tools
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-3 pt-6">
           {ADAPTERS.map((adapter) => (
             <div
               key={adapter.id}
@@ -620,12 +858,71 @@ export function Settings() {
 
       <Card>
         <CardHeader>
+          <CardTitle>Data Management</CardTitle>
+          <CardDescription>
+            Export and import your RuleWeaver configuration (rules, commands, and skills)
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="rounded-md border p-4 space-y-3">
+              <div className="flex items-center gap-2 font-medium">
+                <Download className="h-4 w-4" />
+                Export
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Save your rules, commands, and skills to a JSON or YAML file for backup or sharing.
+              </p>
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={handleExport}
+                disabled={isExporting}
+              >
+                {isExporting ? "Exporting..." : "Export Configuration"}
+              </Button>
+            </div>
+
+            <div className="rounded-md border p-4 space-y-3">
+              <div className="flex items-center gap-2 font-medium">
+                <Upload className="h-4 w-4" />
+                Import
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Load configuration from a file. This will replace existing items with the same ID.
+              </p>
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={handleImport}
+                disabled={isImporting}
+              >
+                {isImporting ? "Importing..." : "Import Configuration"}
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle>About</CardTitle>
         </CardHeader>
         <CardContent className="space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-muted-foreground">Version</span>
-            <span className="font-mono">{isLoading ? "..." : appVersion}</span>
+            <div className="flex items-center gap-2">
+              <span className="font-mono">{isLoading ? "..." : appVersion}</span>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs"
+                onClick={handleCheckUpdates}
+                disabled={isCheckingUpdates || isLoading}
+              >
+                {isCheckingUpdates ? "Checking..." : "Check for Updates"}
+              </Button>
+            </div>
           </div>
           <div className="flex gap-2 pt-2">
             <a
@@ -649,6 +946,111 @@ export function Settings() {
           </div>
         </CardContent>
       </Card>
+
+      <Dialog open={isUpdateDialogOpen} onOpenChange={setIsUpdateDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Zap className="h-5 w-5 text-yellow-500" />
+              Update Available
+            </DialogTitle>
+            <DialogDescription>A new version of RuleWeaver is available.</DialogDescription>
+          </DialogHeader>
+          <div className="py-4 space-y-4">
+            <div className="rounded-md bg-muted p-3">
+              <div className="text-sm font-medium">New Version: {updateData?.version}</div>
+              <div className="text-xs text-muted-foreground mt-1">
+                Release notes: {updateData?.body || "No release notes available."}
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsUpdateDialogOpen(false)}
+              disabled={isUpdating}
+            >
+              Later
+            </Button>
+            <Button onClick={confirmUpdate} disabled={isUpdating}>
+              {isUpdating ? (
+                <>
+                  <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                  Updating...
+                </>
+              ) : (
+                "Update Now"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ShieldAlert className="h-5 w-5 text-yellow-500" />
+              Confirm Import
+            </DialogTitle>
+            <DialogDescription>
+              Review the items that will be imported into your database. Existing items with the
+              same ID will be overwritten.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4 space-y-3">
+            <div className="grid grid-cols-3 gap-2">
+              <div className="rounded-md border p-3 text-center">
+                <div className="text-xl font-bold">{importPreview?.rules.length || 0}</div>
+                <div className="text-[10px] uppercase text-muted-foreground">Rules</div>
+              </div>
+              <div className="rounded-md border p-3 text-center">
+                <div className="text-xl font-bold">{importPreview?.commands.length || 0}</div>
+                <div className="text-[10px] uppercase text-muted-foreground">Commands</div>
+              </div>
+              <div className="rounded-md border p-3 text-center">
+                <div className="text-xl font-bold">{importPreview?.skills.length || 0}</div>
+                <div className="text-[10px] uppercase text-muted-foreground">Skills</div>
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground italic px-1">
+              Source: {importPreview?.path.split(/[/\\]/).pop()}
+            </p>
+            <div className="flex items-center space-x-2 pt-2 px-1">
+              <Checkbox
+                id="overwrite"
+                checked={importMode === "overwrite"}
+                onChange={(checked) => setImportMode(checked ? "overwrite" : "skip")}
+              />
+              <label
+                htmlFor="overwrite"
+                className="text-xs font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+              >
+                Overwrite existing items with same ID
+              </label>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsImportDialogOpen(false)}
+              disabled={isImporting}
+            >
+              Cancel
+            </Button>
+            <Button onClick={executeImport} disabled={isImporting}>
+              {isImporting ? (
+                <>
+                  <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                  Importing...
+                </>
+              ) : (
+                "Proceed with Import"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
