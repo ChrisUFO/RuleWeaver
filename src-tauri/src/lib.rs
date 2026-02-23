@@ -163,13 +163,14 @@ pub fn run() {
                                                                                         let db_for_sync = Arc::clone(&db);
                                                                                         let result = tokio::task::spawn_blocking(move || {
                                                                                             let engine = crate::sync::SyncEngine::new(&db_for_sync);
-                                                                                            if let Ok(rules) = db_for_sync.get_all_rules() {
-                                                                                                Ok(engine.sync_all(rules))
-                                                                                            } else {
-                                                                                                Err(crate::error::AppError::Internal {
-                                                                                                    message: "Failed to fetch rules".to_string(),
-                                                                                                })
-                                                                                            }
+                                                                                                                                if let Ok(rules) = db_for_sync.get_all_rules() {
+                                                                                                                                    Ok(engine.sync_all(rules))
+                                                                                                                                } else {
+                                                                                                                                    Err(crate::error::AppError::InvalidInput {
+                                                                                                                                        message: "Failed to fetch rules".to_string(),
+                                                                                                                                    })
+                                                                                                                                }
+                                                                                            
                                                                                         })
                                                                                         .await;
                                                         

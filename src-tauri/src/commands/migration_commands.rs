@@ -56,7 +56,7 @@ pub async fn resolve_conflict(
                 engine.sync_file_by_path(&rules, &file_path)
             })
             .await
-            .map_err(|e| crate::error::AppError::Internal {
+            .map_err(|e| crate::error::AppError::InvalidInput {
                 message: e.to_string(),
             })??;
         }
@@ -66,7 +66,7 @@ pub async fn resolve_conflict(
                 std::fs::read_to_string(validated_path).map_err(crate::error::AppError::Io)
             })
             .await
-            .map_err(|e| crate::error::AppError::Internal {
+            .map_err(|e| crate::error::AppError::InvalidInput {
                 message: e.to_string(),
             })??;
             let hash = crate::sync::compute_content_hash_public(&content);

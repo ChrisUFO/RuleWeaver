@@ -132,7 +132,18 @@ export function Settings() {
           isEnabled(),
         ]);
         setAppDataPath(path);
-        setAppVersion(version);
+        // Try to get version from version.json first, fallback to API
+        try {
+          const versionResponse = await fetch("/version.json");
+          if (versionResponse.ok) {
+            const versionData = await versionResponse.json();
+            setAppVersion(versionData.version || version);
+          } else {
+            setAppVersion(version);
+          }
+        } catch {
+          setAppVersion(version);
+        }
         setStorageMode(mode === "file" ? "file" : "sqlite");
         setStorageInfo(info);
         setBackupPath(savedBackupPath ?? "");

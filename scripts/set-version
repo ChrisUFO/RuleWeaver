@@ -1,24 +1,23 @@
 #!/bin/bash
-
-# RuleWeaver Build Script
-# Builds the production distribution with timestamp-based versioning
+# Set timestamp-based version across all config files
+# Usage: ./scripts/set-version [version]
+# If no version provided, uses current timestamp (YYMMDD.HHMM)
 
 set -e
 
-echo "🔨 Building RuleWeaver..."
-echo ""
+if [ -z "$1" ]; then
+    # Generate timestamp version (YYMMDD.HHMM format)
+    VERSION=$(date +"%y%m%d.%H%M")
+else
+    VERSION="$1"
+fi
 
-# Generate timestamp version (YYMMDD.HHMM format)
-VERSION=$(date +"%y%m%d.%H%M")
 echo "📅 Setting version to: $VERSION"
-echo ""
 
 # Update package.json version
 if [[ "$OSTYPE" == "darwin"* ]]; then
-    # macOS sed
     sed -i '' "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" package.json
 else
-    # Linux sed
     sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" package.json
 fi
 echo "✓ Updated package.json"
@@ -45,35 +44,4 @@ echo "{ \"version\": \"$VERSION\", \"timestamp\": \"$TIMESTAMP\" }" > public/ver
 echo "✓ Updated public/version.json"
 
 echo ""
-
-# Check if node_modules exists
-if [ ! -d "node_modules" ]; then
-    echo "📦 Installing dependencies..."
-    npm install
-    echo ""
-fi
-
-# Run linting
-echo "🔍 Running linters..."
-npm run lint
-npm run lint:rust
-echo ""
-
-# Run type checks
-echo "📋 Running type checks..."
-npm run typecheck
-echo ""
-
-# Run tests
-echo "🧪 Running tests..."
-npm run test
-npm run test:rust
-echo ""
-
-# Build the application
-echo "🏗️  Building production bundle..."
-npm run tauri:build
-
-echo ""
-echo "✅ Build complete! Version: $VERSION"
-echo "📁 Distribution files are in src-tauri/target/release/bundle/"
+echo "✅ Version set to $VERSION"

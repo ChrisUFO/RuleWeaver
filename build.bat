@@ -39,6 +39,10 @@ REM Update tauri.conf.json version
 powershell -Command "(Get-Content src-tauri\tauri.conf.json) -replace '\"version\": \"[^\"]+\"', '\"version\": \"!VERSION!\"' | Set-Content src-tauri\tauri.conf.json"
 echo ✓ Updated tauri.conf.json
 
+REM Create/update version.json for frontend access
+echo { "version": "!VERSION!", "timestamp": "!date! !time!" } > public\version.json
+echo ✓ Updated public\version.json
+
 echo.
 
 REM Check if node_modules exists
