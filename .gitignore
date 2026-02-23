@@ -52,3 +52,6 @@ review*.md
 review*.txt
 review*.log
 review*.json
+
+# Temporary plan files
+PLAN.md
