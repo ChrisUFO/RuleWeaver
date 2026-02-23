@@ -1,0 +1,57 @@
+#!/bin/bash
+# Post-build script to rename installer with full timestamp
+
+# Read version from package.json
+VERSION=$(grep '"version"' package.json | head -1 | sed 's/.*"version": "\(.*\)".*/\1/')
+
+# Generate full timestamp (YYMMDDHHMM)
+FULL_TIMESTAMP=$(date +"%y%m%d%H%M")
+
+# Define source directory
+SOURCE_DIR="src-tauri/target/release/bundle"
+
+echo "🔧 Renaming installers with timestamp: $FULL_TIMESTAMP"
+
+# Rename NSIS installer if it exists
+for file in "$SOURCE_DIR/nsis/RuleWeaver"*"_x64-setup.exe"; do
+    if [ -f "$file" ]; then
+        filename=$(basename "$file")
+        newname="RuleWeaver_${VERSION}_${FULL_TIMESTAMP}_x64-setup.exe"
+        echo "Renaming $filename to $newname"
+        mv "$file" "$SOURCE_DIR/nsis/$newname"
+    fi
+done
+
+# Rename MSI installer if it exists
+for file in "$SOURCE_DIR/msi/RuleWeaver"*"_x64_en-US.msi"; do
+    if [ -f "$file" ]; then
+        filename=$(basename "$file")
+        newname="RuleWeaver_${VERSION}_${FULL_TIMESTAMP}_x64_en-US.msi"
+        echo "Renaming $filename to $newname"
+        mv "$file" "$SOURCE_DIR/msi/$newname"
+    fi
+done
+
+# Rename .deb package if it exists
+for file in "$SOURCE_DIR/deb/"*.deb; do
+    if [ -f "$file" ]; then
+        filename=$(basename "$file")
+        # Extract package name without version
+        pkgname=$(echo "$filename" | sed 's/_.*//')
+        newname="${pkgname}_${VERSION}_${FULL_TIMESTAMP}_amd64.deb"
+        echo "Renaming $filename to $newname"
+        mv "$file" "$SOURCE_DIR/deb/$newname"
+    fi
+done
+
+# Rename .AppImage if it exists
+for file in "$SOURCE_DIR/appimage/RuleWeaver"*.AppImage; do
+    if [ -f "$file" ]; then
+        filename=$(basename "$file")
+        newname="RuleWeaver_${VERSION}_${FULL_TIMESTAMP}_amd64.AppImage"
+        echo "Renaming $filename to $newname"
+        mv "$file" "$SOURCE_DIR/appimage/$newname"
+    fi
+done
+
+echo "✅ Installers renamed with full timestamp: $FULL_TIMESTAMP"

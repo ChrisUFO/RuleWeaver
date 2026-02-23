@@ -109,6 +109,16 @@ echo ""
 echo "🏗️  Building production bundle..."
 npm run tauri:build
 
+# Rename installers with full timestamp
+echo ""
+echo "🏷️  Renaming installers with full timestamp..."
+if [ -f "scripts/rename-installer" ]; then
+    chmod +x scripts/rename-installer
+    ./scripts/rename-installer
+else
+    echo "⚠️  rename-installer script not found"
+fi
+
 echo ""
 echo "✅ Build complete! Version: $VERSION"
 echo "📁 Distribution files are in src-tauri/target/release/bundle/"

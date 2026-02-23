@@ -108,6 +108,15 @@ REM Build the application
 echo 🏗️  Building production bundle...
 call :run_command "npm run tauri:build"
 
+REM Rename installers with full timestamp
+echo.
+echo 🏷️  Renaming installers with full timestamp...
+if exist "scripts\rename-installer.bat" (
+    call scripts\rename-installer.bat
+) else (
+    echo ⚠️  rename-installer.bat script not found
+)
+
 echo.
 echo ✅ Build complete! Version: !VERSION!
 echo 📁 Distribution files are in src-tauri\target\release\bundle\
