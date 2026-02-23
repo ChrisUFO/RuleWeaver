@@ -447,6 +447,14 @@ fn handle_initialize(id: serde_json::Value) -> serde_json::Value {
     })
 }
 
+struct McpToolParameter {
+    name: String,
+    description: String,
+    required: bool,
+    enum_values: Option<Vec<String>>,
+    param_type: SkillParameterType,
+}
+
 fn handle_tools_list(
     id: serde_json::Value,
     commands: &[Command],
@@ -470,13 +478,13 @@ fn handle_tools_list(
                         SkillParameterType::String
                     };
 
-                    (
-                        a.name.clone(),
-                        a.description.clone(),
-                        a.required,
-                        a.options.clone(),
-                        p_type,
-                    )
+                    McpToolParameter {
+                        name: a.name.clone(),
+                        description: a.description.clone(),
+                        required: a.required,
+                        enum_values: a.options.clone(),
+                        param_type: p_type,
+                    }
                 })
                 .collect();
 
@@ -495,16 +503,15 @@ fn handle_tools_list(
             let params: Vec<_> = s
                 .input_schema
                 .iter()
-                .map(|p| {
-                    (
-                        p.name.clone(),
-                        p.description.clone(),
-                        p.required,
-                        p.enum_values.clone(),
-                        p.param_type.clone(),
-                    )
+                .map(|p| McpToolParameter {
+                    name: p.name.clone(),
+                    description: p.description.clone(),
+                    required: p.required,
+                    enum_values: p.enum_values.clone(),
+                    param_type: p.param_type.clone(),
                 })
                 .collect();
+
             build_mcp_tool_schema(
                 &format!("skill_{}-{}", slugify(&s.name), &s.id[..8]),
                 &s.description,
@@ -525,19 +532,13 @@ fn handle_tools_list(
 fn build_mcp_tool_schema(
     name: &str,
     description: &str,
-    params: &[(
-        String,
-        String,
-        bool,
-        Option<Vec<String>>,
-        SkillParameterType,
-    )], // name, description, required, enum_values, type
+    params: &[McpToolParameter],
 ) -> serde_json::Value {
     let mut props = serde_json::Map::new();
     let mut required: Vec<String> = Vec::new();
 
-    for (p_name, p_desc, p_req, p_enum, p_type) in params {
-        let type_str = match p_type {
+    for param in params {
+        let type_str = match param.param_type {
             SkillParameterType::Number => "number",
             SkillParameterType::Boolean => "boolean",
             SkillParameterType::Array => "array",
@@ -547,19 +548,19 @@ fn build_mcp_tool_schema(
 
         let mut prop_schema = json!({
             "type": type_str,
-            "description": p_desc,
+            "description": param.description,
         });
 
-        if let Some(enum_vals) = p_enum {
+        if let Some(ref enum_vals) = param.enum_values {
             prop_schema
                 .as_object_mut()
                 .unwrap()
                 .insert("enum".to_string(), json!(enum_vals));
         }
 
-        props.insert(p_name.clone(), prop_schema);
-        if *p_req {
-            required.push(p_name.clone());
+        props.insert(param.name.clone(), prop_schema);
+        if param.required {
+            required.push(param.name.clone());
         }
     }
 
