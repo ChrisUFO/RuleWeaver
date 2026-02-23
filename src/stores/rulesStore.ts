@@ -13,6 +13,7 @@ interface RulesState {
   createRule: (input: CreateRuleInput) => Promise<Rule>;
   updateRule: (id: string, input: UpdateRuleInput) => Promise<Rule>;
   deleteRule: (id: string) => Promise<void>;
+  bulkDeleteRules: (ids: string[]) => Promise<void>;
   duplicateRule: (rule: Rule) => Promise<Rule>;
   restoreRecentlyDeleted: () => Promise<void>;
   toggleRule: (id: string, enabled: boolean) => Promise<void>;
@@ -93,6 +94,25 @@ export const useRulesStore = create<RulesState>((set, get) => ({
     } catch (error) {
       set({
         error: error instanceof Error ? error.message : "Failed to delete rule",
+        isLoading: false,
+      });
+      throw error;
+    }
+  },
+
+  bulkDeleteRules: async (ids: string[]) => {
+    set({ isLoading: true, error: null });
+    try {
+      await api.rules.bulkDelete(ids);
+      set((state) => ({
+        rules: state.rules.filter((r) => !ids.includes(r.id)),
+        selectedRule:
+          state.selectedRule && ids.includes(state.selectedRule.id) ? null : state.selectedRule,
+        isLoading: false,
+      }));
+    } catch (error) {
+      set({
+        error: error instanceof Error ? error.message : "Failed to delete rules",
         isLoading: false,
       });
       throw error;

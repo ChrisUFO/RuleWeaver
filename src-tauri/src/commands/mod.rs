@@ -27,6 +27,10 @@ use crate::constants::limits::{
     MAX_COMMAND_NAME_LENGTH, MAX_COMMAND_SCRIPT_LENGTH, MAX_RULE_CONTENT_LENGTH,
     MAX_RULE_NAME_LENGTH,
 };
+use crate::constants::{
+    NEW_CURSOR_DIR, NEW_GEMINI_DIR, NEW_KILO_DIR, NEW_OPENCODE_DIR, NEW_ROO_CODE_DIR,
+    NEW_WINDSURF_DIR,
+};
 use crate::database::Database;
 use crate::error::{AppError, Result};
 use crate::file_storage;
@@ -167,15 +171,14 @@ pub fn command_file_targets() -> Result<Vec<(String, Box<dyn CommandAdapter>)>> 
         .ok_or_else(|| AppError::Path("Could not determine home directory".to_string()))?;
     Ok(vec![
         (
-            home.join(".gemini")
+            home.join(NEW_GEMINI_DIR)
                 .join("COMMANDS.toml")
                 .to_string_lossy()
                 .to_string(),
             Box::new(GeminiAdapter),
         ),
         (
-            home.join(".config")
-                .join("opencode")
+            home.join(NEW_OPENCODE_DIR)
                 .join("COMMANDS.md")
                 .to_string_lossy()
                 .to_string(),
@@ -189,7 +192,7 @@ pub fn command_file_targets() -> Result<Vec<(String, Box<dyn CommandAdapter>)>> 
             Box::new(ClaudeAdapter),
         ),
         (
-            home.join(".kilocode")
+            home.join(NEW_KILO_DIR)
                 .join("rules")
                 .join("COMMANDS.md")
                 .to_string_lossy()
@@ -197,14 +200,14 @@ pub fn command_file_targets() -> Result<Vec<(String, Box<dyn CommandAdapter>)>> 
             Box::new(KiloAdapter),
         ),
         (
-            home.join(".cursorrules")
-                .with_file_name("COMMANDS.md")
+            home.join(NEW_CURSOR_DIR)
+                .join("COMMANDS.md")
                 .to_string_lossy()
                 .to_string(),
             Box::new(CursorAdapter),
         ),
         (
-            home.join(".windsurf")
+            home.join(NEW_WINDSURF_DIR)
                 .join("rules")
                 .join("COMMANDS.md")
                 .to_string_lossy()
@@ -212,8 +215,7 @@ pub fn command_file_targets() -> Result<Vec<(String, Box<dyn CommandAdapter>)>> 
             Box::new(WindsurfAdapter),
         ),
         (
-            home.join(".roo")
-                .join("rules")
+            home.join(NEW_ROO_CODE_DIR)
                 .join("COMMANDS.md")
                 .to_string_lossy()
                 .to_string(),

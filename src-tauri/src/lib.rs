@@ -82,6 +82,11 @@ pub fn run() {
                 let _ = app.emit("startup-sync-error", e.to_string());
             }
 
+            // Migrate legacy configurations
+            if let Err(e) = crate::sync::check_and_migrate_legacy_paths() {
+                log::error!("Failed to migrate legacy paths: {}", e);
+            }
+
             let mcp_manager = McpManager::new(crate::constants::DEFAULT_MCP_PORT);
 
             let auto_start_mcp = db
@@ -116,102 +121,100 @@ pub fn run() {
                 db.set_setting(MINIMIZE_TO_TRAY_KEY, "true")?;
             }
 
-                        let status_label = MenuItemBuilder::with_id("status", "Status: Idle")
-                            .enabled(false)
-                            .build(app)?;
-                        let quick_sync = MenuItemBuilder::with_id("sync", "Quick Sync").build(app)?;
-                        let mcp_info = MenuItemBuilder::with_id("mcp_info", "MCP: Disconnected")
-                            .enabled(false)
-                            .build(app)?;
-            
-                        let show = MenuItemBuilder::with_id("show", "Show RuleWeaver").build(app)?;
-                        let hide = MenuItemBuilder::with_id("hide", "Hide to Tray").build(app)?;
-                        let quit = MenuItemBuilder::with_id("quit", "Quit RuleWeaver").build(app)?;
-                                    let tray_menu = MenuBuilder::new(app)
-                                        .item(&status_label)
-                                        .item(&mcp_info)
-                                        .separator()
-                                        .item(&quick_sync)
-                                        .separator()
-                                        .item(&show)
-                                        .item(&hide)
-                                        .separator()
-                                        .item(&quit)
-                                        .build()?;
-                        
-                                    let global_status = GlobalStatus::default();
-                                    {
-                                        *global_status.menu.lock() = Some(tray_menu.clone());
-                                    }
-                        
-                                    let app_handle = app.handle().clone();
-                                    TrayIconBuilder::with_id("main")
-                                        .menu(&tray_menu)
-                                        .on_menu_event(move |app, event| match event.id().as_ref() {
-                                            "sync" => {
-                                                let app_handle = app.clone();
-                                                tauri::async_runtime::spawn(async move {
-                                                    if let (Some(db), Some(status)) = (
-                                                        app_handle.try_state::<Arc<Database>>(),
-                                                        app_handle.try_state::<GlobalStatus>(),
-                                                    ) {
-                                                                                        {
-                                                                                            *status.sync_status.lock() = "Syncing...".to_string();
-                                                                                            status.update_tray();
-                                                                                        }
-                                                        
-                                                                                        let db_for_sync = Arc::clone(&db);
-                                                                                        let result = tokio::task::spawn_blocking(move || {
-                                                                                            let engine = crate::sync::SyncEngine::new(&db_for_sync);
-                                                                                                                                if let Ok(rules) = db_for_sync.get_all_rules() {
-                                                                                                                                    Ok(engine.sync_all(rules))
-                                                                                                                                } else {
-                                                                                                                                    Err(crate::error::AppError::InvalidInput {
-                                                                                                                                        message: "Failed to fetch rules".to_string(),
-                                                                                                                                    })
-                                                                                                                                }
-                                                                                            
-                                                                                        })
-                                                                                        .await;
-                                                        
-                                                                                        {
-                                                                                            *status.sync_status.lock() = "Idle".to_string();
-                                                                                            status.update_tray();
-                                                                                        }
-                                                        
-                                                                                        match result {
-                                                                                            Ok(Ok(sync_result)) => {
-                                                                                                use tauri_plugin_notification::NotificationExt;
-                                                                                                if sync_result.success {
-                                                                                                    app_handle
-                                                                                                        .notification()
-                                                                                                        .builder()
-                                                                                                        .title("Sync Complete")
-                                                                                                        .body(format!(
-                                                                                                            "Successfully synced {} files.",
-                                                                                                            sync_result.files_written.len()
-                                                                                                        ))
-                                                                                                        .show()
-                                                                                                        .ok();
-                                                                                                } else {
-                                                                                                    app_handle
-                                                                                                        .notification()
-                                                                                                        .builder()
-                                                                                                        .title("Sync Failed")
-                                                                                                        .body("Errors occurred during quick sync.")
-                                                                                                        .show()
-                                                                                                        .ok();
-                                                                                                }
-                                                                                            }
-                                                                                            _ => {
-                                                                                                log::error!("Sync task failed or panicked");
-                                                                                            }
-                                                                                        }
-                                                        
-                                        }
-                                    });
+            let status_label = MenuItemBuilder::with_id("status", "Status: Idle")
+                .enabled(false)
+                .build(app)?;
+            let quick_sync = MenuItemBuilder::with_id("sync", "Quick Sync").build(app)?;
+            let mcp_info = MenuItemBuilder::with_id("mcp_info", "MCP: Disconnected")
+                .enabled(false)
+                .build(app)?;
+
+            let show = MenuItemBuilder::with_id("show", "Show RuleWeaver").build(app)?;
+            let hide = MenuItemBuilder::with_id("hide", "Hide to Tray").build(app)?;
+            let quit = MenuItemBuilder::with_id("quit", "Quit RuleWeaver").build(app)?;
+            let tray_menu = MenuBuilder::new(app)
+                .item(&status_label)
+                .item(&mcp_info)
+                .separator()
+                .item(&quick_sync)
+                .separator()
+                .item(&show)
+                .item(&hide)
+                .separator()
+                .item(&quit)
+                .build()?;
+
+            let global_status = GlobalStatus::default();
+            {
+                *global_status.menu.lock() = Some(tray_menu.clone());
+            }
+
+            let app_handle = app.handle().clone();
+            TrayIconBuilder::with_id("main")
+                .menu(&tray_menu)
+                .on_menu_event(move |app, event| match event.id().as_ref() {
+                    "sync" => {
+                        let app_handle = app.clone();
+                        tauri::async_runtime::spawn(async move {
+                            if let (Some(db), Some(status)) = (
+                                app_handle.try_state::<Arc<Database>>(),
+                                app_handle.try_state::<GlobalStatus>(),
+                            ) {
+                                {
+                                    *status.sync_status.lock() = "Syncing...".to_string();
+                                    status.update_tray();
                                 }
-            
+
+                                let db_for_sync = Arc::clone(&db);
+                                let result = tokio::task::spawn_blocking(move || {
+                                    let engine = crate::sync::SyncEngine::new(&db_for_sync);
+                                    if let Ok(rules) = db_for_sync.get_all_rules() {
+                                        Ok(engine.sync_all(rules))
+                                    } else {
+                                        Err(crate::error::AppError::InvalidInput {
+                                            message: "Failed to fetch rules".to_string(),
+                                        })
+                                    }
+                                })
+                                .await;
+
+                                {
+                                    *status.sync_status.lock() = "Idle".to_string();
+                                    status.update_tray();
+                                }
+
+                                match result {
+                                    Ok(Ok(sync_result)) => {
+                                        use tauri_plugin_notification::NotificationExt;
+                                        if sync_result.success {
+                                            app_handle
+                                                .notification()
+                                                .builder()
+                                                .title("Sync Complete")
+                                                .body(format!(
+                                                    "Successfully synced {} files.",
+                                                    sync_result.files_written.len()
+                                                ))
+                                                .show()
+                                                .ok();
+                                        } else {
+                                            app_handle
+                                                .notification()
+                                                .builder()
+                                                .title("Sync Failed")
+                                                .body("Errors occurred during quick sync.")
+                                                .show()
+                                                .ok();
+                                        }
+                                    }
+                                    _ => {
+                                        log::error!("Sync task failed or panicked");
+                                    }
+                                }
+                            }
+                        });
+                    }
+
                     "show" => {
                         if let Some(window) = app.get_webview_window("main") {
                             let _ = window.show();
@@ -299,6 +302,7 @@ pub fn run() {
             commands::create_rule,
             commands::update_rule,
             commands::delete_rule,
+            commands::bulk_delete_rules,
             commands::toggle_rule,
             commands::sync_rules,
             commands::preview_sync,
@@ -387,19 +391,21 @@ fn setup_watcher(
             crate::file_storage::FileChangeEvent::Created(path)
             | crate::file_storage::FileChangeEvent::Modified(path) => {
                 log::info!("File watcher detected change in: {}", path.display());
-                
+
                 // Use spawn_blocking for all FS and DB operations
                 let app_clone = app.clone();
                 let app_for_blocking = app.clone();
                 tauri::async_runtime::spawn(async move {
                     let result = tokio::task::spawn_blocking(move || {
                         handle_external_rule_change(&app_for_blocking, &db, path)
-                    }).await;
-                    
+                    })
+                    .await;
+
                     if let Err(e) = result {
                         log::error!("Join error in watcher task: {}", e);
                         use tauri_plugin_notification::NotificationExt;
-                        app_clone.notification()
+                        app_clone
+                            .notification()
                             .builder()
                             .title("Sync Error")
                             .body("Failed to process file changes")
@@ -555,4 +561,3 @@ fn handle_external_rule_change(
 
     Ok(())
 }
-

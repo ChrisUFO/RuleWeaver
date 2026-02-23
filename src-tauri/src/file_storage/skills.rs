@@ -8,9 +8,7 @@ use crate::database::Database;
 use crate::error::{AppError, Result};
 use crate::models::{CreateSkillInput, Scope, Skill, SkillParameter, UpdateSkillInput};
 
-pub const SKILLS_DIR_NAME: &str = "skills";
-pub const SKILL_METADATA_FILE: &str = "skill.json";
-pub const SKILL_INSTRUCTIONS_FILE: &str = "SKILL.md";
+use crate::constants::{SKILLS_DIR_NAME, SKILL_INSTRUCTIONS_FILE, SKILL_METADATA_FILE};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct SkillMetadata {
@@ -127,6 +125,35 @@ pub fn load_skill_from_directory(dir: &Path) -> Result<Skill> {
     })
 }
 
+pub fn validate_skill_directory_path(path: &Path) -> Result<()> {
+    // 1. Ensure it's absolute
+    if !path.is_absolute() {
+        return Err(AppError::InvalidInput {
+            message: "Skill directory path must be absolute".to_string(),
+        });
+    }
+
+    // 2. Security: Check for path traversal components
+    for component in path.components() {
+        if let std::path::Component::ParentDir = component {
+            return Err(AppError::InvalidInput {
+                message: "Path traversal sequences (..) are not allowed".to_string(),
+            });
+        }
+    }
+
+    // 3. Ensure it's within user's home directory for safety
+    let home = dirs::home_dir()
+        .ok_or_else(|| AppError::Path("Could not determine home directory".to_string()))?;
+    if !path.starts_with(&home) {
+        return Err(AppError::InvalidInput {
+            message: "Skill directory must be within your home directory".to_string(),
+        });
+    }
+
+    Ok(())
+}
+
 pub fn save_skill_to_disk(skill: &Skill) -> Result<PathBuf> {
     let skill_dir = if !skill.directory_path.is_empty() {
         PathBuf::from(&skill.directory_path)
@@ -134,11 +161,9 @@ pub fn save_skill_to_disk(skill: &Skill) -> Result<PathBuf> {
         let base_dir = match skill.scope {
             Scope::Global => get_global_skills_dir()?,
             Scope::Local => {
-                return Err(AppError::InvalidInput {
-                    message:
-                        "Local skills must have a directory path explicitly set during creation"
-                            .to_string(),
-                });
+                let path = PathBuf::from(&skill.directory_path);
+                validate_skill_directory_path(&path)?;
+                path
             }
         };
 
@@ -169,6 +194,11 @@ pub fn save_skill_to_disk(skill: &Skill) -> Result<PathBuf> {
 
     if !skill_dir.exists() {
         fs::create_dir_all(&skill_dir)?;
+    } else if skill.id.is_empty() {
+        // This is a new skill creation with an existing directory
+        return Err(AppError::InvalidInput {
+            message: format!("Directory already exists: {}", skill_dir.display()),
+        });
     }
 
     // Write SKILL.md

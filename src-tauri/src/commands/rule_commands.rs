@@ -100,6 +100,24 @@ pub fn delete_rule(id: String, db: State<'_, Arc<Database>>) -> Result<()> {
 }
 
 #[tauri::command]
+pub fn bulk_delete_rules(ids: Vec<String>, db: State<'_, Arc<Database>>) -> Result<()> {
+    let use_fs = use_file_storage(&db);
+
+    for id in ids {
+        if use_fs {
+            if let Ok(existing) = db.get_rule_by_id(&id) {
+                let location = storage_location_for_rule(&existing);
+                let _ = file_storage::delete_rule_file(&id, &location, Some(&db));
+                let _ = db.remove_rule_file_index(&id);
+            }
+        }
+        db.delete_rule(&id)?;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
 pub fn toggle_rule(id: String, enabled: bool, db: State<'_, Arc<Database>>) -> Result<Rule> {
     let toggled = db.toggle_rule(&id, enabled)?;
 

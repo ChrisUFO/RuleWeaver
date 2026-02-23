@@ -110,7 +110,16 @@ impl Database {
                 let created_at: i64 = row.get(7)?;
                 let updated_at: i64 = row.get(8)?;
 
-                let scope = Scope::from_str(&scope_str).unwrap_or(Scope::Global);
+                let scope = Scope::from_str(&scope_str).ok_or_else(|| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        3,
+                        rusqlite::types::Type::Text,
+                        Box::new(std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            format!("Invalid scope for rule {}: {}", id, scope_str),
+                        )),
+                    )
+                })?;
 
                 let target_paths: Option<Vec<String>> = match target_paths_json {
                     Some(j) => Some(serde_json::from_str(&j).map_err(|e| {
@@ -169,7 +178,17 @@ impl Database {
                 let created_at: i64 = row.get(7)?;
                 let updated_at: i64 = row.get(8)?;
 
-                let scope = Scope::from_str(&scope_str).unwrap_or(Scope::Global);
+                let scope = Scope::from_str(&scope_str).ok_or_else(|| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        3,
+                        rusqlite::types::Type::Text,
+                        Box::new(std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            format!("Invalid scope for rule {}: {}", id, scope_str),
+                        )),
+                    )
+                })?;
+
                 let target_paths: Option<Vec<String>> = match target_paths_json {
                     Some(j) => Some(serde_json::from_str(&j).map_err(|e| {
                         rusqlite::Error::FromSqlConversionFailure(
@@ -483,7 +502,16 @@ impl Database {
                     updated_at: parse_timestamp_or_now(row.get(7)?),
                     directory_path: row.get(8)?,
                     entry_point: row.get(9)?,
-                    scope: Scope::from_str(&row.get::<_, String>(10)?).unwrap_or(Scope::Global),
+                    scope: Scope::from_str(&row.get::<_, String>(10)?).ok_or_else(|| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            10,
+                            rusqlite::types::Type::Text,
+                            Box::new(std::io::Error::new(
+                                std::io::ErrorKind::InvalidData,
+                                "Invalid skill scope",
+                            )),
+                        )
+                    })?,
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -520,7 +548,16 @@ impl Database {
                     updated_at: parse_timestamp_or_now(row.get(7)?),
                     directory_path: row.get(8)?,
                     entry_point: row.get(9)?,
-                    scope: Scope::from_str(&row.get::<_, String>(10)?).unwrap_or(Scope::Global),
+                    scope: Scope::from_str(&row.get::<_, String>(10)?).ok_or_else(|| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            10,
+                            rusqlite::types::Type::Text,
+                            Box::new(std::io::Error::new(
+                                std::io::ErrorKind::InvalidData,
+                                format!("Invalid scope for skill: {}", id),
+                            )),
+                        )
+                    })?,
                 })
             })
             .map_err(|e| match e {

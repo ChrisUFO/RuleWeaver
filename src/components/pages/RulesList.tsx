@@ -61,6 +61,7 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
     fetchRules,
     toggleRule,
     deleteRule,
+    bulkDeleteRules,
     duplicateRule,
     restoreRecentlyDeleted,
     isLoading,
@@ -196,7 +197,7 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
   const handleBulkDelete = async () => {
     const count = selectedIds.size;
     try {
-      await Promise.all(Array.from(selectedIds).map((id) => deleteRule(id)));
+      await bulkDeleteRules(Array.from(selectedIds));
       addToast({
         title: "Rules Deleted",
         description: `${count} rule${count !== 1 ? "s" : ""} deleted`,
