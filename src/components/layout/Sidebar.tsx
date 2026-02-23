@@ -35,7 +35,14 @@ export function Sidebar({ collapsed, onCollapsedChange, activeView, onViewChange
       aria-expanded={!collapsed}
     >
       <div className="flex h-14 items-center justify-between border-b px-4">
-        {!collapsed && <span className="font-semibold text-lg">RuleWeaver</span>}
+        <div className="flex items-center gap-2 overflow-hidden">
+          <img
+            src="/logo.svg"
+            alt="RuleWeaver Logo"
+            className="h-8 w-8 shrink-0 rounded-lg shadow-sm"
+          />
+          {!collapsed && <span className="font-semibold text-lg truncate">RuleWeaver</span>}
+        </div>
         <button
           onClick={() => onCollapsedChange(!collapsed)}
           className="p-1.5 rounded-md hover:bg-accent focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"

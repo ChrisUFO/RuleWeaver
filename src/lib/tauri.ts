@@ -78,6 +78,8 @@ export const api = {
         current_rule?: string;
         status: "NotStarted" | "InProgress" | "Completed" | "Failed" | "RolledBack";
       }>("get_file_migration_progress"),
+    exportConfiguration: (path: string) => invoke<void>("export_configuration", { path }),
+    importConfiguration: (path: string) => invoke<void>("import_configuration", { path }),
   },
 
   commands: {

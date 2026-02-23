@@ -810,6 +810,81 @@ impl Database {
         Ok(())
     }
 
+    pub fn import_rule(&self, rule: Rule) -> Result<()> {
+        let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
+        let now = chrono::Utc::now().timestamp();
+
+        let target_paths_json = rule
+            .target_paths
+            .as_ref()
+            .map(|p| serde_json::to_string(p).unwrap_or_default());
+
+        let enabled_adapters_json = serde_json::to_string(&rule.enabled_adapters)?;
+
+        conn.execute(
+            "INSERT OR REPLACE INTO rules (id, name, content, scope, target_paths, enabled_adapters, enabled, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            params![
+                rule.id,
+                rule.name,
+                rule.content,
+                rule.scope.as_str(),
+                target_paths_json,
+                enabled_adapters_json,
+                rule.enabled,
+                rule.created_at.timestamp(),
+                now
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn import_command(&self, command: Command) -> Result<()> {
+        let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
+        let now = chrono::Utc::now().timestamp();
+        let arguments_json = serde_json::to_string(&command.arguments)?;
+
+        conn.execute(
+            "INSERT OR REPLACE INTO commands (id, name, description, script, arguments, expose_via_mcp, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            params![
+                command.id,
+                command.name,
+                command.description,
+                command.script,
+                arguments_json,
+                command.expose_via_mcp,
+                command.created_at.timestamp(),
+                now
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn import_skill(&self, skill: Skill) -> Result<()> {
+        let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
+        let now = chrono::Utc::now().timestamp();
+        let input_schema_json = serde_json::to_string(&skill.input_schema)?;
+
+        conn.execute(
+            "INSERT OR REPLACE INTO skills (id, name, description, instructions, input_schema, enabled, directory_path, entry_point, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            params![
+                skill.id,
+                skill.name,
+                skill.description,
+                skill.instructions,
+                input_schema_json,
+                skill.enabled,
+                skill.directory_path,
+                skill.entry_point,
+                skill.created_at.timestamp(),
+                now
+            ],
+        )?;
+        Ok(())
+    }
+
     pub fn get_storage_mode(&self) -> Result<String> {
         let mode = self.get_setting("storage_mode")?;
         Ok(mode.unwrap_or_else(|| "sqlite".to_string()))

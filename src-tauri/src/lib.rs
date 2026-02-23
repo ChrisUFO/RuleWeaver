@@ -10,6 +10,7 @@ mod sync;
 pub mod templates;
 
 use database::Database;
+use file_storage::RuleFileWatcher;
 use mcp::McpManager;
 use std::sync::Arc;
 use tauri::menu::{MenuBuilder, MenuItemBuilder};
@@ -18,14 +19,21 @@ use tauri::{Emitter, Manager};
 
 const MINIMIZE_TO_TRAY_KEY: &str = "minimize_to_tray";
 
+pub struct WatcherState(pub RuleFileWatcher);
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     log::info!("RuleWeaver application initializing");
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_autostart::Builder::new().build())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let db = Arc::new(Database::new(app.handle())?);
+            let watcher = RuleFileWatcher::new();
 
             // Sync skills to database on startup
             if let Err(e) = crate::file_storage::skills::sync_skills_to_db(&db) {
@@ -50,14 +58,40 @@ pub fn run() {
                 });
             }
 
+            // Start file watcher if in file storage mode
+            if db.get_storage_mode()? == "file" {
+                let app_handle = app.handle().clone();
+                let db_clone = Arc::clone(&db);
+                let watcher_clone = watcher.clone();
+
+                tauri::async_runtime::spawn(async move {
+                    if let Err(e) = setup_watcher(app_handle, db_clone, watcher_clone) {
+                        log::error!("Failed to setup file watcher: {}", e);
+                    }
+                });
+            }
+
             if db.get_setting(MINIMIZE_TO_TRAY_KEY)?.is_none() {
                 db.set_setting(MINIMIZE_TO_TRAY_KEY, "true")?;
             }
+
+            let status_label = MenuItemBuilder::with_id("status", "Status: Idle")
+                .enabled(false)
+                .build(app)?;
+            let quick_sync = MenuItemBuilder::with_id("sync", "Quick Sync").build(app)?;
+            let mcp_info = MenuItemBuilder::with_id("mcp_info", "MCP: Disconnected")
+                .enabled(false)
+                .build(app)?;
 
             let show = MenuItemBuilder::with_id("show", "Show RuleWeaver").build(app)?;
             let hide = MenuItemBuilder::with_id("hide", "Hide to Tray").build(app)?;
             let quit = MenuItemBuilder::with_id("quit", "Quit RuleWeaver").build(app)?;
             let tray_menu = MenuBuilder::new(app)
+                .item(&status_label)
+                .item(&mcp_info)
+                .separator()
+                .item(&quick_sync)
+                .separator()
                 .item(&show)
                 .item(&hide)
                 .separator()
@@ -68,6 +102,44 @@ pub fn run() {
             TrayIconBuilder::new()
                 .menu(&tray_menu)
                 .on_menu_event(move |app, event| match event.id().as_ref() {
+                    "sync" => {
+                        let app_handle = app.clone();
+                        tauri::async_runtime::spawn(async move {
+                            if let (Some(db), Some(tray)) = (
+                                app_handle.try_state::<Arc<Database>>(),
+                                app_handle.tray_by_id("main"),
+                            ) {
+                                let _ = tray.set_menu(None::<tauri::menu::Menu<tauri::Wry>>); // Refresh hack if needed
+                                                                                              // We'll implement actual dynamic updates later if possible
+                                                                                              // For now, let's just trigger the sync
+                                let engine = crate::sync::SyncEngine::new(&db);
+                                if let Ok(rules) = db.get_all_rules() {
+                                    let result = engine.sync_all(rules);
+                                    use tauri_plugin_notification::NotificationExt;
+                                    if result.success {
+                                        app_handle
+                                            .notification()
+                                            .builder()
+                                            .title("Sync Complete")
+                                            .body(format!(
+                                                "Successfully synced {} files.",
+                                                result.files_written.len()
+                                            ))
+                                            .show()
+                                            .ok();
+                                    } else {
+                                        app_handle
+                                            .notification()
+                                            .builder()
+                                            .title("Sync Failed")
+                                            .body("Errors occurred during quick sync.")
+                                            .show()
+                                            .ok();
+                                    }
+                                }
+                            }
+                        });
+                    }
                     "show" => {
                         if let Some(window) = app.get_webview_window("main") {
                             let _ = window.show();
@@ -142,6 +214,7 @@ pub fn run() {
 
             app.manage(Arc::clone(&db));
             app.manage(mcp_manager);
+            app.manage(WatcherState(watcher));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -168,6 +241,8 @@ pub fn run() {
             commands::get_file_migration_progress,
             commands::get_storage_info,
             commands::get_storage_mode,
+            commands::export_configuration,
+            commands::import_configuration,
             commands::get_all_commands,
             commands::get_command_by_id,
             commands::create_command,
@@ -212,4 +287,134 @@ pub fn run_mcp_cli(port: u16, token: Option<String>) -> std::result::Result<(), 
             .map_err(|e| e.to_string())?;
         Ok(())
     })
+}
+
+fn setup_watcher(
+    app: tauri::AppHandle,
+    db: Arc<Database>,
+    watcher: RuleFileWatcher,
+) -> crate::error::Result<()> {
+    let global_dir = crate::file_storage::get_global_rules_dir()?;
+    if !global_dir.exists() {
+        std::fs::create_dir_all(&global_dir)?;
+    }
+
+    let app_handle_for_callback = app.clone();
+    let db_for_callback = Arc::clone(&db);
+
+    let callback = Box::new(move |event: crate::file_storage::FileChangeEvent| {
+        let app = app_handle_for_callback.clone();
+        let db = Arc::clone(&db_for_callback);
+
+        tauri::async_runtime::spawn(async move {
+            match event {
+                crate::file_storage::FileChangeEvent::Created(path)
+                | crate::file_storage::FileChangeEvent::Modified(path) => {
+                    log::info!("File watcher detected change in: {}", path.display());
+                    if let Err(e) = handle_external_rule_change(&app, &db, path) {
+                        log::error!("Failed to handle external rule change: {}", e);
+                    }
+                }
+                crate::file_storage::FileChangeEvent::Deleted(path) => {
+                    log::info!("File watcher detected deletion: {}", path.display());
+                    // For now, we don't automatically delete from DB to prevent accidental data loss
+                    let _ = app.emit("rule-file-deleted", path.to_string_lossy());
+                }
+            }
+        });
+    });
+
+    watcher.start(&global_dir, callback.clone())?;
+
+    if let Ok(local_roots) = crate::commands::get_local_rule_roots(&db) {
+        for root in local_roots {
+            let local_rules_dir = crate::file_storage::get_local_rules_dir(&root);
+            if local_rules_dir.exists() {
+                if let Err(e) = watcher.start(&local_rules_dir, callback.clone()) {
+                    log::error!(
+                        "Failed to watch local dir {}: {}",
+                        local_rules_dir.display(),
+                        e
+                    );
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn handle_external_rule_change(
+    app: &tauri::AppHandle,
+    db: &Database,
+    path: std::path::PathBuf,
+) -> crate::error::Result<()> {
+    use tauri_plugin_notification::NotificationExt;
+
+    // 1. Load the rule from disk
+    let rule = crate::file_storage::load_rule_from_file(&path)?;
+
+    // 2. Check if it exists in DB
+    let existing_rule = db.get_rule_by_id(&rule.id).ok();
+
+    let should_sync = if let Some(_existing) = existing_rule {
+        // If it exists, check if it's actually different
+        // In a real "file-first" system, we might want to check hashes
+        // For now, if modified externally, we update DB and sync
+        db.update_rule(
+            &rule.id,
+            crate::models::UpdateRuleInput {
+                name: Some(rule.name.clone()),
+                content: Some(rule.content.clone()),
+                scope: Some(rule.scope),
+                target_paths: rule.target_paths.clone(),
+                enabled_adapters: Some(rule.enabled_adapters.clone()),
+                enabled: Some(rule.enabled),
+            },
+        )?;
+        true
+    } else {
+        // New rule created externally
+        db.create_rule(crate::models::CreateRuleInput {
+            name: rule.name.clone(),
+            content: rule.content.clone(),
+            scope: rule.scope,
+            target_paths: rule.target_paths.clone(),
+            enabled_adapters: rule.enabled_adapters.clone(),
+            enabled: rule.enabled,
+        })?;
+        true
+    };
+
+    if should_sync {
+        let engine = crate::sync::SyncEngine::new(db);
+        let rules = db.get_all_rules()?;
+        let sync_result = engine.sync_all(rules);
+
+        if sync_result.success {
+            app.notification()
+                .builder()
+                .title("Rule Auto-Synced")
+                .body(format!(
+                    "External changes to '{}' have been applied.",
+                    rule.name
+                ))
+                .show()
+                .ok();
+            let _ = app.emit("sync-complete", sync_result);
+        } else {
+            app.notification()
+                .builder()
+                .title("Sync Warning")
+                .body(format!(
+                    "Detected changes in '{}' but sync had issues.",
+                    rule.name
+                ))
+                .show()
+                .ok();
+            let _ = app.emit("sync-error", sync_result);
+        }
+    }
+
+    Ok(())
 }

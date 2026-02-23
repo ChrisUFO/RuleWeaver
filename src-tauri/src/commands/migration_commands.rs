@@ -9,7 +9,9 @@ use crate::sync::SyncEngine;
 use super::validate_path;
 
 #[tauri::command]
-pub fn migrate_to_file_storage(db: State<'_, Arc<Database>>) -> Result<file_storage::MigrationResult> {
+pub fn migrate_to_file_storage(
+    db: State<'_, Arc<Database>>,
+) -> Result<file_storage::MigrationResult> {
     let result = file_storage::migrate_to_file_storage(&db)?;
     if result.success {
         db.set_storage_mode("file")?;
@@ -28,7 +30,9 @@ pub fn rollback_file_migration(backup_path: String, db: State<'_, Arc<Database>>
 }
 
 #[tauri::command]
-pub fn verify_file_migration(db: State<'_, Arc<Database>>) -> Result<file_storage::VerificationResult> {
+pub fn verify_file_migration(
+    db: State<'_, Arc<Database>>,
+) -> Result<file_storage::VerificationResult> {
     file_storage::verify_migration(&db)
 }
 
@@ -84,4 +88,57 @@ pub fn get_storage_info() -> Result<std::collections::HashMap<String, String>> {
 #[tauri::command]
 pub fn get_storage_mode(db: State<'_, Arc<Database>>) -> Result<String> {
     db.get_storage_mode()
+}
+
+#[tauri::command]
+pub async fn export_configuration(path: String, db: State<'_, Arc<Database>>) -> Result<()> {
+    let rules = db.get_all_rules()?;
+    let commands = db.get_all_commands()?;
+    let skills = db.get_all_skills()?;
+
+    let config = crate::models::ExportConfiguration::new(rules, commands, skills);
+
+    let content = if path.ends_with(".yaml") || path.ends_with(".yml") {
+        serde_yaml::to_string(&config).map_err(|e| crate::error::AppError::InvalidInput {
+            message: e.to_string(),
+        })?
+    } else {
+        serde_json::to_string_pretty(&config)?
+    };
+
+    std::fs::write(path, content)?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn import_configuration(path: String, db: State<'_, Arc<Database>>) -> Result<()> {
+    let content = std::fs::read_to_string(path.clone())?;
+
+    let config: crate::models::ExportConfiguration =
+        if path.ends_with(".yaml") || path.ends_with(".yml") {
+            serde_yaml::from_str(&content).map_err(|e| crate::error::AppError::InvalidInput {
+                message: e.to_string(),
+            })?
+        } else {
+            serde_json::from_str(&content)?
+        };
+
+    for rule in config.rules {
+        db.import_rule(rule)?;
+    }
+
+    for command in config.commands {
+        db.import_command(command)?;
+    }
+
+    for skill in config.skills {
+        db.import_skill(skill)?;
+    }
+
+    // Trigger sync after import
+    let engine = SyncEngine::new(&db);
+    let rules = db.get_all_rules()?;
+    let _ = engine.sync_all(rules);
+
+    Ok(())
 }

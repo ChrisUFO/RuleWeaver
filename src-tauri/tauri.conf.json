@@ -38,5 +38,11 @@
     "shortDescription": "RuleWeaver - AI Coding Assistant Rule Manager",
     "longDescription": "A unified desktop application for managing rules, commands, and skills for AI coding assistants like Gemini CLI, OpenCode, Cline, and Claude Code.",
     "category": "DeveloperTool"
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": ["https://github.com/ChrisUFO/RuleWeaver/releases/latest/download/updater.json"],
+      "pubkey": "DWYtm9clv8t...PLACEHOLDER...key"
+    }
   }
 }

@@ -11,7 +11,10 @@ pub async fn get_mcp_status(mcp: State<'_, McpManager>) -> Result<McpStatus> {
 }
 
 #[tauri::command]
-pub async fn start_mcp_server(db: State<'_, Arc<Database>>, mcp: State<'_, McpManager>) -> Result<()> {
+pub async fn start_mcp_server(
+    db: State<'_, Arc<Database>>,
+    mcp: State<'_, McpManager>,
+) -> Result<()> {
     mcp.start(&db).await
 }
 
@@ -21,7 +24,10 @@ pub async fn stop_mcp_server(mcp: State<'_, McpManager>) -> Result<()> {
 }
 
 #[tauri::command]
-pub async fn restart_mcp_server(db: State<'_, Arc<Database>>, mcp: State<'_, McpManager>) -> Result<()> {
+pub async fn restart_mcp_server(
+    db: State<'_, Arc<Database>>,
+    mcp: State<'_, McpManager>,
+) -> Result<()> {
     mcp.stop().await?;
     mcp.start(&db).await
 }

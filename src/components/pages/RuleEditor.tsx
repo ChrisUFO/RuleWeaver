@@ -154,7 +154,12 @@ export function RuleEditor({ rule, onBack, isNew = false }: RuleEditorProps) {
     } catch (error) {
       addToast({
         title: "Save Failed",
-        description: error instanceof Error ? error.message : "Unknown error",
+        description:
+          typeof error === "string"
+            ? error
+            : error instanceof Error
+              ? error.message
+              : "Unknown error",
         variant: "error",
       });
     } finally {

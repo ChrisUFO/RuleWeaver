@@ -8,7 +8,12 @@ import {
   ShieldCheck,
   Server,
   RefreshCw,
+  Download,
+  Upload,
 } from "lucide-react";
+import { save, open } from "@tauri-apps/plugin-dialog";
+import { check } from "@tauri-apps/plugin-updater";
+import { enable, disable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
@@ -36,6 +41,10 @@ export function Settings() {
   const [hasChanges, setHasChanges] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [isExporting, setIsExporting] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const [isCheckingUpdates, setIsCheckingUpdates] = useState(false);
+  const [launchOnStartup, setLaunchOnStartup] = useState(false);
   const [storageMode, setStorageMode] = useState<"sqlite" | "file">("sqlite");
   const [storageInfo, setStorageInfo] = useState<Record<string, string> | null>(null);
   const [isMigratingStorage, setIsMigratingStorage] = useState(false);
@@ -92,6 +101,7 @@ export function Settings() {
           api.settings.get("mcp_auto_start"),
           api.settings.get("minimize_to_tray"),
           api.mcp.getLogs(20),
+          isEnabled(),
         ]);
         setAppDataPath(path);
         setAppVersion(version);
@@ -103,6 +113,7 @@ export function Settings() {
         setMcpAutoStart(mcpAutoStartSetting === "true");
         setMinimizeToTray(minimizeToTraySetting !== "false");
         setMcpLogs(mcpLogsInitial);
+        setLaunchOnStartup(autoStartEnabled);
 
         if (settingsJson) {
           try {
@@ -375,6 +386,123 @@ export function Settings() {
     }
   };
 
+  const toggleLaunchOnStartup = async (enabled: boolean) => {
+    setLaunchOnStartup(enabled);
+    try {
+      if (enabled) {
+        await enable();
+      } else {
+        await disable();
+      }
+      addToast({
+        title: "Startup Preference Saved",
+        description: enabled
+          ? "RuleWeaver will now launch on startup"
+          : "RuleWeaver will no longer launch on startup",
+        variant: "success",
+      });
+    } catch (error) {
+      setLaunchOnStartup(!enabled);
+      addToast({
+        title: "Setting Failed",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "error",
+      });
+    }
+  };
+
+  const handleExport = async () => {
+    try {
+      const selected = await save({
+        filters: [
+          { name: "JSON", extensions: ["json"] },
+          { name: "YAML", extensions: ["yaml", "yml"] },
+        ],
+        defaultPath: `ruleweaver-config-${new Date().toISOString().split("T")[0]}.json`,
+      });
+
+      if (!selected) return;
+
+      setIsExporting(true);
+      await api.storage.exportConfiguration(selected);
+      addToast({
+        title: "Export Successful",
+        description: `Configuration exported to ${selected}`,
+        variant: "success",
+      });
+    } catch (error) {
+      addToast({
+        title: "Export Failed",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "error",
+      });
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleImport = async () => {
+    try {
+      const selected = await open({
+        filters: [{ name: "Configuration", extensions: ["json", "yaml", "yml"] }],
+        multiple: false,
+      });
+
+      if (!selected) return;
+
+      setIsImporting(true);
+      await api.storage.importConfiguration(selected as string);
+      addToast({
+        title: "Import Successful",
+        description: "Configuration has been imported and synchronized.",
+        variant: "success",
+      });
+      // Optionally reload data or trigger a refresh in other components
+    } catch (error) {
+      addToast({
+        title: "Import Failed",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "error",
+      });
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  const handleCheckUpdates = async () => {
+    setIsCheckingUpdates(true);
+    try {
+      const update = await check();
+      if (update) {
+        addToast({
+          title: "Update Available",
+          description: `Version ${update.version} is available.`,
+          variant: "success",
+        });
+
+        if (
+          confirm(`New version ${update.version} is available. Would you like to install it now?`)
+        ) {
+          await update.downloadAndInstall();
+          // The app will restart automatically after install or might need manual restart depending on platform
+        }
+      } else {
+        addToast({
+          title: "No Updates",
+          description: "You are already using the latest version.",
+        });
+      }
+    } catch (error) {
+      addToast({
+        title: "Update Check Failed",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "error",
+      });
+    } finally {
+      setIsCheckingUpdates(false);
+    }
+  };
+
   return (
     <div className="space-y-6 max-w-3xl">
       <div className="flex items-center justify-between">
@@ -477,6 +605,16 @@ export function Settings() {
               </div>
             </div>
             <Switch checked={minimizeToTray} onCheckedChange={toggleMinimizeToTray} />
+          </div>
+
+          <div className="flex items-center justify-between rounded-md border p-3">
+            <div>
+              <div className="font-medium">Launch on startup</div>
+              <div className="text-xs text-muted-foreground">
+                Automatically start RuleWeaver when you log in
+              </div>
+            </div>
+            <Switch checked={launchOnStartup} onCheckedChange={toggleLaunchOnStartup} />
           </div>
 
           {mcpInstructions && (
@@ -620,12 +758,71 @@ export function Settings() {
 
       <Card>
         <CardHeader>
+          <CardTitle>Data Management</CardTitle>
+          <CardDescription>
+            Export and import your RuleWeaver configuration (rules, commands, and skills)
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="rounded-md border p-4 space-y-3">
+              <div className="flex items-center gap-2 font-medium">
+                <Download className="h-4 w-4" />
+                Export
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Save your rules, commands, and skills to a JSON or YAML file for backup or sharing.
+              </p>
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={handleExport}
+                disabled={isExporting}
+              >
+                {isExporting ? "Exporting..." : "Export Configuration"}
+              </Button>
+            </div>
+
+            <div className="rounded-md border p-4 space-y-3">
+              <div className="flex items-center gap-2 font-medium">
+                <Upload className="h-4 w-4" />
+                Import
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Load configuration from a file. This will replace existing items with the same ID.
+              </p>
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={handleImport}
+                disabled={isImporting}
+              >
+                {isImporting ? "Importing..." : "Import Configuration"}
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle>About</CardTitle>
         </CardHeader>
         <CardContent className="space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-muted-foreground">Version</span>
-            <span className="font-mono">{isLoading ? "..." : appVersion}</span>
+            <div className="flex items-center gap-2">
+              <span className="font-mono">{isLoading ? "..." : appVersion}</span>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs"
+                onClick={handleCheckUpdates}
+                disabled={isCheckingUpdates || isLoading}
+              >
+                {isCheckingUpdates ? "Checking..." : "Check for Updates"}
+              </Button>
+            </div>
           </div>
           <div className="flex gap-2 pt-2">
             <a
