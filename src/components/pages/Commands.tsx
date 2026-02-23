@@ -30,6 +30,12 @@ export function Commands() {
   const [history, setHistory] = useState<ExecutionLog[]>([]);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSlashCommandSyncing, setIsSlashCommandSyncing] = useState(false);
+  const [generateSlashCommands, setGenerateSlashCommands] = useState(false);
+  const [slashCommandAdapters, setSlashCommandAdapters] = useState<string[]>([]);
+  const [availableAdapters, setAvailableAdapters] = useState<
+    { name: string; supports_argument_substitution: boolean }[]
+  >([]);
   const { addToast } = useToast();
 
   const selected = useMemo(
@@ -57,9 +63,18 @@ export function Commands() {
     setHistory(logs);
   };
 
+  const loadAvailableAdapters = async () => {
+    try {
+      const adapters = await api.slashCommands.getAdapters();
+      setAvailableAdapters(adapters);
+    } catch (error) {
+      console.error("Failed to load slash command adapters:", error);
+    }
+  };
+
   useEffect(() => {
     setIsLoading(true);
-    Promise.all([loadCommands(), loadHistory()])
+    Promise.all([loadCommands(), loadHistory(), loadAvailableAdapters()])
       .catch((error) => {
         addToast({
           title: "Failed to Load Commands",
@@ -78,6 +93,8 @@ export function Commands() {
       setDescription("");
       setScript("");
       setExposeViaMcp(true);
+      setGenerateSlashCommands(false);
+      setSlashCommandAdapters([]);
       return;
     }
 
@@ -85,6 +102,8 @@ export function Commands() {
     setDescription(selected.description);
     setScript(selected.script);
     setExposeViaMcp(Boolean(selected.expose_via_mcp));
+    setGenerateSlashCommands(Boolean(selected.generate_slash_commands));
+    setSlashCommandAdapters(selected.slash_command_adapters ?? []);
     const nextArgs: Record<string, string> = {};
     for (const arg of selected.arguments) {
       nextArgs[arg.name] = arg.default_value ?? "";
@@ -125,6 +144,8 @@ export function Commands() {
         description,
         script,
         expose_via_mcp: exposeViaMcp,
+        generate_slash_commands: generateSlashCommands,
+        slash_command_adapters: slashCommandAdapters,
       });
       setCommands((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
       addToast({ title: "Command Saved", description: updated.name, variant: "success" });
@@ -210,6 +231,30 @@ export function Commands() {
       });
     } finally {
       setIsSyncing(false);
+    }
+  };
+
+  const handleSyncSlashCommands = async () => {
+    if (!selected) return;
+    setIsSlashCommandSyncing(true);
+    try {
+      const result = await api.slashCommands.sync(selected.id, true);
+      if (result.errors.length > 0) {
+        throw new Error(result.errors[0]);
+      }
+      addToast({
+        title: "Slash Commands Synced",
+        description: `Wrote ${result.files_written} slash command files`,
+        variant: "success",
+      });
+    } catch (error) {
+      addToast({
+        title: "Slash Command Sync Failed",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "error",
+      });
+    } finally {
+      setIsSlashCommandSyncing(false);
     }
   };
 
@@ -374,6 +419,56 @@ export function Commands() {
                 />
               </div>
 
+              {/* Slash Commands Section */}
+              <div className="rounded-xl border border-white/5 bg-white/5 p-4 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="font-semibold text-sm">Generate Slash Commands</div>
+                    <div className="text-[10px] uppercase tracking-wider text-muted-foreground/60">
+                      Create native /command triggers in AI tools.
+                    </div>
+                  </div>
+                  <Switch
+                    checked={generateSlashCommands}
+                    onCheckedChange={setGenerateSlashCommands}
+                    aria-label="Generate slash commands"
+                  />
+                </div>
+
+                {generateSlashCommands && availableAdapters.length > 0 && (
+                  <div className="space-y-2 pt-2 border-t border-white/5">
+                    <div className="text-xs font-medium text-muted-foreground">Target AI Tools</div>
+                    <div className="flex flex-wrap gap-2">
+                      {availableAdapters.map((adapter) => (
+                        <button
+                          key={adapter.name}
+                          onClick={() => {
+                            setSlashCommandAdapters((prev) =>
+                              prev.includes(adapter.name)
+                                ? prev.filter((a) => a !== adapter.name)
+                                : [...prev, adapter.name]
+                            );
+                          }}
+                          className={cn(
+                            "px-3 py-1.5 rounded-full text-xs font-medium transition-colors",
+                            slashCommandAdapters.includes(adapter.name)
+                              ? "bg-primary text-primary-foreground"
+                              : "bg-white/5 text-muted-foreground hover:bg-white/10"
+                          )}
+                        >
+                          {adapter.name}
+                        </button>
+                      ))}
+                    </div>
+                    {slashCommandAdapters.length > 0 && (
+                      <div className="text-[10px] text-muted-foreground pt-1">
+                        Selected: {slashCommandAdapters.join(", ")}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
               {selected.arguments.length > 0 && (
                 <div className="rounded-md border p-3 space-y-2">
                   <div className="text-sm font-medium">Test Arguments</div>
@@ -405,6 +500,15 @@ export function Commands() {
                   <Play className="mr-2 h-4 w-4" />
                   {isTesting ? "Running..." : "Test Run"}
                 </Button>
+                {generateSlashCommands && slashCommandAdapters.length > 0 && (
+                  <Button
+                    variant="outline"
+                    onClick={handleSyncSlashCommands}
+                    disabled={isSlashCommandSyncing}
+                  >
+                    {isSlashCommandSyncing ? "Syncing..." : "Sync Slash Commands"}
+                  </Button>
+                )}
                 <Button variant="outline" onClick={handleDelete} disabled={isSaving}>
                   <Trash2 className="mr-2 h-4 w-4" />
                   Delete

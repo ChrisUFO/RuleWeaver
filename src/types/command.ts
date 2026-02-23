@@ -12,6 +12,8 @@ export interface CommandModel {
   script: string;
   arguments: CommandArgument[];
   expose_via_mcp: boolean;
+  generate_slash_commands?: boolean;
+  slash_command_adapters?: string[];
   created_at: number;
   updated_at: number;
 }
@@ -30,6 +32,8 @@ export interface UpdateCommandInput {
   script?: string;
   arguments?: CommandArgument[];
   expose_via_mcp?: boolean;
+  generate_slash_commands?: boolean;
+  slash_command_adapters?: string[];
 }
 
 export interface TestCommandResult {
