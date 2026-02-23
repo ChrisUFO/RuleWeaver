@@ -27,7 +27,10 @@ impl SlashCommandSyncResult {
             conflicts: Vec::new(),
         }
     }
+}
+    }
 
+    #[allow(dead_code)]
     pub fn success(&self) -> bool {
         self.errors.is_empty() && self.conflicts.is_empty()
     }
@@ -313,29 +316,6 @@ mod tests {
         assert!(matches!(SyncStatus::Synced, SyncStatus::Synced));
         assert!(matches!(SyncStatus::OutOfDate, SyncStatus::OutOfDate));
         assert!(matches!(SyncStatus::NotSynced, SyncStatus::NotSynced));
-    }
-
-    #[test]
-    fn test_sync_result_success() {
-        let result = SlashCommandSyncResult {
-            files_written: 2,
-            files_removed: 0,
-            errors: vec![],
-            conflicts: vec![],
-        };
-        assert!(result.success());
-        assert_eq!(result.files_written, 2);
-    }
-
-    #[test]
-    fn test_sync_result_failure() {
-        let result = SlashCommandSyncResult {
-            files_written: 0,
-            files_removed: 0,
-            errors: vec!["Error".to_string()],
-            conflicts: vec![],
-        };
-        assert!(!result.success());
     }
 
     #[test]

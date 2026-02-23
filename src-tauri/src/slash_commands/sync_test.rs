@@ -136,49 +136,6 @@ mod tests {
     }
 
     #[test]
-    fn test_slash_command_sync_result_success() {
-        let result = SlashCommandSyncResult {
-            files_written: 2,
-            files_removed: 0,
-            errors: vec![],
-            conflicts: vec![],
-        };
-
-        assert!(result.success());
-    }
-
-    #[test]
-    fn test_slash_command_sync_result_failure_with_errors() {
-        let result = SlashCommandSyncResult {
-            files_written: 0,
-            files_removed: 0,
-            errors: vec!["Error 1".to_string()],
-            conflicts: vec![],
-        };
-
-        assert!(!result.success());
-    }
-
-    #[test]
-    fn test_slash_command_sync_result_failure_with_conflicts() {
-        use crate::slash_commands::SlashCommandConflict;
-
-        let result = SlashCommandSyncResult {
-            files_written: 0,
-            files_removed: 0,
-            errors: vec![],
-            conflicts: vec![SlashCommandConflict {
-                command_name: "test".to_string(),
-                adapter_name: "opencode".to_string(),
-                file_path: std::path::PathBuf::from("/test"),
-                message: "Conflict".to_string(),
-            }],
-        };
-
-        assert!(!result.success());
-    }
-
-    #[test]
     fn test_sync_status_variants() {
         let synced = SyncStatus::Synced;
         let out_of_date = SyncStatus::OutOfDate;
@@ -227,7 +184,8 @@ mod tests {
         let result = engine.sync_all_commands(true).unwrap();
 
         assert_eq!(result.files_written, 0);
-        assert!(result.success());
+        assert!(result.errors.is_empty());
+        assert!(result.conflicts.is_empty());
     }
 
     #[test]

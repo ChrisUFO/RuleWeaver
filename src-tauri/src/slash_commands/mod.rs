@@ -1,5 +1,4 @@
 use crate::models::Command;
-use std::collections::HashMap;
 use std::path::PathBuf;
 
 pub trait SlashCommandAdapter: Send + Sync {
