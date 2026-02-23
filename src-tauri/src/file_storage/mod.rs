@@ -1,6 +1,7 @@
 mod migration;
 mod parser;
 mod serializer;
+pub mod skills;
 pub mod watcher;
 
 #[allow(unused_imports)]

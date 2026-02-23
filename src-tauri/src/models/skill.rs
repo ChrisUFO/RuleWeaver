@@ -10,6 +10,8 @@ pub struct Skill {
     #[serde(default)]
     pub input_schema: Vec<SkillParameter>,
     pub enabled: bool,
+    pub directory_path: String,
+    pub entry_point: String,
     #[serde(with = "crate::models::timestamp")]
     pub created_at: DateTime<Utc>,
     #[serde(with = "crate::models::timestamp")]
@@ -26,6 +28,8 @@ pub struct SkillParameter {
     pub required: bool,
     #[serde(default)]
     pub default_value: Option<String>,
+    #[serde(default)]
+    pub enum_values: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -34,6 +38,9 @@ pub enum SkillParameterType {
     String,
     Number,
     Boolean,
+    Enum,
+    Array,
+    Object,
 }
 
 fn default_skill_param_type() -> SkillParameterType {
@@ -42,11 +49,14 @@ fn default_skill_param_type() -> SkillParameterType {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateSkillInput {
+    pub id: Option<String>,
     pub name: String,
     pub description: String,
     pub instructions: String,
     #[serde(default)]
     pub input_schema: Vec<SkillParameter>,
+    pub directory_path: String,
+    pub entry_point: String,
     #[serde(default = "default_true")]
     pub enabled: bool,
 }
@@ -61,5 +71,7 @@ pub struct UpdateSkillInput {
     pub description: Option<String>,
     pub instructions: Option<String>,
     pub input_schema: Option<Vec<SkillParameter>>,
+    pub directory_path: Option<String>,
+    pub entry_point: Option<String>,
     pub enabled: Option<bool>,
 }

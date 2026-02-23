@@ -11,8 +11,6 @@ pub mod timing {
 }
 
 pub mod limits {
-    pub const MAX_SKILL_STEPS: usize = 10;
-    pub const MAX_STEP_LENGTH: usize = 4000;
     pub const MAX_ARG_LENGTH: usize = 2000;
     pub const MAX_SCRIPT_LENGTH: usize = 20000;
     pub const MAX_OUTPUT_SIZE: usize = 10 * 1024 * 1024; // 10MB

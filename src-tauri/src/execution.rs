@@ -145,6 +145,15 @@ pub async fn execute_shell_with_timeout_env(
     timeout_dur: Duration,
     envs: &[(String, String)],
 ) -> Result<(i32, String, String)> {
+    execute_shell_with_timeout_env_dir(script, timeout_dur, envs, None).await
+}
+
+pub async fn execute_shell_with_timeout_env_dir(
+    script: &str,
+    timeout_dur: Duration,
+    envs: &[(String, String)],
+    dir: Option<std::path::PathBuf>,
+) -> Result<(i32, String, String)> {
     if script.trim().is_empty() {
         return Err(AppError::InvalidInput {
             message: "Cannot execute empty script".to_string(),
@@ -173,6 +182,10 @@ pub async fn execute_shell_with_timeout_env(
     cmd.args(["-c", script]);
 
     cmd.envs(envs.iter().cloned());
+
+    if let Some(d) = dir {
+        cmd.current_dir(d);
+    }
 
     let future = cmd.output();
 

@@ -7,6 +7,7 @@ mod file_storage;
 mod mcp;
 mod models;
 mod sync;
+pub mod templates;
 
 use database::Database;
 use mcp::McpManager;
@@ -20,11 +21,17 @@ const MINIMIZE_TO_TRAY_KEY: &str = "minimize_to_tray";
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     log::info!("RuleWeaver application initializing");
-    
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let db = Arc::new(Database::new(app.handle())?);
+
+            // Sync skills to database on startup
+            if let Err(e) = crate::file_storage::skills::sync_skills_to_db(&db) {
+                log::error!("Failed to sync skills on startup: {}", e);
+            }
+
             let mcp_manager = McpManager::new(crate::constants::DEFAULT_MCP_PORT);
 
             let auto_start_mcp = db
@@ -172,6 +179,8 @@ pub fn run() {
             commands::create_skill,
             commands::update_skill,
             commands::delete_skill,
+            commands::get_skill_templates,
+            commands::install_skill_template,
             commands::get_mcp_status,
             commands::start_mcp_server,
             commands::stop_mcp_server,
@@ -187,7 +196,7 @@ pub fn run() {
 pub fn run_mcp_cli(port: u16, token: Option<String>) -> std::result::Result<(), String> {
     let db = Arc::new(Database::new_for_cli().map_err(|e| e.to_string())?);
     let manager = McpManager::new(port);
-    
+
     let rt = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
     rt.block_on(async {
         if let Some(t) = token {
@@ -195,7 +204,10 @@ pub fn run_mcp_cli(port: u16, token: Option<String>) -> std::result::Result<(), 
         }
 
         manager.start(&db).await.map_err(|e| e.to_string())?;
-        manager.wait_until_stopped().await.map_err(|e| e.to_string())?;
+        manager
+            .wait_until_stopped()
+            .await
+            .map_err(|e| e.to_string())?;
         Ok(())
     })
 }
