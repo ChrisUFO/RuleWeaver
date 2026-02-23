@@ -414,23 +414,30 @@ fn handle_external_rule_change(
     // 1. Load the rule from disk
     let rule_from_disk = crate::file_storage::load_rule_from_file(&path)?;
 
-    // 2. Check if it exists in DB
-    let existing_rule = db.get_rule_by_id(&rule_from_disk.id).ok();
-
-    if let Some(existing) = existing_rule {
-        // Compute what we *would* write to disk for this rule if we synced from DB
-        // to see if the external change actually introduced a difference.
-        let engine = crate::sync::SyncEngine::new(db);
-        
-        // Check for conflicts using hashes
-        let rules = db.get_all_rules()?;
-        let preview = engine.preview(rules);
-        
-        let conflict = preview.conflicts.iter().find(|c| c.file_path == path.to_string_lossy());
-        
-        if let Some(c) = conflict {
-            // There is a real difference between what's in DB and what's on disk.
-            log::info!("External change conflict detected for rule: {}", rule_from_disk.name);
+        // 2. Check if it exists in DB
+        let existing_rule = db.get_rule_by_id(&rule_from_disk.id).ok();
+    
+        if let Some(_existing) = existing_rule {
+            // Compute what we *would* write to disk for this rule if we synced from DB
+            // to see if the external change actually introduced a difference.
+            let engine = crate::sync::SyncEngine::new(db);
+    
+            // Check for conflicts using hashes
+            let rules = db.get_all_rules()?;
+            let preview = engine.preview(rules);
+    
+            let conflict = preview
+                .conflicts
+                .iter()
+                .find(|c| c.file_path == path.to_string_lossy());
+    
+            if let Some(_c) = conflict {
+                // There is a real difference between what's in DB and what's on disk.
+                log::info!(
+                    "External change conflict detected for rule: {}",
+                    rule_from_disk.name
+                );
+    
             
             app.notification()
                 .builder()
