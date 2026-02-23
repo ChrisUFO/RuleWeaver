@@ -6,7 +6,10 @@ pub mod rule_commands;
 pub mod skill_commands;
 pub mod system_commands;
 
-use adapters::{ClaudeAdapter, CommandAdapter, GeminiAdapter, OpenCodeAdapter};
+use adapters::{
+    ClaudeAdapter, CommandAdapter, CursorAdapter, GeminiAdapter, KiloAdapter, OpenCodeAdapter,
+    RooCodeAdapter, WindsurfAdapter,
+};
 pub use command_commands::*;
 pub use mcp_commands::*;
 pub use migration_commands::*;
@@ -23,6 +26,10 @@ use std::time::Instant;
 use crate::constants::limits::{
     MAX_COMMAND_NAME_LENGTH, MAX_COMMAND_SCRIPT_LENGTH, MAX_RULE_CONTENT_LENGTH,
     MAX_RULE_NAME_LENGTH,
+};
+use crate::constants::{
+    NEW_CURSOR_DIR, NEW_GEMINI_DIR, NEW_KILO_DIR, NEW_OPENCODE_DIR, NEW_ROO_CODE_DIR,
+    NEW_WINDSURF_DIR,
 };
 use crate::database::Database;
 use crate::error::{AppError, Result};
@@ -164,14 +171,14 @@ pub fn command_file_targets() -> Result<Vec<(String, Box<dyn CommandAdapter>)>> 
         .ok_or_else(|| AppError::Path("Could not determine home directory".to_string()))?;
     Ok(vec![
         (
-            home.join(".gemini")
+            home.join(NEW_GEMINI_DIR)
                 .join("COMMANDS.toml")
                 .to_string_lossy()
                 .to_string(),
             Box::new(GeminiAdapter),
         ),
         (
-            home.join(".opencode")
+            home.join(NEW_OPENCODE_DIR)
                 .join("COMMANDS.md")
                 .to_string_lossy()
                 .to_string(),
@@ -183,6 +190,36 @@ pub fn command_file_targets() -> Result<Vec<(String, Box<dyn CommandAdapter>)>> 
                 .to_string_lossy()
                 .to_string(),
             Box::new(ClaudeAdapter),
+        ),
+        (
+            home.join(NEW_KILO_DIR)
+                .join("rules")
+                .join("COMMANDS.md")
+                .to_string_lossy()
+                .to_string(),
+            Box::new(KiloAdapter),
+        ),
+        (
+            home.join(NEW_CURSOR_DIR)
+                .join("COMMANDS.md")
+                .to_string_lossy()
+                .to_string(),
+            Box::new(CursorAdapter),
+        ),
+        (
+            home.join(NEW_WINDSURF_DIR)
+                .join("rules")
+                .join("COMMANDS.md")
+                .to_string_lossy()
+                .to_string(),
+            Box::new(WindsurfAdapter),
+        ),
+        (
+            home.join(NEW_ROO_CODE_DIR)
+                .join("COMMANDS.md")
+                .to_string_lossy()
+                .to_string(),
+            Box::new(RooCodeAdapter),
         ),
     ])
 }

@@ -1,14 +1,14 @@
 # RuleWeaver
 
-RuleWeaver is a unified, standalone desktop application designed to centrally manage configurations, rules, commands, and skills for various AI coding assistants (Antigravity, Gemini CLI, OpenCode, Cline, Claude Code, Codex).
+RuleWeaver is a unified, standalone desktop application designed to centrally manage configurations, rules, commands, and skills for various AI coding assistants (Antigravity, Gemini CLI, OpenCode, Cline, Claude Code, Codex, Kilo Code, Cursor, Windsurf, Roo Code).
 
-Managing different file formats and local/global settings across 6+ AI tools is a nightmare. RuleWeaver solves this by acting as a single source of truth using a **Hybrid Synchronization Model**.
+Managing different file formats and local/global settings across 10+ AI tools is a nightmare. RuleWeaver solves this by acting as a single source of truth using a **Hybrid Synchronization Model**.
 
 ## The Hybrid Approach
 
 Different types of AI configurations require different management strategies:
 
-1. **Rules (Static Context):** Managed via **File Sync**. You write your global or repo-specific rules in the RuleWeaver UI. The app then uses **Tool-Specific Adapters (Post-Processors)** to automatically translate and copy these rules into the specific proprietary formats and directories required by each target tool (e.g., configuring TOML for Gemini CLI, `.clinerules` for Cline, or `AGENTS.md` for OpenCode).
+1. **Rules (Static Context):** Managed via **File Sync**. You write your global or repo-specific rules in the RuleWeaver UI. The app then uses **Tool-Specific Adapters (Post-Processors)** to automatically translate and copy these rules into the specific proprietary formats and directories required by each target tool (e.g., configuring `.clinerules` for Cline, `.cursorrules` for Cursor, or `AGENTS.md` for OpenCode).
 2. **Commands & Skills (Executable Actions):** Managed via a **Local MCP Server** combined with **UI Stub Syncing**. RuleWeaver supports two MCP runtime modes:
    - **Embedded mode:** MCP runs inside the desktop app process.
    - **Standalone mode:** MCP runs as a separate binary (`ruleweaver-mcp --port 8080`).

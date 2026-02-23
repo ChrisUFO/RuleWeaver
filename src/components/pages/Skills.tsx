@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/tauri";
 import { useToast } from "@/components/ui/toast";
 import type { Skill, SkillParameter } from "@/types/skill";
+import { Scope } from "@/types/rule";
 import { SkillSchemaEditor } from "@/components/skills/SkillSchemaEditor";
 import { TemplateBrowser } from "@/components/skills/TemplateBrowser";
 
@@ -20,6 +21,8 @@ export function Skills() {
   const [instructions, setInstructions] = useState("");
   const [inputSchema, setInputSchema] = useState<SkillParameter[]>([]);
   const [entryPoint, setEntryPoint] = useState("");
+  const [scope, setScope] = useState<Scope>("global");
+  const [directoryPath, setDirectoryPath] = useState("");
   const [enabled, setEnabled] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const { addToast } = useToast();
@@ -59,6 +62,8 @@ export function Skills() {
     setInstructions(selected.instructions);
     setInputSchema(selected.input_schema || []);
     setEntryPoint(selected.entry_point || "");
+    setScope(selected.scope);
+    setDirectoryPath(selected.directory_path || "");
     setEnabled(selected.enabled);
   }, [selected]);
 
@@ -69,6 +74,7 @@ export function Skills() {
         name: "New Skill",
         description: "Describe this workflow",
         instructions: "Step 1\nStep 2",
+        scope: "global",
         input_schema: [],
         entry_point: "run.sh",
         enabled: true,
@@ -95,7 +101,9 @@ export function Skills() {
         name,
         description,
         instructions,
+        scope,
         input_schema: inputSchema,
+        directory_path: scope === "local" ? directoryPath : undefined,
         entry_point: entryPoint,
         enabled,
       });
@@ -270,6 +278,16 @@ export function Skills() {
                     placeholder="What does this do?"
                   />
                 </div>
+                {scope === "local" && (
+                  <div className="space-y-2 md:col-span-2">
+                    <label className="text-sm font-medium">Directory Path (for local skill)</label>
+                    <Input
+                      value={directoryPath}
+                      onChange={(e) => setDirectoryPath(e.target.value)}
+                      placeholder="/absolute/path/to/project/.agent/skills/my-skill"
+                    />
+                  </div>
+                )}
               </div>
 
               <div className="space-y-2">
@@ -285,6 +303,32 @@ export function Skills() {
               </div>
 
               <SkillSchemaEditor schema={inputSchema} onChange={setInputSchema} />
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Scope</label>
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant={scope === "global" ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setScope("global")}
+                      className="flex-1"
+                    >
+                      Global
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={scope === "local" ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setScope("local")}
+                      className="flex-1"
+                    >
+                      Local
+                    </Button>
+                  </div>
+                </div>
+              </div>
 
               <div className="flex items-center justify-between rounded-md border p-4 bg-muted/20">
                 <div className="space-y-0.5">

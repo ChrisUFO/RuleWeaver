@@ -1,4 +1,4 @@
-use crate::models::{CreateSkillInput, SkillParameter, SkillParameterType};
+use crate::models::{CreateSkillInput, Scope, SkillParameter, SkillParameterType};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -35,6 +35,7 @@ pub fn get_bundled_skill_templates() -> Vec<TemplateSkill> {
                 }],
                 directory_path: "".to_string(),
                 entry_point: "python review.py".to_string(),
+                scope: Scope::Global,
                 enabled: true,
             },
             files: vec![TemplateFile {
@@ -52,6 +53,7 @@ pub fn get_bundled_skill_templates() -> Vec<TemplateSkill> {
                 input_schema: vec![],
                 directory_path: "".to_string(),
                 entry_point: "pwsh -File ./sysinfo.ps1".to_string(),
+                scope: Scope::Global,
                 enabled: true,
             },
             files: vec![TemplateFile {

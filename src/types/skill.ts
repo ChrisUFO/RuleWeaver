@@ -1,3 +1,5 @@
+import { Scope } from "./rule";
+
 export enum SkillParameterType {
   String = "String",
   Number = "Number",
@@ -21,6 +23,7 @@ export interface Skill {
   name: string;
   description: string;
   instructions: string;
+  scope: Scope;
   input_schema: SkillParameter[];
   directory_path: string;
   entry_point: string;
@@ -33,6 +36,7 @@ export interface CreateSkillInput {
   name: string;
   description: string;
   instructions: string;
+  scope: Scope;
   input_schema: SkillParameter[];
   directory_path?: string;
   entry_point?: string;
@@ -43,6 +47,7 @@ export interface UpdateSkillInput {
   name?: string;
   description?: string;
   instructions?: string;
+  scope?: Scope;
   input_schema?: SkillParameter[];
   directory_path?: string;
   entry_point?: string;

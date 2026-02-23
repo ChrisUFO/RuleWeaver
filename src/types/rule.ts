@@ -1,6 +1,16 @@
 export type Scope = "global" | "local";
 
-export type AdapterType = "antigravity" | "gemini" | "opencode" | "cline" | "claude-code" | "codex";
+export type AdapterType =
+  | "antigravity"
+  | "gemini"
+  | "opencode"
+  | "cline"
+  | "claude-code"
+  | "codex"
+  | "kilo"
+  | "cursor"
+  | "windsurf"
+  | "roocode";
 
 export interface Rule {
   id: string;
@@ -76,10 +86,10 @@ export const ADAPTERS: AdapterInfo[] = [
   {
     id: "antigravity",
     name: "Antigravity",
-    fileName: "ANTIGRAVITY.md",
+    fileName: "GEMINI.md",
     icon: "antigravity",
     description: "Antigravity AI coding assistant",
-    globalPath: "~/.antigravity/ANTIGRAVITY.md",
+    globalPath: "~/.gemini/GEMINI.md",
     enabled: true,
   },
   {
@@ -97,7 +107,7 @@ export const ADAPTERS: AdapterInfo[] = [
     fileName: "AGENTS.md",
     icon: "opencode",
     description: "OpenCode AI coding assistant",
-    globalPath: "~/.opencode/AGENTS.md",
+    globalPath: "~/.config/opencode/AGENTS.md",
     enabled: true,
   },
   {
@@ -121,10 +131,46 @@ export const ADAPTERS: AdapterInfo[] = [
   {
     id: "codex",
     name: "Codex",
-    fileName: "CODEX.md",
+    fileName: "AGENTS.md",
     icon: "codex",
     description: "OpenAI Codex assistant",
-    globalPath: "~/.codex/CODEX.md",
+    globalPath: "~/.codex/AGENTS.md",
+    enabled: true,
+  },
+  {
+    id: "kilo",
+    name: "Kilo Code",
+    fileName: "AGENTS.md",
+    icon: "kilo",
+    description: "Kilo Code AI assistant",
+    globalPath: "~/.kilocode/rules/AGENTS.md",
+    enabled: true,
+  },
+  {
+    id: "cursor",
+    name: "Cursor",
+    fileName: ".cursorrules",
+    icon: "cursor",
+    description: "Cursor AI code editor",
+    globalPath: "~/.cursorrules",
+    enabled: true,
+  },
+  {
+    id: "windsurf",
+    name: "Windsurf",
+    fileName: ".windsurf/rules/rules.md",
+    icon: "windsurf",
+    description: "Windsurf AI assistant",
+    globalPath: "~/.windsurf/rules/rules.md",
+    enabled: true,
+  },
+  {
+    id: "roocode",
+    name: "Roo Code",
+    fileName: ".roo/rules/rules.md",
+    icon: "roocode",
+    description: "Roo Code AI assistant",
+    globalPath: "~/.roo/rules/rules.md",
     enabled: true,
   },
 ];

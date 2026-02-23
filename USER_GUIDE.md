@@ -37,6 +37,10 @@ Generated command files:
 - `~/.gemini/COMMANDS.toml`
 - `~/.opencode/COMMANDS.md`
 - `~/.claude/COMMANDS.md`
+- `~/.cursorrules` (appended)
+- `~/.clinerules` (appended)
+- `.windsurf/rules/rules.md`
+- `.roo/rules/rules.md`
 
 ## 3) Manage Skills (Phase 3 Foundation)
 
@@ -45,6 +49,8 @@ Generated command files:
   - name
   - description
   - instructions
+  - scope (`global` or `local`)
+  - project directory path (if `local`)
   - enabled flag
 
 Current status:
@@ -99,7 +105,7 @@ Use the generated `claude_code_json` snippet from RuleWeaver settings.
 
 Use the generated `opencode_json` snippet from RuleWeaver settings.
 
-### Gemini, Cline, Codex, Antigravity
+### Gemini, Cline, Codex, Antigravity, Kilo, Cursor, Windsurf, Roo Code
 
 - Use synced rule/command files from RuleWeaver.
 - If a specific MCP client integration is available in that tool, configure it to connect to the same localhost MCP endpoint shown in settings.

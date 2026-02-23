@@ -110,7 +110,16 @@ impl Database {
                 let created_at: i64 = row.get(7)?;
                 let updated_at: i64 = row.get(8)?;
 
-                let scope = Scope::from_str(&scope_str).unwrap_or(Scope::Global);
+                let scope = Scope::from_str(&scope_str).ok_or_else(|| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        3,
+                        rusqlite::types::Type::Text,
+                        Box::new(std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            format!("Invalid scope for rule {}: {}", id, scope_str),
+                        )),
+                    )
+                })?;
 
                 let target_paths: Option<Vec<String>> = match target_paths_json {
                     Some(j) => Some(serde_json::from_str(&j).map_err(|e| {
@@ -169,7 +178,17 @@ impl Database {
                 let created_at: i64 = row.get(7)?;
                 let updated_at: i64 = row.get(8)?;
 
-                let scope = Scope::from_str(&scope_str).unwrap_or(Scope::Global);
+                let scope = Scope::from_str(&scope_str).ok_or_else(|| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        3,
+                        rusqlite::types::Type::Text,
+                        Box::new(std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            format!("Invalid scope for rule {}: {}", id, scope_str),
+                        )),
+                    )
+                })?;
+
                 let target_paths: Option<Vec<String>> = match target_paths_json {
                     Some(j) => Some(serde_json::from_str(&j).map_err(|e| {
                         rusqlite::Error::FromSqlConversionFailure(
@@ -456,7 +475,7 @@ impl Database {
     pub fn get_all_skills(&self) -> Result<Vec<Skill>> {
         let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
         let mut stmt = conn.prepare(
-            "SELECT id, name, description, instructions, input_schema, enabled, created_at, updated_at, directory_path, entry_point
+            "SELECT id, name, description, instructions, input_schema, enabled, created_at, updated_at, directory_path, entry_point, scope
              FROM skills
              ORDER BY updated_at DESC",
         )?;
@@ -483,6 +502,16 @@ impl Database {
                     updated_at: parse_timestamp_or_now(row.get(7)?),
                     directory_path: row.get(8)?,
                     entry_point: row.get(9)?,
+                    scope: Scope::from_str(&row.get::<_, String>(10)?).ok_or_else(|| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            10,
+                            rusqlite::types::Type::Text,
+                            Box::new(std::io::Error::new(
+                                std::io::ErrorKind::InvalidData,
+                                "Invalid skill scope",
+                            )),
+                        )
+                    })?,
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -493,7 +522,7 @@ impl Database {
     pub fn get_skill_by_id(&self, id: &str) -> Result<Skill> {
         let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
         let mut stmt = conn.prepare(
-            "SELECT id, name, description, instructions, input_schema, enabled, created_at, updated_at, directory_path, entry_point
+            "SELECT id, name, description, instructions, input_schema, enabled, created_at, updated_at, directory_path, entry_point, scope
              FROM skills WHERE id = ?",
         )?;
 
@@ -519,6 +548,16 @@ impl Database {
                     updated_at: parse_timestamp_or_now(row.get(7)?),
                     directory_path: row.get(8)?,
                     entry_point: row.get(9)?,
+                    scope: Scope::from_str(&row.get::<_, String>(10)?).ok_or_else(|| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            10,
+                            rusqlite::types::Type::Text,
+                            Box::new(std::io::Error::new(
+                                std::io::ErrorKind::InvalidData,
+                                format!("Invalid scope for skill: {}", id),
+                            )),
+                        )
+                    })?,
                 })
             })
             .map_err(|e| match e {
@@ -538,8 +577,8 @@ impl Database {
         let input_schema_json = serde_json::to_string(&input.input_schema)?;
 
         conn.execute(
-            "INSERT INTO skills (id, name, description, instructions, input_schema, enabled, directory_path, entry_point, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO skills (id, name, description, instructions, input_schema, enabled, directory_path, entry_point, scope, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             params![
                 &id,
                 &input.name,
@@ -549,6 +588,7 @@ impl Database {
                 &input.enabled,
                 &input.directory_path,
                 &input.entry_point,
+                &input.scope.as_str(),
                 &now,
                 &now
             ],
@@ -569,11 +609,12 @@ impl Database {
         let enabled = input.enabled.unwrap_or(existing.enabled);
         let directory_path = input.directory_path.unwrap_or(existing.directory_path);
         let entry_point = input.entry_point.unwrap_or(existing.entry_point);
+        let scope = input.scope.unwrap_or(existing.scope);
         let now = chrono::Utc::now().timestamp();
         let input_schema_json = serde_json::to_string(&input_schema)?;
 
         conn.execute(
-            "UPDATE skills SET name = ?, description = ?, instructions = ?, input_schema = ?, enabled = ?, directory_path = ?, entry_point = ?, updated_at = ? WHERE id = ?",
+            "UPDATE skills SET name = ?, description = ?, instructions = ?, input_schema = ?, enabled = ?, directory_path = ?, entry_point = ?, scope = ?, updated_at = ? WHERE id = ?",
             params![
                 &name,
                 &description,
@@ -582,6 +623,7 @@ impl Database {
                 &enabled,
                 &directory_path,
                 &entry_point,
+                &scope.as_str(),
                 &now,
                 &id
             ],
@@ -1124,7 +1166,21 @@ fn run_migrations(conn: &mut Connection) -> Result<()> {
         }
     }
 
-    transaction.execute("PRAGMA user_version = 7", [])?;
+    if current_version < 8 {
+        let mut stmt = transaction.prepare("PRAGMA table_info(skills)")?;
+        let cols: Vec<String> = stmt
+            .query_map([], |row| row.get(1))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+
+        if !cols.iter().any(|c| c == "scope") {
+            transaction.execute(
+                "ALTER TABLE skills ADD COLUMN scope TEXT NOT NULL DEFAULT 'global'",
+                [],
+            )?;
+        }
+    }
+
+    transaction.execute("PRAGMA user_version = 8", [])?;
     transaction.commit()?;
 
     Ok(())
@@ -1169,6 +1225,7 @@ mod tests {
             }],
             directory_path: "/test/path".to_string(),
             entry_point: "main.sh".to_string(),
+            scope: Scope::Global,
             enabled: true,
         };
 

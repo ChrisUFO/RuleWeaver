@@ -1,4 +1,5 @@
 use crate::error::{AppError, Result};
+use crate::models::Scope;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
@@ -8,6 +9,7 @@ pub struct Skill {
     pub name: String,
     pub description: String,
     pub instructions: String,
+    pub scope: Scope,
     #[serde(default)]
     pub input_schema: Vec<SkillParameter>,
     pub enabled: bool,
@@ -213,6 +215,7 @@ pub struct CreateSkillInput {
     pub name: String,
     pub description: String,
     pub instructions: String,
+    pub scope: Scope,
     #[serde(default)]
     pub input_schema: Vec<SkillParameter>,
     pub directory_path: String,
@@ -230,6 +233,7 @@ pub struct UpdateSkillInput {
     pub name: Option<String>,
     pub description: Option<String>,
     pub instructions: Option<String>,
+    pub scope: Option<Scope>,
     pub input_schema: Option<Vec<SkillParameter>>,
     pub directory_path: Option<String>,
     pub entry_point: Option<String>,

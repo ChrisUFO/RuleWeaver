@@ -25,6 +25,7 @@ export const api = {
     create: (input: CreateRuleInput) => invoke<Rule>("create_rule", { input }),
     update: (id: string, input: UpdateRuleInput) => invoke<Rule>("update_rule", { id, input }),
     delete: (id: string) => invoke<void>("delete_rule", { id }),
+    bulkDelete: (ids: string[]) => invoke<void>("bulk_delete_rules", { ids }),
     toggle: (id: string, enabled: boolean) => invoke<Rule>("toggle_rule", { id, enabled }),
   },
 
