@@ -57,5 +57,4 @@ pub mod commands;
 pub mod sync;
 
 pub use adapters::*;
-pub use commands::*;
 pub use sync::*;

@@ -10,7 +10,7 @@ use crate::models::Command;
 use crate::slash_commands::{get_adapter, SlashCommandAdapter};
 
 /// Represents the result of a slash command sync operation
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct SlashCommandSyncResult {
     pub files_written: usize,
     pub files_removed: usize,
@@ -40,7 +40,7 @@ impl Default for SlashCommandSyncResult {
 }
 
 /// Represents a conflict in slash command sync
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct SlashCommandConflict {
     pub command_name: String,
     pub adapter_name: String,
@@ -276,7 +276,7 @@ impl SlashCommandSyncEngine {
 }
 
 /// Represents the sync status of a command
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub enum SyncStatus {
     /// Command is synced and up to date
     Synced,

@@ -6,8 +6,7 @@ use tauri::State;
 use crate::database::Database;
 use crate::error::Result;
 use crate::slash_commands::{
-    get_all_adapters, get_command_sync_status, SlashCommandAdapter, SlashCommandConflict,
-    SlashCommandSyncEngine, SlashCommandSyncResult, SyncStatus,
+    get_all_adapters, SlashCommandSyncEngine, SlashCommandSyncResult, SyncStatus,
 };
 
 /// Sync slash commands for a specific command
