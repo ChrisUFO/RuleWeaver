@@ -38,7 +38,7 @@ if !PATCH! gtr 255 (
     )
 )
 
-REM Generate timestamp for prerelease (YYMMDDHHMM)
+REM Generate timestamps
 for /f "tokens=2-4 delims=/ " %%a in ('date /t') do (
     set year=%%c
     set month=%%a
@@ -50,10 +50,14 @@ for /f "tokens=1-2 delims=: " %%a in ('time /t') do (
 )
 set year=!year:~2,2!
 
-set TIMESTAMP=!year!!month!!day!!hour!!minute!
+REM Full timestamp for filename: YYMMDDHHMM
+set FULL_TIMESTAMP=!year!!month!!day!!hour!!minute!
 
-REM Final version: MAJOR.MINOR.PATCH-TIMESTAMP
-set VERSION=!MAJOR!.!MINOR!.!PATCH!-!TIMESTAMP!
+REM Prerelease for version: DDMM (max 3112, fits in 65535)
+set PRERELEASE=!day!!month!
+
+REM Final version: MAJOR.MINOR.PATCH-DDMM
+set VERSION=!MAJOR!.!MINOR!.!PATCH!-!PRERELEASE!
 
 echo 📦 Current: !CURRENT_VERSION!
 echo 📅 New version: !VERSION!

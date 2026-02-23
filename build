@@ -37,11 +37,12 @@ if [ $PATCH -gt 255 ]; then
     fi
 fi
 
-# Generate timestamp for prerelease
-TIMESTAMP=$(date +"%y%m%d%H%M")
+# Generate timestamps
+FULL_TIMESTAMP=$(date +"%y%m%d%H%M")  # For filename: YYMMDDHHMM
+PRERELEASE=$(date +"%d%m")               # For version: DDMM (max 3112, fits in 65535)
 
-# Final version with prerelease: 0.0.X-YYMMDDHHMM
-VERSION="$MAJOR.$MINOR.$PATCH-$TIMESTAMP"
+# Final version with prerelease: 0.0.X-DDMM
+VERSION="$MAJOR.$MINOR.$PATCH-$PRERELEASE"
 
 echo "📦 Current: $CURRENT_VERSION"
 echo "📅 New version: $VERSION"

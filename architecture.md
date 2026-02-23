@@ -6,29 +6,34 @@ RuleWeaver is designed as a standalone desktop application. It requires deep fil
 
 RuleWeaver uses an **auto-incrementing timestamp-based versioning scheme** to avoid formal semantic versioning during rapid development phases.
 
-**Format:** `MAJOR.MINOR.PATCH-YYMMDDHHMM`
+**Format:** `MAJOR.MINOR.PATCH-DDMM`
 
-- **Example:** `0.0.1-2602231155` (first build on Feb 23, 2026 at 11:55)
+- **Example:** `0.0.1-2302` (first build on Feb 23)
 
 **Version Components:**
 
 - `MAJOR.MINOR.PATCH`: Auto-incremented on each build (e.g., 0.0.1, 0.0.2, ...)
-- `YYMMDDHHMM`: Build timestamp as prerelease identifier
+- `DDMM`: Day and month as prerelease identifier (max 3112, fits MSI bundler limit of 65535)
 - **Rollover:** When PATCH reaches 255, it resets to 0 and increments MINOR (0.0.255 → 0.1.0). Same for MINOR → MAJOR.
 
 **Why this format?**
 
 - Valid semver compatible with Tauri bundler
+- MSI bundler compatible (prerelease ≤ 65535)
 - Windows VERSIONINFO compatible (all components ≤ 255)
-- Shows both version progression and exact build time
+- Shows version progression and build date
 - No manual version management needed during development
+
+**Build Artifacts:**
+
+Installers include the full timestamp in the filename (e.g., `ruleweaver_0.0.1_2602231155.exe`), allowing precise build identification while keeping the version string MSI-compatible.
 
 **Build Scripts:**
 
 - `./build` (Unix/macOS) and `./build.bat` (Windows) automatically:
   1. Parse current version from `package.json`
   2. Increment PATCH (with rollover logic)
-  3. Generate timestamp
+  3. Generate DDMM prerelease and full YYMMDDHHMM timestamp
   4. Update all version files (`package.json`, `Cargo.toml`, `tauri.conf.json`)
 
 ## Tech Stack
