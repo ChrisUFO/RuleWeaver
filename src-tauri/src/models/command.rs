@@ -149,6 +149,8 @@ mod tests {
                 options: None,
             }],
             expose_via_mcp: true,
+            generate_slash_commands: false,
+            slash_command_adapters: vec![],
         };
 
         let json = serde_json::to_string(&input).expect("serialize create input");

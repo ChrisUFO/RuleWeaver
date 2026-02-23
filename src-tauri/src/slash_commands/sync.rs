@@ -294,7 +294,6 @@ fn calculate_hash(content: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{ArgumentType, Command, CommandArgument, CreateCommandInput};
 
     #[test]
     fn test_sync_status_enum() {
