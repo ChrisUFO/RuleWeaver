@@ -6,8 +6,8 @@
 set -e
 
 if [ -z "$1" ]; then
-    # Generate timestamp version (YYMMDD.HHMM format)
-    VERSION=$(date +"%y%m%d.%H%M")
+    # Generate timestamp version (0.YYMMDD.HHMM format for semver compatibility)
+    VERSION="0.$(date +"%y%m%d.%H%M")"
 else
     VERSION="$1"
 fi

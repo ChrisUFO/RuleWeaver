@@ -8,8 +8,8 @@ set -e
 echo "🔨 Building RuleWeaver..."
 echo ""
 
-# Generate timestamp version (YYMMDD.HHMM format)
-VERSION=$(date +"%y%m%d.%H%M")
+# Generate timestamp version (0.YYMMDD.HHMM format for semver compatibility)
+VERSION="0.$(date +"%y%m%d.%H%M")"
 echo "📅 Setting version to: $VERSION"
 echo ""
 

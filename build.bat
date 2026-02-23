@@ -23,7 +23,7 @@ set day=!day:~0,2!
 set hour=!hour:~0,2!
 set minute=!minute:~0,2!
 
-set VERSION=!year!!month!!day!.!hour!!minute!
+set VERSION=0.!year!!month!!day!.!hour!!minute!
 echo 📅 Setting version to: !VERSION!
 echo.
 

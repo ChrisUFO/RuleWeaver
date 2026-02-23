@@ -1,7 +1,7 @@
 {
   "name": "ruleweaver",
   "private": true,
-  "version": "260223.1040",
+  "version": "0.260223.1044",
   "type": "module",
   "scripts": {
     "dev": "vite",

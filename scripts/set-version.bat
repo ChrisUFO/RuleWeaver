@@ -15,9 +15,9 @@ if "%~1"=="" (
         set hour=%%a
         set minute=%%b
     )
-    REM Remove century from year (20)
+    REM Remove century from year (20) and add 0. prefix for semver
     set year=!year:~2,2!
-    set VERSION=!year!!month!!day!.!hour!!minute!
+    set VERSION=0.!year!!month!!day!.!hour!!minute!
 ) else (
     set VERSION=%~1
 )

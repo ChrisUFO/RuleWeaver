@@ -566,6 +566,7 @@ impl<'a> SyncEngine<'a> {
         }
     }
 
+    #[allow(dead_code)]
     pub fn sync_rule(&self, rule: Rule) -> SyncResult {
         let mut files_written = Vec::new();
         let mut errors = Vec::new();
@@ -591,13 +592,15 @@ impl<'a> SyncEngine<'a> {
         };
 
         for adapter in &adapters {
-            if disabled_adapters.contains(&adapter.id()) || !rule.enabled_adapters.contains(&adapter.id()) {
+            if disabled_adapters.contains(&adapter.id())
+                || !rule.enabled_adapters.contains(&adapter.id())
+            {
                 continue;
             }
 
             // For each adapter, we need to sync the file(s) this rule belongs to.
             // This means re-collecting ALL rules for that target file to ensure its content is correct.
-            
+
             if rule.scope == Scope::Global {
                 let path = match adapter.global_path() {
                     Ok(p) => p,
@@ -610,10 +613,12 @@ impl<'a> SyncEngine<'a> {
                         continue;
                     }
                 };
-                
+
                 let global_rules: Vec<Rule> = all_rules
                     .iter()
-                    .filter(|r| r.scope == Scope::Global && r.enabled_adapters.contains(&adapter.id()))
+                    .filter(|r| {
+                        r.scope == Scope::Global && r.enabled_adapters.contains(&adapter.id())
+                    })
                     .cloned()
                     .collect();
 
@@ -628,15 +633,18 @@ impl<'a> SyncEngine<'a> {
             } else if rule.scope == Scope::Local {
                 if let Some(paths) = &rule.target_paths {
                     for base_path in paths {
-                        if let Ok(_) = validate_target_path(base_path) {
+                        if validate_target_path(base_path).is_ok() {
                             let path = PathBuf::from(base_path).join(adapter.file_name());
-                            
+
                             let path_rules: Vec<Rule> = all_rules
                                 .iter()
                                 .filter(|r| {
-                                    r.scope == Scope::Local && 
-                                    r.enabled_adapters.contains(&adapter.id()) &&
-                                    r.target_paths.as_ref().map(|p| p.contains(base_path)).unwrap_or(false)
+                                    r.scope == Scope::Local
+                                        && r.enabled_adapters.contains(&adapter.id())
+                                        && r.target_paths
+                                            .as_ref()
+                                            .map(|p| p.contains(base_path))
+                                            .unwrap_or(false)
                                 })
                                 .cloned()
                                 .collect();

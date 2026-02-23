@@ -61,6 +61,10 @@ pub enum AppError {
     #[error("File watcher error: {message}")]
     #[allow(dead_code)]
     Watcher { message: String },
+
+    #[error("Internal error: {message}")]
+    #[allow(dead_code)]
+    Internal { message: String },
 }
 
 impl<T> From<PoisonError<T>> for AppError {
