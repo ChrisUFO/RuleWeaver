@@ -1,6 +1,5 @@
-use super::{SlashCommandAdapter, SlashCommandOutput};
+use super::SlashCommandAdapter;
 use crate::models::Command;
-use std::collections::HashMap;
 use std::path::PathBuf;
 
 /// OpenCode slash command adapter

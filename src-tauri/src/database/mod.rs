@@ -321,7 +321,7 @@ impl Database {
     pub fn get_all_commands(&self) -> Result<Vec<Command>> {
         let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
         let mut stmt = conn.prepare(
-            "SELECT id, name, description, script, arguments, expose_via_mcp, created_at, updated_at
+            "SELECT id, name, description, script, arguments, expose_via_mcp, generate_slash_commands, slash_command_adapters, created_at, updated_at
              FROM commands
              ORDER BY updated_at DESC",
         )?;
@@ -334,8 +334,10 @@ impl Database {
                 let script: String = row.get(3)?;
                 let arguments_json: String = row.get(4)?;
                 let expose_via_mcp: bool = row.get(5)?;
-                let created_at: i64 = row.get(6)?;
-                let updated_at: i64 = row.get(7)?;
+                let generate_slash_commands: bool = row.get(6)?;
+                let slash_adapters_json: String = row.get(7)?;
+                let created_at: i64 = row.get(8)?;
+                let updated_at: i64 = row.get(9)?;
 
                 let arguments: Vec<CommandArgument> = serde_json::from_str(&arguments_json)
                     .map_err(|e| {
@@ -346,6 +348,9 @@ impl Database {
                         )
                     })?;
 
+                let slash_command_adapters: Vec<String> =
+                    serde_json::from_str(&slash_adapters_json).unwrap_or_default();
+
                 Ok(Command {
                     id,
                     name,
@@ -353,6 +358,8 @@ impl Database {
                     script,
                     arguments,
                     expose_via_mcp,
+                    generate_slash_commands,
+                    slash_command_adapters,
                     created_at: parse_timestamp_or_now(created_at),
                     updated_at: parse_timestamp_or_now(updated_at),
                 })
@@ -365,7 +372,7 @@ impl Database {
     pub fn get_command_by_id(&self, id: &str) -> Result<Command> {
         let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
         let mut stmt = conn.prepare(
-            "SELECT id, name, description, script, arguments, expose_via_mcp, created_at, updated_at
+            "SELECT id, name, description, script, arguments, expose_via_mcp, generate_slash_commands, slash_command_adapters, created_at, updated_at
              FROM commands
              WHERE id = ?",
         )?;
@@ -378,8 +385,10 @@ impl Database {
                 let script: String = row.get(3)?;
                 let arguments_json: String = row.get(4)?;
                 let expose_via_mcp: bool = row.get(5)?;
-                let created_at: i64 = row.get(6)?;
-                let updated_at: i64 = row.get(7)?;
+                let generate_slash_commands: bool = row.get(6)?;
+                let slash_adapters_json: String = row.get(7)?;
+                let created_at: i64 = row.get(8)?;
+                let updated_at: i64 = row.get(9)?;
 
                 let arguments: Vec<CommandArgument> = serde_json::from_str(&arguments_json)
                     .map_err(|e| {
@@ -390,6 +399,9 @@ impl Database {
                         )
                     })?;
 
+                let slash_command_adapters: Vec<String> =
+                    serde_json::from_str(&slash_adapters_json).unwrap_or_default();
+
                 Ok(Command {
                     id,
                     name,
@@ -397,6 +409,8 @@ impl Database {
                     script,
                     arguments,
                     expose_via_mcp,
+                    generate_slash_commands,
+                    slash_command_adapters,
                     created_at: parse_timestamp_or_now(created_at),
                     updated_at: parse_timestamp_or_now(updated_at),
                 })
