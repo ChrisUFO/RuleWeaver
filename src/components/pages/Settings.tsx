@@ -89,6 +89,7 @@ export function Settings() {
           mcpAutoStartSetting,
           minimizeToTraySetting,
           mcpLogsInitial,
+          autoStartEnabled,
         ] = await Promise.all([
           api.app.getAppDataPath(),
           api.app.getVersion(),
