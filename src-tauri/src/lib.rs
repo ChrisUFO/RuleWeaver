@@ -6,6 +6,7 @@ mod execution;
 mod file_storage;
 mod mcp;
 mod models;
+mod slash_commands;
 mod sync;
 pub mod templates;
 

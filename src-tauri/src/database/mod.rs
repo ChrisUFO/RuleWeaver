@@ -416,10 +416,11 @@ impl Database {
         let now = chrono::Utc::now().timestamp();
         let id = uuid::Uuid::new_v4().to_string();
         let arguments_json = serde_json::to_string(&input.arguments)?;
+        let slash_adapters_json = serde_json::to_string(&input.slash_command_adapters)?;
 
         conn.execute(
-            "INSERT INTO commands (id, name, description, script, arguments, expose_via_mcp, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO commands (id, name, description, script, arguments, expose_via_mcp, generate_slash_commands, slash_command_adapters, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             params![
                 id,
                 input.name,
@@ -427,6 +428,8 @@ impl Database {
                 input.script,
                 arguments_json,
                 input.expose_via_mcp,
+                input.generate_slash_commands,
+                slash_adapters_json,
                 now,
                 now
             ],
@@ -445,11 +448,18 @@ impl Database {
         let script = input.script.unwrap_or(existing.script);
         let arguments = input.arguments.unwrap_or(existing.arguments);
         let expose_via_mcp = input.expose_via_mcp.unwrap_or(existing.expose_via_mcp);
+        let generate_slash_commands = input
+            .generate_slash_commands
+            .unwrap_or(existing.generate_slash_commands);
+        let slash_command_adapters = input
+            .slash_command_adapters
+            .unwrap_or(existing.slash_command_adapters);
         let now = chrono::Utc::now().timestamp();
         let arguments_json = serde_json::to_string(&arguments)?;
+        let slash_adapters_json = serde_json::to_string(&slash_command_adapters)?;
 
         conn.execute(
-            "UPDATE commands SET name = ?, description = ?, script = ?, arguments = ?, expose_via_mcp = ?, updated_at = ?
+            "UPDATE commands SET name = ?, description = ?, script = ?, arguments = ?, expose_via_mcp = ?, generate_slash_commands = ?, slash_command_adapters = ?, updated_at = ?
              WHERE id = ?",
             params![
                 name,
@@ -457,6 +467,8 @@ impl Database {
                 script,
                 arguments_json,
                 expose_via_mcp,
+                generate_slash_commands,
+                slash_adapters_json,
                 now,
                 id
             ],
@@ -1180,7 +1192,28 @@ fn run_migrations(conn: &mut Connection) -> Result<()> {
         }
     }
 
-    transaction.execute("PRAGMA user_version = 8", [])?;
+    if current_version < 9 {
+        // Add slash command support columns to commands table
+        let mut stmt = transaction.prepare("PRAGMA table_info(commands)")?;
+        let cols: Vec<String> = stmt
+            .query_map([], |row| row.get(1))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+
+        if !cols.iter().any(|c| c == "generate_slash_commands") {
+            transaction.execute(
+                "ALTER TABLE commands ADD COLUMN generate_slash_commands INTEGER NOT NULL DEFAULT 0",
+                [],
+            )?;
+        }
+        if !cols.iter().any(|c| c == "slash_command_adapters") {
+            transaction.execute(
+                "ALTER TABLE commands ADD COLUMN slash_command_adapters TEXT NOT NULL DEFAULT '[]'",
+                [],
+            )?;
+        }
+    }
+
+    transaction.execute("PRAGMA user_version = 9", [])?;
     transaction.commit()?;
 
     Ok(())
