@@ -30,8 +30,14 @@ pub struct GlobalStatus {
 
 impl GlobalStatus {
     pub fn update_tray(&self) {
-        let sync = self.sync_status.lock().clone();
-        let mcp = self.mcp_status.lock().clone();
+        let sync = match self.sync_status.try_lock() {
+            Some(s) => s.clone(),
+            None => return,
+        };
+        let mcp = match self.mcp_status.try_lock() {
+            Some(s) => s.clone(),
+            None => return,
+        };
 
         if let Some(menu) = self.menu.lock().as_ref() {
             if let Ok(items) = menu.items() {
@@ -201,6 +207,9 @@ pub fn run() {
                         }
                     }
                     "quit" => {
+                        if let Some(watcher_state) = app.try_state::<WatcherState>() {
+                            let _ = watcher_state.0.stop();
+                        }
                         if let Some(mcp) = app.try_state::<McpManager>() {
                             let mcp_clone = mcp.inner().clone();
                             tauri::async_runtime::spawn(async move {
@@ -363,13 +372,21 @@ fn setup_watcher(
                 
                 // Use spawn_blocking for all FS and DB operations
                 let app_clone = app.clone();
+                let app_for_blocking = app.clone();
                 tauri::async_runtime::spawn(async move {
                     let result = tokio::task::spawn_blocking(move || {
-                        handle_external_rule_change(&app_clone, &db, path)
+                        handle_external_rule_change(&app_for_blocking, &db, path)
                     }).await;
                     
                     if let Err(e) = result {
                         log::error!("Join error in watcher task: {}", e);
+                        use tauri_plugin_notification::NotificationExt;
+                        app_clone.notification()
+                            .builder()
+                            .title("Sync Error")
+                            .body("Failed to process file changes")
+                            .show()
+                            .ok();
                     } else if let Ok(Err(e)) = result {
                         log::error!("Failed to handle external rule change: {}", e);
                     }

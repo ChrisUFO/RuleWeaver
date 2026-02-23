@@ -918,6 +918,25 @@ impl Database {
         Ok(())
     }
 
+    pub fn import_configuration(
+        &self,
+        config: crate::models::ExportConfiguration,
+        mode: crate::models::ImportMode,
+    ) -> Result<()> {
+        for rule in config.rules {
+            self.import_rule(rule, mode)?;
+        }
+
+        for command in config.commands {
+            self.import_command(command, mode)?;
+        }
+
+        for skill in config.skills {
+            self.import_skill(skill, mode)?;
+        }
+        Ok(())
+    }
+
     pub fn get_storage_mode(&self) -> Result<String> {
         let mode = self.get_setting("storage_mode")?;
         Ok(mode.unwrap_or_else(|| "sqlite".to_string()))

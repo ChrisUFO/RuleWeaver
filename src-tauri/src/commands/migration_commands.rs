@@ -142,6 +142,23 @@ fn validate_config_data(config: &crate::models::ExportConfiguration) -> Result<(
                 rule.name
             )));
         }
+        if let Some(ref paths) = rule.target_paths {
+            for path in paths {
+                if path.contains("..") {
+                    return Err(crate::error::AppError::Validation(format!(
+                        "Imported rule '{}' contains invalid path traversal sequence: {}",
+                        rule.name, path
+                    )));
+                }
+                let p = std::path::Path::new(path);
+                if !p.is_absolute() {
+                    return Err(crate::error::AppError::Validation(format!(
+                        "Imported rule '{}' contains non-absolute path: {}",
+                        rule.name, path
+                    )));
+                }
+            }
+        }
     }
 
     for cmd in &config.commands {
@@ -228,18 +245,7 @@ pub async fn import_configuration(
 
     // Perform DB operations in a blocking task to keep UI responsive
     tokio::task::spawn_blocking(move || -> Result<()> {
-        for rule in config.rules {
-            db_clone.import_rule(rule, mode)?;
-        }
-
-        for command in config.commands {
-            db_clone.import_command(command, mode)?;
-        }
-
-        for skill in config.skills {
-            db_clone.import_skill(skill, mode)?;
-        }
-        Ok(())
+        db_clone.import_configuration(config, mode)
     })
     .await
     .map_err(|e| crate::error::AppError::InvalidInput {
