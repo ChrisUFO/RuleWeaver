@@ -6,8 +6,10 @@
 set -e
 
 if [ -z "$1" ]; then
-    # Generate timestamp version (0.YYMMDD.HHMM format for semver compatibility)
-    VERSION="0.$(date +"%y%m%d.%H%M")"
+    # Generate timestamp version (YYMM.HH.MM format for semver compatibility)
+    # Format: YearMonth.Hour.Minute (e.g., 2502.14.30)
+    # This keeps all version components under 255 as required by Tauri bundler
+    VERSION=$(date +"%y%m.%H.%M")
 else
     VERSION="$1"
 fi

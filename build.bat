@@ -1,12 +1,32 @@
 @echo off
 setlocal EnableDelayedExpansion
 REM RuleWeaver Build Script
-REM Builds the production distribution with timestamp-based versioning
+REM Builds the production distribution with auto-increment versioning
 
 echo 🔨 Building RuleWeaver...
 echo.
 
-REM Generate timestamp version (YYMMDD.HHMM format)
+REM Get current version from package.json
+for /f "tokens=*" %%a in ('powershell -Command "(Get-Content package.json | ConvertFrom-Json).version"') do set CURRENT_VERSION=%%a
+
+REM Extract version components and increment patch
+for /f "tokens=1,2,3 delims=- " %%a in ("!CURRENT_VERSION!") do (
+    for /f "tokens=1,2,3 delims=." %%i in ("%%a") do (
+        set MAJOR=%%i
+        set MINOR=%%j
+        set PATCH=%%k
+    )
+)
+
+REM Default to 0.0.0 if parsing fails
+if "!MAJOR!"=="" set MAJOR=0
+if "!MINOR!"=="" set MINOR=0
+if "!PATCH!"=="" set PATCH=0
+
+REM Increment patch
+set /a PATCH=!PATCH!+1
+
+REM Generate timestamp for prerelease (YYMMDDHHMM)
 for /f "tokens=2-4 delims=/ " %%a in ('date /t') do (
     set year=%%c
     set month=%%a
@@ -16,15 +36,15 @@ for /f "tokens=1-2 delims=: " %%a in ('time /t') do (
     set hour=%%a
     set minute=%%b
 )
-REM Remove century from year (20) and leading zeros if any
 set year=!year:~2,2!
-set month=!month:~0,2!
-set day=!day:~0,2!
-set hour=!hour:~0,2!
-set minute=!minute:~0,2!
 
-set VERSION=0.!year!!month!!day!.!hour!!minute!
-echo 📅 Setting version to: !VERSION!
+set TIMESTAMP=!year!!month!!day!!hour!!minute!
+
+REM Final version: MAJOR.MINOR.PATCH-TIMESTAMP
+set VERSION=!MAJOR!.!MINOR!.!PATCH!-!TIMESTAMP!
+
+echo 📦 Current: !CURRENT_VERSION!
+echo 📅 New version: !VERSION!
 echo.
 
 REM Update package.json version
