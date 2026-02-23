@@ -2,6 +2,35 @@
 
 RuleWeaver is designed as a standalone desktop application. It requires deep filesystem access to sync tool configurations globally and locally, as well as network capabilities to host a local server.
 
+## Versioning Strategy
+
+RuleWeaver uses an **auto-incrementing timestamp-based versioning scheme** to avoid formal semantic versioning during rapid development phases.
+
+**Format:** `MAJOR.MINOR.PATCH-YYMMDDHHMM`
+
+- **Example:** `0.0.1-2602231155` (first build on Feb 23, 2026 at 11:55)
+
+**Version Components:**
+
+- `MAJOR.MINOR.PATCH`: Auto-incremented on each build (e.g., 0.0.1, 0.0.2, ...)
+- `YYMMDDHHMM`: Build timestamp as prerelease identifier
+- **Rollover:** When PATCH reaches 255, it resets to 0 and increments MINOR (0.0.255 → 0.1.0). Same for MINOR → MAJOR.
+
+**Why this format?**
+
+- Valid semver compatible with Tauri bundler
+- Windows VERSIONINFO compatible (all components ≤ 255)
+- Shows both version progression and exact build time
+- No manual version management needed during development
+
+**Build Scripts:**
+
+- `./build` (Unix/macOS) and `./build.bat` (Windows) automatically:
+  1. Parse current version from `package.json`
+  2. Increment PATCH (with rollover logic)
+  3. Generate timestamp
+  4. Update all version files (`package.json`, `Cargo.toml`, `tauri.conf.json`)
+
 ## Tech Stack
 
 - **Framework:** [Tauri](https://tauri.app/) (desktop shell + native Rust backend).
