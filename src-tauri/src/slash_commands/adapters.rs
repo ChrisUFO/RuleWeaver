@@ -415,7 +415,7 @@ pub fn get_all_adapters() -> Vec<Box<dyn SlashCommandAdapter>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{ArgumentType, Command, CommandArgument};
+    use crate::models::Command;
 
     fn create_test_command() -> Command {
         Command::new(
