@@ -272,7 +272,7 @@ describe("api.mcp", () => {
     });
 
     it("should get MCP status", async () => {
-      const status = { running: true, port: 3000 };
+      const status = { running: true, port: 3000, uptime_seconds: 120 };
       vi.mocked(api.mcp.getStatus).mockResolvedValue(status);
 
       const result = await api.mcp.getStatus();
@@ -283,13 +283,13 @@ describe("api.mcp", () => {
     });
 
     it("should handle stopped MCP server status", async () => {
-      const status = { running: false, port: null };
+      const status = { running: false, port: 0, uptime_seconds: 0 };
       vi.mocked(api.mcp.getStatus).mockResolvedValue(status);
 
       const result = await api.mcp.getStatus();
 
       expect(result.running).toBe(false);
-      expect(result.port).toBeNull();
+      expect(result.port).toBe(0);
     });
   });
 });
