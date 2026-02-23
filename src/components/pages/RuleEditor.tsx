@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   ArrowLeft,
   Save,
@@ -52,6 +52,7 @@ export function RuleEditor({ rule, onBack, isNew = false }: RuleEditorProps) {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [previewAdapter, setPreviewAdapter] = useState<AdapterType>("gemini");
   const [newPath, setNewPath] = useState("");
+  const isInitialized = useRef(false);
 
   const wordCount = getWordCount(content);
   const characterCount = getCharacterCount(content);
@@ -64,15 +65,21 @@ export function RuleEditor({ rule, onBack, isNew = false }: RuleEditorProps) {
         if (savedDefaults) {
           const parsed = JSON.parse(savedDefaults);
           setDefaultAdapters(parsed);
+        } else {
+          // Fallback if no settings found yet
+          setDefaultAdapters(["gemini", "opencode"]);
         }
       } catch {
         console.error("Failed to load default adapters from database");
+        setDefaultAdapters(["gemini", "opencode"]);
       }
     };
     loadDefaultAdapters();
   }, []);
 
   useEffect(() => {
+    if (isInitialized.current) return;
+
     if (rule) {
       setName(rule.name);
       setContent(rule.content);
@@ -80,16 +87,19 @@ export function RuleEditor({ rule, onBack, isNew = false }: RuleEditorProps) {
       setTargetPaths(rule.targetPaths || []);
       setEnabledAdapters(rule.enabledAdapters);
       setPreviewAdapter(rule.enabledAdapters[0] || "gemini");
-    } else if (isNew && enabledAdapters.length === 0) {
-      const initialAdapters =
-        defaultAdapters.length > 0 ? defaultAdapters : (["gemini", "opencode"] as AdapterType[]);
-      setEnabledAdapters(initialAdapters);
-      setPreviewAdapter(initialAdapters[0]);
+      isInitialized.current = true;
+    } else if (isNew && defaultAdapters.length > 0) {
+      setEnabledAdapters(defaultAdapters);
+      setPreviewAdapter(defaultAdapters[0]);
+      isInitialized.current = true;
     }
-  }, [rule, isNew, defaultAdapters, enabledAdapters.length]);
+  }, [rule, isNew, defaultAdapters]);
 
   useEffect(() => {
-    setHasUnsavedChanges(true);
+    // Only set unsaved changes if we've finished initializing
+    if (isInitialized.current) {
+      setHasUnsavedChanges(true);
+    }
   }, [name, content, scope, targetPaths, enabledAdapters]);
 
   const handleSave = useCallback(async () => {
@@ -198,17 +208,23 @@ export function RuleEditor({ rule, onBack, isNew = false }: RuleEditorProps) {
     ],
   });
 
-  const toggleAdapter = (adapter: AdapterType) => {
-    if (enabledAdapters.includes(adapter)) {
-      const newAdapters = enabledAdapters.filter((a) => a !== adapter);
-      setEnabledAdapters(newAdapters);
-      if (newAdapters.length > 0 && !newAdapters.includes(previewAdapter)) {
-        setPreviewAdapter(newAdapters[0]);
-      }
-    } else {
-      setEnabledAdapters([...enabledAdapters, adapter]);
-    }
-  };
+  const toggleAdapter = useCallback(
+    (adapter: AdapterType) => {
+      setEnabledAdapters((prev) => {
+        if (prev.includes(adapter)) {
+          const next = prev.filter((a) => a !== adapter);
+          // If the current preview adapter was removed, switch to another one
+          if (next.length > 0 && adapter === previewAdapter) {
+            setPreviewAdapter(next[0]);
+          }
+          return next;
+        } else {
+          return [...prev, adapter];
+        }
+      });
+    },
+    [previewAdapter]
+  );
 
   const addPath = () => {
     if (newPath.trim() && !targetPaths.includes(newPath.trim())) {
@@ -470,9 +486,10 @@ export function RuleEditor({ rule, onBack, isNew = false }: RuleEditorProps) {
               </p>
               <div className="space-y-2">
                 {ADAPTERS.map((adapter) => (
-                  <label
+                  <div
                     key={adapter.id}
-                    className="flex items-center justify-between p-2 rounded-md hover:bg-accent cursor-pointer"
+                    className="flex items-center justify-between p-2 rounded-md hover:bg-accent cursor-pointer transition-colors"
+                    onClick={() => toggleAdapter(adapter.id)}
                   >
                     <div className="flex items-center gap-2">
                       <Switch
@@ -485,7 +502,7 @@ export function RuleEditor({ rule, onBack, isNew = false }: RuleEditorProps) {
                         <div className="text-xs text-muted-foreground">{adapter.fileName}</div>
                       </div>
                     </div>
-                  </label>
+                  </div>
                 ))}
               </div>
             </div>
