@@ -29,6 +29,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { api } from "@/lib/tauri";
+import { cn } from "@/lib/utils";
 import { useToast } from "@/components/ui/toast";
 import { ADAPTERS, type AdapterType, type Rule } from "@/types/rule";
 import type { CommandModel } from "@/types/command";
