@@ -35,6 +35,10 @@ pub enum AdapterType {
     Cline,
     ClaudeCode,
     Codex,
+    Kilo,
+    Cursor,
+    Windsurf,
+    RooCode,
 }
 
 impl AdapterType {
@@ -46,6 +50,10 @@ impl AdapterType {
             AdapterType::Cline => "cline",
             AdapterType::ClaudeCode => "claude-code",
             AdapterType::Codex => "codex",
+            AdapterType::Kilo => "kilo",
+            AdapterType::Cursor => "cursor",
+            AdapterType::Windsurf => "windsurf",
+            AdapterType::RooCode => "roocode",
         }
     }
 
@@ -57,6 +65,10 @@ impl AdapterType {
             "cline" => Some(AdapterType::Cline),
             "claude-code" => Some(AdapterType::ClaudeCode),
             "codex" => Some(AdapterType::Codex),
+            "kilo" => Some(AdapterType::Kilo),
+            "cursor" => Some(AdapterType::Cursor),
+            "windsurf" => Some(AdapterType::Windsurf),
+            "roocode" => Some(AdapterType::RooCode),
             _ => None,
         }
     }
@@ -70,6 +82,10 @@ impl AdapterType {
             AdapterType::Cline,
             AdapterType::ClaudeCode,
             AdapterType::Codex,
+            AdapterType::Kilo,
+            AdapterType::Cursor,
+            AdapterType::Windsurf,
+            AdapterType::RooCode,
         ]
     }
 }

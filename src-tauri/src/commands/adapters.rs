@@ -87,6 +87,46 @@ impl CommandAdapter for ClaudeAdapter {
     }
 }
 
+pub struct KiloAdapter;
+impl CommandAdapter for KiloAdapter {
+    fn name(&self) -> &'static str {
+        "kilo"
+    }
+    fn format(&self, commands: &[Command]) -> String {
+        format_markdown(commands, "RuleWeaver Commands (Kilo Code)")
+    }
+}
+
+pub struct CursorAdapter;
+impl CommandAdapter for CursorAdapter {
+    fn name(&self) -> &'static str {
+        "cursor"
+    }
+    fn format(&self, commands: &[Command]) -> String {
+        format_markdown(commands, "RuleWeaver Commands (Cursor)")
+    }
+}
+
+pub struct WindsurfAdapter;
+impl CommandAdapter for WindsurfAdapter {
+    fn name(&self) -> &'static str {
+        "windsurf"
+    }
+    fn format(&self, commands: &[Command]) -> String {
+        format_markdown(commands, "RuleWeaver Commands (Windsurf)")
+    }
+}
+
+pub struct RooCodeAdapter;
+impl CommandAdapter for RooCodeAdapter {
+    fn name(&self) -> &'static str {
+        "roocode"
+    }
+    fn format(&self, commands: &[Command]) -> String {
+        format_markdown(commands, "RuleWeaver Commands (Roo Code)")
+    }
+}
+
 fn format_markdown(commands: &[Command], title: &str) -> String {
     let mut out = format!(
         "# {}

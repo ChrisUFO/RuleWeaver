@@ -6,7 +6,7 @@ use walkdir::WalkDir;
 
 use crate::database::Database;
 use crate::error::{AppError, Result};
-use crate::models::{CreateSkillInput, Skill, SkillParameter, UpdateSkillInput};
+use crate::models::{CreateSkillInput, Scope, Skill, SkillParameter, UpdateSkillInput};
 
 pub const SKILLS_DIR_NAME: &str = "skills";
 pub const SKILL_METADATA_FILE: &str = "skill.json";
@@ -20,6 +20,7 @@ pub struct SkillMetadata {
     pub entry_point: String,
     #[serde(default)]
     pub input_schema: Vec<SkillParameter>,
+    pub scope: Scope,
     #[serde(default = "default_true")]
     pub enabled: bool,
     #[serde(default)]
@@ -116,6 +117,7 @@ pub fn load_skill_from_directory(dir: &Path) -> Result<Skill> {
         name: metadata.name,
         description: metadata.description.unwrap_or_default(),
         instructions,
+        scope: metadata.scope,
         input_schema: metadata.input_schema,
         enabled: metadata.enabled,
         directory_path: dir.to_string_lossy().to_string(),
@@ -126,15 +128,24 @@ pub fn load_skill_from_directory(dir: &Path) -> Result<Skill> {
 }
 
 pub fn save_skill_to_disk(skill: &Skill) -> Result<PathBuf> {
-    let global_dir = get_global_skills_dir()?;
-    if !global_dir.exists() {
-        fs::create_dir_all(&global_dir)?;
-    }
-
-    let skill_dir = PathBuf::from(&skill.directory_path);
-    let skill_dir = if skill_dir.is_absolute() {
-        skill_dir
+    let skill_dir = if !skill.directory_path.is_empty() {
+        PathBuf::from(&skill.directory_path)
     } else {
+        let base_dir = match skill.scope {
+            Scope::Global => get_global_skills_dir()?,
+            Scope::Local => {
+                return Err(AppError::InvalidInput {
+                    message:
+                        "Local skills must have a directory path explicitly set during creation"
+                            .to_string(),
+                });
+            }
+        };
+
+        if !base_dir.exists() {
+            fs::create_dir_all(&base_dir)?;
+        }
+
         // Sanitize name for directory
         let safe_name = skill
             .name
@@ -145,12 +156,12 @@ pub fn save_skill_to_disk(skill: &Skill) -> Result<PathBuf> {
             .collect::<Vec<_>>()
             .join("-");
 
-        let mut dir = global_dir.join(&safe_name);
+        let mut dir = base_dir.join(&safe_name);
 
         // Handle collisions
         let mut counter = 1;
         while dir.exists() {
-            dir = global_dir.join(format!("{}-{}", safe_name, counter));
+            dir = base_dir.join(format!("{}-{}", safe_name, counter));
             counter += 1;
         }
         dir
@@ -171,6 +182,7 @@ pub fn save_skill_to_disk(skill: &Skill) -> Result<PathBuf> {
         description: Some(skill.description.clone()),
         entry_point: skill.entry_point.clone(),
         input_schema: skill.input_schema.clone(),
+        scope: skill.scope,
         enabled: skill.enabled,
         created_at: Some(skill.created_at.to_rfc3339()),
         updated_at: Some(skill.updated_at.to_rfc3339()),
@@ -195,6 +207,7 @@ pub fn sync_skills_to_db(db: &Database) -> Result<u32> {
                 description: Some(skill.description.clone()),
                 instructions: Some(skill.instructions.clone()),
                 input_schema: Some(skill.input_schema.clone()),
+                scope: Some(skill.scope),
                 directory_path: Some(skill.directory_path.clone()),
                 entry_point: Some(skill.entry_point.clone()),
                 enabled: Some(skill.enabled),
@@ -206,6 +219,7 @@ pub fn sync_skills_to_db(db: &Database) -> Result<u32> {
                 name: skill.name.clone(),
                 description: skill.description.clone(),
                 instructions: skill.instructions.clone(),
+                scope: skill.scope,
                 input_schema: skill.input_schema.clone(),
                 directory_path: skill.directory_path.clone(),
                 entry_point: skill.entry_point.clone(),

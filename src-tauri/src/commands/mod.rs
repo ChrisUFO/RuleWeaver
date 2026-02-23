@@ -6,7 +6,10 @@ pub mod rule_commands;
 pub mod skill_commands;
 pub mod system_commands;
 
-use adapters::{ClaudeAdapter, CommandAdapter, GeminiAdapter, OpenCodeAdapter};
+use adapters::{
+    ClaudeAdapter, CommandAdapter, CursorAdapter, GeminiAdapter, KiloAdapter, OpenCodeAdapter,
+    RooCodeAdapter, WindsurfAdapter,
+};
 pub use command_commands::*;
 pub use mcp_commands::*;
 pub use migration_commands::*;
@@ -171,7 +174,8 @@ pub fn command_file_targets() -> Result<Vec<(String, Box<dyn CommandAdapter>)>> 
             Box::new(GeminiAdapter),
         ),
         (
-            home.join(".opencode")
+            home.join(".config")
+                .join("opencode")
                 .join("COMMANDS.md")
                 .to_string_lossy()
                 .to_string(),
@@ -183,6 +187,37 @@ pub fn command_file_targets() -> Result<Vec<(String, Box<dyn CommandAdapter>)>> 
                 .to_string_lossy()
                 .to_string(),
             Box::new(ClaudeAdapter),
+        ),
+        (
+            home.join(".kilocode")
+                .join("rules")
+                .join("COMMANDS.md")
+                .to_string_lossy()
+                .to_string(),
+            Box::new(KiloAdapter),
+        ),
+        (
+            home.join(".cursorrules")
+                .with_file_name("COMMANDS.md")
+                .to_string_lossy()
+                .to_string(),
+            Box::new(CursorAdapter),
+        ),
+        (
+            home.join(".windsurf")
+                .join("rules")
+                .join("COMMANDS.md")
+                .to_string_lossy()
+                .to_string(),
+            Box::new(WindsurfAdapter),
+        ),
+        (
+            home.join(".roo")
+                .join("rules")
+                .join("COMMANDS.md")
+                .to_string_lossy()
+                .to_string(),
+            Box::new(RooCodeAdapter),
         ),
     ])
 }
