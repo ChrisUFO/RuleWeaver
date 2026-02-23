@@ -12,6 +12,43 @@ use super::{
     validate_local_rule_paths, validate_rule_input,
 };
 
+/// Helper function to sync all rules to AI tool locations.
+/// Logs any errors that occur during the sync process.
+fn sync_to_ai_tools(db: &Database) {
+    match db.get_all_rules() {
+        Ok(rules) => {
+            let engine = SyncEngine::new(db);
+            let sync_result = engine.sync_all(rules);
+            if !sync_result.errors.is_empty() {
+                log::error!("AI tool sync failed with errors: {:?}", sync_result.errors);
+            }
+        }
+        Err(e) => {
+            log::error!("Failed to get rules for AI tool sync: {}", e);
+        }
+    }
+}
+
+/// Helper function to delete a rule file from all possible storage locations.
+/// This handles the case where a rule exists only as a file and not in the database.
+fn delete_rule_from_all_locations(id: &str, db: &Database) -> Result<()> {
+    // First try global
+    file_storage::delete_rule_file(id, &file_storage::StorageLocation::Global, Some(db))?;
+
+    // Then try all local paths
+    if let Ok(local_roots) = get_local_rule_roots(db) {
+        for root in local_roots {
+            file_storage::delete_rule_file(
+                id,
+                &file_storage::StorageLocation::Local(root),
+                Some(db),
+            )?;
+        }
+    }
+
+    Ok(())
+}
+
 #[tauri::command]
 pub fn get_all_rules(db: State<'_, Arc<Database>>) -> Result<Vec<Rule>> {
     if use_file_storage(&db) {
@@ -53,9 +90,7 @@ pub fn create_rule(input: CreateRuleInput, db: State<'_, Arc<Database>>) -> Resu
     }
 
     // Sync to AI tool locations
-    let rules = db.get_all_rules()?;
-    let engine = SyncEngine::new(&db);
-    let _ = engine.sync_all(rules);
+    sync_to_ai_tools(&db);
 
     Ok(created)
 }
@@ -90,9 +125,7 @@ pub fn update_rule(
     }
 
     // Sync to AI tool locations
-    let rules = db.get_all_rules()?;
-    let engine = SyncEngine::new(&db);
-    let _ = engine.sync_all(rules);
+    sync_to_ai_tools(&db);
 
     Ok(updated)
 }
@@ -107,30 +140,13 @@ pub fn delete_rule(id: String, db: State<'_, Arc<Database>>) -> Result<()> {
             db.remove_rule_file_index(&id)?;
         } else {
             // Rule not in DB but might exist as file - try to delete from all locations
-            // First try global
-            let _ = file_storage::delete_rule_file(
-                &id,
-                &file_storage::StorageLocation::Global,
-                Some(&db),
-            );
-            // Then try all local paths
-            if let Ok(local_roots) = get_local_rule_roots(&db) {
-                for root in local_roots {
-                    let _ = file_storage::delete_rule_file(
-                        &id,
-                        &file_storage::StorageLocation::Local(root),
-                        Some(&db),
-                    );
-                }
-            }
+            delete_rule_from_all_locations(&id, &db)?;
         }
     }
     db.delete_rule(&id)?;
 
     // Sync to AI tool locations to remove deleted rule from adapters
-    let rules = db.get_all_rules()?;
-    let engine = SyncEngine::new(&db);
-    let _ = engine.sync_all(rules);
+    sync_to_ai_tools(&db);
 
     Ok(())
 }
@@ -147,31 +163,15 @@ pub fn bulk_delete_rules(ids: Vec<String>, db: State<'_, Arc<Database>>) -> Resu
                 let _ = db.remove_rule_file_index(&id);
             } else {
                 // Rule not in DB but might exist as file - try to delete from all locations
-                // First try global
-                let _ = file_storage::delete_rule_file(
-                    &id,
-                    &file_storage::StorageLocation::Global,
-                    Some(&db),
-                );
-                // Then try all local paths
-                if let Ok(local_roots) = get_local_rule_roots(&db) {
-                    for root in local_roots {
-                        let _ = file_storage::delete_rule_file(
-                            &id,
-                            &file_storage::StorageLocation::Local(root),
-                            Some(&db),
-                        );
-                    }
-                }
+                // Note: We intentionally ignore errors here to continue deleting other rules
+                let _ = delete_rule_from_all_locations(&id, &db);
             }
         }
         db.delete_rule(&id)?;
     }
 
     // Sync to AI tool locations to remove deleted rules from adapters
-    let rules = db.get_all_rules()?;
-    let engine = SyncEngine::new(&db);
-    let _ = engine.sync_all(rules);
+    sync_to_ai_tools(&db);
 
     Ok(())
 }
@@ -188,9 +188,7 @@ pub fn toggle_rule(id: String, enabled: bool, db: State<'_, Arc<Database>>) -> R
     }
 
     // Sync to AI tool locations - enabled/disabled status affects adapter files
-    let rules = db.get_all_rules()?;
-    let engine = SyncEngine::new(&db);
-    let _ = engine.sync_all(rules);
+    sync_to_ai_tools(&db);
 
     Ok(toggled)
 }
@@ -207,41 +205,4 @@ pub fn preview_sync(db: State<'_, Arc<Database>>) -> Result<SyncResult> {
     let rules = db.get_all_rules()?;
     let engine = SyncEngine::new(&db);
     Ok(engine.preview(rules))
-}
-
-#[cfg(test)]
-mod tests {
-    // Tests to verify sync calls are triggered by rule operations
-    // These are compile-time verifications that the functions include sync logic
-    // Full integration tests would require a real database setup
-
-    #[test]
-    fn test_delete_rule_includes_sync() {
-        // Verified at compile time - delete_rule now calls engine.sync_all()
-        assert!(true);
-    }
-
-    #[test]
-    fn test_update_rule_includes_sync() {
-        // Verified at compile time - update_rule now calls engine.sync_all()
-        assert!(true);
-    }
-
-    #[test]
-    fn test_create_rule_includes_sync() {
-        // Verified at compile time - create_rule now calls engine.sync_all()
-        assert!(true);
-    }
-
-    #[test]
-    fn test_toggle_rule_includes_sync() {
-        // Verified at compile time - toggle_rule now calls engine.sync_all()
-        assert!(true);
-    }
-
-    #[test]
-    fn test_bulk_delete_rules_includes_sync() {
-        // Verified at compile time - bulk_delete_rules now calls engine.sync_all()
-        assert!(true);
-    }
 }
