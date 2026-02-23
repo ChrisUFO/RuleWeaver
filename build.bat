@@ -23,8 +23,20 @@ if "!MAJOR!"=="" set MAJOR=0
 if "!MINOR!"=="" set MINOR=0
 if "!PATCH!"=="" set PATCH=0
 
-REM Increment patch
+REM Increment patch with rollover logic (max 255 per component for Windows compatibility)
 set /a PATCH=!PATCH!+1
+if !PATCH! gtr 255 (
+    set PATCH=0
+    set /a MINOR=!MINOR!+1
+    if !MINOR! gtr 255 (
+        set MINOR=0
+        set /a MAJOR=!MAJOR!+1
+        if !MAJOR! gtr 255 (
+            echo ❌ Error: Major version exceeded 255
+            exit /b 1
+        )
+    )
+)
 
 REM Generate timestamp for prerelease (YYMMDDHHMM)
 for /f "tokens=2-4 delims=/ " %%a in ('date /t') do (

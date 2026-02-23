@@ -22,8 +22,20 @@ if [ -z "$MAJOR" ]; then MAJOR=0; fi
 if [ -z "$MINOR" ]; then MINOR=0; fi
 if [ -z "$PATCH" ]; then PATCH=0; fi
 
-# Increment patch
+# Increment patch with rollover logic (max 255 per component for Windows compatibility)
 PATCH=$((PATCH + 1))
+if [ $PATCH -gt 255 ]; then
+    PATCH=0
+    MINOR=$((MINOR + 1))
+    if [ $MINOR -gt 255 ]; then
+        MINOR=0
+        MAJOR=$((MAJOR + 1))
+        if [ $MAJOR -gt 255 ]; then
+            echo "❌ Error: Major version exceeded 255"
+            exit 1
+        fi
+    fi
+fi
 
 # Generate timestamp for prerelease
 TIMESTAMP=$(date +"%y%m%d%H%M")
