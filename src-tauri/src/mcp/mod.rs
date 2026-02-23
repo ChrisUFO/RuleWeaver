@@ -29,6 +29,17 @@ use crate::execution::{
 };
 use crate::models::{Command, Skill, SkillParameterType};
 
+fn mcp_error_response(id: serde_json::Value, code: i64, message: &str) -> serde_json::Value {
+    json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "error": {
+            "code": code,
+            "message": message
+        }
+    })
+}
+
 fn truncate_output_custom(s: String, max_size: usize) -> String {
     if s.len() > max_size {
         let original_len = s.len();
@@ -651,14 +662,11 @@ async fn handle_command_call(
     shared_db: &Option<Arc<Database>>,
 ) -> serde_json::Value {
     if let Some(pattern) = contains_disallowed_pattern(&cmd.script) {
-        return json!({
-            "jsonrpc": "2.0",
-            "id": id,
-            "error": {
-                "code": -32602,
-                "message": format!("Command script contains a disallowed pattern: {}", pattern)
-            }
-        });
+        return mcp_error_response(
+            id,
+            -32602,
+            &format!("Command script contains a disallowed pattern: {}", pattern),
+        );
     }
 
     let missing_required: Vec<String> = cmd
@@ -677,14 +685,14 @@ async fn handle_command_call(
         .collect();
 
     if !missing_required.is_empty() {
-        return json!({
-            "jsonrpc": "2.0",
-            "id": id,
-            "error": {
-                "code": -32602,
-                "message": format!("Missing required arguments: {}", missing_required.join(", "))
-            }
-        });
+        return mcp_error_response(
+            id,
+            -32602,
+            &format!(
+                "Missing required arguments: {}",
+                missing_required.join(", ")
+            ),
+        );
     }
 
     let mut rendered = cmd.script.clone();
@@ -731,14 +739,7 @@ async fn handle_command_call(
     }
 
     if let Some(message) = invalid_arg_message {
-        return json!({
-            "jsonrpc": "2.0",
-            "id": id,
-            "error": {
-                "code": -32602,
-                "message": format!("Invalid argument value: {}", message)
-            }
-        });
+        return mcp_error_response(id, -32602, &format!("Invalid argument value: {}", message));
     }
 
     let args_json = match serde_json::to_string(&args_map) {
@@ -810,14 +811,7 @@ async fn handle_skill_call(
     let final_envs = match skill.validate_payload(&args_map) {
         Ok(envs) => envs,
         Err(e) => {
-            return json!({
-                "jsonrpc": "2.0",
-                "id": id,
-                "error": {
-                    "code": -32602,
-                    "message": e.to_string()
-                }
-            });
+            return mcp_error_response(id, -32602, &e.to_string());
         }
     };
 
@@ -869,36 +863,17 @@ async fn handle_skill_call(
     let mut is_error = false;
 
     if let Err(e) = crate::models::validate_skill_input(&skill.name, &skill.instructions) {
-        return json!({
-            "jsonrpc": "2.0",
-            "id": id,
-            "error": { "code": -32602, "message": e.to_string() }
-        });
+        return mcp_error_response(id, -32602, &e.to_string());
     }
     if let Err(e) = crate::models::validate_skill_schema(&skill.input_schema) {
-        return json!({
-            "jsonrpc": "2.0",
-            "id": id,
-            "error": { "code": -32602, "message": e.to_string() }
-        });
+        return mcp_error_response(id, -32602, &e.to_string());
     }
     if let Err(e) = crate::models::validate_skill_entry_point(&skill.entry_point) {
-        return json!({
-            "jsonrpc": "2.0",
-            "id": id,
-            "error": { "code": -32602, "message": e.to_string() }
-        });
+        return mcp_error_response(id, -32602, &e.to_string());
     }
 
     let entry_point = if skill.entry_point.is_empty() {
-        return json!({
-            "jsonrpc": "2.0",
-            "id": id,
-            "error": {
-                "code": -32603,
-                "message": "Skill has no entry point defined"
-            }
-        });
+        return mcp_error_response(id, -32603, "Skill has no entry point defined");
     } else {
         skill.entry_point.clone()
     };
