@@ -42,6 +42,11 @@ pub trait SlashCommandAdapter: Send + Sync {
         Ok(base_path.join(path_str).join(self.get_filename(command_name)))
     }
 
+    /// Returns a local command path rooted at a specific repository path.
+    fn get_command_path_for_root(&self, command_name: &str, root: &std::path::Path) -> Result<PathBuf> {
+        Ok(root.join(self.local_dir()).join(self.get_filename(command_name)))
+    }
+
     /// Whether this adapter supports argument substitution
     fn supports_argument_substitution(&self) -> bool {
         false

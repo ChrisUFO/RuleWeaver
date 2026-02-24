@@ -335,6 +335,34 @@ pub fn register_local_paths(db: &Database, paths: &[String]) -> Result<()> {
     db.set_setting(LOCAL_RULE_PATHS_KEY, &encoded)
 }
 
+pub fn validate_paths_within_registered_roots(db: &Database, paths: &[String]) -> Result<()> {
+    if paths.is_empty() {
+        return Ok(());
+    }
+
+    let roots = get_local_rule_roots(db)?;
+    if roots.is_empty() {
+        return Err(AppError::InvalidInput {
+            message: "No repository roots configured. Add roots in Settings first.".to_string(),
+        });
+    }
+
+    for path in paths {
+        let canonical = validate_path(path)?;
+        let in_roots = roots.iter().any(|root| canonical.starts_with(root));
+        if !in_roots {
+            return Err(AppError::InvalidInput {
+                message: format!(
+                    "Target path '{}' is not inside configured repository roots",
+                    path
+                ),
+            });
+        }
+    }
+
+    Ok(())
+}
+
 pub fn storage_location_for_rule(rule: &Rule) -> file_storage::StorageLocation {
     match rule.scope {
         crate::models::Scope::Global => file_storage::StorageLocation::Global,

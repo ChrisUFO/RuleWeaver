@@ -191,13 +191,50 @@ impl SlashCommandSyncEngine {
                 }
             };
 
-            match self.sync_command_with_adapter(command, adapter.as_ref(), is_global) {
-                Ok(true) => result.files_written += 1,
-                Ok(false) => {} // No changes needed
-                Err(e) => result.errors.push(format!(
-                    "Failed to sync {} to {}: {}",
-                    command.name, adapter_name, e
-                )),
+            if !is_global && !command.target_paths.is_empty() {
+                for root in &command.target_paths {
+                    let safe_name = match validate_command_name(&command.name) {
+                        Ok(v) => v,
+                        Err(e) => {
+                            result.errors.push(format!(
+                                "Failed to sanitize command '{}' for {}: {}",
+                                command.name, adapter_name, e
+                            ));
+                            continue;
+                        }
+                    };
+
+                    let file_path =
+                        match adapter.get_command_path_for_root(&safe_name, &PathBuf::from(root)) {
+                            Ok(p) => p,
+                            Err(e) => {
+                                result.errors.push(format!(
+                                    "Failed to resolve local path for {} in {}: {}",
+                                    adapter_name, root, e
+                                ));
+                                continue;
+                            }
+                        };
+
+                    let content = adapter.format_command(command);
+                    match self.sync_command_to_path(&file_path, &content) {
+                        Ok(true) => result.files_written += 1,
+                        Ok(false) => {}
+                        Err(e) => result.errors.push(format!(
+                            "Failed to sync {} to {} in {}: {}",
+                            command.name, adapter_name, root, e
+                        )),
+                    }
+                }
+            } else {
+                match self.sync_command_with_adapter(command, adapter.as_ref(), is_global) {
+                    Ok(true) => result.files_written += 1,
+                    Ok(false) => {} // No changes needed
+                    Err(e) => result.errors.push(format!(
+                        "Failed to sync {} to {}: {}",
+                        command.name, adapter_name, e
+                    )),
+                }
             }
         }
 
@@ -215,7 +252,11 @@ impl SlashCommandSyncEngine {
         let safe_name = validate_command_name(&command.name)?;
         let file_path = adapter.get_command_path(&safe_name, is_global)?;
         let content = adapter.format_command(command);
-        let content_hash = calculate_hash(&content);
+        self.sync_command_to_path(&file_path, &content)
+    }
+
+    fn sync_command_to_path(&self, file_path: &PathBuf, content: &str) -> Result<bool> {
+        let content_hash = calculate_hash(content);
 
         // Create parent directory if needed
         if let Some(parent) = file_path.parent() {
@@ -224,7 +265,7 @@ impl SlashCommandSyncEngine {
 
         // Check if file exists and has the same content
         if file_path.exists() {
-            let existing_content = fs::read_to_string(&file_path)?;
+            let existing_content = fs::read_to_string(file_path)?;
             let existing_hash = calculate_hash(&existing_content);
 
             if existing_hash == content_hash {
@@ -234,7 +275,7 @@ impl SlashCommandSyncEngine {
         }
 
         // Write the file atomically
-        atomic_write(&file_path, &content)?;
+        atomic_write(file_path, content)?;
 
         Ok(true)
     }
@@ -390,14 +431,6 @@ impl SlashCommandSyncEngine {
                 }
             };
 
-            let local_path = match adapter.get_command_path(&safe_name, false) {
-                Ok(p) => p,
-                Err(e) => {
-                    status.insert(adapter_name.clone(), SyncStatus::Error(e.to_string()));
-                    continue;
-                }
-            };
-
             let mut adapter_status = Vec::new();
 
             if global_path.exists() {
@@ -407,11 +440,32 @@ impl SlashCommandSyncEngine {
                 adapter_status.push(("global", is_current));
             }
 
-            if local_path.exists() {
-                let content = fs::read_to_string(&local_path)?;
-                let expected = adapter.format_command(command);
-                let is_current = calculate_hash(&content) == calculate_hash(&expected);
-                adapter_status.push(("local", is_current));
+            if !command.target_paths.is_empty() {
+                for root in &command.target_paths {
+                    let local_path =
+                        adapter.get_command_path_for_root(&safe_name, &PathBuf::from(root))?;
+                    if local_path.exists() {
+                        let content = fs::read_to_string(&local_path)?;
+                        let expected = adapter.format_command(command);
+                        let is_current = calculate_hash(&content) == calculate_hash(&expected);
+                        adapter_status.push(("local", is_current));
+                    }
+                }
+            } else {
+                let local_path = match adapter.get_command_path(&safe_name, false) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        status.insert(adapter_name.clone(), SyncStatus::Error(e.to_string()));
+                        continue;
+                    }
+                };
+
+                if local_path.exists() {
+                    let content = fs::read_to_string(&local_path)?;
+                    let expected = adapter.format_command(command);
+                    let is_current = calculate_hash(&content) == calculate_hash(&expected);
+                    adapter_status.push(("local", is_current));
+                }
             }
 
             let sync_status = if adapter_status.is_empty() {

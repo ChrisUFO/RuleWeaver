@@ -20,6 +20,7 @@ use crate::models::{
 use crate::sync::SyncEngine;
 
 const DEFAULT_IMPORT_FILE_LIMIT: u64 = 10 * 1024 * 1024;
+const MAX_IMPORT_CANDIDATES: usize = 1000;
 const IMPORT_SOURCE_MAP_KEY: &str = "import_source_map";
 const IMPORT_HISTORY_KEY: &str = "import_history";
 const LOCAL_RULE_PATHS_KEY: &str = "local_rule_paths";
@@ -42,6 +43,8 @@ pub async fn scan_url_to_candidates(url: &str, max_size: u64) -> Result<ImportSc
         .map_err(|e| AppError::InvalidInput {
             message: format!("Failed to fetch URL: {}", e),
         })?;
+
+    validate_url_for_import(response.url().as_str())?;
 
     if !response.status().is_success() {
         return Err(AppError::InvalidInput {
@@ -165,7 +168,16 @@ pub fn scan_directory_to_candidates(path: &Path, max_size: u64) -> ImportScanRes
             None,
             max_size,
         ) {
-            Ok(candidate) => scan.candidates.push(candidate),
+            Ok(candidate) => {
+                if scan.candidates.len() >= MAX_IMPORT_CANDIDATES {
+                    scan.errors.push(format!(
+                        "Import candidate limit reached ({}). Narrow directory scope or import in batches.",
+                        MAX_IMPORT_CANDIDATES
+                    ));
+                    break;
+                }
+                scan.candidates.push(candidate)
+            }
             Err(e) => scan.errors.push(e.to_string()),
         }
     }
@@ -212,7 +224,16 @@ pub fn scan_ai_tool_candidates(db: &Database, max_size: u64) -> Result<ImportSca
                 Some(vec![local_root.to_string_lossy().to_string()]),
                 max_size,
             ) {
-                Ok(candidate) => scan.candidates.push(candidate),
+                Ok(candidate) => {
+                    if scan.candidates.len() >= MAX_IMPORT_CANDIDATES {
+                        scan.errors.push(format!(
+                            "Import candidate limit reached ({}). Narrow configured repository roots or import in batches.",
+                            MAX_IMPORT_CANDIDATES
+                        ));
+                        return Ok(scan);
+                    }
+                    scan.candidates.push(candidate)
+                }
                 Err(e) => scan.errors.push(e.to_string()),
             }
         }

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { fireEvent } from "@testing-library/react";
 import { RulesList } from "../../../components/pages/RulesList";
 import { ToastProvider } from "../../../components/ui/toast";
 import type { Rule } from "../../../types/rule";
@@ -280,5 +281,28 @@ describe("RulesList import workflow", () => {
         })
       );
     });
+  });
+
+  it("shows URL required validation when scanning URL without input", async () => {
+    renderWithProviders(<RulesList onSelectRule={vi.fn()} onCreateRule={vi.fn()} />);
+
+    await userEvent.click(screen.getByRole("button", { name: /import url/i }));
+    await userEvent.click(screen.getByRole("button", { name: /scan url/i }));
+
+    expect(screen.getByText(/URL Required/i)).toBeInTheDocument();
+  });
+
+  it("shows drop not supported for dropped files without path", async () => {
+    renderWithProviders(<RulesList onSelectRule={vi.fn()} onCreateRule={vi.fn()} />);
+
+    const dropZone = screen.getByText(/Drag and drop a rule file here/i).closest("div");
+    expect(dropZone).toBeTruthy();
+
+    const file = new File(["x"], "rule.md", { type: "text/markdown" });
+    const dataTransfer = { files: [file] } as unknown as DataTransfer;
+
+    fireEvent.drop(dropZone as Element, { dataTransfer });
+
+    expect(screen.getByText(/Drop Not Supported/i)).toBeInTheDocument();
   });
 });

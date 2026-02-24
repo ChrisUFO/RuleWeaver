@@ -125,3 +125,30 @@ pub fn scan_rule_clipboard_import(
 pub fn get_rule_import_history(db: State<'_, Arc<Database>>) -> Vec<ImportHistoryEntry> {
     rule_import::read_import_history(&db)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scan_rule_clipboard_import_enforces_max_size() {
+        let result = scan_rule_clipboard_import(
+            "123456".to_string(),
+            Some("clip".to_string()),
+            Some(ImportExecutionOptions {
+                max_file_size_bytes: Some(5),
+                ..Default::default()
+            }),
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn scan_rule_file_import_returns_errors_for_missing_file() {
+        let result = scan_rule_file_import(
+            "C:/definitely/not/found.md".to_string(),
+            Some(ImportExecutionOptions::default()),
+        );
+        assert!(!result.errors.is_empty());
+    }
+}

@@ -23,6 +23,7 @@ use std::time::Instant;
 use super::{
     command_file_targets, command_file_targets_for_root, register_local_paths,
     validate_command_arguments, validate_command_input, validate_path,
+    validate_paths_within_registered_roots,
 };
 
 #[tauri::command]
@@ -46,6 +47,7 @@ pub async fn create_command(
     for path in &input.target_paths {
         validate_path(path)?;
     }
+    validate_paths_within_registered_roots(&db, &input.target_paths)?;
     let created = db.create_command(input)?;
     register_local_paths(&db, &created.target_paths)?;
     mcp.refresh_commands(&db).await?;
@@ -79,6 +81,7 @@ pub async fn update_command(
         for path in paths {
             validate_path(path)?;
         }
+        validate_paths_within_registered_roots(&db, paths)?;
     }
 
     let updated = db.update_command(&id, input)?;

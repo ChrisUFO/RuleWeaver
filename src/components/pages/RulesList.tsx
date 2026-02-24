@@ -104,6 +104,9 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
   const [importConflictMode, setImportConflictMode] = useState<ImportConflictMode>("rename");
   const [importResult, setImportResult] = useState<ImportExecutionResult | null>(null);
   const [importHistory, setImportHistory] = useState<ImportHistoryEntry[]>([]);
+  const [importHistoryFilter, setImportHistoryFilter] = useState<
+    "all" | "ai_tool" | "file" | "directory" | "url" | "clipboard"
+  >("all");
   const [importSourceMode, setImportSourceMode] = useState<ImportSourceMode>("ai");
   const [importSourceValue, setImportSourceValue] = useState("");
   const [clipboardImportName, setClipboardImportName] = useState<string | undefined>(undefined);
@@ -622,6 +625,15 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
     } finally {
       setIsImporting(false);
     }
+  };
+
+  const retryConflictsAsRename = async () => {
+    if (!importResult || importResult.conflicts.length === 0) {
+      return;
+    }
+    setSelectedImportIds(new Set(importResult.conflicts.map((c) => c.candidateId)));
+    setImportConflictMode("rename");
+    await executeImport();
   };
 
   const hasActiveFilters = searchQuery || scopeFilter !== "all" || adapterFilter !== "all";
@@ -1149,23 +1161,59 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
                   </p>
                 )}
                 {importResult.conflicts.length > 0 && (
-                  <p className="text-xs text-destructive mt-1">
-                    Conflict: {importResult.conflicts[0].candidateName}
-                  </p>
+                  <div className="mt-2 flex items-center justify-between gap-2">
+                    <p className="text-xs text-destructive">
+                      Conflict: {importResult.conflicts[0].candidateName}
+                    </p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void retryConflictsAsRename()}
+                    >
+                      Retry Conflicts
+                    </Button>
+                  </div>
                 )}
               </div>
             )}
 
             {importHistory.length > 0 && (
               <div className="rounded-md border p-3 text-xs">
-                <p className="font-medium mb-2">Recent Import Runs</p>
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <p className="font-medium">Recent Import Runs</p>
+                  <Select
+                    value={importHistoryFilter}
+                    onChange={(value) =>
+                      setImportHistoryFilter(
+                        value as "all" | "ai_tool" | "file" | "directory" | "url" | "clipboard"
+                      )
+                    }
+                    options={[
+                      { value: "all", label: "All sources" },
+                      { value: "ai_tool", label: "AI Tool" },
+                      { value: "file", label: "File" },
+                      { value: "directory", label: "Directory" },
+                      { value: "url", label: "URL" },
+                      { value: "clipboard", label: "Clipboard" },
+                    ]}
+                    className="w-32"
+                    aria-label="Import history source filter"
+                  />
+                </div>
                 <div className="space-y-1 text-muted-foreground">
-                  {importHistory.slice(0, 3).map((entry) => (
-                    <p key={entry.id}>
-                      {new Date(entry.timestamp * 1000).toLocaleString()} - {entry.sourceType} -{" "}
-                      {entry.importedCount} imported
-                    </p>
-                  ))}
+                  {importHistory
+                    .filter((entry) =>
+                      importHistoryFilter === "all"
+                        ? true
+                        : entry.sourceType === importHistoryFilter
+                    )
+                    .slice(0, 3)
+                    .map((entry) => (
+                      <p key={entry.id}>
+                        {new Date(entry.timestamp * 1000).toLocaleString()} - {entry.sourceType} -{" "}
+                        {entry.importedCount} imported
+                      </p>
+                    ))}
                 </div>
               </div>
             )}
