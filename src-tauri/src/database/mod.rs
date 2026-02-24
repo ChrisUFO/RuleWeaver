@@ -1270,12 +1270,6 @@ fn run_migrations(conn: &mut Connection) -> Result<()> {
                 [],
             )?;
         }
-        if !cols.iter().any(|c| c == "target_paths") {
-            transaction.execute(
-                "ALTER TABLE commands ADD COLUMN target_paths TEXT NOT NULL DEFAULT '[]'",
-                [],
-            )?;
-        }
     }
 
     if current_version < 10 {

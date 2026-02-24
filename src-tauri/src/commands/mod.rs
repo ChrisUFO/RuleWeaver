@@ -321,18 +321,17 @@ pub fn command_file_targets_for_root(root: &Path) -> Vec<(String, Box<dyn Comman
 }
 
 pub fn register_local_paths(db: &Database, paths: &[String]) -> Result<()> {
-    let mut roots = get_local_rule_roots(db)?
+    let mut roots: std::collections::HashSet<String> = get_local_rule_roots(db)?
         .into_iter()
         .map(|p| p.to_string_lossy().to_string())
-        .collect::<Vec<_>>();
+        .collect();
 
     for path in paths {
-        if !roots.iter().any(|p| p == path) {
-            roots.push(path.clone());
-        }
+        roots.insert(path.clone());
     }
 
-    let encoded = serde_json::to_string(&roots)?;
+    let roots_vec: Vec<String> = roots.into_iter().collect();
+    let encoded = serde_json::to_string(&roots_vec)?;
     db.set_setting(LOCAL_RULE_PATHS_KEY, &encoded)
 }
 

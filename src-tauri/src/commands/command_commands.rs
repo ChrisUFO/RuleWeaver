@@ -219,12 +219,11 @@ pub fn sync_commands(db: State<'_, Arc<Database>>) -> Result<SyncResult> {
         pending_writes.push((path, adapter.name().to_string(), content));
     }
 
-    let mut local_roots = std::collections::HashSet::new();
-    for command in &commands {
-        for path in &command.target_paths {
-            local_roots.insert(path.clone());
-        }
-    }
+    let local_roots: std::collections::HashSet<_> = commands
+        .iter()
+        .flat_map(|command| &command.target_paths)
+        .cloned()
+        .collect();
 
     for local_root in local_roots {
         let local_commands = commands
