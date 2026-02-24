@@ -26,14 +26,42 @@ use super::{
     validate_paths_within_registered_roots,
 };
 
+use std::collections::HashMap;
+use std::fs;
+use std::io::Write;
+use std::path::PathBuf;
+use std::sync::Arc;
+use tauri::State;
+
+use crate::commands::{RUNNING_TESTS, TEST_INVOCATION_TIMESTAMPS};
+use crate::constants::limits::TEST_CMD_RATE_LIMIT_MAX;
+use crate::constants::timing::{TEST_CMD_RATE_LIMIT_WINDOW, TEST_CMD_TIMEOUT};
+use crate::database::Database;
+use crate::error::{AppError, Result};
+use crate::execution::{
+    argument_env_var_name, execute_and_log, replace_template_with_env_ref, sanitize_argument_value,
+    validate_enum_argument, ExecuteAndLogInput,
+};
+use crate::mcp::McpManager;
+use crate::models::{
+    Command, CreateCommandInput, SyncError, SyncResult, TestCommandResult, UpdateCommandInput,
+};
+use std::time::Instant;
+
+use super::{
+    command_file_targets, command_file_targets_for_root, register_local_paths,
+    validate_command_arguments, validate_command_input, validate_path,
+    validate_paths_within_registered_roots,
+};
+
 #[tauri::command]
-pub fn get_all_commands(db: State<'_, Arc<Database>>) -> Result<Vec<Command>> {
-    db.get_all_commands()
+pub async fn get_all_commands(db: State<'_, Arc<Database>>) -> Result<Vec<Command>> {
+    db.get_all_commands().await
 }
 
 #[tauri::command]
-pub fn get_command_by_id(id: String, db: State<'_, Arc<Database>>) -> Result<Command> {
-    db.get_command_by_id(&id)
+pub async fn get_command_by_id(id: String, db: State<'_, Arc<Database>>) -> Result<Command> {
+    db.get_command_by_id(&id).await
 }
 
 #[tauri::command]
@@ -48,7 +76,7 @@ pub async fn create_command(
         validate_path(path)?;
     }
     validate_paths_within_registered_roots(&db, &input.target_paths)?;
-    let created = db.create_command(input)?;
+    let created = db.create_command(input).await?;
     register_local_paths(&db, &created.target_paths)?;
     mcp.refresh_commands(&db).await?;
     Ok(created)
@@ -65,11 +93,11 @@ pub async fn update_command(
         if let Some(script) = &input.script {
             validate_command_input(name, script)?;
         } else {
-            let existing = db.get_command_by_id(&id)?;
+            let existing = db.get_command_by_id(&id).await?;
             validate_command_input(name, &existing.script)?;
         }
     } else if let Some(script) = &input.script {
-        let existing = db.get_command_by_id(&id)?;
+        let existing = db.get_command_by_id(&id).await?;
         validate_command_input(&existing.name, script)?;
     }
 
@@ -84,7 +112,7 @@ pub async fn update_command(
         validate_paths_within_registered_roots(&db, paths)?;
     }
 
-    let updated = db.update_command(&id, input)?;
+    let updated = db.update_command(&id, input).await?;
     register_local_paths(&db, &updated.target_paths)?;
     mcp.refresh_commands(&db).await?;
     Ok(updated)
@@ -96,7 +124,7 @@ pub async fn delete_command(
     db: State<'_, Arc<Database>>,
     mcp: State<'_, McpManager>,
 ) -> Result<()> {
-    db.delete_command(&id)?;
+    db.delete_command(&id).await?;
     mcp.refresh_commands(&db).await
 }
 
@@ -160,7 +188,7 @@ async fn test_command_internal(
     args: HashMap<String, String>,
     db: &State<'_, Arc<Database>>,
 ) -> Result<TestCommandResult> {
-    let cmd = db.get_command_by_id(id)?;
+    let cmd = db.get_command_by_id(id).await?;
     let mut script = cmd.script.clone();
     let mut envs: Vec<(String, String)> = Vec::new();
 
@@ -208,8 +236,8 @@ async fn test_command_internal(
 }
 
 #[tauri::command]
-pub fn sync_commands(db: State<'_, Arc<Database>>) -> Result<SyncResult> {
-    let commands = db.get_all_commands()?;
+pub async fn sync_commands(db: State<'_, Arc<Database>>) -> Result<SyncResult> {
+    let commands = db.get_all_commands().await?;
     let mut files_written = Vec::new();
     let mut errors = Vec::new();
 

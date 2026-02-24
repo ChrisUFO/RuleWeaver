@@ -14,8 +14,8 @@ use super::{
 
 /// Helper function to sync all rules to AI tool locations.
 /// Logs any errors that occur during the sync process.
-fn sync_to_ai_tools(db: &Database) {
-    match db.get_all_rules() {
+async fn sync_to_ai_tools(db: &Database) {
+    match db.get_all_rules().await {
         Ok(rules) => {
             let engine = SyncEngine::new(db);
             let sync_result = engine.sync_all(rules);
@@ -31,18 +31,18 @@ fn sync_to_ai_tools(db: &Database) {
 
 /// Helper function to delete a rule file from all possible storage locations.
 /// This handles the case where a rule exists only as a file and not in the database.
-fn delete_rule_from_all_locations(id: &str, db: &Database) -> Result<()> {
+async fn delete_rule_from_all_locations(id: &str, db: &Database) -> Result<()> {
     // First try global
-    file_storage::delete_rule_file(id, &file_storage::StorageLocation::Global, Some(db))?;
+    file_storage::delete_rule_file(id, &file_storage::StorageLocation::Global, Some(db)).await?;
 
     // Then try all local paths
-    if let Ok(local_roots) = get_local_rule_roots(db) {
+    if let Ok(local_roots) = get_local_rule_roots(db).await {
         for root in local_roots {
             file_storage::delete_rule_file(
                 id,
                 &file_storage::StorageLocation::Local(root),
                 Some(db),
-            )?;
+            ).await?;
         }
     }
 
@@ -50,20 +50,20 @@ fn delete_rule_from_all_locations(id: &str, db: &Database) -> Result<()> {
 }
 
 #[tauri::command]
-pub fn get_all_rules(db: State<'_, Arc<Database>>) -> Result<Vec<Rule>> {
-    if use_file_storage(&db) {
-        let local_roots = get_local_rule_roots(&db)?;
+pub async fn get_all_rules(db: State<'_, Arc<Database>>) -> Result<Vec<Rule>> {
+    if use_file_storage(&db).await {
+        let local_roots = get_local_rule_roots(&db).await?;
         let loaded = file_storage::load_rules_from_locations(&local_roots)?;
         Ok(loaded.rules)
     } else {
-        db.get_all_rules()
+        db.get_all_rules().await
     }
 }
 
 #[tauri::command]
-pub fn get_rule_by_id(id: String, db: State<'_, Arc<Database>>) -> Result<Rule> {
-    if use_file_storage(&db) {
-        let local_roots = get_local_rule_roots(&db)?;
+pub async fn get_rule_by_id(id: String, db: State<'_, Arc<Database>>) -> Result<Rule> {
+    if use_file_storage(&db).await {
+        let local_roots = get_local_rule_roots(&db).await?;
         let loaded = file_storage::load_rules_from_locations(&local_roots)?;
         loaded
             .rules
@@ -71,32 +71,32 @@ pub fn get_rule_by_id(id: String, db: State<'_, Arc<Database>>) -> Result<Rule> 
             .find(|r| r.id == id)
             .ok_or_else(|| AppError::RuleNotFound { id })
     } else {
-        db.get_rule_by_id(&id)
+        db.get_rule_by_id(&id).await
     }
 }
 
 #[tauri::command]
-pub fn create_rule(input: CreateRuleInput, db: State<'_, Arc<Database>>) -> Result<Rule> {
+pub async fn create_rule(input: CreateRuleInput, db: State<'_, Arc<Database>>) -> Result<Rule> {
     validate_rule_input(&input.name, &input.content)?;
-    validate_local_rule_paths(&db, None, Some(input.scope), &input.target_paths)?;
+    validate_local_rule_paths(&db, None, Some(input.scope), &input.target_paths).await?;
 
-    let created = db.create_rule(input)?;
+    let created = db.create_rule(input).await?;
 
-    if use_file_storage(&db) {
+    if use_file_storage(&db).await {
         let location = storage_location_for_rule(&created);
         file_storage::save_rule_to_disk(&created, &location)?;
-        db.update_rule_file_index(&created.id, &location)?;
-        register_local_rule_paths(&db, &created)?;
+        db.update_rule_file_index(&created.id, &location).await?;
+        register_local_rule_paths(&db, &created).await?;
     }
 
     // Sync to AI tool locations
-    sync_to_ai_tools(&db);
+    sync_to_ai_tools(&db).await;
 
     Ok(created)
 }
 
 #[tauri::command]
-pub fn update_rule(
+pub async fn update_rule(
     id: String,
     input: UpdateRuleInput,
     db: State<'_, Arc<Database>>,
@@ -105,104 +105,104 @@ pub fn update_rule(
         if let Some(ref content) = input.content {
             validate_rule_input(name, content)?;
         } else {
-            let existing = db.get_rule_by_id(&id)?;
+            let existing = db.get_rule_by_id(&id).await?;
             validate_rule_input(name, &existing.content)?;
         }
     } else if let Some(ref content) = input.content {
-        let existing = db.get_rule_by_id(&id)?;
+        let existing = db.get_rule_by_id(&id).await?;
         validate_rule_input(&existing.name, content)?;
     }
 
-    validate_local_rule_paths(&db, Some(&id), input.scope, &input.target_paths)?;
+    validate_local_rule_paths(&db, Some(&id), input.scope, &input.target_paths).await?;
 
-    let updated = db.update_rule(&id, input)?;
+    let updated = db.update_rule(&id, input).await?;
 
-    if use_file_storage(&db) {
+    if use_file_storage(&db).await {
         let location = storage_location_for_rule(&updated);
         file_storage::save_rule_to_disk(&updated, &location)?;
-        db.update_rule_file_index(&updated.id, &location)?;
-        register_local_rule_paths(&db, &updated)?;
+        db.update_rule_file_index(&updated.id, &location).await?;
+        register_local_rule_paths(&db, &updated).await?;
     }
 
     // Sync to AI tool locations
-    sync_to_ai_tools(&db);
+    sync_to_ai_tools(&db).await;
 
     Ok(updated)
 }
 
 #[tauri::command]
-pub fn delete_rule(id: String, db: State<'_, Arc<Database>>) -> Result<()> {
-    if use_file_storage(&db) {
+pub async fn delete_rule(id: String, db: State<'_, Arc<Database>>) -> Result<()> {
+    if use_file_storage(&db).await {
         // Try to get the rule from DB to determine storage location
-        if let Ok(existing) = db.get_rule_by_id(&id) {
+        if let Ok(existing) = db.get_rule_by_id(&id).await {
             let location = storage_location_for_rule(&existing);
-            file_storage::delete_rule_file(&id, &location, Some(&db))?;
-            db.remove_rule_file_index(&id)?;
+            file_storage::delete_rule_file(&id, &location, Some(&db)).await?;
+            db.remove_rule_file_index(&id).await?;
         } else {
             // Rule not in DB but might exist as file - try to delete from all locations
-            delete_rule_from_all_locations(&id, &db)?;
+            delete_rule_from_all_locations(&id, &db).await?;
         }
     }
-    db.delete_rule(&id)?;
+    db.delete_rule(&id).await?;
 
     // Sync to AI tool locations to remove deleted rule from adapters
-    sync_to_ai_tools(&db);
+    sync_to_ai_tools(&db).await;
 
     Ok(())
 }
 
 #[tauri::command]
-pub fn bulk_delete_rules(ids: Vec<String>, db: State<'_, Arc<Database>>) -> Result<()> {
-    let use_fs = use_file_storage(&db);
+pub async fn bulk_delete_rules(ids: Vec<String>, db: State<'_, Arc<Database>>) -> Result<()> {
+    let use_fs = use_file_storage(&db).await;
 
     for id in ids {
         if use_fs {
-            if let Ok(existing) = db.get_rule_by_id(&id) {
+            if let Ok(existing) = db.get_rule_by_id(&id).await {
                 let location = storage_location_for_rule(&existing);
-                let _ = file_storage::delete_rule_file(&id, &location, Some(&db));
-                let _ = db.remove_rule_file_index(&id);
+                let _ = file_storage::delete_rule_file(&id, &location, Some(&db)).await;
+                let _ = db.remove_rule_file_index(&id).await;
             } else {
                 // Rule not in DB but might exist as file - try to delete from all locations
                 // Note: We intentionally ignore errors here to continue deleting other rules
-                let _ = delete_rule_from_all_locations(&id, &db);
+                let _ = delete_rule_from_all_locations(&id, &db).await;
             }
         }
-        db.delete_rule(&id)?;
+        db.delete_rule(&id).await?;
     }
 
     // Sync to AI tool locations to remove deleted rules from adapters
-    sync_to_ai_tools(&db);
+    sync_to_ai_tools(&db).await;
 
     Ok(())
 }
 
 #[tauri::command]
-pub fn toggle_rule(id: String, enabled: bool, db: State<'_, Arc<Database>>) -> Result<Rule> {
-    let toggled = db.toggle_rule(&id, enabled)?;
+pub async fn toggle_rule(id: String, enabled: bool, db: State<'_, Arc<Database>>) -> Result<Rule> {
+    let toggled = db.toggle_rule(&id, enabled).await?;
 
-    if use_file_storage(&db) {
+    if use_file_storage(&db).await {
         let location = storage_location_for_rule(&toggled);
         file_storage::save_rule_to_disk(&toggled, &location)?;
-        db.update_rule_file_index(&toggled.id, &location)?;
-        register_local_rule_paths(&db, &toggled)?;
+        db.update_rule_file_index(&toggled.id, &location).await?;
+        register_local_rule_paths(&db, &toggled).await?;
     }
 
     // Sync to AI tool locations - enabled/disabled status affects adapter files
-    sync_to_ai_tools(&db);
+    sync_to_ai_tools(&db).await;
 
     Ok(toggled)
 }
 
 #[tauri::command]
-pub fn sync_rules(db: State<'_, Arc<Database>>) -> Result<SyncResult> {
-    let rules = db.get_all_rules()?;
+pub async fn sync_rules(db: State<'_, Arc<Database>>) -> Result<SyncResult> {
+    let rules = db.get_all_rules().await?;
     let engine = SyncEngine::new(&db);
     Ok(engine.sync_all(rules))
 }
 
 #[tauri::command]
-pub fn preview_sync(db: State<'_, Arc<Database>>) -> Result<SyncResult> {
-    let rules = db.get_all_rules()?;
+pub async fn preview_sync(db: State<'_, Arc<Database>>) -> Result<SyncResult> {
+    let rules = db.get_all_rules().await?;
     let engine = SyncEngine::new(&db);
     Ok(engine.preview(rules))
 }

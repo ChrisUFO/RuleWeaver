@@ -1,5 +1,5 @@
 use std::path::PathBuf;
-use std::sync::Mutex;
+use tokio::sync::Mutex;
 
 use chrono::{DateTime, TimeZone, Utc};
 use rusqlite::{params, Connection, OptionalExtension};
@@ -40,58 +40,76 @@ pub struct ExecutionLogInput<'a> {
 }
 
 impl Database {
-    fn new_with_db_path(db_path: PathBuf) -> Result<Self> {
+    async fn new_with_db_path(db_path: PathBuf) -> Result<Self> {
         if let Some(parent) = db_path.parent() {
             std::fs::create_dir_all(parent)?;
         }
 
-        let mut conn = Connection::open(&db_path)?;
-        run_migrations(&mut conn)?;
+        // Connection::open is blocking, so we wrap it in spawn_blocking
+        let conn = tokio::task::spawn_blocking(move || -> Result<Connection> {
+            let mut conn = Connection::open(&db_path)?;
+            run_migrations(&mut conn)?;
+            Ok(conn)
+        })
+        .await
+        .map_err(|e| AppError::Database(rusqlite::Error::ToSqlConversionFailure(Box::new(e))))??;
+
         Ok(Self(Mutex::new(conn)))
     }
 
-    pub fn new(app_handle: &tauri::AppHandle) -> Result<Self> {
+    pub async fn new(app_handle: &tauri::AppHandle) -> Result<Self> {
         let app_data_dir = app_handle
             .path()
             .app_data_dir()
             .map_err(|e| AppError::Path(e.to_string()))?;
         let db_path = app_data_dir.join("ruleweaver.db");
-        Self::new_with_db_path(db_path)
+        Self::new_with_db_path(db_path).await
     }
 
-    pub fn new_for_cli() -> Result<Self> {
+    pub async fn new_for_cli() -> Result<Self> {
         let app_data_dir = default_app_data_dir()?;
         let db_path = app_data_dir.join("ruleweaver.db");
-        Self::new_with_db_path(db_path)
+        Self::new_with_db_path(db_path).await
     }
 
     #[cfg(test)]
-    pub fn new_in_memory() -> Result<Self> {
-        let mut conn = Connection::open_in_memory()?;
-        run_migrations(&mut conn)?;
+    pub async fn new_in_memory() -> Result<Self> {
+        let conn = tokio::task::spawn_blocking(move || -> Result<Connection> {
+            let mut conn = Connection::open_in_memory()?;
+            run_migrations(&mut conn)?;
+            Ok(conn)
+        })
+        .await
+        .map_err(|e| AppError::Database(rusqlite::Error::ToSqlConversionFailure(Box::new(e))))??;
+
         Ok(Self(Mutex::new(conn)))
     }
 
     /// Re-establishes the database connection and runs migrations.
     /// Useful for recovering from disk disconnections or handling external database modifications.
     #[allow(dead_code)]
-    pub fn reconnect(&self) -> Result<()> {
+    pub async fn reconnect(&self) -> Result<()> {
         let db_path = {
-            let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
+            let conn = self.0.lock().await;
             let path: String = conn.query_row("PRAGMA database_list", [], |row| row.get(2))?;
             PathBuf::from(path)
         };
 
-        let mut conn = Connection::open(&db_path)?;
-        run_migrations(&mut conn)?;
+        let new_conn = tokio::task::spawn_blocking(move || -> Result<Connection> {
+            let mut conn = Connection::open(&db_path)?;
+            run_migrations(&mut conn)?;
+            Ok(conn)
+        })
+        .await
+        .map_err(|e| AppError::Database(rusqlite::Error::ToSqlConversionFailure(Box::new(e))))??;
 
-        let mut guard = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
-        *guard = conn;
+        let mut guard = self.0.lock().await;
+        *guard = new_conn;
         Ok(())
     }
 
-    pub fn get_all_rules(&self) -> Result<Vec<Rule>> {
-        let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
+    pub async fn get_all_rules(&self) -> Result<Vec<Rule>> {
+        let conn = self.0.lock().await;
         let mut stmt = conn.prepare(
             "SELECT id, name, content, scope, target_paths, enabled_adapters, enabled, created_at, updated_at 
              FROM rules 
@@ -158,8 +176,8 @@ impl Database {
         Ok(rules)
     }
 
-    pub fn get_rule_by_id(&self, id: &str) -> Result<Rule> {
-        let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
+    pub async fn get_rule_by_id(&self, id: &str) -> Result<Rule> {
+        let conn = self.0.lock().await;
         let mut stmt = conn.prepare(
             "SELECT id, name, content, scope, target_paths, enabled_adapters, enabled, created_at, updated_at 
              FROM rules 
@@ -230,8 +248,8 @@ impl Database {
         Ok(rule)
     }
 
-    pub fn create_rule(&self, input: CreateRuleInput) -> Result<Rule> {
-        let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
+    pub async fn create_rule(&self, input: CreateRuleInput) -> Result<Rule> {
+        let conn = self.0.lock().await;
         let now = chrono::Utc::now().timestamp();
         let id = uuid::Uuid::new_v4().to_string();
 
@@ -259,12 +277,12 @@ impl Database {
         )?;
 
         drop(conn);
-        self.get_rule_by_id(&id)
+        self.get_rule_by_id(&id).await
     }
 
-    pub fn update_rule(&self, id: &str, input: UpdateRuleInput) -> Result<Rule> {
-        let existing = self.get_rule_by_id(id)?;
-        let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
+    pub async fn update_rule(&self, id: &str, input: UpdateRuleInput) -> Result<Rule> {
+        let existing = self.get_rule_by_id(id).await?;
+        let conn = self.0.lock().await;
 
         let name = input.name.unwrap_or(existing.name);
         let content = input.content.unwrap_or(existing.content);
@@ -296,17 +314,17 @@ impl Database {
         )?;
 
         drop(conn);
-        self.get_rule_by_id(id)
+        self.get_rule_by_id(id).await
     }
 
-    pub fn delete_rule(&self, id: &str) -> Result<()> {
-        let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
+    pub async fn delete_rule(&self, id: &str) -> Result<()> {
+        let conn = self.0.lock().await;
         conn.execute("DELETE FROM rules WHERE id = ?", params![id])?;
         Ok(())
     }
 
-    pub fn toggle_rule(&self, id: &str, enabled: bool) -> Result<Rule> {
-        let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
+    pub async fn toggle_rule(&self, id: &str, enabled: bool) -> Result<Rule> {
+        let conn = self.0.lock().await;
         let now = chrono::Utc::now().timestamp();
 
         conn.execute(
@@ -315,11 +333,11 @@ impl Database {
         )?;
 
         drop(conn);
-        self.get_rule_by_id(id)
+        self.get_rule_by_id(id).await
     }
 
-    pub fn get_all_commands(&self) -> Result<Vec<Command>> {
-        let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
+    pub async fn get_all_commands(&self) -> Result<Vec<Command>> {
+        let conn = self.0.lock().await;
         let mut stmt = conn.prepare(
             "SELECT id, name, description, script, arguments, expose_via_mcp, generate_slash_commands, slash_command_adapters, target_paths, created_at, updated_at
              FROM commands
@@ -386,8 +404,8 @@ impl Database {
         Ok(commands)
     }
 
-    pub fn get_command_by_id(&self, id: &str) -> Result<Command> {
-        let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
+    pub async fn get_command_by_id(&self, id: &str) -> Result<Command> {
+        let conn = self.0.lock().await;
         let mut stmt = conn.prepare(
             "SELECT id, name, description, script, arguments, expose_via_mcp, generate_slash_commands, slash_command_adapters, target_paths, created_at, updated_at
              FROM commands
@@ -459,8 +477,8 @@ impl Database {
         Ok(command)
     }
 
-    pub fn create_command(&self, input: CreateCommandInput) -> Result<Command> {
-        let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
+    pub async fn create_command(&self, input: CreateCommandInput) -> Result<Command> {
+        let conn = self.0.lock().await;
         let now = chrono::Utc::now().timestamp();
         let id = uuid::Uuid::new_v4().to_string();
         let arguments_json = serde_json::to_string(&input.arguments)?;
@@ -486,12 +504,12 @@ impl Database {
         )?;
 
         drop(conn);
-        self.get_command_by_id(&id)
+        self.get_command_by_id(&id).await
     }
 
-    pub fn update_command(&self, id: &str, input: UpdateCommandInput) -> Result<Command> {
-        let existing = self.get_command_by_id(id)?;
-        let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
+    pub async fn update_command(&self, id: &str, input: UpdateCommandInput) -> Result<Command> {
+        let existing = self.get_command_by_id(id).await?;
+        let conn = self.0.lock().await;
 
         let name = input.name.unwrap_or(existing.name);
         let description = input.description.unwrap_or(existing.description);
@@ -528,17 +546,17 @@ impl Database {
         )?;
 
         drop(conn);
-        self.get_command_by_id(id)
+        self.get_command_by_id(id).await
     }
 
-    pub fn delete_command(&self, id: &str) -> Result<()> {
-        let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
+    pub async fn delete_command(&self, id: &str) -> Result<()> {
+        let conn = self.0.lock().await;
         conn.execute("DELETE FROM commands WHERE id = ?", params![id])?;
         Ok(())
     }
 
-    pub fn get_all_skills(&self) -> Result<Vec<Skill>> {
-        let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
+    pub async fn get_all_skills(&self) -> Result<Vec<Skill>> {
+        let conn = self.0.lock().await;
         let mut stmt = conn.prepare(
             "SELECT id, name, description, instructions, input_schema, enabled, created_at, updated_at, directory_path, entry_point, scope
              FROM skills
@@ -584,8 +602,8 @@ impl Database {
         Ok(skills)
     }
 
-    pub fn get_skill_by_id(&self, id: &str) -> Result<Skill> {
-        let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
+    pub async fn get_skill_by_id(&self, id: &str) -> Result<Skill> {
+        let conn = self.0.lock().await;
         let mut stmt = conn.prepare(
             "SELECT id, name, description, instructions, input_schema, enabled, created_at, updated_at, directory_path, entry_point, scope
              FROM skills WHERE id = ?",
@@ -635,8 +653,8 @@ impl Database {
         Ok(skill)
     }
 
-    pub fn create_skill(&self, input: CreateSkillInput) -> Result<Skill> {
-        let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
+    pub async fn create_skill(&self, input: CreateSkillInput) -> Result<Skill> {
+        let conn = self.0.lock().await;
         let now = chrono::Utc::now().timestamp();
         let id = input.id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
         let input_schema_json = serde_json::to_string(&input.input_schema)?;
@@ -660,12 +678,12 @@ impl Database {
         )?;
 
         drop(conn);
-        self.get_skill_by_id(&id)
+        self.get_skill_by_id(&id).await
     }
 
-    pub fn update_skill(&self, id: &str, input: UpdateSkillInput) -> Result<Skill> {
-        let existing = self.get_skill_by_id(id)?;
-        let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
+    pub async fn update_skill(&self, id: &str, input: UpdateSkillInput) -> Result<Skill> {
+        let existing = self.get_skill_by_id(id).await?;
+        let conn = self.0.lock().await;
 
         let name = input.name.unwrap_or(existing.name);
         let description = input.description.unwrap_or(existing.description);
@@ -695,23 +713,23 @@ impl Database {
         )?;
 
         drop(conn);
-        self.get_skill_by_id(id)
+        self.get_skill_by_id(id).await
     }
 
-    pub fn delete_skill(&self, id: &str) -> Result<()> {
-        let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
+    pub async fn delete_skill(&self, id: &str) -> Result<()> {
+        let conn = self.0.lock().await;
         conn.execute("DELETE FROM skills WHERE id = ?", params![id])?;
         Ok(())
     }
 
-    pub fn get_mcp_data(&self) -> Result<(Vec<Command>, Vec<Skill>)> {
-        let commands = self.get_all_commands()?;
-        let skills = self.get_all_skills()?;
+    pub async fn get_mcp_data(&self) -> Result<(Vec<Command>, Vec<Skill>)> {
+        let commands = self.get_all_commands().await?;
+        let skills = self.get_all_skills().await?;
         Ok((commands, skills))
     }
 
-    pub fn add_execution_log(&self, input: &ExecutionLogInput<'_>) -> Result<()> {
-        let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
+    pub async fn add_execution_log(&self, input: &ExecutionLogInput<'_>) -> Result<()> {
+        let conn = self.0.lock().await;
         let id = uuid::Uuid::new_v4().to_string();
         let now = chrono::Utc::now().timestamp();
 
@@ -735,8 +753,8 @@ impl Database {
         Ok(())
     }
 
-    pub fn get_execution_history(&self, limit: u32) -> Result<Vec<ExecutionLog>> {
-        let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
+    pub async fn get_execution_history(&self, limit: u32) -> Result<Vec<ExecutionLog>> {
+        let conn = self.0.lock().await;
         let mut stmt = conn.prepare(
             "SELECT id, command_id, command_name, arguments, stdout, stderr, exit_code, duration_ms, executed_at, triggered_by
              FROM execution_logs
@@ -765,8 +783,8 @@ impl Database {
         Ok(rows)
     }
 
-    pub fn get_file_hash(&self, file_path: &str) -> Result<Option<String>> {
-        let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
+    pub async fn get_file_hash(&self, file_path: &str) -> Result<Option<String>> {
+        let conn = self.0.lock().await;
         let result: Option<String> = conn
             .query_row(
                 "SELECT content_hash FROM sync_history WHERE file_path = ?",
@@ -778,8 +796,8 @@ impl Database {
         Ok(result)
     }
 
-    pub fn set_file_hash(&self, file_path: &str, hash: &str) -> Result<()> {
-        let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
+    pub async fn set_file_hash(&self, file_path: &str, hash: &str) -> Result<()> {
+        let conn = self.0.lock().await;
         let now = chrono::Utc::now().timestamp();
 
         conn.execute(
@@ -791,8 +809,8 @@ impl Database {
         Ok(())
     }
 
-    pub fn add_sync_log(&self, files_written: u32, status: &str, triggered_by: &str) -> Result<()> {
-        let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
+    pub async fn add_sync_log(&self, files_written: u32, status: &str, triggered_by: &str) -> Result<()> {
+        let conn = self.0.lock().await;
         let id = uuid::Uuid::new_v4().to_string();
         let now = chrono::Utc::now().timestamp();
 
@@ -805,8 +823,8 @@ impl Database {
         Ok(())
     }
 
-    pub fn get_sync_history(&self, limit: u32) -> Result<Vec<SyncHistoryEntry>> {
-        let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
+    pub async fn get_sync_history(&self, limit: u32) -> Result<Vec<SyncHistoryEntry>> {
+        let conn = self.0.lock().await;
         let mut stmt = conn.prepare(
             "SELECT id, timestamp, files_written, status, triggered_by 
              FROM sync_logs 
@@ -835,8 +853,8 @@ impl Database {
         Ok(entries)
     }
 
-    pub fn get_setting(&self, key: &str) -> Result<Option<String>> {
-        let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
+    pub async fn get_setting(&self, key: &str) -> Result<Option<String>> {
+        let conn = self.0.lock().await;
         let result: Option<String> = conn
             .query_row(
                 "SELECT value FROM settings WHERE key = ?",
@@ -848,8 +866,8 @@ impl Database {
         Ok(result)
     }
 
-    pub fn set_setting(&self, key: &str, value: &str) -> Result<()> {
-        let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
+    pub async fn set_setting(&self, key: &str, value: &str) -> Result<()> {
+        let conn = self.0.lock().await;
         conn.execute(
             "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
             params![key, value],
@@ -857,8 +875,8 @@ impl Database {
         Ok(())
     }
 
-    pub fn merge_setting_string_array_unique(&self, key: &str, values: &[String]) -> Result<()> {
-        let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
+    pub async fn merge_setting_string_array_unique(&self, key: &str, values: &[String]) -> Result<()> {
+        let conn = self.0.lock().await;
         let current: Option<String> = conn
             .query_row(
                 "SELECT value FROM settings WHERE key = ?",
@@ -888,8 +906,8 @@ impl Database {
         Ok(())
     }
 
-    pub fn get_all_settings(&self) -> Result<std::collections::HashMap<String, String>> {
-        let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
+    pub async fn get_all_settings(&self) -> Result<std::collections::HashMap<String, String>> {
+        let conn = self.0.lock().await;
         let mut stmt = conn.prepare("SELECT key, value FROM settings")?;
 
         let settings = stmt
@@ -903,14 +921,14 @@ impl Database {
         Ok(settings)
     }
 
-    pub fn get_database_path(&self) -> Result<String> {
-        let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
+    pub async fn get_database_path(&self) -> Result<String> {
+        let conn = self.0.lock().await;
         let path: String = conn.query_row("PRAGMA database_list", [], |row| row.get(2))?;
         Ok(path)
     }
 
-    pub fn update_rule_file_index(&self, rule_id: &str, location: &StorageLocation) -> Result<()> {
-        let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
+    pub async fn update_rule_file_index(&self, rule_id: &str, location: &StorageLocation) -> Result<()> {
+        let conn = self.0.lock().await;
         let file_path = match location {
             StorageLocation::Global => crate::file_storage::get_global_rules_dir()?
                 .to_string_lossy()
@@ -926,8 +944,8 @@ impl Database {
         Ok(())
     }
 
-    pub fn get_rule_file_path(&self, rule_id: &str) -> Result<Option<String>> {
-        let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
+    pub async fn get_rule_file_path(&self, rule_id: &str) -> Result<Option<String>> {
+        let conn = self.0.lock().await;
         let result: Option<String> = conn
             .query_row(
                 "SELECT file_path FROM rule_file_index WHERE rule_id = ?",
@@ -939,8 +957,8 @@ impl Database {
         Ok(result)
     }
 
-    pub fn remove_rule_file_index(&self, rule_id: &str) -> Result<()> {
-        let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
+    pub async fn remove_rule_file_index(&self, rule_id: &str) -> Result<()> {
+        let conn = self.0.lock().await;
         conn.execute(
             "DELETE FROM rule_file_index WHERE rule_id = ?",
             params![rule_id],
@@ -948,8 +966,8 @@ impl Database {
         Ok(())
     }
 
-    pub fn import_rule(&self, rule: Rule, mode: crate::models::ImportMode) -> Result<()> {
-        let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
+    pub async fn import_rule(&self, rule: Rule, mode: crate::models::ImportMode) -> Result<()> {
+        let conn = self.0.lock().await;
         let now = chrono::Utc::now().timestamp();
 
         let target_paths_json = rule
@@ -988,8 +1006,8 @@ impl Database {
         Ok(())
     }
 
-    pub fn import_command(&self, command: Command, mode: crate::models::ImportMode) -> Result<()> {
-        let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
+    pub async fn import_command(&self, command: Command, mode: crate::models::ImportMode) -> Result<()> {
+        let conn = self.0.lock().await;
         let now = chrono::Utc::now().timestamp();
         let arguments_json = serde_json::to_string(&command.arguments)?;
         let slash_adapters_json = serde_json::to_string(&command.slash_command_adapters)?;
@@ -1026,8 +1044,8 @@ impl Database {
         Ok(())
     }
 
-    pub fn import_skill(&self, skill: Skill, mode: crate::models::ImportMode) -> Result<()> {
-        let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
+    pub async fn import_skill(&self, skill: Skill, mode: crate::models::ImportMode) -> Result<()> {
+        let conn = self.0.lock().await;
         let now = chrono::Utc::now().timestamp();
         let input_schema_json = serde_json::to_string(&skill.input_schema)?;
 
@@ -1061,32 +1079,32 @@ impl Database {
         Ok(())
     }
 
-    pub fn import_configuration(
+    pub async fn import_configuration(
         &self,
         config: crate::models::ExportConfiguration,
         mode: crate::models::ImportMode,
     ) -> Result<()> {
         for rule in config.rules {
-            self.import_rule(rule, mode)?;
+            self.import_rule(rule, mode).await?;
         }
 
         for command in config.commands {
-            self.import_command(command, mode)?;
+            self.import_command(command, mode).await?;
         }
 
         for skill in config.skills {
-            self.import_skill(skill, mode)?;
+            self.import_skill(skill, mode).await?;
         }
         Ok(())
     }
 
-    pub fn get_storage_mode(&self) -> Result<String> {
-        let mode = self.get_setting("storage_mode")?;
+    pub async fn get_storage_mode(&self) -> Result<String> {
+        let mode = self.get_setting("storage_mode").await?;
         Ok(mode.unwrap_or_else(|| "sqlite".to_string()))
     }
 
-    pub fn set_storage_mode(&self, mode: &str) -> Result<()> {
-        self.set_setting("storage_mode", mode)
+    pub async fn set_storage_mode(&self, mode: &str) -> Result<()> {
+        self.set_setting("storage_mode", mode).await
     }
 }
 
