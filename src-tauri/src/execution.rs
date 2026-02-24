@@ -88,7 +88,13 @@ pub fn sanitize_argument_value(value: &str) -> Result<String> {
 
 #[cfg(target_os = "windows")]
 fn escape_cmd_argument(value: &str) -> String {
-    let mut escaped = String::with_capacity(value.len());
+    // Fast path: if no special characters are present, we can avoid allocating a new string.
+    if !value.chars().any(|c| matches!(c, '^' | '&' | '<' | '>' | '|' | '(' | ')' | '%' | '!' | '"')) {
+        return value.to_string();
+    }
+
+    // Pre-allocate with some extra space to reduce reallocations.
+    let mut escaped = String::with_capacity(value.len() + 16);
     for c in value.chars() {
         match c {
             // Escape special cmd characters with ^
