@@ -1,7 +1,8 @@
 use super::SlashCommandAdapter;
 use crate::constants::{
-    ANTIGRAVITY_WORKFLOWS_DIR, CLAUDE_COMMANDS_DIR, CLINE_WORKFLOWS_DIR, CODEX_SKILLS_DIR,
-    CURSOR_COMMANDS_DIR, GEMINI_COMMANDS_DIR, OPENCODE_COMMANDS_DIR, ROO_COMMANDS_DIR,
+    ANTIGRAVITY_WORKFLOWS_DIR, CLAUDE_COMMANDS_DIR, CLINE_GLOBAL_WORKFLOWS_DIR,
+    CLINE_WORKFLOWS_DIR, CODEX_SKILLS_DIR, CURSOR_COMMANDS_DIR, GEMINI_COMMANDS_DIR,
+    OPENCODE_COMMANDS_DIR, ROO_COMMANDS_DIR,
 };
 use crate::models::Command;
 use std::path::PathBuf;
@@ -130,7 +131,7 @@ impl SlashCommandAdapter for ClineSlashAdapter {
     }
 
     fn global_dir(&self) -> &'static str {
-        CLINE_WORKFLOWS_DIR
+        CLINE_GLOBAL_WORKFLOWS_DIR
     }
 
     fn local_dir(&self) -> &'static str {
@@ -370,12 +371,19 @@ impl SlashCommandAdapter for CodexSlashAdapter {
     }
 
     fn get_command_path(&self, command_name: &str, is_global: bool) -> PathBuf {
-        let dir = if is_global {
+        let path_str = if is_global {
             self.global_dir()
         } else {
             self.local_dir()
         };
-        PathBuf::from(dir).join(command_name).join("SKILL.md")
+
+        let base_path = if is_global {
+            dirs::home_dir().unwrap_or_default()
+        } else {
+            PathBuf::new()
+        };
+
+        base_path.join(path_str).join(command_name).join("SKILL.md")
     }
 
     fn supports_argument_substitution(&self) -> bool {

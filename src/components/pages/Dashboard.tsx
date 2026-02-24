@@ -228,13 +228,13 @@ export function Dashboard({ onNavigate }: DashboardProps) {
         fetchSyncHistory();
         addToast({
           title: "Sync Complete",
-          description: `${result.filesWritten.length} files updated`,
+          description: `${(result.filesWritten || []).length} files updated`,
           variant: "success",
         });
       } else {
         addToast({
           title: "Sync Completed with Issues",
-          description: `${result.errors.length} errors occurred`,
+          description: `${(result.errors || []).length} errors occurred`,
           variant: "warning",
         });
       }

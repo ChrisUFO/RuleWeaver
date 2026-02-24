@@ -19,9 +19,9 @@ interface SyncResultsDialogProps {
 export function SyncResultsDialog({ open, onOpenChange, result }: SyncResultsDialogProps) {
   if (!result) return null;
 
-  const successCount = result.filesWritten.length;
-  const conflictCount = result.conflicts.length;
-  const errorCount = result.errors.length;
+  const successCount = (result.filesWritten || []).length;
+  const conflictCount = (result.conflicts || []).length;
+  const errorCount = (result.errors || []).length;
 
   const handleOpenFolder = async (filePath: string) => {
     const dirPath = filePath.substring(0, filePath.lastIndexOf("/"));
@@ -63,11 +63,11 @@ export function SyncResultsDialog({ open, onOpenChange, result }: SyncResultsDia
             )}
           </div>
 
-          {result.filesWritten.length > 0 && (
+          {(result.filesWritten || []).length > 0 && (
             <div className="space-y-2">
               <h4 className="text-sm font-medium">Files Updated</h4>
               <div className="max-h-40 overflow-auto space-y-1">
-                {result.filesWritten.map((filePath) => (
+                {(result.filesWritten || []).map((filePath) => (
                   <div
                     key={filePath}
                     className="flex items-center justify-between p-2 rounded-md bg-muted/30 text-sm"
@@ -91,11 +91,11 @@ export function SyncResultsDialog({ open, onOpenChange, result }: SyncResultsDia
             </div>
           )}
 
-          {result.errors.length > 0 && (
+          {(result.errors || []).length > 0 && (
             <div className="space-y-2">
               <h4 className="text-sm font-medium text-destructive">Errors</h4>
               <div className="max-h-32 overflow-auto space-y-1">
-                {result.errors.map((error, index) => (
+                {(result.errors || []).map((error, index) => (
                   <div key={index} className="p-2 rounded-md bg-destructive/10 text-sm">
                     <p className="font-medium">{error.adapterName}</p>
                     <p className="text-muted-foreground">{error.message}</p>

@@ -70,6 +70,7 @@ pub const NEW_ROO_CODE_DIR: &str = ".roo";
 pub const OPENCODE_COMMANDS_DIR: &str = ".config/opencode/commands";
 pub const CLAUDE_COMMANDS_DIR: &str = ".claude/commands";
 pub const CLINE_WORKFLOWS_DIR: &str = ".clinerules/workflows";
+pub const CLINE_GLOBAL_WORKFLOWS_DIR: &str = "Documents/Cline/Workflows";
 pub const GEMINI_COMMANDS_DIR: &str = ".gemini/commands";
 pub const CURSOR_COMMANDS_DIR: &str = ".cursor/commands";
 pub const ROO_COMMANDS_DIR: &str = ".roo/commands";

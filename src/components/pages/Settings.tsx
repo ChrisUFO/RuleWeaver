@@ -856,6 +856,61 @@ export function Settings() {
         </CardContent>
       </Card>
 
+      <Card className="glass-card premium-shadow border-none overflow-hidden">
+        <CardHeader className="bg-white/5 pb-4">
+          <CardTitle className="text-sm font-semibold tracking-wide uppercase text-muted-foreground/80">
+            Slash Commands
+          </CardTitle>
+          <CardDescription>Configure native slash command generation for AI tools</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4 pt-6">
+          <div className="flex items-center justify-between rounded-md border p-3">
+            <div>
+              <div className="font-medium">Auto-sync on Save</div>
+              <div className="text-sm text-muted-foreground">
+                Automatically sync slash commands when saving a command
+              </div>
+            </div>
+            <Switch
+              checked={false}
+              onCheckedChange={() => {
+                addToast({
+                  title: "Coming Soon",
+                  description: "This feature will be available in a future update",
+                  variant: "info",
+                });
+              }}
+              disabled={isLoading}
+            />
+          </div>
+
+          <div className="pt-2">
+            <Button
+              variant="outline"
+              onClick={async () => {
+                try {
+                  const result = await api.slashCommands.syncAll(true);
+                  addToast({
+                    title: "Slash Commands Synced",
+                    description: `Wrote ${result.files_written} files`,
+                    variant: result.errors.length > 0 ? "warning" : "success",
+                  });
+                } catch (error) {
+                  addToast({
+                    title: "Sync Failed",
+                    description: error instanceof Error ? error.message : "Unknown error",
+                    variant: "error",
+                  });
+                }
+              }}
+              disabled={isLoading}
+            >
+              Sync All Slash Commands
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader>
           <CardTitle>Data Management</CardTitle>

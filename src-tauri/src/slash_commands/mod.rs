@@ -24,12 +24,19 @@ pub trait SlashCommandAdapter: Send + Sync {
 
     /// Returns the full path for a command
     fn get_command_path(&self, command_name: &str, is_global: bool) -> PathBuf {
-        let dir = if is_global {
+        let path_str = if is_global {
             self.global_dir()
         } else {
             self.local_dir()
         };
-        PathBuf::from(dir).join(self.get_filename(command_name))
+
+        let base_path = if is_global {
+            dirs::home_dir().unwrap_or_default()
+        } else {
+            PathBuf::new()
+        };
+
+        base_path.join(path_str).join(self.get_filename(command_name))
     }
 
     /// Whether this adapter supports argument substitution
