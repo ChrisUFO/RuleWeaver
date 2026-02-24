@@ -26,34 +26,6 @@ use super::{
     validate_paths_within_registered_roots,
 };
 
-use std::collections::HashMap;
-use std::fs;
-use std::io::Write;
-use std::path::PathBuf;
-use std::sync::Arc;
-use tauri::State;
-
-use crate::commands::{RUNNING_TESTS, TEST_INVOCATION_TIMESTAMPS};
-use crate::constants::limits::TEST_CMD_RATE_LIMIT_MAX;
-use crate::constants::timing::{TEST_CMD_RATE_LIMIT_WINDOW, TEST_CMD_TIMEOUT};
-use crate::database::Database;
-use crate::error::{AppError, Result};
-use crate::execution::{
-    argument_env_var_name, execute_and_log, replace_template_with_env_ref, sanitize_argument_value,
-    validate_enum_argument, ExecuteAndLogInput,
-};
-use crate::mcp::McpManager;
-use crate::models::{
-    Command, CreateCommandInput, SyncError, SyncResult, TestCommandResult, UpdateCommandInput,
-};
-use std::time::Instant;
-
-use super::{
-    command_file_targets, command_file_targets_for_root, register_local_paths,
-    validate_command_arguments, validate_command_input, validate_path,
-    validate_paths_within_registered_roots,
-};
-
 #[tauri::command]
 pub async fn get_all_commands(db: State<'_, Arc<Database>>) -> Result<Vec<Command>> {
     db.get_all_commands().await
