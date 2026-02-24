@@ -107,6 +107,9 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
   const [clipboardImportName, setClipboardImportName] = useState<string | undefined>(undefined);
   const [urlImportDialogOpen, setUrlImportDialogOpen] = useState(false);
   const [urlImportValue, setUrlImportValue] = useState("");
+  const [clipboardNameDialogOpen, setClipboardNameDialogOpen] = useState(false);
+  const [clipboardPendingContent, setClipboardPendingContent] = useState("");
+  const [clipboardNameInput, setClipboardNameInput] = useState("");
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -434,7 +437,6 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
   };
 
   const scanImportFromClipboard = async () => {
-    setIsScanningImport(true);
     try {
       const text = await navigator.clipboard.readText();
       if (!text.trim()) {
@@ -446,10 +448,31 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
         return;
       }
 
-      const name = window.prompt("Optional name for clipboard import:") || undefined;
+      setClipboardPendingContent(text);
+      setClipboardNameInput(clipboardImportName ?? "");
+      setClipboardNameDialogOpen(true);
+    } catch (error) {
+      addToast({
+        title: "Scan Failed",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "error",
+      });
+    }
+  };
+
+  const submitClipboardImportScan = async () => {
+    if (!clipboardPendingContent.trim()) {
+      setClipboardNameDialogOpen(false);
+      return;
+    }
+
+    setClipboardNameDialogOpen(false);
+    setIsScanningImport(true);
+    try {
+      const name = clipboardNameInput.trim() || undefined;
       setClipboardImportName(name);
-      const scan = await api.ruleImport.scanFromClipboard(text, name);
-      await openImportPreview("clipboard", text, scan.candidates, scan.errors);
+      const scan = await api.ruleImport.scanFromClipboard(clipboardPendingContent, name);
+      await openImportPreview("clipboard", clipboardPendingContent, scan.candidates, scan.errors);
     } catch (error) {
       addToast({
         title: "Scan Failed",
@@ -1076,6 +1099,31 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
               Cancel
             </Button>
             <Button onClick={submitUrlImportScan}>Scan URL</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={clipboardNameDialogOpen} onOpenChange={setClipboardNameDialogOpen}>
+        <DialogContent onClose={() => setClipboardNameDialogOpen(false)}>
+          <DialogHeader>
+            <DialogTitle>Clipboard Import Name</DialogTitle>
+            <DialogDescription>
+              Optionally provide a name used for preview and import.
+            </DialogDescription>
+          </DialogHeader>
+
+          <Input
+            value={clipboardNameInput}
+            onChange={(e) => setClipboardNameInput(e.target.value)}
+            placeholder="clipboard-import"
+            aria-label="Clipboard import name"
+          />
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setClipboardNameDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={submitClipboardImportScan}>Scan Clipboard</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -97,6 +97,7 @@ pub fn run() {
                 .map(|v| v == "true")
                 .unwrap_or(false);
             if !bootstrap_done {
+                let mut mark_bootstrap_done = false;
                 let options = crate::models::ImportExecutionOptions {
                     conflict_mode: crate::models::ImportConflictMode::Rename,
                     ..Default::default()
@@ -104,9 +105,12 @@ pub fn run() {
                 let max_size = crate::rule_import::resolve_max_size(&options);
                 match crate::rule_import::scan_ai_tool_candidates(&db, max_size) {
                     Ok(scan) => {
-                        if !scan.candidates.is_empty() {
+                        if scan.candidates.is_empty() {
+                            mark_bootstrap_done = true;
+                        } else {
                             match crate::rule_import::execute_import(&db, scan, options) {
                                 Ok(import_result) => {
+                                    mark_bootstrap_done = true;
                                     log::info!(
                                         "Bootstrap import complete: {} imported, {} skipped, {} conflicts",
                                         import_result.imported.len(),
@@ -143,8 +147,10 @@ pub fn run() {
                         log::error!("Bootstrap import scan failed: {}", e);
                     }
                 }
-                if let Err(e) = db.set_setting("ai_tool_import_bootstrap_done", "true") {
-                    log::error!("Failed to persist bootstrap import flag: {}", e);
+                if mark_bootstrap_done {
+                    if let Err(e) = db.set_setting("ai_tool_import_bootstrap_done", "true") {
+                        log::error!("Failed to persist bootstrap import flag: {}", e);
+                    }
                 }
             }
 
