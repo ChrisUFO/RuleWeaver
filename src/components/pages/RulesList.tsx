@@ -6,6 +6,8 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -773,35 +775,30 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
                 </span>
               </div>
 
-              <div className="w-44">
-                <select
-                  value={importConflictMode}
-                  onChange={(e) => setImportConflictMode(e.target.value as ImportConflictMode)}
-                  className="w-full h-9 rounded-md border bg-background px-3 text-sm"
-                  aria-label="Conflict mode"
-                >
-                  <option value="rename">Conflicts: Rename</option>
-                  <option value="skip">Conflicts: Skip</option>
-                  <option value="replace">Conflicts: Replace</option>
-                </select>
-              </div>
+              <Select
+                value={importConflictMode}
+                onChange={(value) => setImportConflictMode(value as ImportConflictMode)}
+                options={[
+                  { value: "rename", label: "Conflicts: Rename" },
+                  { value: "skip", label: "Conflicts: Skip" },
+                  { value: "replace", label: "Conflicts: Replace" },
+                ]}
+                className="w-44"
+                aria-label="Conflict mode"
+              />
             </div>
 
             <div className="grid grid-cols-1 gap-2 rounded-md border p-3">
-              <div className="w-full">
-                <select
-                  value={importScopeOverride}
-                  onChange={(e) =>
-                    setImportScopeOverride(e.target.value as "source" | "global" | "local")
-                  }
-                  className="w-full h-9 rounded-md border bg-background px-3 text-sm"
-                  aria-label="Scope override"
-                >
-                  <option value="source">Scope: Use source</option>
-                  <option value="global">Scope: Force global</option>
-                  <option value="local">Scope: Force local</option>
-                </select>
-              </div>
+              <Select
+                value={importScopeOverride}
+                onChange={(value) => setImportScopeOverride(value as "source" | "global" | "local")}
+                options={[
+                  { value: "source", label: "Scope: Use source" },
+                  { value: "global", label: "Scope: Force global" },
+                  { value: "local", label: "Scope: Force local" },
+                ]}
+                aria-label="Scope override"
+              />
 
               <div className="flex items-center gap-2">
                 <Checkbox
@@ -935,12 +932,11 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
             <DialogDescription>Enter a URL to scan before importing.</DialogDescription>
           </DialogHeader>
 
-          <input
+          <Input
             type="url"
             value={urlImportValue}
             onChange={(e) => setUrlImportValue(e.target.value)}
             placeholder="https://example.com/rules.md"
-            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             aria-label="Import URL"
           />
 
@@ -962,12 +958,11 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
             </DialogDescription>
           </DialogHeader>
 
-          <input
+          <Input
             type="text"
             value={clipboardNameInput}
             onChange={(e) => setClipboardNameInput(e.target.value)}
             placeholder="clipboard-import"
-            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             aria-label="Clipboard import name"
           />
 
