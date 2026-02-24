@@ -32,6 +32,7 @@ import {
 import { api } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/components/ui/toast";
+import { useRepositoryRoots } from "@/hooks/useRepositoryRoots";
 import { ADAPTERS, type AdapterType, type Rule } from "@/types/rule";
 import type { CommandModel } from "@/types/command";
 import type { Skill } from "@/types/skill";
@@ -98,6 +99,14 @@ export function Settings() {
   const [mcpAutoStart, setMcpAutoStart] = useState(false);
   const [minimizeToTray, setMinimizeToTray] = useState(true);
   const [mcpLogs, setMcpLogs] = useState<string[]>([]);
+  const {
+    roots: repositoryRoots,
+    setRoots: setRepositoryRoots,
+    refresh: refreshRepositoryRoots,
+    save: saveRepositoryRootsSetting,
+  } = useRepositoryRoots(false);
+  const [repoPathsDirty, setRepoPathsDirty] = useState(false);
+  const [isSavingRepos, setIsSavingRepos] = useState(false);
   const { addToast } = useToast();
 
   useEffect(() => {
@@ -153,6 +162,7 @@ export function Settings() {
         setMinimizeToTray(minimizeToTraySetting !== "false");
         setMcpLogs(mcpLogsInitial);
         setLaunchOnStartup(autoStartEnabled);
+        await refreshRepositoryRoots();
 
         if (settingsJson) {
           try {
@@ -169,7 +179,7 @@ export function Settings() {
       }
     };
     loadData();
-  }, []);
+  }, [refreshRepositoryRoots]);
 
   const handleOpenAppData = async () => {
     try {
@@ -212,6 +222,84 @@ export function Settings() {
       });
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const addRepositoryRoot = async () => {
+    try {
+      const selected = await open({ directory: true, multiple: false });
+      if (!selected || Array.isArray(selected)) return;
+
+      setRepositoryRoots((prev) => {
+        if (prev.includes(selected)) return prev;
+        setRepoPathsDirty(true);
+        return [...prev, selected];
+      });
+    } catch {
+      addToast({
+        title: "Add Repository Failed",
+        description: "Could not select repository path",
+        variant: "error",
+      });
+    }
+  };
+
+  const removeRepositoryRoot = async (path: string) => {
+    try {
+      const [rules, commands, skills] = await Promise.all([
+        api.rules.getAll(),
+        api.commands.getAll(),
+        api.skills.getAll(),
+      ]);
+
+      const usedByRule = rules.some((rule) => rule.targetPaths?.some((p) => p === path));
+      const usedByCommand = commands.some((command) =>
+        command.target_paths?.some((p) => p === path)
+      );
+      const usedBySkill = skills.some(
+        (skill) =>
+          skill.scope === "local" && skill.directory_path && skill.directory_path.startsWith(path)
+      );
+
+      if (usedByRule || usedByCommand || usedBySkill) {
+        addToast({
+          title: "Repository In Use",
+          description:
+            "Cannot remove this repository root while rules, commands, or skills still reference it.",
+          variant: "error",
+        });
+        return;
+      }
+
+      setRepositoryRoots((prev) => prev.filter((p) => p !== path));
+      setRepoPathsDirty(true);
+    } catch (error) {
+      addToast({
+        title: "Validation Failed",
+        description: error instanceof Error ? error.message : "Could not validate repository usage",
+        variant: "error",
+      });
+    }
+  };
+
+  const saveRepositoryRoots = async () => {
+    setIsSavingRepos(true);
+    try {
+      await saveRepositoryRootsSetting(repositoryRoots);
+      setRepoPathsDirty(false);
+      addToast({
+        title: "Repositories Saved",
+        description: "Repository roots updated for local artifact discovery",
+        variant: "success",
+      });
+    } catch (error) {
+      addToast({
+        title: "Save Failed",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "error",
+      });
+    } finally {
+      setIsSavingRepos(false);
     }
   };
 
@@ -612,6 +700,51 @@ export function Settings() {
               <FolderOpen className="h-4 w-4" aria-hidden="true" />
             </Button>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card className="glass-card premium-shadow border-none overflow-hidden">
+        <CardHeader className="bg-white/5 pb-4">
+          <CardTitle className="text-sm font-semibold tracking-wide uppercase text-muted-foreground/80">
+            Repository Roots
+          </CardTitle>
+          <CardDescription>
+            Configure repositories once, then select them across local artifacts and import
+            workflows.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3 pt-6">
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={addRepositoryRoot}>
+              <FolderOpen className="mr-2 h-4 w-4" /> Add Repository
+            </Button>
+            <Button
+              onClick={saveRepositoryRoots}
+              disabled={!repoPathsDirty || isSavingRepos || isLoading}
+            >
+              {isSavingRepos ? "Saving..." : "Save Repositories"}
+            </Button>
+          </div>
+
+          {repositoryRoots.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No repository roots configured yet.</p>
+          ) : (
+            <div className="space-y-2">
+              {repositoryRoots.map((path) => (
+                <div key={path} className="flex items-center justify-between rounded-md border p-2">
+                  <span className="text-xs break-all">{path}</span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => void removeRepositoryRoot(path)}
+                    aria-label={`Remove repository ${path}`}
+                  >
+                    Remove
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
 

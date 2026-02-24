@@ -14,6 +14,8 @@ pub struct Command {
     pub generate_slash_commands: bool,
     #[serde(default)]
     pub slash_command_adapters: Vec<String>,
+    #[serde(default)]
+    pub target_paths: Vec<String>,
     #[serde(with = "crate::models::timestamp")]
     pub created_at: DateTime<Utc>,
     #[serde(with = "crate::models::timestamp")]
@@ -72,6 +74,7 @@ impl Command {
             expose_via_mcp: true,
             generate_slash_commands: false,
             slash_command_adapters: Vec::new(),
+            target_paths: Vec::new(),
             created_at: now,
             updated_at: now,
         }
@@ -91,6 +94,8 @@ pub struct CreateCommandInput {
     pub generate_slash_commands: bool,
     #[serde(default)]
     pub slash_command_adapters: Vec<String>,
+    #[serde(default)]
+    pub target_paths: Vec<String>,
 }
 
 fn default_true() -> bool {
@@ -106,6 +111,7 @@ pub struct UpdateCommandInput {
     pub expose_via_mcp: Option<bool>,
     pub generate_slash_commands: Option<bool>,
     pub slash_command_adapters: Option<Vec<String>>,
+    pub target_paths: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -151,6 +157,7 @@ mod tests {
             expose_via_mcp: true,
             generate_slash_commands: false,
             slash_command_adapters: vec![],
+            target_paths: vec![],
         };
 
         let json = serde_json::to_string(&input).expect("serialize create input");

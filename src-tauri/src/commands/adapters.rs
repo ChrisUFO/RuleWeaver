@@ -3,7 +3,7 @@ use crate::execution::slugify;
 use crate::models::Command;
 use std::collections::HashMap;
 
-pub trait CommandAdapter {
+pub trait CommandAdapter: Send + Sync {
     fn format(&self, commands: &[Command]) -> String;
     fn name(&self) -> &'static str;
 }

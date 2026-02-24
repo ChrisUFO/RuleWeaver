@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useRef } from "react";
+import { useEffect, useState, useMemo, useRef, type DragEvent } from "react";
 import { cn } from "@/lib/utils";
 import {
   Plus,
@@ -39,8 +39,10 @@ import {
   ADAPTERS,
   type Rule,
   type AdapterType,
+  type Scope,
   type ImportCandidate,
   type ImportConflictMode,
+  type ImportExecutionOptions,
   type ImportExecutionResult,
   type ImportHistoryEntry,
 } from "@/types/rule";
@@ -102,6 +104,9 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
   const [importConflictMode, setImportConflictMode] = useState<ImportConflictMode>("rename");
   const [importResult, setImportResult] = useState<ImportExecutionResult | null>(null);
   const [importHistory, setImportHistory] = useState<ImportHistoryEntry[]>([]);
+  const [importHistoryFilter, setImportHistoryFilter] = useState<
+    "all" | "ai_tool" | "file" | "directory" | "url" | "clipboard"
+  >("all");
   const [importSourceMode, setImportSourceMode] = useState<ImportSourceMode>("ai");
   const [importSourceValue, setImportSourceValue] = useState("");
   const [clipboardImportName, setClipboardImportName] = useState<string | undefined>(undefined);
@@ -110,6 +115,10 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
   const [clipboardNameDialogOpen, setClipboardNameDialogOpen] = useState(false);
   const [clipboardPendingContent, setClipboardPendingContent] = useState("");
   const [clipboardNameInput, setClipboardNameInput] = useState("");
+  const [importScopeOverride, setImportScopeOverride] = useState<"source" | Scope>("source");
+  const [useAdapterOverride, setUseAdapterOverride] = useState(false);
+  const [adapterOverrideSet, setAdapterOverrideSet] = useState<Set<AdapterType>>(new Set());
+  const [isDragImportActive, setIsDragImportActive] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -338,8 +347,75 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
     setImportScanErrors(errors);
     setSelectedImportIds(new Set(candidates.map((c) => c.id)));
     setImportDialogOpen(true);
+    setImportScopeOverride("source");
+    setUseAdapterOverride(false);
+    setAdapterOverrideSet(new Set());
     const history = await api.ruleImport.getHistory();
     setImportHistory(history);
+  };
+
+  const getImportExecutionOptions = (): ImportExecutionOptions => ({
+    conflictMode: importConflictMode,
+    selectedCandidateIds: Array.from(selectedImportIds),
+    defaultScope: importScopeOverride === "source" ? undefined : importScopeOverride,
+    defaultAdapters: useAdapterOverride ? Array.from(adapterOverrideSet) : undefined,
+  });
+
+  const toggleAdapterOverride = (adapter: AdapterType, checked: boolean) => {
+    setAdapterOverrideSet((prev) => {
+      const next = new Set(prev);
+      if (checked) {
+        next.add(adapter);
+      } else {
+        next.delete(adapter);
+      }
+      return next;
+    });
+  };
+
+  const handleDragImportOver = (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setIsDragImportActive(true);
+  };
+
+  const handleDragImportLeave = (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setIsDragImportActive(false);
+  };
+
+  const handleDropImport = async (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setIsDragImportActive(false);
+
+    const droppedFiles = event.dataTransfer.files;
+    if (!droppedFiles || droppedFiles.length === 0) {
+      return;
+    }
+
+    const fileWithPath = droppedFiles[0] as File & { path?: string };
+    const filePath = fileWithPath.path;
+    if (!filePath) {
+      addToast({
+        title: "Drop Not Supported",
+        description: "Use Import File if your platform does not expose drop file paths.",
+        variant: "error",
+      });
+      return;
+    }
+
+    setIsScanningImport(true);
+    try {
+      const scan = await api.ruleImport.scanFromFile(filePath);
+      await openImportPreview("file", filePath, scan.candidates, scan.errors);
+    } catch (error) {
+      addToast({
+        title: "Scan Failed",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "error",
+      });
+    } finally {
+      setIsScanningImport(false);
+    }
   };
 
   const scanAiToolRules = async () => {
@@ -516,10 +592,7 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
 
     setIsImporting(true);
     try {
-      const options = {
-        conflictMode: importConflictMode,
-        selectedCandidateIds: Array.from(selectedImportIds),
-      };
+      const options = getImportExecutionOptions();
 
       let result: ImportExecutionResult;
       if (importSourceMode === "ai") {
@@ -552,6 +625,15 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
     } finally {
       setIsImporting(false);
     }
+  };
+
+  const retryConflictsAsRename = async () => {
+    if (!importResult || importResult.conflicts.length === 0) {
+      return;
+    }
+    setSelectedImportIds(new Set(importResult.conflicts.map((c) => c.candidateId)));
+    setImportConflictMode("rename");
+    await executeImport();
   };
 
   const hasActiveFilters = searchQuery || scopeFilter !== "all" || adapterFilter !== "all";
@@ -610,6 +692,20 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
             New Rule
           </Button>
         </div>
+      </div>
+
+      <div
+        className={cn(
+          "rounded-xl border border-dashed p-3 text-sm transition-colors",
+          isDragImportActive
+            ? "border-primary bg-primary/10 text-foreground"
+            : "border-white/20 text-muted-foreground"
+        )}
+        onDragOver={handleDragImportOver}
+        onDragLeave={handleDragImportLeave}
+        onDrop={handleDropImport}
+      >
+        Drag and drop a rule file here to scan and import.
       </div>
 
       <div className="flex flex-wrap items-center gap-3 p-4 glass rounded-xl border border-white/5 premium-shadow">
@@ -969,6 +1065,43 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
               />
             </div>
 
+            <div className="grid grid-cols-1 gap-2 rounded-md border p-3">
+              <Select
+                value={importScopeOverride}
+                onChange={(value) => setImportScopeOverride(value as "source" | Scope)}
+                options={[
+                  { value: "source", label: "Scope: Use source" },
+                  { value: "global", label: "Scope: Force global" },
+                  { value: "local", label: "Scope: Force local" },
+                ]}
+                aria-label="Scope override"
+              />
+
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  checked={useAdapterOverride}
+                  onChange={setUseAdapterOverride}
+                  aria-label="Enable adapter override"
+                />
+                <span className="text-sm text-muted-foreground">Override adapters on import</span>
+              </div>
+
+              {useAdapterOverride && (
+                <div className="grid grid-cols-2 gap-2">
+                  {ADAPTERS.map((adapter) => (
+                    <label key={adapter.id} className="flex items-center gap-2 text-sm">
+                      <Checkbox
+                        checked={adapterOverrideSet.has(adapter.id)}
+                        onChange={(checked) => toggleAdapterOverride(adapter.id, checked)}
+                        aria-label={`Use adapter ${adapter.name}`}
+                      />
+                      <span>{adapter.name}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+
             {importCandidates.length === 0 ? (
               <div className="rounded-md border p-3 text-sm text-muted-foreground">
                 No import candidates found for this source.
@@ -1028,23 +1161,59 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
                   </p>
                 )}
                 {importResult.conflicts.length > 0 && (
-                  <p className="text-xs text-destructive mt-1">
-                    Conflict: {importResult.conflicts[0].candidateName}
-                  </p>
+                  <div className="mt-2 flex items-center justify-between gap-2">
+                    <p className="text-xs text-destructive">
+                      Conflict: {importResult.conflicts[0].candidateName}
+                    </p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void retryConflictsAsRename()}
+                    >
+                      Retry Conflicts
+                    </Button>
+                  </div>
                 )}
               </div>
             )}
 
             {importHistory.length > 0 && (
               <div className="rounded-md border p-3 text-xs">
-                <p className="font-medium mb-2">Recent Import Runs</p>
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <p className="font-medium">Recent Import Runs</p>
+                  <Select
+                    value={importHistoryFilter}
+                    onChange={(value) =>
+                      setImportHistoryFilter(
+                        value as "all" | "ai_tool" | "file" | "directory" | "url" | "clipboard"
+                      )
+                    }
+                    options={[
+                      { value: "all", label: "All sources" },
+                      { value: "ai_tool", label: "AI Tool" },
+                      { value: "file", label: "File" },
+                      { value: "directory", label: "Directory" },
+                      { value: "url", label: "URL" },
+                      { value: "clipboard", label: "Clipboard" },
+                    ]}
+                    className="w-32"
+                    aria-label="Import history source filter"
+                  />
+                </div>
                 <div className="space-y-1 text-muted-foreground">
-                  {importHistory.slice(0, 3).map((entry) => (
-                    <p key={entry.id}>
-                      {new Date(entry.timestamp * 1000).toLocaleString()} - {entry.sourceType} -{" "}
-                      {entry.importedCount} imported
-                    </p>
-                  ))}
+                  {importHistory
+                    .filter((entry) =>
+                      importHistoryFilter === "all"
+                        ? true
+                        : entry.sourceType === importHistoryFilter
+                    )
+                    .slice(0, 3)
+                    .map((entry) => (
+                      <p key={entry.id}>
+                        {new Date(entry.timestamp * 1000).toLocaleString()} - {entry.sourceType} -{" "}
+                        {entry.importedCount} imported
+                      </p>
+                    ))}
                 </div>
               </div>
             )}

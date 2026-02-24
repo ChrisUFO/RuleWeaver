@@ -23,9 +23,13 @@ A comprehensive guide to how each AI coding tool handles **rules**, **custom com
 
 - RuleWeaver supports import from known AI tool rule locations in both global and local scopes.
 - Import supports scan + preview + selection before execution.
+- Import supports additional override options during execution: scope override and adapter override.
 - Duplicate content is skipped automatically.
 - Conflict handling supports `rename`, `skip`, and `replace`.
 - Same-name cross-tool imports can be automatically disambiguated with a tool suffix (for example, `quality-cline`).
+- Rules page includes a drag-and-drop import target for direct file scan/import preview.
+- Configure repository roots in Settings to power local artifact selection and local AI tool path discovery.
+- Commands and skills can also reference the same repository roots for consistent local-target configuration.
 
 ---
 

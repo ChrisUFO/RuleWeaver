@@ -9,6 +9,9 @@ import { Skill, SkillParameterType } from "../../../types/skill";
 // Mock Tauri API
 vi.mock("../../../lib/tauri", () => ({
   api: {
+    settings: {
+      get: vi.fn(),
+    },
     skills: {
       getAll: vi.fn(),
       create: vi.fn(),
@@ -65,6 +68,7 @@ const mockSkills: Skill[] = [
 describe("Skills Component", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(api.settings.get).mockResolvedValue("[]");
   });
 
   it("loads and displays skills on mount", async () => {

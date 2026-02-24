@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { fireEvent } from "@testing-library/react";
 import { RulesList } from "../../../components/pages/RulesList";
 import { ToastProvider } from "../../../components/ui/toast";
 import type { Rule } from "../../../types/rule";
@@ -229,5 +230,79 @@ describe("RulesList import workflow", () => {
         expect.objectContaining({ selectedCandidateIds: ["file-1"] })
       );
     });
+  });
+
+  it("sends scope and adapter overrides when selected", async () => {
+    const { api } = await import("../../../lib/tauri");
+    vi.mocked(api.ruleImport.scanAiToolCandidates).mockResolvedValue({
+      candidates: [
+        {
+          id: "cand-1",
+          sourceType: "ai_tool",
+          sourceLabel: "Cline",
+          sourcePath: "C:/tmp/.clinerules",
+          sourceTool: "cline",
+          name: "quality",
+          proposedName: "quality-cline",
+          content: "rule content",
+          scope: "global",
+          targetPaths: null,
+          enabledAdapters: ["cline"],
+          contentHash: "hash",
+          fileSize: 12,
+        },
+      ],
+      errors: [],
+    });
+    vi.mocked(api.ruleImport.importAiToolRules).mockResolvedValue({
+      imported: [],
+      skipped: [],
+      conflicts: [],
+      errors: [],
+    });
+
+    renderWithProviders(<RulesList onSelectRule={vi.fn()} onCreateRule={vi.fn()} />);
+
+    await userEvent.click(screen.getByRole("button", { name: /import ai/i }));
+    await waitFor(() => expect(screen.getByText("quality-cline")).toBeInTheDocument());
+
+    await userEvent.selectOptions(screen.getByLabelText(/scope override/i), "local");
+    await userEvent.click(screen.getByLabelText(/enable adapter override/i));
+    await userEvent.click(screen.getByLabelText(/use adapter gemini/i));
+
+    await userEvent.click(screen.getByRole("button", { name: /import selected/i }));
+
+    await waitFor(() => {
+      expect(api.ruleImport.importAiToolRules).toHaveBeenCalledWith(
+        expect.objectContaining({
+          defaultScope: "local",
+          defaultAdapters: ["gemini"],
+          selectedCandidateIds: ["cand-1"],
+        })
+      );
+    });
+  });
+
+  it("shows URL required validation when scanning URL without input", async () => {
+    renderWithProviders(<RulesList onSelectRule={vi.fn()} onCreateRule={vi.fn()} />);
+
+    await userEvent.click(screen.getByRole("button", { name: /import url/i }));
+    await userEvent.click(screen.getByRole("button", { name: /scan url/i }));
+
+    expect(screen.getByText(/URL Required/i)).toBeInTheDocument();
+  });
+
+  it("shows drop not supported for dropped files without path", async () => {
+    renderWithProviders(<RulesList onSelectRule={vi.fn()} onCreateRule={vi.fn()} />);
+
+    const dropZone = screen.getByText(/Drag and drop a rule file here/i).closest("div");
+    expect(dropZone).toBeTruthy();
+
+    const file = new File(["x"], "rule.md", { type: "text/markdown" });
+    const dataTransfer = { files: [file] } as unknown as DataTransfer;
+
+    fireEvent.drop(dropZone as Element, { dataTransfer });
+
+    expect(screen.getByText(/Drop Not Supported/i)).toBeInTheDocument();
   });
 });

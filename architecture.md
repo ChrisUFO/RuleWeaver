@@ -93,6 +93,9 @@ This layer handles all OS-level operations.
 
 - **File Watchers:** AI tools (like Cline, OpenCode) naturally watch for changes in their rule files. When the Sync Engine updates a file, the AI tool seamlessly picks it up.
 - **Manual Import UX:** The Rules page exposes import actions for AI tools, files, folders, URLs, and clipboard content, with result summaries.
+  - Includes drag-and-drop file import and import-time option overrides (scope/adapters/conflict mode).
+- **Repository Roots Registry:** Settings persist a managed list of local repository roots (`local_rule_paths`) used for local artifact selection and local import discovery.
+  - Rules, commands, and skills can reference these configured roots instead of free-form path entry.
 - **MCP Clients:** AI tools (Claude Code, OpenCode, etc.) connect to localhost MCP endpoint or launch standalone `ruleweaver-mcp` binary. They use `tools/list` + `tools/call` to invoke commands.
 
 ## Runtime Topology

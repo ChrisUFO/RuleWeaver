@@ -1,6 +1,6 @@
 [package]
 name = "ruleweaver"
-version = "0.0.20-2302"
+version = "0.0.22-2402"
 description = "A unified desktop app for managing AI coding assistant rules and configurations"
 authors = ["ChrisUFO"]
 edition = "2021"
