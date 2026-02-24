@@ -148,10 +148,6 @@ A comprehensive guide to how each AI coding tool handles **rules**, **custom com
   Check that the build completed successfully.
   ````
 
-  ```
-
-  ```
-
 ### Skills
 
 - **Status:** Experimental feature (enable in Settings → Features → Enable Skills)

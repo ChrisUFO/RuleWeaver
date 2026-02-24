@@ -62,7 +62,7 @@ RuleWeaver can generate **native slash commands** that appear in your AI tool's 
 
 - OpenCode: `~/.config/opencode/commands/{name}.md`
 - Claude Code: `~/.claude/commands/{name}.md`
-- Cline: `.clinerules/workflows/{name}.md`
+- Cline: `~/Documents/Cline/Workflows/{name}.md` (global), `.clinerules/workflows/{name}.md` (local)
 - Gemini: `~/.gemini/commands/{name}.toml`
 - Cursor: `~/.cursor/commands/{name}.md`
 - Roo Code: `.roo/commands/{name}.md`
