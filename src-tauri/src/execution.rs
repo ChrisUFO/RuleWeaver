@@ -2,10 +2,7 @@ use std::time::Duration;
 use tokio::process::Command as TokioCommand;
 use tokio::time::timeout;
 
-use crate::constants::{
-    limits::{MAX_ARG_LENGTH, MAX_SCRIPT_LENGTH},
-    security::REGEX_DFA_SIZE_LIMIT,
-};
+use crate::constants::limits::{MAX_ARG_LENGTH, MAX_SCRIPT_LENGTH};
 use crate::database::{Database, ExecutionLogInput};
 use crate::error::{AppError, Result};
 
@@ -63,49 +60,59 @@ pub fn validate_enum_argument(
 }
 
 pub fn sanitize_argument_value(value: &str) -> Result<String> {
-    if value.len() > MAX_ARG_LENGTH {
-        return Err(AppError::InvalidInput {
-            message: format!("Argument too long (max {} chars)", MAX_ARG_LENGTH),
-        });
-    }
-
     if value.contains('\n') || value.contains('\r') || value.contains('\t') {
         return Err(AppError::InvalidInput {
             message: "Argument contains forbidden control characters".to_string(),
         });
     }
 
-    // Use regex to catch dangerous tokens even with internal whitespace (e.g. $( pwd ))
-    // We use \b for eval and exec to avoid catching words like "evaluation"
-    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-    let re = RE.get_or_init(|| {
-        regex::RegexBuilder::new(
-            r"(?i);|&&|&|\|\||\||`|\$\s*\(|\$\s*\{|\)|<|>|<<|<&|>&|\beval\b|\bexec\b",
-        )
-        .size_limit(100_000)
-        .dfa_size_limit(REGEX_DFA_SIZE_LIMIT)
-        .build()
-        .expect("Invalid dangerous tokens regex")
-    });
+    let sanitized = {
+        #[cfg(target_os = "windows")]
+        {
+            escape_cmd_argument(value)
+        }
 
-    if let Some(m) = re.find(value) {
-        let matched = m.as_str();
-        let category = match matched {
-            ";" | "&&" | "&" | "||" | "|" => "command chaining",
-            "`" | "$(" | "${" | ")" => "command substitution",
-            "<" | ">" | "<<" | "<&" | ">&" => "I/O redirection",
-            "eval" | "exec" => "dynamic execution",
-            _ => "suspicious pattern",
-        };
+        #[cfg(not(target_os = "windows"))]
+        {
+            // On Unix, to prevent word splitting and glob expansion on unquoted
+            // variables, we must escape the argument to be a single shell literal.
+            let mut escaped = String::with_capacity(value.len() + 2);
+            escaped.push('\'');
+            escaped.push_str(&value.replace('\'', "'\\''"));
+            escaped.push('\'');
+            escaped
+        }
+    };
+
+    if sanitized.len() > MAX_ARG_LENGTH {
         return Err(AppError::InvalidInput {
-            message: format!(
-                "Argument contains forbidden {} token: {}",
-                category, matched
-            ),
+            message: format!("Argument too long (max {} chars)", MAX_ARG_LENGTH),
         });
     }
 
-    Ok(value.to_string())
+    Ok(sanitized)
+}
+
+#[cfg(target_os = "windows")]
+fn escape_cmd_argument(value: &str) -> String {
+    // Fast path: if no special characters are present, we can avoid allocating a new string.
+    if !value.chars().any(|c| matches!(c, '^' | '&' | '<' | '>' | '|' | '(' | ')' | '%' | '!' | '"')) {
+        return value.to_string();
+    }
+
+    // Pre-allocate with some extra space to reduce reallocations.
+    let mut escaped = String::with_capacity(value.len() + 16);
+    for c in value.chars() {
+        match c {
+            // Escape special cmd characters with ^
+            '^' | '&' | '<' | '>' | '|' | '(' | ')' | '%' | '!' | '"' => {
+                escaped.push('^');
+                escaped.push(c);
+            }
+            _ => escaped.push(c),
+        }
+    }
+    escaped
 }
 
 pub fn contains_disallowed_pattern(script: &str) -> Option<String> {
@@ -235,5 +242,38 @@ pub async fn execute_and_log(input: ExecuteAndLogInput<'_>) -> Result<(i32, Stri
             Ok((exit_code, stdout, stderr, duration_ms))
         }
         Err(e) => Err(e),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_escape_cmd_argument() {
+        assert_eq!(escape_cmd_argument("normal"), "normal");
+        assert_eq!(escape_cmd_argument("foo & bar"), "foo ^& bar");
+        assert_eq!(escape_cmd_argument("foo | bar"), "foo ^| bar");
+        assert_eq!(escape_cmd_argument("echo (1)"), "echo ^(1^)");
+        assert_eq!(escape_cmd_argument("%path%"), "^%path^%");
+        assert_eq!(escape_cmd_argument("\"quoted\""), "^\"quoted^\"");
+    }
+
+    #[test]
+    fn test_sanitize_argument_value() {
+        let input = "foo & bar";
+        #[cfg(target_os = "windows")]
+        assert_eq!(sanitize_argument_value(input).unwrap(), "foo ^& bar");
+        #[cfg(not(target_os = "windows"))]
+        assert_eq!(sanitize_argument_value(input).unwrap(), "'foo & bar'");
+    }
+
+    #[test]
+    #[cfg(not(target_os = "windows"))]
+    fn test_sanitize_argument_value_unix_injection() {
+        let input = "foo'; rm -rf /; echo 'bar";
+        // Expected: 'foo'\; rm -rf /; echo 'bar'
+        assert_eq!(sanitize_argument_value(input).unwrap(), "'foo'\\'; rm -rf /; echo 'bar'");
     }
 }

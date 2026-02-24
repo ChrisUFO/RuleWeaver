@@ -30,8 +30,8 @@ struct JsonRulePayload {
     name: Option<String>,
     content: Option<String>,
     scope: Option<String>,
-    #[serde(rename = "targetPaths")]
-    target_paths: Option<Vec<String>>,
+    // Security: target_paths is intentionally omitted to prevent arbitrary file writes.
+    // Untrusted payloads cannot specify their own target paths.
     #[serde(rename = "enabledAdapters")]
     enabled_adapters: Option<Vec<String>>,
 }
@@ -713,39 +713,17 @@ fn extract_rule_payload(
 ) -> (String, String, Scope, Option<Vec<String>>, Vec<AdapterType>) {
     let trimmed = content.trim().to_string();
 
-    if let Ok(payload) = serde_json::from_str::<JsonRulePayload>(&trimmed) {
-        let name = payload
-            .name
-            .filter(|n| !n.trim().is_empty())
-            .unwrap_or_else(|| fallback_name.to_string());
-        let body = payload
-            .content
-            .filter(|c| !c.trim().is_empty())
-            .unwrap_or(trimmed.clone());
-        let scope = payload
-            .scope
-            .and_then(|s| Scope::from_str(&s))
-            .unwrap_or(fallback_scope);
-        let adapters = payload
-            .enabled_adapters
-            .unwrap_or_default()
-            .iter()
-            .filter_map(|a| AdapterType::from_str(a))
-            .collect::<Vec<_>>();
-        return (
-            sanitize_rule_name(&name),
-            body,
-            scope,
-            payload.target_paths.or(fallback_targets),
-            if adapters.is_empty() {
-                default_adapters(source_tool)
-            } else {
-                adapters
-            },
-        );
-    }
+    let try_parse = |text: &str| -> Option<JsonRulePayload> {
+        if let Ok(payload) = serde_json::from_str::<JsonRulePayload>(text) {
+            return Some(payload);
+        }
+        if let Ok(payload) = serde_yaml::from_str::<JsonRulePayload>(text) {
+            return Some(payload);
+        }
+        None
+    };
 
-    if let Ok(payload) = serde_yaml::from_str::<JsonRulePayload>(&trimmed) {
+    if let Some(payload) = try_parse(&trimmed) {
         let name = payload
             .name
             .filter(|n| !n.trim().is_empty())
@@ -764,11 +742,12 @@ fn extract_rule_payload(
             .iter()
             .filter_map(|a| AdapterType::from_str(a))
             .collect::<Vec<_>>();
+        
         return (
             sanitize_rule_name(&name),
             body,
             scope,
-            payload.target_paths.or(fallback_targets),
+            fallback_targets, // Always use fallback targets (safe), never payload targets
             if adapters.is_empty() {
                 default_adapters(source_tool)
             } else {
@@ -1114,8 +1093,34 @@ mod tests {
         assert_eq!(name, "json-rule");
         assert_eq!(content, "json body");
         assert_eq!(scope, Scope::Local);
-        assert_eq!(target_paths, Some(vec!["C:/repo".to_string()]));
+        // Security fix: verify target_paths from JSON are IGNORED
+        assert_eq!(target_paths, None);
         assert_eq!(adapters.len(), 2);
+    }
+
+    #[test]
+    fn extract_payload_ignores_malicious_paths() {
+        let json = r#"{
+          "name": "malicious",
+          "content": "bad",
+          "targetPaths": ["../../../../Windows/System32"]
+        }"#;
+
+        let (_, _, _, target_paths, _) =
+            extract_rule_payload("fallback", json, Scope::Global, None, None);
+
+        assert_eq!(target_paths, None);
+    }
+
+    #[test]
+    fn extract_payload_respects_fallback_paths() {
+        let json = r#"{ "name": "ok", "content": "ok" }"#;
+        let fallback = Some(vec!["C:/safe/path".to_string()]);
+        
+        let (_, _, _, target_paths, _) =
+            extract_rule_payload("fallback", json, Scope::Global, fallback.clone(), None);
+
+        assert_eq!(target_paths, fallback);
     }
 
     #[test]
