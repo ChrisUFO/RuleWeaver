@@ -732,11 +732,14 @@ fn extract_rule_payload(
             .iter()
             .filter_map(|a| AdapterType::from_str(a))
             .collect::<Vec<_>>();
+        
+        // Security: Ignore target_paths from payload to prevent arbitrary file writes.
+        // Only use fallback_targets from trusted context (e.g. directory scan).
         return (
             sanitize_rule_name(&name),
             body,
             scope,
-            payload.target_paths.or(fallback_targets),
+            fallback_targets,
             if adapters.is_empty() {
                 default_adapters(source_tool)
             } else {
@@ -764,11 +767,14 @@ fn extract_rule_payload(
             .iter()
             .filter_map(|a| AdapterType::from_str(a))
             .collect::<Vec<_>>();
+            
+        // Security: Ignore target_paths from payload to prevent arbitrary file writes.
+        // Only use fallback_targets from trusted context.
         return (
             sanitize_rule_name(&name),
             body,
             scope,
-            payload.target_paths.or(fallback_targets),
+            fallback_targets,
             if adapters.is_empty() {
                 default_adapters(source_tool)
             } else {
@@ -1114,8 +1120,34 @@ mod tests {
         assert_eq!(name, "json-rule");
         assert_eq!(content, "json body");
         assert_eq!(scope, Scope::Local);
-        assert_eq!(target_paths, Some(vec!["C:/repo".to_string()]));
+        // Security fix: verify target_paths from JSON are IGNORED
+        assert_eq!(target_paths, None);
         assert_eq!(adapters.len(), 2);
+    }
+
+    #[test]
+    fn extract_payload_ignores_malicious_paths() {
+        let json = r#"{
+          "name": "malicious",
+          "content": "bad",
+          "targetPaths": ["../../../../Windows/System32"]
+        }"#;
+
+        let (_, _, _, target_paths, _) =
+            extract_rule_payload("fallback", json, Scope::Global, None, None);
+
+        assert_eq!(target_paths, None);
+    }
+
+    #[test]
+    fn extract_payload_respects_fallback_paths() {
+        let json = r#"{ "name": "ok", "content": "ok" }"#;
+        let fallback = Some(vec!["C:/safe/path".to_string()]);
+        
+        let (_, _, _, target_paths, _) =
+            extract_rule_payload("fallback", json, Scope::Global, fallback.clone(), None);
+
+        assert_eq!(target_paths, fallback);
     }
 
     #[test]

@@ -75,37 +75,34 @@ pub fn sanitize_argument_value(value: &str) -> Result<String> {
         });
     }
 
-    // Use regex to catch dangerous tokens even with internal whitespace (e.g. $( pwd ))
-    // We use \b for eval and exec to avoid catching words like "evaluation"
-    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-    let re = RE.get_or_init(|| {
-        regex::RegexBuilder::new(
-            r"(?i);|&&|&|\|\||\||`|\$\s*\(|\$\s*\{|\)|<|>|<<|<&|>&|\beval\b|\bexec\b",
-        )
-        .size_limit(100_000)
-        .dfa_size_limit(REGEX_DFA_SIZE_LIMIT)
-        .build()
-        .expect("Invalid dangerous tokens regex")
-    });
-
-    if let Some(m) = re.find(value) {
-        let matched = m.as_str();
-        let category = match matched {
-            ";" | "&&" | "&" | "||" | "|" => "command chaining",
-            "`" | "$(" | "${" | ")" => "command substitution",
-            "<" | ">" | "<<" | "<&" | ">&" => "I/O redirection",
-            "eval" | "exec" => "dynamic execution",
-            _ => "suspicious pattern",
-        };
-        return Err(AppError::InvalidInput {
-            message: format!(
-                "Argument contains forbidden {} token: {}",
-                category, matched
-            ),
-        });
+    #[cfg(target_os = "windows")]
+    {
+        Ok(escape_cmd_argument(value))
     }
 
-    Ok(value.to_string())
+    #[cfg(not(target_os = "windows"))]
+    {
+        // On Unix, environment variables are treated as data, not code, 
+        // so injection via env vars is not possible unless the script uses `eval`.
+        // We pass the value as-is.
+        Ok(value.to_string())
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn escape_cmd_argument(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len());
+    for c in value.chars() {
+        match c {
+            // Escape special cmd characters with ^
+            '^' | '&' | '<' | '>' | '|' | '(' | ')' | '%' | '!' | '"' => {
+                escaped.push('^');
+                escaped.push(c);
+            }
+            _ => escaped.push(c),
+        }
+    }
+    escaped
 }
 
 pub fn contains_disallowed_pattern(script: &str) -> Option<String> {
@@ -235,5 +232,30 @@ pub async fn execute_and_log(input: ExecuteAndLogInput<'_>) -> Result<(i32, Stri
             Ok((exit_code, stdout, stderr, duration_ms))
         }
         Err(e) => Err(e),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_escape_cmd_argument() {
+        assert_eq!(escape_cmd_argument("normal"), "normal");
+        assert_eq!(escape_cmd_argument("foo & bar"), "foo ^& bar");
+        assert_eq!(escape_cmd_argument("foo | bar"), "foo ^| bar");
+        assert_eq!(escape_cmd_argument("echo (1)"), "echo ^(1^)");
+        assert_eq!(escape_cmd_argument("%path%"), "^%path^%");
+        assert_eq!(escape_cmd_argument("\"quoted\""), "^\"quoted^\"");
+    }
+
+    #[test]
+    fn test_sanitize_argument_value() {
+        let input = "foo & bar";
+        #[cfg(target_os = "windows")]
+        assert_eq!(sanitize_argument_value(input).unwrap(), "foo ^& bar");
+        #[cfg(not(target_os = "windows"))]
+        assert_eq!(sanitize_argument_value(input).unwrap(), "foo & bar");
     }
 }
