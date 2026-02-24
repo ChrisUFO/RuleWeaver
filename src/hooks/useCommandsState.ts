@@ -7,7 +7,7 @@ import type { CommandModel, ExecutionLog } from "@/types/command";
 
 export interface AdapterInfo {
   name: string;
-  supports_argument_substitution: boolean;
+  supportsArgumentSubstitution: boolean;
 }
 
 export interface CommandFormData {
@@ -281,7 +281,7 @@ export function useCommandsState(
       if (result.errors.length > 0 || result.conflicts.length > 0) {
         const errorMessages = [
           ...result.errors,
-          ...result.conflicts.map((c) => `${c.adapter_name}: ${c.message}`),
+          ...result.conflicts.map((c) => `${c.adapterName}: ${c.message}`),
         ];
         toast.error(addToast, {
           title: `Sync completed with ${errorMessages.length} issue${errorMessages.length > 1 ? "s" : ""}`,
@@ -294,8 +294,8 @@ export function useCommandsState(
       toast.success(addToast, {
         title: "Slash Commands Synced",
         description:
-          result.files_written > 0
-            ? `Successfully wrote ${result.files_written} file${result.files_written > 1 ? "s" : ""}`
+          result.filesWritten > 0
+            ? `Successfully wrote ${result.filesWritten} file${result.filesWritten > 1 ? "s" : ""} `
             : "All files were already up to date",
       });
     } catch (error) {

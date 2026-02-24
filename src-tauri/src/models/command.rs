@@ -49,6 +49,7 @@ fn default_arg_type() -> ArgumentType {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ExecutionLog {
     pub id: String,
     pub command_id: String,

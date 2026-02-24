@@ -30,7 +30,7 @@ vi.mock("@/lib/tauri", () => ({
         arguments: [],
       }),
       delete: vi.fn().mockResolvedValue(undefined),
-      test: vi.fn().mockResolvedValue({ stdout: "ok", stderr: "", exit_code: 0, success: true }),
+      test: vi.fn().mockResolvedValue({ stdout: "ok", stderr: "", exitCode: 0, success: true }),
       sync: vi.fn().mockResolvedValue({ success: true, filesWritten: [{ path: "/test" }] }),
     },
     execution: {
@@ -39,8 +39,8 @@ vi.mock("@/lib/tauri", () => ({
     slashCommands: {
       getAdapters: vi
         .fn()
-        .mockResolvedValue([{ name: "gemini", supports_argument_substitution: true }]),
-      sync: vi.fn().mockResolvedValue({ errors: [], conflicts: [], files_written: 1 }),
+        .mockResolvedValue([{ name: "gemini", supportsArgumentSubstitution: true }]),
+      sync: vi.fn().mockResolvedValue({ errors: [], conflicts: [], filesWritten: 1 }),
     },
   },
 }));

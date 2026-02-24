@@ -25,13 +25,13 @@ interface MigrationProgress {
 interface McpStatus {
   running: boolean;
   port: number;
-  uptime_seconds: number;
+  uptimeSeconds: number;
 }
 
 interface McpInstructions {
-  claude_code_json: string;
-  opencode_json: string;
-  standalone_command: string;
+  claudeCodeJson: string;
+  opencodeJson: string;
+  standaloneCommand: string;
 }
 
 interface ImportPreview {
@@ -635,7 +635,7 @@ export function useSettingsState(
       const result = await api.slashCommands.syncAll(true);
       toast[`${result.errors.length > 0 ? "warning" : "success"}`](addToast, {
         title: "Slash Commands Synced",
-        description: `Wrote ${result.files_written} files`,
+        description: `Wrote ${result.filesWritten} files`,
       });
     } catch (error) {
       toast.error(addToast, { title: "Sync Failed", error });

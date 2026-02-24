@@ -6,11 +6,11 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 
 interface McpSettingsCardProps {
-  mcpStatus: { running: boolean; port: number; uptime_seconds: number } | null;
+  mcpStatus: { running: boolean; port: number; uptimeSeconds: number } | null;
   mcpInstructions: {
-    claude_code_json: string;
-    opencode_json: string;
-    standalone_command: string;
+    claudeCodeJson: string;
+    opencodeJson: string;
+    standaloneCommand: string;
   } | null;
   mcpLogs: readonly string[];
   isMcpLoading: boolean;
@@ -77,7 +77,7 @@ export function McpSettingsCard({
         </div>
 
         {mcpStatus?.running && (
-          <p className="text-xs text-muted-foreground">Uptime: {mcpStatus.uptime_seconds}s</p>
+          <p className="text-xs text-muted-foreground">Uptime: {mcpStatus.uptimeSeconds}s</p>
         )}
 
         <div className="flex flex-wrap gap-2">
@@ -140,14 +140,14 @@ export function McpSettingsCard({
         {mcpInstructions && (
           <div className="space-y-2">
             <code className="block rounded-md bg-muted p-2 text-xs overflow-auto">
-              {mcpInstructions.standalone_command}
+              {mcpInstructions.standaloneCommand}
             </code>
             <div className="grid gap-2 md:grid-cols-2">
               <code className="rounded-md bg-muted p-2 text-xs overflow-auto">
-                {mcpInstructions.claude_code_json}
+                {mcpInstructions.claudeCodeJson}
               </code>
               <code className="rounded-md bg-muted p-2 text-xs overflow-auto">
-                {mcpInstructions.opencode_json}
+                {mcpInstructions.opencodeJson}
               </code>
             </div>
           </div>

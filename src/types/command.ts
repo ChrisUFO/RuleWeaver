@@ -50,24 +50,24 @@ export interface TestCommandResult {
 export interface McpStatus {
   running: boolean;
   port: number;
-  uptime_seconds: number;
+  uptimeSeconds: number;
 }
 
 export interface McpConnectionInstructions {
-  claude_code_json: string;
-  opencode_json: string;
-  standalone_command: string;
+  claudeCodeJson: string;
+  opencodeJson: string;
+  standaloneCommand: string;
 }
 
 export interface ExecutionLog {
   id: string;
-  command_id: string;
-  command_name: string;
+  commandId: string;
+  commandName: string;
   arguments: string;
   stdout: string;
   stderr: string;
-  exit_code: number;
-  duration_ms: number;
-  executed_at: number;
-  triggered_by: string;
+  exitCode: number;
+  durationMs: number;
+  executedAt: number;
+  triggeredBy: string;
 }

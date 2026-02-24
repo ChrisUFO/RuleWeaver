@@ -60,6 +60,7 @@ fn truncate_output(s: String) -> String {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct McpStatus {
     pub running: bool,
     pub port: u16,
@@ -68,6 +69,7 @@ pub struct McpStatus {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct McpConnectionInstructions {
     pub claude_code_json: String,
     pub opencode_json: String,

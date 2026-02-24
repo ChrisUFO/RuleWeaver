@@ -88,7 +88,7 @@ export function CommandEditor({
     );
   }
 
-  const commandHistory = history.filter((h) => h.command_id === selected.id);
+  const commandHistory = history.filter((h) => h.commandId === selected.id);
 
   return (
     <Card className="glass-card premium-shadow border-none overflow-hidden">
@@ -267,8 +267,8 @@ export function CommandEditor({
             {commandHistory.slice(0, 10).map((h) => (
               <div key={h.id} className="rounded border p-2">
                 <div className="flex items-center justify-between text-xs">
-                  <span className="font-medium">exit {h.exit_code}</span>
-                  <span className="text-muted-foreground">{h.duration_ms}ms</span>
+                  <span className="font-medium">exit {h.exitCode}</span>
+                  <span className="text-muted-foreground">{h.durationMs}ms</span>
                 </div>
                 <div className="mt-1 truncate text-xs text-muted-foreground">
                   {h.stdout || h.stderr || "(no output)"}
