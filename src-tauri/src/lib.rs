@@ -630,7 +630,7 @@ async fn handle_external_rule_change(
     }
 
     let engine = crate::sync::SyncEngine::new(db);
-    let sync_result = engine.sync_rule(rule_from_disk.clone());
+    let sync_result = engine.sync_rule(rule_from_disk.clone()).await;
 
     if let Some(ref s) = status {
         *s.sync_status.lock() = "Idle".to_string();

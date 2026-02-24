@@ -1363,9 +1363,9 @@ mod tests {
         UpdateCommandInput, UpdateSkillInput,
     };
 
-    #[test]
-    fn test_skill_crud() {
-        let db = Database::new_in_memory().unwrap();
+    #[tokio::test]
+    async fn test_skill_crud() {
+        let db = Database::new_in_memory().await.unwrap();
 
         // 1. Create
         let input = CreateSkillInput {
@@ -1387,17 +1387,17 @@ mod tests {
             enabled: true,
         };
 
-        let created = db.create_skill(input.clone()).unwrap();
+        let created = db.create_skill(input.clone()).await.unwrap();
         assert_eq!(created.name, "Test Skill");
         assert_eq!(created.input_schema.len(), 1);
         assert_eq!(created.directory_path, "/test/path");
 
         // 2. Read
-        let fetched = db.get_skill_by_id(&created.id).unwrap();
+        let fetched = db.get_skill_by_id(&created.id).await.unwrap();
         assert_eq!(created.id, fetched.id);
         assert_eq!(fetched.entry_point, "main.sh");
 
-        let all = db.get_all_skills().unwrap();
+        let all = db.get_all_skills().await.unwrap();
         assert_eq!(all.len(), 1);
 
         // 3. Update
@@ -1405,20 +1405,20 @@ mod tests {
             name: Some("Updated Skill".to_string()),
             ..Default::default()
         };
-        let updated = db.update_skill(&created.id, update_input).unwrap();
+        let updated = db.update_skill(&created.id, update_input).await.unwrap();
         assert_eq!(updated.name, "Updated Skill");
         // Ensure other fields remain unchanged
         assert_eq!(updated.directory_path, "/test/path");
 
         // 4. Delete
-        db.delete_skill(&created.id).unwrap();
-        assert!(db.get_skill_by_id(&created.id).is_err());
-        assert_eq!(db.get_all_skills().unwrap().len(), 0);
+        db.delete_skill(&created.id).await.unwrap();
+        assert!(db.get_skill_by_id(&created.id).await.is_err());
+        assert_eq!(db.get_all_skills().await.unwrap().len(), 0);
     }
 
-    #[test]
-    fn test_command_target_paths_roundtrip() {
-        let db = Database::new_in_memory().unwrap();
+    #[tokio::test]
+    async fn test_command_target_paths_roundtrip() {
+        let db = Database::new_in_memory().await.unwrap();
 
         let created = db
             .create_command(CreateCommandInput {
@@ -1431,6 +1431,7 @@ mod tests {
                 slash_command_adapters: vec![],
                 target_paths: vec!["C:/repo-a".to_string()],
             })
+            .await
             .unwrap();
 
         assert_eq!(created.target_paths, vec!["C:/repo-a".to_string()]);
@@ -1443,6 +1444,7 @@ mod tests {
                     ..Default::default()
                 },
             )
+            .await
             .unwrap();
 
         assert_eq!(

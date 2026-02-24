@@ -122,8 +122,8 @@ pub fn scan_rule_clipboard_import(
 }
 
 #[tauri::command]
-pub async fn get_rule_import_history(db: State<'_, Arc<Database>>) -> Vec<ImportHistoryEntry> {
-    rule_import::read_import_history(&db).await
+pub async fn get_rule_import_history(db: State<'_, Arc<Database>>) -> Result<Vec<ImportHistoryEntry>> {
+    Ok(rule_import::read_import_history(&db).await)
 }
 
 #[cfg(test)]
