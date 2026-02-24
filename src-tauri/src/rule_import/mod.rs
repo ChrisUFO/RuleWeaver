@@ -956,9 +956,9 @@ mod tests {
             .any(|c| c.proposed_name == "quality-antigravity"));
     }
 
-    #[test]
-    fn execute_import_skips_duplicate_content() {
-        let db = Database::new_in_memory().expect("in-memory db");
+    #[tokio::test]
+    async fn execute_import_skips_duplicate_content() {
+        let db = Database::new_in_memory().await.expect("in-memory db");
         db.create_rule(CreateRuleInput {
             name: "Existing".to_string(),
             content: "same-content".to_string(),
@@ -967,6 +967,7 @@ mod tests {
             enabled_adapters: vec![AdapterType::Gemini],
             enabled: true,
         })
+        .await
         .expect("seed rule");
 
         let candidate = candidate_from_text(
@@ -988,15 +989,16 @@ mod tests {
             },
             ImportExecutionOptions::default(),
         )
+        .await
         .expect("execute import");
 
         assert_eq!(result.imported.len(), 0);
         assert_eq!(result.skipped.len(), 1);
     }
 
-    #[test]
-    fn execute_import_rename_mode_creates_unique_name() {
-        let db = Database::new_in_memory().expect("in-memory db");
+    #[tokio::test]
+    async fn execute_import_rename_mode_creates_unique_name() {
+        let db = Database::new_in_memory().await.expect("in-memory db");
         db.create_rule(CreateRuleInput {
             name: "quality".to_string(),
             content: "old".to_string(),
@@ -1005,6 +1007,7 @@ mod tests {
             enabled_adapters: vec![AdapterType::Gemini],
             enabled: true,
         })
+        .await
         .expect("seed rule");
 
         let candidate = candidate_from_text(
@@ -1029,15 +1032,16 @@ mod tests {
                 ..Default::default()
             },
         )
+        .await
         .expect("execute import");
 
         assert_eq!(result.imported.len(), 1);
         assert_eq!(result.imported[0].name, "quality-2");
     }
 
-    #[test]
-    fn execute_import_replace_mode_updates_existing_rule() {
-        let db = Database::new_in_memory().expect("in-memory db");
+    #[tokio::test]
+    async fn execute_import_replace_mode_updates_existing_rule() {
+        let db = Database::new_in_memory().await.expect("in-memory db");
         let existing = db
             .create_rule(CreateRuleInput {
                 name: "policy".to_string(),
@@ -1047,6 +1051,7 @@ mod tests {
                 enabled_adapters: vec![AdapterType::Gemini],
                 enabled: true,
             })
+            .await
             .expect("seed rule");
 
         let candidate = candidate_from_text(
@@ -1071,6 +1076,7 @@ mod tests {
                 ..Default::default()
             },
         )
+        .await
         .expect("execute import");
 
         assert_eq!(result.imported.len(), 1);
@@ -1143,9 +1149,9 @@ enabledAdapters:
         assert_eq!(adapters, vec![AdapterType::Cline]);
     }
 
-    #[test]
-    fn execute_import_reimport_updates_mapped_rule_idempotently() {
-        let db = Database::new_in_memory().expect("in-memory db");
+    #[tokio::test]
+    async fn execute_import_reimport_updates_mapped_rule_idempotently() {
+        let db = Database::new_in_memory().await.expect("in-memory db");
 
         let first_candidate = candidate_from_text(
             "original content".to_string(),
@@ -1166,6 +1172,7 @@ enabledAdapters:
             },
             ImportExecutionOptions::default(),
         )
+        .await
         .expect("first import");
 
         assert_eq!(first_result.imported.len(), 1);
@@ -1190,6 +1197,7 @@ enabledAdapters:
             },
             ImportExecutionOptions::default(),
         )
+        .await
         .expect("second import");
 
         assert_eq!(second_result.imported.len(), 1);
@@ -1218,9 +1226,9 @@ enabledAdapters:
         assert!(validate_url_for_import("ftp://example.com/rules.md").is_err());
     }
 
-    #[test]
-    fn history_source_type_matches_candidate_source() {
-        let db = Database::new_in_memory().expect("in-memory db");
+    #[tokio::test]
+    async fn history_source_type_matches_candidate_source() {
+        let db = Database::new_in_memory().await.expect("in-memory db");
 
         let candidate = candidate_from_text(
             "file content".to_string(),
@@ -1241,9 +1249,10 @@ enabledAdapters:
             },
             ImportExecutionOptions::default(),
         )
+        .await
         .expect("import succeeds");
 
-        let history = read_import_history(&db);
+        let history = read_import_history(&db).await;
         assert!(!history.is_empty());
         assert_eq!(
             history[0].source_type,
