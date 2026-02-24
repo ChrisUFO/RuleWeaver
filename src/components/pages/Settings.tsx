@@ -179,7 +179,7 @@ export function Settings() {
       }
     };
     loadData();
-  }, []);
+  }, [refreshRepositoryRoots]);
 
   const handleOpenAppData = async () => {
     try {
