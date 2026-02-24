@@ -74,10 +74,13 @@ pub fn sanitize_argument_value(value: &str) -> Result<String> {
 
         #[cfg(not(target_os = "windows"))]
         {
-            // On Unix, environment variables are treated as data, not code, 
-            // so injection via env vars is not possible unless the script uses `eval`.
-            // We pass the value as-is.
-            value.to_string()
+            // On Unix, to prevent word splitting and glob expansion on unquoted
+            // variables, we must escape the argument to be a single shell literal.
+            let mut escaped = String::with_capacity(value.len() + 2);
+            escaped.push('\'');
+            escaped.push_str(&value.replace('\'', "'\\''"));
+            escaped.push('\'');
+            escaped
         }
     };
 
@@ -263,6 +266,14 @@ mod tests {
         #[cfg(target_os = "windows")]
         assert_eq!(sanitize_argument_value(input).unwrap(), "foo ^& bar");
         #[cfg(not(target_os = "windows"))]
-        assert_eq!(sanitize_argument_value(input).unwrap(), "foo & bar");
+        assert_eq!(sanitize_argument_value(input).unwrap(), "'foo & bar'");
+    }
+
+    #[test]
+    #[cfg(not(target_os = "windows"))]
+    fn test_sanitize_argument_value_unix_injection() {
+        let input = "foo'; rm -rf /; echo 'bar";
+        // Expected: 'foo'\; rm -rf /; echo 'bar'
+        assert_eq!(sanitize_argument_value(input).unwrap(), "'foo'\\'; rm -rf /; echo 'bar'");
     }
 }
