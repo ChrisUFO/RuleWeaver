@@ -130,6 +130,13 @@ export const api = {
   },
 
   slashCommands: {
+    remove: (commandName: string, adapters: string[]) =>
+      invoke<{
+        files_written: number;
+        files_removed: number;
+        errors: string[];
+        conflicts: Array<{ command_name: string; adapter_name: string; message: string }>;
+      }>("remove_slash_command_files", { commandName, adapters }),
     sync: (commandId: string, isGlobal: boolean) =>
       invoke<{
         files_written: number;

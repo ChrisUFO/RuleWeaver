@@ -349,7 +349,13 @@ impl Database {
                     })?;
 
                 let slash_command_adapters: Vec<String> =
-                    serde_json::from_str(&slash_adapters_json).unwrap_or_default();
+                    serde_json::from_str(&slash_adapters_json).map_err(|e| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            7,
+                            rusqlite::types::Type::Text,
+                            Box::new(e),
+                        )
+                    })?;
 
                 Ok(Command {
                     id,
@@ -400,7 +406,13 @@ impl Database {
                     })?;
 
                 let slash_command_adapters: Vec<String> =
-                    serde_json::from_str(&slash_adapters_json).unwrap_or_default();
+                    serde_json::from_str(&slash_adapters_json).map_err(|e| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            7,
+                            rusqlite::types::Type::Text,
+                            Box::new(e),
+                        )
+                    })?;
 
                 Ok(Command {
                     id,

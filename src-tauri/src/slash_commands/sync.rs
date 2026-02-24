@@ -213,7 +213,7 @@ impl SlashCommandSyncEngine {
     ) -> Result<bool> {
         // Use safe name for file path
         let safe_name = validate_command_name(&command.name)?;
-        let file_path = adapter.get_command_path(&safe_name, is_global);
+        let file_path = adapter.get_command_path(&safe_name, is_global)?;
         let content = adapter.format_command(command);
         let content_hash = calculate_hash(&content);
 
@@ -273,6 +273,9 @@ impl SlashCommandSyncEngine {
     ) -> Result<SlashCommandSyncResult> {
         let mut result = SlashCommandSyncResult::new();
 
+        // Validate and sanitize the command name
+        let safe_name = validate_command_name(command_name)?;
+
         for adapter_name in adapters {
             let adapter = match get_adapter(adapter_name) {
                 Some(a) => a,
@@ -285,17 +288,34 @@ impl SlashCommandSyncEngine {
             };
 
             // Try to remove both global and local versions
-            let global_path = adapter.get_command_path(command_name, true);
-            let local_path = adapter.get_command_path(command_name, false);
-
-            if global_path.exists() {
-                fs::remove_file(&global_path)?;
-                result.files_removed += 1;
+            match adapter.get_command_path(&safe_name, true) {
+                Ok(global_path) => {
+                    if global_path.exists() {
+                        fs::remove_file(&global_path)?;
+                        result.files_removed += 1;
+                    }
+                }
+                Err(e) => {
+                    result.errors.push(format!(
+                        "Failed to get global path for {}: {}",
+                        adapter_name, e
+                    ));
+                }
             }
 
-            if local_path.exists() {
-                fs::remove_file(&local_path)?;
-                result.files_removed += 1;
+            match adapter.get_command_path(&safe_name, false) {
+                Ok(local_path) => {
+                    if local_path.exists() {
+                        fs::remove_file(&local_path)?;
+                        result.files_removed += 1;
+                    }
+                }
+                Err(e) => {
+                    result.errors.push(format!(
+                        "Failed to get local path for {}: {}",
+                        adapter_name, e
+                    ));
+                }
             }
         }
 
@@ -346,6 +366,9 @@ impl SlashCommandSyncEngine {
     ) -> Result<HashMap<String, SyncStatus>> {
         let mut status = HashMap::new();
 
+        // Sanitize command name for consistency with sync
+        let safe_name = validate_command_name(&command.name)?;
+
         for adapter_name in &command.slash_command_adapters {
             let adapter = match get_adapter(adapter_name) {
                 Some(a) => a,
@@ -359,8 +382,21 @@ impl SlashCommandSyncEngine {
             };
 
             // Check both global and local paths
-            let global_path = adapter.get_command_path(&command.name, true);
-            let local_path = adapter.get_command_path(&command.name, false);
+            let global_path = match adapter.get_command_path(&safe_name, true) {
+                Ok(p) => p,
+                Err(e) => {
+                    status.insert(adapter_name.clone(), SyncStatus::Error(e.to_string()));
+                    continue;
+                }
+            };
+
+            let local_path = match adapter.get_command_path(&safe_name, false) {
+                Ok(p) => p,
+                Err(e) => {
+                    status.insert(adapter_name.clone(), SyncStatus::Error(e.to_string()));
+                    continue;
+                }
+            };
 
             let mut adapter_status = Vec::new();
 

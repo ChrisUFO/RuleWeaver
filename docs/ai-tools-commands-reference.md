@@ -142,11 +142,11 @@ A comprehensive guide to how each AI coding tool handles **rules**, **custom com
   ```bash
   npm run build
   ```
-  ````
 
   ## Step 3: Verify results
 
   Check that the build completed successfully.
+  ````
 
   ```
 
@@ -367,14 +367,14 @@ A comprehensive guide to how each AI coding tool handles **rules**, **custom com
 ### Skills
 
 - **Global Skills:** `~/.gemini/antigravity/skills/<skill-folder>/SKILL.md`
-- **Local Skills:** `.agent/skills/<skill-folder>/SKILL.md`
+- **Local Skills:** `.agents/skills/<skill-folder>/SKILL.md`
 - **Format:** Markdown with YAML frontmatter (Agent Skills standard)
 - **Frontmatter:**
   - `name`: Optional, unique identifier (lowercase, hyphens). Defaults to folder name.
   - `description`: **Required**, clear description of what the skill does and when to use it
 - **Structure:**
   ```
-  .agent/skills/my-skill/
+  .agents/skills/my-skill/
   ├── SKILL.md          # Main instructions (required)
   ├── scripts/          # Helper scripts (optional)
   ├── examples/         # Reference implementations (optional)
@@ -682,7 +682,7 @@ Title: $PR_TITLE
 | Gemini      | `~/.gemini/commands/*.toml`                   | `.gemini/commands/*.toml`    | TOML            | `{{args}}`               |
 | Cursor      | `~/.cursor/commands/*.md`                     | `.cursor/commands/*.md`      | Markdown        | Text after command       |
 | Roo Code    | `~/.roo/commands/*.md`                        | `.roo/commands/*.md`         | Markdown + YAML | Via frontmatter          |
-| Antigravity | `~/.gemini/antigravity/global_workflows/*.md` | `.agents/workflows/*.md`     | Markdown + YAML | None                     |
+| Antigravity | `~/.gemini/antigravity/global_workflows/*.md` | `.agents/workflows/*.md`     | Markdown + YAML | None (natural language)  |
 | Windsurf    | ❌ Not Supported                              | ❌ Not Supported             | N/A             | N/A                      |
 | Codex       | ❌ Deprecated                                 | ❌ Deprecated                | N/A             | N/A                      |
 
@@ -696,7 +696,7 @@ Title: $PR_TITLE
 | Gemini      | ✅ Yes         | `~/.gemini/skills/*/SKILL.md`             | `.gemini/skills/*/SKILL.md`   | Agent Skills |
 | Cursor      | ✅ Yes         | `~/.cursor/skills/*/SKILL.md`             | `.cursor/skills/*/SKILL.md`   | Agent Skills |
 | Roo Code    | ✅ Yes         | `~/.roo/skills/*/SKILL.md`                | `.roo/skills/*/SKILL.md`      | Agent Skills |
-| Antigravity | ✅ Yes         | `~/.gemini/antigravity/skills/*/SKILL.md` | `.agent/skills/*/SKILL.md`    | Agent Skills |
+| Antigravity | ✅ Yes         | `~/.gemini/antigravity/skills/*/SKILL.md` | `.agents/skills/*/SKILL.md`   | Agent Skills |
 | Windsurf    | ❌ No          | N/A                                       | N/A                           | N/A          |
 | Kilo Code   | ❌ No          | N/A                                       | N/A                           | N/A          |
 | Codex       | ✅ Yes         | `~/.agents/skills/*/SKILL.md`             | `.agents/skills/*/SKILL.md`   | Agent Skills |

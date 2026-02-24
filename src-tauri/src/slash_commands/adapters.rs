@@ -4,6 +4,7 @@ use crate::constants::{
     CLINE_WORKFLOWS_DIR, CODEX_SKILLS_DIR, CURSOR_COMMANDS_DIR, GEMINI_COMMANDS_DIR,
     OPENCODE_COMMANDS_DIR, ROO_COMMANDS_DIR,
 };
+use crate::error::Result;
 use crate::models::Command;
 use std::path::PathBuf;
 
@@ -370,7 +371,7 @@ impl SlashCommandAdapter for CodexSlashAdapter {
         format!("{}/{}", command_name, "SKILL.md")
     }
 
-    fn get_command_path(&self, command_name: &str, is_global: bool) -> PathBuf {
+    fn get_command_path(&self, command_name: &str, is_global: bool) -> Result<PathBuf> {
         let path_str = if is_global {
             self.global_dir()
         } else {
@@ -378,12 +379,16 @@ impl SlashCommandAdapter for CodexSlashAdapter {
         };
 
         let base_path = if is_global {
-            dirs::home_dir().unwrap_or_default()
+            dirs::home_dir().ok_or_else(|| {
+                crate::error::AppError::Path(
+                    "Could not determine home directory for global commands".to_string(),
+                )
+            })?
         } else {
             PathBuf::new()
         };
 
-        base_path.join(path_str).join(command_name).join("SKILL.md")
+        Ok(base_path.join(path_str).join(command_name).join("SKILL.md"))
     }
 
     fn supports_argument_substitution(&self) -> bool {
@@ -471,7 +476,9 @@ mod tests {
     #[test]
     fn test_codex_skill_structure() {
         let adapter = CodexSlashAdapter;
-        let path = adapter.get_command_path("my-skill", true);
+        let path = adapter
+            .get_command_path("my-skill", true)
+            .expect("Failed to get path");
         let path_str = path.to_string_lossy();
         assert!(path_str.contains("SKILL.md"));
     }

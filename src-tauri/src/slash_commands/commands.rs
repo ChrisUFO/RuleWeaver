@@ -149,6 +149,7 @@ pub async fn get_slash_command_path(
     is_global: bool,
 ) -> Result<PathBuf> {
     use crate::slash_commands::get_adapter;
+    use crate::slash_commands::sync::validate_command_name;
     
     // Get the adapter
     let adapter = get_adapter(&adapter_name)
@@ -156,8 +157,11 @@ pub async fn get_slash_command_path(
             message: format!("Unknown adapter: {}", adapter_name),
         })?;
     
+    // Sanitize the command name for consistent paths
+    let safe_name = validate_command_name(&command_name)?;
+    
     // Get the path
-    let path = adapter.get_command_path(&command_name, is_global);
+    let path = adapter.get_command_path(&safe_name, is_global)?;
     
     Ok(path)
 }
