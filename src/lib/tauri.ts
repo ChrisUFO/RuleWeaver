@@ -6,6 +6,10 @@ import type {
   SyncResult,
   SyncHistoryEntry,
   Conflict,
+  ImportExecutionOptions,
+  ImportExecutionResult,
+  ImportHistoryEntry,
+  ImportScanResult,
 } from "@/types/rule";
 import type {
   CommandModel,
@@ -27,6 +31,30 @@ export const api = {
     delete: (id: string) => invoke<void>("delete_rule", { id }),
     bulkDelete: (ids: string[]) => invoke<void>("bulk_delete_rules", { ids }),
     toggle: (id: string, enabled: boolean) => invoke<Rule>("toggle_rule", { id, enabled }),
+  },
+
+  ruleImport: {
+    scanAiToolCandidates: (options?: ImportExecutionOptions) =>
+      invoke<ImportScanResult>("scan_ai_tool_import_candidates", { options }),
+    scanFromFile: (path: string, options?: ImportExecutionOptions) =>
+      invoke<ImportScanResult>("scan_rule_file_import", { path, options }),
+    scanFromDirectory: (path: string, options?: ImportExecutionOptions) =>
+      invoke<ImportScanResult>("scan_rule_directory_import", { path, options }),
+    scanFromUrl: (url: string, options?: ImportExecutionOptions) =>
+      invoke<ImportScanResult>("scan_rule_url_import", { url, options }),
+    scanFromClipboard: (content: string, name?: string) =>
+      invoke<ImportScanResult>("scan_rule_clipboard_import", { content, name }),
+    importAiToolRules: (options?: ImportExecutionOptions) =>
+      invoke<ImportExecutionResult>("import_ai_tool_rules", { options }),
+    importFromFile: (path: string, options?: ImportExecutionOptions) =>
+      invoke<ImportExecutionResult>("import_rule_from_file", { path, options }),
+    importFromDirectory: (path: string, options?: ImportExecutionOptions) =>
+      invoke<ImportExecutionResult>("import_rules_from_directory", { path, options }),
+    importFromUrl: (url: string, options?: ImportExecutionOptions) =>
+      invoke<ImportExecutionResult>("import_rule_from_url", { url, options }),
+    importFromClipboard: (content: string, name?: string, options?: ImportExecutionOptions) =>
+      invoke<ImportExecutionResult>("import_rule_from_clipboard", { content, name, options }),
+    getHistory: () => invoke<ImportHistoryEntry[]>("get_rule_import_history"),
   },
 
   sync: {

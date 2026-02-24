@@ -70,6 +70,11 @@ This layer handles all OS-level operations.
   - Because every AI tool expects a different filename (`GEMINI.md`, `AGENTS.md`, `.clinerules`) or specific frontmatter, the Sync Engine acts as a collection of **Tool-Specific Adapters (Post-Processors)**.
   - When a sync is triggered, the engine takes the master Rule and runs it through each active adapter. The adapter handles tool-specific formatting (e.g., prepending XML tags for Claude, or formatting TOML headers) and determines the exact target directory based on the "Scope".
   - Writes file outputs directly to the filesystem.
+- **Rule Import Engine (Bidirectional Sync):**
+  - Scans existing AI tool rule locations and external sources.
+  - Supports import sources: AI tool directories, single files, directories, URLs, and clipboard text.
+  - Normalizes imported content, applies duplicate detection and conflict policy (`skip`, `rename`, `replace`), and stores import history/source mapping.
+  - Writes imported rules to DB and file storage mode (if enabled), then runs sync to keep generated tool files current.
 - **Command Stub Sync Engine:**
   - Generates tool-facing command definition files (`COMMANDS.toml` / `COMMANDS.md`) for supported adapters.
   - Keeps command UX in client tools while execution remains centralized in MCP.
@@ -87,6 +92,7 @@ This layer handles all OS-level operations.
 ### 3. The Target Layer (The AI Tools)
 
 - **File Watchers:** AI tools (like Cline, OpenCode) naturally watch for changes in their rule files. When the Sync Engine updates a file, the AI tool seamlessly picks it up.
+- **Manual Import UX:** The Rules page exposes import actions for AI tools, files, folders, URLs, and clipboard content, with result summaries.
 - **MCP Clients:** AI tools (Claude Code, OpenCode, etc.) connect to localhost MCP endpoint or launch standalone `ruleweaver-mcp` binary. They use `tools/list` + `tools/call` to invoke commands.
 
 ## Runtime Topology

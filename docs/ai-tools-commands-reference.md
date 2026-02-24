@@ -4,18 +4,28 @@ A comprehensive guide to how each AI coding tool handles **rules**, **custom com
 
 ## Overview
 
-| Tool        | Rules Support     | Custom Commands   | Skills Support    | Config Location                        |
-| ----------- | ----------------- | ----------------- | ----------------- | -------------------------------------- |
-| OpenCode    | ✅ Global + Local | ✅ Global + Local | ✅ Global + Local | `~/.config/opencode/`, `.opencode/`    |
-| Claude Code | ✅ Global + Local | ✅ Global + Local | ✅ Global + Local | `~/.claude/`, `.claude/`               |
-| Cline       | ✅ Global + Local | ✅ Global + Local | ✅ Global + Local | `~/.clinerules`, `.clinerules/`        |
-| Gemini CLI  | ✅ Global + Local | ✅ Global + Local | ✅ Global + Local | `~/.gemini/`, `.gemini/`               |
-| Cursor      | ✅ Global + Local | ✅ Global + Local | ✅ Global + Local | `~/.cursor/`, `.cursor/`               |
-| Roo Code    | ✅ Global + Local | ✅ Global + Local | ✅ Global + Local | `~/.roo/`, `.roo/`                     |
-| Antigravity | ✅ Global + Local | ✅ Global + Local | ✅ Global + Local | `~/.gemini/antigravity/`, `.agents/`   |
-| Windsurf    | ✅ Global + Local | ❌ No             | ❌ No             | `.windsurfrules`, `~/.windsurf/`       |
-| Kilo Code   | ✅ Global + Local | ❌ No             | ❌ No             | `~/.kilocode/`, `.kilocode/`           |
-| Codex       | ✅ Global + Local | ✅ Global + Local | ✅ Global + Local | `~/.agents/skills/`, `.agents/skills/` |
+| Tool        | Rules Support     | Rule Import Support | Custom Commands   | Skills Support    | Config Location                        |
+| ----------- | ----------------- | ------------------- | ----------------- | ----------------- | -------------------------------------- |
+| OpenCode    | ✅ Global + Local | ✅ Global + Local   | ✅ Global + Local | ✅ Global + Local | `~/.config/opencode/`, `.opencode/`    |
+| Claude Code | ✅ Global + Local | ✅ Global + Local   | ✅ Global + Local | ✅ Global + Local | `~/.claude/`, `.claude/`               |
+| Cline       | ✅ Global + Local | ✅ Global + Local   | ✅ Global + Local | ✅ Global + Local | `~/.clinerules`, `.clinerules/`        |
+| Gemini CLI  | ✅ Global + Local | ✅ Global + Local   | ✅ Global + Local | ✅ Global + Local | `~/.gemini/`, `.gemini/`               |
+| Cursor      | ✅ Global + Local | ✅ Global + Local   | ✅ Global + Local | ✅ Global + Local | `~/.cursor/`, `.cursor/`               |
+| Roo Code    | ✅ Global + Local | ✅ Global + Local   | ✅ Global + Local | ✅ Global + Local | `~/.roo/`, `.roo/`                     |
+| Antigravity | ✅ Global + Local | ✅ Global + Local   | ✅ Global + Local | ✅ Global + Local | `~/.gemini/antigravity/`, `.agents/`   |
+| Windsurf    | ✅ Global + Local | ✅ Global + Local   | ❌ No             | ❌ No             | `.windsurfrules`, `~/.windsurf/`       |
+| Kilo Code   | ✅ Global + Local | ✅ Global + Local   | ❌ No             | ❌ No             | `~/.kilocode/`, `.kilocode/`           |
+| Codex       | ✅ Global + Local | ✅ Global + Local   | ✅ Global + Local | ✅ Global + Local | `~/.agents/skills/`, `.agents/skills/` |
+
+---
+
+## Rule Import Notes
+
+- RuleWeaver supports import from known AI tool rule locations in both global and local scopes.
+- Import supports scan + preview + selection before execution.
+- Duplicate content is skipped automatically.
+- Conflict handling supports `rename`, `skip`, and `replace`.
+- Same-name cross-tool imports can be automatically disambiguated with a tool suffix (for example, `quality-cline`).
 
 ---
 

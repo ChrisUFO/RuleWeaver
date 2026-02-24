@@ -10,7 +10,13 @@ import {
   Globe,
   FolderOpen,
   X,
+  Upload,
+  FolderUp,
+  Link,
+  Clipboard,
+  FileText,
 } from "lucide-react";
+import { open } from "@tauri-apps/plugin-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -29,7 +35,16 @@ import {
 import { useRulesStore } from "@/stores/rulesStore";
 import { useToast } from "@/components/ui/toast";
 import { RulesListSkeleton } from "@/components/ui/skeleton";
-import { ADAPTERS, type Rule, type AdapterType } from "@/types/rule";
+import {
+  ADAPTERS,
+  type Rule,
+  type AdapterType,
+  type ImportCandidate,
+  type ImportConflictMode,
+  type ImportExecutionResult,
+  type ImportHistoryEntry,
+} from "@/types/rule";
+import { api } from "@/lib/tauri";
 
 type SortField = "name" | "createdAt" | "updatedAt" | "enabled";
 type SortDirection = "asc" | "desc";
@@ -38,6 +53,8 @@ interface RulesListProps {
   onSelectRule: (rule: Rule) => void;
   onCreateRule: () => void;
 }
+
+type ImportSourceMode = "ai" | "file" | "directory" | "url" | "clipboard";
 
 const SORT_OPTIONS = [
   { value: "name-asc", label: "Name (A-Z)" },
@@ -76,6 +93,18 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
   const [menuOpen, setMenuOpen] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const [isScanningImport, setIsScanningImport] = useState(false);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [importCandidates, setImportCandidates] = useState<ImportCandidate[]>([]);
+  const [selectedImportIds, setSelectedImportIds] = useState<Set<string>>(new Set());
+  const [importScanErrors, setImportScanErrors] = useState<string[]>([]);
+  const [importConflictMode, setImportConflictMode] = useState<ImportConflictMode>("rename");
+  const [importResult, setImportResult] = useState<ImportExecutionResult | null>(null);
+  const [importHistory, setImportHistory] = useState<ImportHistoryEntry[]>([]);
+  const [importSourceMode, setImportSourceMode] = useState<ImportSourceMode>("ai");
+  const [importSourceValue, setImportSourceValue] = useState("");
+  const [clipboardImportName, setClipboardImportName] = useState<string | undefined>(undefined);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -270,6 +299,212 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
     setSortValue("name-asc");
   };
 
+  const handleImportResult = async (title: string, result: ImportExecutionResult) => {
+    await fetchRules();
+    addToast({
+      title,
+      description: `${result.imported.length} imported, ${result.skipped.length} skipped, ${result.conflicts.length} conflicts`,
+      variant: result.errors.length > 0 ? "error" : "success",
+    });
+    if (result.errors.length > 0) {
+      addToast({
+        title: "Import Warnings",
+        description: result.errors[0],
+        variant: "error",
+      });
+    }
+    const history = await api.ruleImport.getHistory();
+    setImportHistory(history);
+  };
+
+  const openImportPreview = async (
+    mode: ImportSourceMode,
+    sourceValue: string,
+    candidates: ImportCandidate[],
+    errors: string[]
+  ) => {
+    setImportSourceMode(mode);
+    setImportSourceValue(sourceValue);
+    setImportResult(null);
+    setImportCandidates(candidates);
+    setImportScanErrors(errors);
+    setSelectedImportIds(new Set(candidates.map((c) => c.id)));
+    setImportDialogOpen(true);
+    const history = await api.ruleImport.getHistory();
+    setImportHistory(history);
+  };
+
+  const scanAiToolRules = async () => {
+    setIsScanningImport(true);
+    try {
+      const scan = await api.ruleImport.scanAiToolCandidates();
+      await openImportPreview("ai", "", scan.candidates, scan.errors);
+    } catch (error) {
+      addToast({
+        title: "Scan Failed",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "error",
+      });
+    } finally {
+      setIsScanningImport(false);
+    }
+  };
+
+  const scanImportFromFile = async () => {
+    const selected = await open({
+      multiple: false,
+      filters: [{ name: "Rule Files", extensions: ["md", "txt", "json", "yaml", "yml"] }],
+    });
+    if (!selected || Array.isArray(selected)) return;
+
+    setIsScanningImport(true);
+    try {
+      const scan = await api.ruleImport.scanFromFile(selected);
+      await openImportPreview("file", selected, scan.candidates, scan.errors);
+    } catch (error) {
+      addToast({
+        title: "Scan Failed",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "error",
+      });
+    } finally {
+      setIsScanningImport(false);
+    }
+  };
+
+  const scanImportFromDirectory = async () => {
+    const selected = await open({ directory: true, multiple: false });
+    if (!selected || Array.isArray(selected)) return;
+
+    setIsScanningImport(true);
+    try {
+      const scan = await api.ruleImport.scanFromDirectory(selected);
+      await openImportPreview("directory", selected, scan.candidates, scan.errors);
+    } catch (error) {
+      addToast({
+        title: "Scan Failed",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "error",
+      });
+    } finally {
+      setIsScanningImport(false);
+    }
+  };
+
+  const scanImportFromUrl = async () => {
+    const url = window.prompt("Enter a URL to import:");
+    if (!url) return;
+
+    setIsScanningImport(true);
+    try {
+      const scan = await api.ruleImport.scanFromUrl(url);
+      await openImportPreview("url", url, scan.candidates, scan.errors);
+    } catch (error) {
+      addToast({
+        title: "Scan Failed",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "error",
+      });
+    } finally {
+      setIsScanningImport(false);
+    }
+  };
+
+  const scanImportFromClipboard = async () => {
+    setIsScanningImport(true);
+    try {
+      const text = await navigator.clipboard.readText();
+      if (!text.trim()) {
+        addToast({
+          title: "Clipboard Empty",
+          description: "No text found in clipboard",
+          variant: "error",
+        });
+        return;
+      }
+
+      const name = window.prompt("Optional name for clipboard import:") || undefined;
+      setClipboardImportName(name);
+      const scan = await api.ruleImport.scanFromClipboard(text, name);
+      await openImportPreview("clipboard", text, scan.candidates, scan.errors);
+    } catch (error) {
+      addToast({
+        title: "Scan Failed",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "error",
+      });
+    } finally {
+      setIsScanningImport(false);
+    }
+  };
+
+  const toggleImportCandidate = (id: string, checked: boolean) => {
+    setSelectedImportIds((prev) => {
+      const next = new Set(prev);
+      if (checked) {
+        next.add(id);
+      } else {
+        next.delete(id);
+      }
+      return next;
+    });
+  };
+
+  const toggleSelectAllImportCandidates = (checked: boolean) => {
+    if (checked) {
+      setSelectedImportIds(new Set(importCandidates.map((c) => c.id)));
+    } else {
+      setSelectedImportIds(new Set());
+    }
+  };
+
+  const executeImport = async () => {
+    if (selectedImportIds.size === 0) {
+      addToast({
+        title: "No Candidates Selected",
+        description: "Select at least one candidate to import",
+        variant: "error",
+      });
+      return;
+    }
+
+    setIsImporting(true);
+    try {
+      const options = {
+        conflictMode: importConflictMode,
+        selectedCandidateIds: Array.from(selectedImportIds),
+      };
+
+      let result: ImportExecutionResult;
+      if (importSourceMode === "ai") {
+        result = await api.ruleImport.importAiToolRules(options);
+      } else if (importSourceMode === "file") {
+        result = await api.ruleImport.importFromFile(importSourceValue, options);
+      } else if (importSourceMode === "directory") {
+        result = await api.ruleImport.importFromDirectory(importSourceValue, options);
+      } else if (importSourceMode === "url") {
+        result = await api.ruleImport.importFromUrl(importSourceValue, options);
+      } else {
+        result = await api.ruleImport.importFromClipboard(
+          importSourceValue,
+          clipboardImportName,
+          options
+        );
+      }
+
+      setImportResult(result);
+      await handleImportResult("Import Complete", result);
+    } catch (error) {
+      addToast({
+        title: "Import Failed",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "error",
+      });
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
   const hasActiveFilters = searchQuery || scopeFilter !== "all" || adapterFilter !== "all";
 
   if (isLoading) {
@@ -280,10 +515,52 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Rules</h1>
-        <Button onClick={onCreateRule} aria-label="Create new rule">
-          <Plus className="mr-2 h-4 w-4" aria-hidden="true" />
-          New Rule
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={scanAiToolRules}
+            disabled={isImporting || isScanningImport}
+          >
+            <Upload className="mr-2 h-4 w-4" aria-hidden="true" />
+            {isScanningImport ? "Scanning..." : "Import AI"}
+          </Button>
+          <Button
+            variant="outline"
+            onClick={scanImportFromFile}
+            disabled={isImporting || isScanningImport}
+          >
+            <FileText className="mr-2 h-4 w-4" aria-hidden="true" />
+            Import File
+          </Button>
+          <Button
+            variant="outline"
+            onClick={scanImportFromDirectory}
+            disabled={isImporting || isScanningImport}
+          >
+            <FolderUp className="mr-2 h-4 w-4" aria-hidden="true" />
+            Import Folder
+          </Button>
+          <Button
+            variant="outline"
+            onClick={scanImportFromUrl}
+            disabled={isImporting || isScanningImport}
+          >
+            <Link className="mr-2 h-4 w-4" aria-hidden="true" />
+            Import URL
+          </Button>
+          <Button
+            variant="outline"
+            onClick={scanImportFromClipboard}
+            disabled={isImporting || isScanningImport}
+          >
+            <Clipboard className="mr-2 h-4 w-4" aria-hidden="true" />
+            Import Clipboard
+          </Button>
+          <Button onClick={onCreateRule} aria-label="Create new rule">
+            <Plus className="mr-2 h-4 w-4" aria-hidden="true" />
+            New Rule
+          </Button>
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-3 p-4 glass rounded-xl border border-white/5 premium-shadow">
@@ -581,6 +858,174 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
             </Button>
             <Button variant="destructive" onClick={handleBulkDelete}>
               Delete All
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={importDialogOpen} onOpenChange={setImportDialogOpen}>
+        <DialogContent onClose={() => setImportDialogOpen(false)}>
+          <DialogHeader>
+            <DialogTitle>
+              {importSourceMode === "ai"
+                ? "Import Existing AI Tool Rules"
+                : importSourceMode === "file"
+                  ? "Import Rules From File"
+                  : importSourceMode === "directory"
+                    ? "Import Rules From Folder"
+                    : importSourceMode === "url"
+                      ? "Import Rules From URL"
+                      : "Import Rules From Clipboard"}
+            </DialogTitle>
+            <DialogDescription>
+              Review discovered candidates, choose conflict handling, and import selected rules.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 max-h-[50vh] overflow-y-auto">
+            {importSourceMode !== "ai" && importSourceValue && (
+              <div className="rounded-md border p-3 text-xs text-muted-foreground break-all">
+                Source: {importSourceMode === "clipboard" ? "Clipboard text" : importSourceValue}
+              </div>
+            )}
+
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  checked={
+                    importCandidates.length > 0 &&
+                    selectedImportIds.size === importCandidates.length
+                  }
+                  indeterminate={
+                    selectedImportIds.size > 0 && selectedImportIds.size < importCandidates.length
+                  }
+                  onChange={toggleSelectAllImportCandidates}
+                  aria-label="Select all import candidates"
+                />
+                <span className="text-sm text-muted-foreground">
+                  {selectedImportIds.size} of {importCandidates.length} selected
+                </span>
+              </div>
+
+              <Select
+                value={importConflictMode}
+                onChange={(value) => setImportConflictMode(value as ImportConflictMode)}
+                options={[
+                  { value: "rename", label: "Conflicts: Rename" },
+                  { value: "skip", label: "Conflicts: Skip" },
+                  { value: "replace", label: "Conflicts: Replace" },
+                ]}
+                className="w-44"
+                aria-label="Conflict mode"
+              />
+            </div>
+
+            {importCandidates.length === 0 ? (
+              <div className="rounded-md border p-3 text-sm text-muted-foreground">
+                No import candidates found for this source.
+              </div>
+            ) : (
+              <ul className="space-y-2">
+                {importCandidates.map((candidate) => (
+                  <li key={candidate.id} className="rounded-md border p-3">
+                    <div className="flex items-start gap-3">
+                      <Checkbox
+                        checked={selectedImportIds.has(candidate.id)}
+                        onChange={(checked) => toggleImportCandidate(candidate.id, checked)}
+                        aria-label={`Select candidate ${candidate.proposedName}`}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium truncate">{candidate.proposedName}</span>
+                          <Badge variant="outline">{candidate.sourceLabel}</Badge>
+                          <Badge variant={candidate.scope === "global" ? "default" : "secondary"}>
+                            {candidate.scope}
+                          </Badge>
+                        </div>
+                        <p className="text-xs text-muted-foreground truncate mt-1">
+                          {candidate.sourcePath}
+                        </p>
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            {importScanErrors.length > 0 && (
+              <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-xs text-destructive">
+                <p className="font-medium mb-1">Scan warnings</p>
+                {importScanErrors.slice(0, 3).map((err) => (
+                  <p key={err}>{err}</p>
+                ))}
+              </div>
+            )}
+
+            {importResult && (
+              <div className="rounded-md border p-3 text-sm">
+                <p className="font-medium">Latest Import Result</p>
+                <p className="text-muted-foreground">
+                  {importResult.imported.length} imported, {importResult.skipped.length} skipped,{" "}
+                  {importResult.conflicts.length} conflicts, {importResult.errors.length} errors
+                </p>
+                {importResult.imported.length > 0 && (
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Imported:{" "}
+                    {importResult.imported
+                      .slice(0, 3)
+                      .map((r) => r.name)
+                      .join(", ")}
+                    {importResult.imported.length > 3 ? "..." : ""}
+                  </p>
+                )}
+                {importResult.conflicts.length > 0 && (
+                  <p className="text-xs text-destructive mt-1">
+                    Conflict: {importResult.conflicts[0].candidateName}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {importHistory.length > 0 && (
+              <div className="rounded-md border p-3 text-xs">
+                <p className="font-medium mb-2">Recent Import Runs</p>
+                <div className="space-y-1 text-muted-foreground">
+                  {importHistory.slice(0, 3).map((entry) => (
+                    <p key={entry.id}>
+                      {new Date(entry.timestamp * 1000).toLocaleString()} - {entry.sourceType} -{" "}
+                      {entry.importedCount} imported
+                    </p>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setImportDialogOpen(false)}>
+              Close
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                if (importSourceMode === "ai") {
+                  void scanAiToolRules();
+                } else if (importSourceMode === "file") {
+                  void scanImportFromFile();
+                } else if (importSourceMode === "directory") {
+                  void scanImportFromDirectory();
+                } else if (importSourceMode === "url") {
+                  void scanImportFromUrl();
+                } else {
+                  void scanImportFromClipboard();
+                }
+              }}
+              disabled={isScanningImport}
+            >
+              Rescan
+            </Button>
+            <Button onClick={executeImport} disabled={isImporting || selectedImportIds.size === 0}>
+              {isImporting ? "Importing..." : "Import Selected"}
             </Button>
           </DialogFooter>
         </DialogContent>

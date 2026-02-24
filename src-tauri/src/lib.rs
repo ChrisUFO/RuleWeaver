@@ -6,6 +6,7 @@ mod execution;
 mod file_storage;
 mod mcp;
 mod models;
+mod rule_import;
 mod slash_commands;
 mod sync;
 pub mod templates;
@@ -86,6 +87,46 @@ pub fn run() {
             // Migrate legacy configurations
             if let Err(e) = crate::sync::check_and_migrate_legacy_paths() {
                 log::error!("Failed to migrate legacy paths: {}", e);
+            }
+
+            // First-run bootstrap import from existing AI tool files
+            let bootstrap_done = db
+                .get_setting("ai_tool_import_bootstrap_done")
+                .ok()
+                .flatten()
+                .map(|v| v == "true")
+                .unwrap_or(false);
+            if !bootstrap_done {
+                let options = crate::models::ImportExecutionOptions {
+                    conflict_mode: crate::models::ImportConflictMode::Rename,
+                    ..Default::default()
+                };
+                let max_size = crate::rule_import::resolve_max_size(&options);
+                match crate::rule_import::scan_ai_tool_candidates(&db, max_size) {
+                    Ok(scan) => {
+                        if !scan.candidates.is_empty() {
+                            match crate::rule_import::execute_import(&db, scan, options) {
+                                Ok(import_result) => {
+                                    log::info!(
+                                        "Bootstrap import complete: {} imported, {} skipped, {} conflicts",
+                                        import_result.imported.len(),
+                                        import_result.skipped.len(),
+                                        import_result.conflicts.len()
+                                    );
+                                }
+                                Err(e) => {
+                                    log::error!("Bootstrap import failed: {}", e);
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        log::error!("Bootstrap import scan failed: {}", e);
+                    }
+                }
+                if let Err(e) = db.set_setting("ai_tool_import_bootstrap_done", "true") {
+                    log::error!("Failed to persist bootstrap import flag: {}", e);
+                }
             }
 
             let mcp_manager = McpManager::new(crate::constants::DEFAULT_MCP_PORT);
@@ -322,6 +363,17 @@ pub fn run() {
             commands::get_file_migration_progress,
             commands::get_storage_info,
             commands::get_storage_mode,
+            commands::scan_ai_tool_import_candidates,
+            commands::import_ai_tool_rules,
+            commands::scan_rule_file_import,
+            commands::import_rule_from_file,
+            commands::scan_rule_directory_import,
+            commands::import_rules_from_directory,
+            commands::scan_rule_url_import,
+            commands::import_rule_from_url,
+            commands::scan_rule_clipboard_import,
+            commands::import_rule_from_clipboard,
+            commands::get_rule_import_history,
             commands::export_configuration,
             commands::import_configuration,
             commands::preview_import,
