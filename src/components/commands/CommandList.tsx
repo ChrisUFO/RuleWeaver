@@ -83,7 +83,7 @@ export function CommandList({
               >
                 {cmd.name}
               </div>
-              {cmd.expose_via_mcp ? (
+              {cmd.exposeViaMcp ? (
                 <Badge
                   variant="default"
                   className="h-4 text-[9px] px-1.5 uppercase font-bold tracking-tighter bg-primary/20 text-primary border-primary/20"

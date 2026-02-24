@@ -137,16 +137,16 @@ export function useCommandsState(
     }
     const nextArgs: Record<string, string> = {};
     for (const arg of selected.arguments) {
-      nextArgs[arg.name] = arg.default_value ?? "";
+      nextArgs[arg.name] = arg.defaultValue ?? "";
     }
     setForm({
       name: selected.name,
       description: selected.description,
       script: selected.script,
-      exposeViaMcp: Boolean(selected.expose_via_mcp),
-      generateSlashCommands: Boolean(selected.generate_slash_commands),
-      slashCommandAdapters: selected.slash_command_adapters ?? [],
-      targetPaths: selected.target_paths ?? [],
+      exposeViaMcp: Boolean(selected.exposeViaMcp),
+      generateSlashCommands: Boolean(selected.generateSlashCommands),
+      slashCommandAdapters: selected.slashCommandAdapters ?? [],
+      targetPaths: selected.targetPaths ?? [],
       testArgs: nextArgs,
     });
   }, [selected]);
@@ -179,8 +179,8 @@ export function useCommandsState(
         description: "Describe what this command does",
         script: "echo hello",
         arguments: [],
-        expose_via_mcp: true,
-        target_paths: [],
+        exposeViaMcp: true,
+        targetPaths: [],
       });
       await loadCommands();
       setSelectedId(created.id);
@@ -200,10 +200,10 @@ export function useCommandsState(
         name: form.name,
         description: form.description,
         script: form.script,
-        expose_via_mcp: form.exposeViaMcp,
-        generate_slash_commands: form.generateSlashCommands,
-        slash_command_adapters: form.slashCommandAdapters,
-        target_paths: form.targetPaths,
+        exposeViaMcp: form.exposeViaMcp,
+        generateSlashCommands: form.generateSlashCommands,
+        slashCommandAdapters: form.slashCommandAdapters,
+        targetPaths: form.targetPaths,
       });
       setCommands((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
       toast.success(addToast, { title: "Command Saved", description: updated.name });
@@ -241,7 +241,7 @@ export function useCommandsState(
       setTestOutput({
         stdout: result.stdout,
         stderr: result.stderr,
-        exitCode: result.exit_code,
+        exitCode: result.exitCode,
       });
       await loadHistory();
       toast[`${result.success ? "success" : "error"}`](addToast, {

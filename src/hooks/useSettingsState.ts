@@ -283,13 +283,13 @@ export function useSettingsState(
           api.skills.getAll(),
         ]);
 
-        const usedByRule = rules.some((rule) => rule.targetPaths?.some((p) => p === path));
+        const usedByRule = rules.some((rule) => rule.targetPaths?.some((p: string) => p === path));
         const usedByCommand = commands.some((command) =>
-          command.target_paths?.some((p) => p === path)
+          command.targetPaths?.some((p: string) => p === path)
         );
         const usedBySkill = skills.some(
           (skill) =>
-            skill.scope === "local" && skill.directory_path && skill.directory_path.startsWith(path)
+            skill.scope === "local" && skill.directoryPath && skill.directoryPath.startsWith(path)
         );
 
         if (usedByRule || usedByCommand || usedBySkill) {
