@@ -18,6 +18,7 @@ import { MarkdownEditor } from "@/components/ui/markdown-editor";
 import { useRulesStore } from "@/stores/rulesStore";
 import { useToast } from "@/components/ui/toast";
 import { useKeyboardShortcuts, SHORTCUTS } from "@/hooks/useKeyboardShortcuts";
+import { useRepositoryRoots } from "@/hooks/useRepositoryRoots";
 import { ADAPTERS, type Rule, type Scope, type AdapterType } from "@/types/rule";
 import { api } from "@/lib/tauri";
 
@@ -51,7 +52,7 @@ export function RuleEditor({ rule, onBack, isNew = false }: RuleEditorProps) {
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [previewAdapter, setPreviewAdapter] = useState<AdapterType>("gemini");
-  const [availableRepos, setAvailableRepos] = useState<string[]>([]);
+  const { roots: availableRepos } = useRepositoryRoots();
   const isInitialized = useRef(false);
 
   const wordCount = getWordCount(content);
@@ -101,23 +102,6 @@ export function RuleEditor({ rule, onBack, isNew = false }: RuleEditorProps) {
       setHasUnsavedChanges(true);
     }
   }, [name, content, scope, targetPaths, enabledAdapters]);
-
-  useEffect(() => {
-    const loadRepos = async () => {
-      try {
-        const stored = await api.settings.get("local_rule_paths");
-        if (!stored) {
-          setAvailableRepos([]);
-          return;
-        }
-        const parsed = JSON.parse(stored) as string[];
-        setAvailableRepos(Array.isArray(parsed) ? parsed : []);
-      } catch {
-        setAvailableRepos([]);
-      }
-    };
-    loadRepos();
-  }, []);
 
   const handleSave = useCallback(async () => {
     if (!name.trim()) {

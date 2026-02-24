@@ -13,6 +13,7 @@ import { Scope } from "@/types/rule";
 import { SkillSchemaEditor } from "@/components/skills/SkillSchemaEditor";
 import { TemplateBrowser } from "@/components/skills/TemplateBrowser";
 import { Select } from "@/components/ui/select";
+import { useRepositoryRoots } from "@/hooks/useRepositoryRoots";
 
 export function Skills() {
   const [skills, setSkills] = useState<Skill[]>([]);
@@ -25,7 +26,7 @@ export function Skills() {
   const [scope, setScope] = useState<Scope>("global");
   const [directoryPath, setDirectoryPath] = useState("");
   const [enabled, setEnabled] = useState(true);
-  const [availableRepos, setAvailableRepos] = useState<string[]>([]);
+  const { roots: availableRepos } = useRepositoryRoots();
   const [isSaving, setIsSaving] = useState(false);
   const { addToast } = useToast();
 
@@ -48,23 +49,6 @@ export function Skills() {
       });
     });
   }, [addToast]);
-
-  useEffect(() => {
-    const loadRepositoryRoots = async () => {
-      try {
-        const stored = await api.settings.get("local_rule_paths");
-        if (!stored) {
-          setAvailableRepos([]);
-          return;
-        }
-        const parsed = JSON.parse(stored) as string[];
-        setAvailableRepos(Array.isArray(parsed) ? parsed : []);
-      } catch {
-        setAvailableRepos([]);
-      }
-    };
-    loadRepositoryRoots();
-  }, []);
 
   useEffect(() => {
     if (!selected) {

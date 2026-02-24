@@ -8,6 +8,7 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { api } from "@/lib/tauri";
+import { useRepositoryRoots } from "@/hooks/useRepositoryRoots";
 import { useToast } from "@/components/ui/toast";
 import { CommandsListSkeleton } from "@/components/ui/skeleton";
 import type { CommandModel, ExecutionLog } from "@/types/command";
@@ -60,7 +61,7 @@ export function Commands() {
   const [availableAdapters, setAvailableAdapters] = useState<
     { name: string; supports_argument_substitution: boolean }[]
   >([]);
-  const [availableRepos, setAvailableRepos] = useState<string[]>([]);
+  const { roots: availableRepos } = useRepositoryRoots();
   const [targetPaths, setTargetPaths] = useState<string[]>([]);
   const { addToast } = useToast();
 
@@ -98,23 +99,9 @@ export function Commands() {
     }
   };
 
-  const loadRepositoryRoots = async () => {
-    try {
-      const stored = await api.settings.get("local_rule_paths");
-      if (!stored) {
-        setAvailableRepos([]);
-        return;
-      }
-      const parsed = JSON.parse(stored) as string[];
-      setAvailableRepos(Array.isArray(parsed) ? parsed : []);
-    } catch {
-      setAvailableRepos([]);
-    }
-  };
-
   useEffect(() => {
     setIsLoading(true);
-    Promise.all([loadCommands(), loadHistory(), loadAvailableAdapters(), loadRepositoryRoots()])
+    Promise.all([loadCommands(), loadHistory(), loadAvailableAdapters()])
       .catch((error) => {
         addToast({
           title: "Failed to Load Commands",

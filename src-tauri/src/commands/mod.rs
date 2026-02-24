@@ -22,6 +22,7 @@ pub use system_commands::*;
 use parking_lot::Mutex;
 use std::collections::{HashSet, VecDeque};
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, OnceLock};
 use std::sync::LazyLock;
 use std::time::Instant;
 
@@ -30,7 +31,7 @@ use crate::constants::limits::{
     MAX_RULE_NAME_LENGTH,
 };
 use crate::constants::{
-    NEW_CURSOR_DIR, NEW_GEMINI_DIR, NEW_KILO_DIR, NEW_OPENCODE_DIR, NEW_ROO_CODE_DIR,
+    NEW_CURSOR_DIR, NEW_GEMINI_DIR, NEW_KILO_DIR, NEW_ROO_CODE_DIR,
     NEW_WINDSURF_DIR,
 };
 use crate::database::Database;
@@ -168,62 +169,45 @@ pub fn markdown_escape_inline(input: &str) -> String {
     input.replace('`', "\\`")
 }
 
-pub fn command_file_targets() -> Result<Vec<(String, Box<dyn CommandAdapter>)>> {
+fn command_adapters() -> &'static Vec<Arc<dyn CommandAdapter>> {
+    static COMMAND_ADAPTERS: OnceLock<Vec<Arc<dyn CommandAdapter>>> = OnceLock::new();
+    COMMAND_ADAPTERS.get_or_init(|| {
+        vec![
+            Arc::new(GeminiAdapter),
+            Arc::new(OpenCodeAdapter),
+            Arc::new(ClaudeAdapter),
+            Arc::new(KiloAdapter),
+            Arc::new(CursorAdapter),
+            Arc::new(WindsurfAdapter),
+            Arc::new(RooCodeAdapter),
+        ]
+    })
+}
+
+fn command_target_path_for_adapter(root: &Path, adapter_name: &str) -> Option<String> {
+    let path = match adapter_name {
+        "gemini" => root.join(NEW_GEMINI_DIR).join("COMMANDS.toml"),
+        "opencode" => root.join(".opencode").join("COMMANDS.md"),
+        "claude" => root.join(".claude").join("COMMANDS.md"),
+        "kilo" => root.join(NEW_KILO_DIR).join("rules").join("COMMANDS.md"),
+        "cursor" => root.join(NEW_CURSOR_DIR).join("COMMANDS.md"),
+        "windsurf" => root.join(NEW_WINDSURF_DIR).join("rules").join("COMMANDS.md"),
+        "roo" => root.join(NEW_ROO_CODE_DIR).join("COMMANDS.md"),
+        _ => return None,
+    };
+    Some(path.to_string_lossy().to_string())
+}
+
+pub fn command_file_targets() -> Result<Vec<(String, Arc<dyn CommandAdapter>)>> {
     let home = dirs::home_dir()
         .ok_or_else(|| AppError::Path("Could not determine home directory".to_string()))?;
-    Ok(vec![
-        (
-            home.join(NEW_GEMINI_DIR)
-                .join("COMMANDS.toml")
-                .to_string_lossy()
-                .to_string(),
-            Box::new(GeminiAdapter),
-        ),
-        (
-            home.join(NEW_OPENCODE_DIR)
-                .join("COMMANDS.md")
-                .to_string_lossy()
-                .to_string(),
-            Box::new(OpenCodeAdapter),
-        ),
-        (
-            home.join(".claude")
-                .join("COMMANDS.md")
-                .to_string_lossy()
-                .to_string(),
-            Box::new(ClaudeAdapter),
-        ),
-        (
-            home.join(NEW_KILO_DIR)
-                .join("rules")
-                .join("COMMANDS.md")
-                .to_string_lossy()
-                .to_string(),
-            Box::new(KiloAdapter),
-        ),
-        (
-            home.join(NEW_CURSOR_DIR)
-                .join("COMMANDS.md")
-                .to_string_lossy()
-                .to_string(),
-            Box::new(CursorAdapter),
-        ),
-        (
-            home.join(NEW_WINDSURF_DIR)
-                .join("rules")
-                .join("COMMANDS.md")
-                .to_string_lossy()
-                .to_string(),
-            Box::new(WindsurfAdapter),
-        ),
-        (
-            home.join(NEW_ROO_CODE_DIR)
-                .join("COMMANDS.md")
-                .to_string_lossy()
-                .to_string(),
-            Box::new(RooCodeAdapter),
-        ),
-    ])
+    let mut targets = Vec::new();
+    for adapter in command_adapters() {
+        if let Some(path) = command_target_path_for_adapter(&home, adapter.name()) {
+            targets.push((path, Arc::clone(adapter)));
+        }
+    }
+    Ok(targets)
 }
 
 pub fn use_file_storage(db: &Database) -> bool {
@@ -251,60 +235,14 @@ pub fn register_local_rule_paths(db: &Database, rule: &Rule) -> Result<()> {
     register_local_paths(db, &paths)
 }
 
-pub fn command_file_targets_for_root(root: &Path) -> Vec<(String, Box<dyn CommandAdapter>)> {
-    vec![
-        (
-            root.join(NEW_GEMINI_DIR)
-                .join("COMMANDS.toml")
-                .to_string_lossy()
-                .to_string(),
-            Box::new(GeminiAdapter),
-        ),
-        (
-            root.join(".opencode")
-                .join("COMMANDS.md")
-                .to_string_lossy()
-                .to_string(),
-            Box::new(OpenCodeAdapter),
-        ),
-        (
-            root.join(".claude")
-                .join("COMMANDS.md")
-                .to_string_lossy()
-                .to_string(),
-            Box::new(ClaudeAdapter),
-        ),
-        (
-            root.join(NEW_KILO_DIR)
-                .join("rules")
-                .join("COMMANDS.md")
-                .to_string_lossy()
-                .to_string(),
-            Box::new(KiloAdapter),
-        ),
-        (
-            root.join(NEW_CURSOR_DIR)
-                .join("COMMANDS.md")
-                .to_string_lossy()
-                .to_string(),
-            Box::new(CursorAdapter),
-        ),
-        (
-            root.join(NEW_WINDSURF_DIR)
-                .join("rules")
-                .join("COMMANDS.md")
-                .to_string_lossy()
-                .to_string(),
-            Box::new(WindsurfAdapter),
-        ),
-        (
-            root.join(NEW_ROO_CODE_DIR)
-                .join("COMMANDS.md")
-                .to_string_lossy()
-                .to_string(),
-            Box::new(RooCodeAdapter),
-        ),
-    ]
+pub fn command_file_targets_for_root(root: &Path) -> Vec<(String, Arc<dyn CommandAdapter>)> {
+    let mut targets = Vec::new();
+    for adapter in command_adapters() {
+        if let Some(path) = command_target_path_for_adapter(root, adapter.name()) {
+            targets.push((path, Arc::clone(adapter)));
+        }
+    }
+    targets
 }
 
 pub fn register_local_paths(db: &Database, paths: &[String]) -> Result<()> {

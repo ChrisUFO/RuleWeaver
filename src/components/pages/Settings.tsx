@@ -32,6 +32,7 @@ import {
 import { api } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/components/ui/toast";
+import { useRepositoryRoots } from "@/hooks/useRepositoryRoots";
 import { ADAPTERS, type AdapterType, type Rule } from "@/types/rule";
 import type { CommandModel } from "@/types/command";
 import type { Skill } from "@/types/skill";
@@ -98,7 +99,12 @@ export function Settings() {
   const [mcpAutoStart, setMcpAutoStart] = useState(false);
   const [minimizeToTray, setMinimizeToTray] = useState(true);
   const [mcpLogs, setMcpLogs] = useState<string[]>([]);
-  const [repositoryRoots, setRepositoryRoots] = useState<string[]>([]);
+  const {
+    roots: repositoryRoots,
+    setRoots: setRepositoryRoots,
+    refresh: refreshRepositoryRoots,
+    save: saveRepositoryRootsSetting,
+  } = useRepositoryRoots(false);
   const [repoPathsDirty, setRepoPathsDirty] = useState(false);
   const [isSavingRepos, setIsSavingRepos] = useState(false);
   const { addToast } = useToast();
@@ -120,7 +126,6 @@ export function Settings() {
           minimizeToTraySetting,
           mcpLogsInitial,
           autoStartEnabled,
-          localRulePathsSetting,
         ] = await Promise.all([
           api.app.getAppDataPath(),
           api.app.getVersion(),
@@ -134,7 +139,6 @@ export function Settings() {
           api.settings.get("minimize_to_tray"),
           api.mcp.getLogs(20),
           isEnabled(),
-          api.settings.get("local_rule_paths"),
         ]);
         setAppDataPath(path);
         // Try to get version from version.json first, fallback to API
@@ -158,18 +162,7 @@ export function Settings() {
         setMinimizeToTray(minimizeToTraySetting !== "false");
         setMcpLogs(mcpLogsInitial);
         setLaunchOnStartup(autoStartEnabled);
-
-        if (localRulePathsSetting) {
-          try {
-            const parsed = JSON.parse(localRulePathsSetting) as string[];
-            setRepositoryRoots(Array.isArray(parsed) ? parsed : []);
-          } catch {
-            console.error("Failed to parse local_rule_paths");
-            setRepositoryRoots([]);
-          }
-        } else {
-          setRepositoryRoots([]);
-        }
+        await refreshRepositoryRoots();
 
         if (settingsJson) {
           try {
@@ -292,7 +285,7 @@ export function Settings() {
   const saveRepositoryRoots = async () => {
     setIsSavingRepos(true);
     try {
-      await api.settings.set("local_rule_paths", JSON.stringify(repositoryRoots));
+      await saveRepositoryRootsSetting(repositoryRoots);
       setRepoPathsDirty(false);
       addToast({
         title: "Repositories Saved",
