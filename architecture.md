@@ -2,6 +2,11 @@
 
 RuleWeaver is designed as a standalone desktop application. It requires deep filesystem access to sync tool configurations globally and locally, as well as network capabilities to host a local server.
 
+## Documentation
+
+- **AI Tools Reference:** See [`docs/ai-tools-commands-reference.md`](./docs/ai-tools-commands-reference.md) for comprehensive documentation on how each supported AI tool handles rules, custom commands, and skills.
+- **Implementation Plan:** See [`PLAN.md`](./PLAN.md) for the strategic implementation plan for GitHub issue #23 (Native Slash Command Support).
+
 ## Versioning Strategy
 
 RuleWeaver uses an **auto-incrementing timestamp-based versioning scheme** to avoid formal semantic versioning during rapid development phases.

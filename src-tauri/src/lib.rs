@@ -6,6 +6,7 @@ mod execution;
 mod file_storage;
 mod mcp;
 mod models;
+mod slash_commands;
 mod sync;
 pub mod templates;
 
@@ -346,6 +347,14 @@ pub fn run() {
             commands::get_mcp_connection_instructions,
             commands::get_mcp_logs,
             commands::get_execution_history,
+            slash_commands::commands::sync_slash_command,
+            slash_commands::commands::sync_all_slash_commands,
+            slash_commands::commands::get_slash_command_status,
+            slash_commands::commands::cleanup_slash_commands,
+            slash_commands::commands::remove_slash_command_files,
+            slash_commands::commands::get_slash_command_adapters,
+            slash_commands::commands::test_slash_command_generation,
+            slash_commands::commands::get_slash_command_path,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

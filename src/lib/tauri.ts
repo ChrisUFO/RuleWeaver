@@ -129,6 +129,51 @@ export const api = {
       invoke<ExecutionLog[]>("get_execution_history", { limit: limit ?? 100 }),
   },
 
+  slashCommands: {
+    remove: (commandName: string, adapters: string[]) =>
+      invoke<{
+        files_written: number;
+        files_removed: number;
+        errors: string[];
+        conflicts: Array<{ command_name: string; adapter_name: string; message: string }>;
+      }>("remove_slash_command_files", { commandName, adapters }),
+    sync: (commandId: string, isGlobal: boolean) =>
+      invoke<{
+        files_written: number;
+        files_removed: number;
+        errors: string[];
+        conflicts: Array<{ command_name: string; adapter_name: string; message: string }>;
+      }>("sync_slash_command", { commandId, isGlobal }),
+    syncAll: (isGlobal: boolean) =>
+      invoke<{
+        files_written: number;
+        files_removed: number;
+        errors: string[];
+        conflicts: Array<{ command_name: string; adapter_name: string; message: string }>;
+      }>("sync_all_slash_commands", { isGlobal }),
+    getStatus: (commandId: string) =>
+      invoke<Record<string, "Synced" | "OutOfDate" | "NotSynced" | { Error: string }>>(
+        "get_slash_command_status",
+        { commandId }
+      ),
+    cleanup: (adapterName: string, isGlobal: boolean) =>
+      invoke<number>("cleanup_slash_commands", { adapterName, isGlobal }),
+    getAdapters: () =>
+      invoke<
+        Array<{
+          name: string;
+          supports_argument_substitution: boolean;
+          argument_pattern?: string;
+          global_path: string;
+          local_path: string;
+        }>
+      >("get_slash_command_adapters"),
+    testGeneration: (adapterName: string, commandId: string) =>
+      invoke<string>("test_slash_command_generation", { adapterName, commandId }),
+    getPath: (adapterName: string, commandName: string, isGlobal: boolean) =>
+      invoke<string>("get_slash_command_path", { adapterName, commandName, isGlobal }),
+  },
+
   app: {
     getAppDataPath: () => invoke<string>("get_app_data_path_cmd"),
     openInExplorer: (path: string) => invoke<void>("open_in_explorer", { path }),
