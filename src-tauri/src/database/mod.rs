@@ -321,7 +321,7 @@ impl Database {
     pub fn get_all_commands(&self) -> Result<Vec<Command>> {
         let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
         let mut stmt = conn.prepare(
-            "SELECT id, name, description, script, arguments, expose_via_mcp, generate_slash_commands, slash_command_adapters, created_at, updated_at
+            "SELECT id, name, description, script, arguments, expose_via_mcp, generate_slash_commands, slash_command_adapters, target_paths, created_at, updated_at
              FROM commands
              ORDER BY updated_at DESC",
         )?;
@@ -336,8 +336,9 @@ impl Database {
                 let expose_via_mcp: bool = row.get(5)?;
                 let generate_slash_commands: bool = row.get(6)?;
                 let slash_adapters_json: String = row.get(7)?;
-                let created_at: i64 = row.get(8)?;
-                let updated_at: i64 = row.get(9)?;
+                let target_paths_json: String = row.get(8)?;
+                let created_at: i64 = row.get(9)?;
+                let updated_at: i64 = row.get(10)?;
 
                 let arguments: Vec<CommandArgument> = serde_json::from_str(&arguments_json)
                     .map_err(|e| {
@@ -357,6 +358,15 @@ impl Database {
                         )
                     })?;
 
+                let target_paths: Vec<String> =
+                    serde_json::from_str(&target_paths_json).map_err(|e| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            8,
+                            rusqlite::types::Type::Text,
+                            Box::new(e),
+                        )
+                    })?;
+
                 Ok(Command {
                     id,
                     name,
@@ -366,6 +376,7 @@ impl Database {
                     expose_via_mcp,
                     generate_slash_commands,
                     slash_command_adapters,
+                    target_paths,
                     created_at: parse_timestamp_or_now(created_at),
                     updated_at: parse_timestamp_or_now(updated_at),
                 })
@@ -378,7 +389,7 @@ impl Database {
     pub fn get_command_by_id(&self, id: &str) -> Result<Command> {
         let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
         let mut stmt = conn.prepare(
-            "SELECT id, name, description, script, arguments, expose_via_mcp, generate_slash_commands, slash_command_adapters, created_at, updated_at
+            "SELECT id, name, description, script, arguments, expose_via_mcp, generate_slash_commands, slash_command_adapters, target_paths, created_at, updated_at
              FROM commands
              WHERE id = ?",
         )?;
@@ -393,8 +404,9 @@ impl Database {
                 let expose_via_mcp: bool = row.get(5)?;
                 let generate_slash_commands: bool = row.get(6)?;
                 let slash_adapters_json: String = row.get(7)?;
-                let created_at: i64 = row.get(8)?;
-                let updated_at: i64 = row.get(9)?;
+                let target_paths_json: String = row.get(8)?;
+                let created_at: i64 = row.get(9)?;
+                let updated_at: i64 = row.get(10)?;
 
                 let arguments: Vec<CommandArgument> = serde_json::from_str(&arguments_json)
                     .map_err(|e| {
@@ -414,6 +426,15 @@ impl Database {
                         )
                     })?;
 
+                let target_paths: Vec<String> =
+                    serde_json::from_str(&target_paths_json).map_err(|e| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            8,
+                            rusqlite::types::Type::Text,
+                            Box::new(e),
+                        )
+                    })?;
+
                 Ok(Command {
                     id,
                     name,
@@ -423,6 +444,7 @@ impl Database {
                     expose_via_mcp,
                     generate_slash_commands,
                     slash_command_adapters,
+                    target_paths,
                     created_at: parse_timestamp_or_now(created_at),
                     updated_at: parse_timestamp_or_now(updated_at),
                 })
@@ -443,10 +465,11 @@ impl Database {
         let id = uuid::Uuid::new_v4().to_string();
         let arguments_json = serde_json::to_string(&input.arguments)?;
         let slash_adapters_json = serde_json::to_string(&input.slash_command_adapters)?;
+        let target_paths_json = serde_json::to_string(&input.target_paths)?;
 
         conn.execute(
-            "INSERT INTO commands (id, name, description, script, arguments, expose_via_mcp, generate_slash_commands, slash_command_adapters, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO commands (id, name, description, script, arguments, expose_via_mcp, generate_slash_commands, slash_command_adapters, target_paths, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             params![
                 id,
                 input.name,
@@ -456,6 +479,7 @@ impl Database {
                 input.expose_via_mcp,
                 input.generate_slash_commands,
                 slash_adapters_json,
+                target_paths_json,
                 now,
                 now
             ],
@@ -480,12 +504,14 @@ impl Database {
         let slash_command_adapters = input
             .slash_command_adapters
             .unwrap_or(existing.slash_command_adapters);
+        let target_paths = input.target_paths.unwrap_or(existing.target_paths);
         let now = chrono::Utc::now().timestamp();
         let arguments_json = serde_json::to_string(&arguments)?;
         let slash_adapters_json = serde_json::to_string(&slash_command_adapters)?;
+        let target_paths_json = serde_json::to_string(&target_paths)?;
 
         conn.execute(
-            "UPDATE commands SET name = ?, description = ?, script = ?, arguments = ?, expose_via_mcp = ?, generate_slash_commands = ?, slash_command_adapters = ?, updated_at = ?
+            "UPDATE commands SET name = ?, description = ?, script = ?, arguments = ?, expose_via_mcp = ?, generate_slash_commands = ?, slash_command_adapters = ?, target_paths = ?, updated_at = ?
              WHERE id = ?",
             params![
                 name,
@@ -495,6 +521,7 @@ impl Database {
                 expose_via_mcp,
                 generate_slash_commands,
                 slash_adapters_json,
+                target_paths_json,
                 now,
                 id
             ],
@@ -934,16 +961,18 @@ impl Database {
         let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
         let now = chrono::Utc::now().timestamp();
         let arguments_json = serde_json::to_string(&command.arguments)?;
+        let slash_adapters_json = serde_json::to_string(&command.slash_command_adapters)?;
+        let target_paths_json = serde_json::to_string(&command.target_paths)?;
 
         let sql = match mode {
             crate::models::ImportMode::Overwrite => {
                 log::info!("Import: Overwriting command {}", command.id);
-                "INSERT OR REPLACE INTO commands (id, name, description, script, arguments, expose_via_mcp, created_at, updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+                "INSERT OR REPLACE INTO commands (id, name, description, script, arguments, expose_via_mcp, generate_slash_commands, slash_command_adapters, target_paths, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             }
             crate::models::ImportMode::Skip => {
-                "INSERT OR IGNORE INTO commands (id, name, description, script, arguments, expose_via_mcp, created_at, updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+                "INSERT OR IGNORE INTO commands (id, name, description, script, arguments, expose_via_mcp, generate_slash_commands, slash_command_adapters, target_paths, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             }
         };
 
@@ -956,6 +985,9 @@ impl Database {
                 command.script,
                 arguments_json,
                 command.expose_via_mcp,
+                command.generate_slash_commands,
+                slash_adapters_json,
+                target_paths_json,
                 command.created_at.timestamp(),
                 now
             ],
@@ -1117,6 +1149,7 @@ fn run_migrations(conn: &mut Connection) -> Result<()> {
                 script TEXT NOT NULL,
                 arguments TEXT NOT NULL,
                 expose_via_mcp INTEGER NOT NULL DEFAULT 1,
+                target_paths TEXT NOT NULL DEFAULT '[]',
                 created_at INTEGER NOT NULL,
                 updated_at INTEGER NOT NULL
             )",
@@ -1237,9 +1270,29 @@ fn run_migrations(conn: &mut Connection) -> Result<()> {
                 [],
             )?;
         }
+        if !cols.iter().any(|c| c == "target_paths") {
+            transaction.execute(
+                "ALTER TABLE commands ADD COLUMN target_paths TEXT NOT NULL DEFAULT '[]'",
+                [],
+            )?;
+        }
     }
 
-    transaction.execute("PRAGMA user_version = 9", [])?;
+    if current_version < 10 {
+        let mut stmt = transaction.prepare("PRAGMA table_info(commands)")?;
+        let cols: Vec<String> = stmt
+            .query_map([], |row| row.get(1))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+
+        if !cols.iter().any(|c| c == "target_paths") {
+            transaction.execute(
+                "ALTER TABLE commands ADD COLUMN target_paths TEXT NOT NULL DEFAULT '[]'",
+                [],
+            )?;
+        }
+    }
+
+    transaction.execute("PRAGMA user_version = 10", [])?;
     transaction.commit()?;
 
     Ok(())
@@ -1262,7 +1315,10 @@ pub fn default_app_data_dir() -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{CreateSkillInput, SkillParameter, SkillParameterType, UpdateSkillInput};
+    use crate::models::{
+        CreateCommandInput, CreateSkillInput, SkillParameter, SkillParameterType,
+        UpdateCommandInput, UpdateSkillInput,
+    };
 
     #[test]
     fn test_skill_crud() {
@@ -1315,5 +1371,40 @@ mod tests {
         db.delete_skill(&created.id).unwrap();
         assert!(db.get_skill_by_id(&created.id).is_err());
         assert_eq!(db.get_all_skills().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn test_command_target_paths_roundtrip() {
+        let db = Database::new_in_memory().unwrap();
+
+        let created = db
+            .create_command(CreateCommandInput {
+                name: "Build".to_string(),
+                description: "Run build".to_string(),
+                script: "npm run build".to_string(),
+                arguments: vec![],
+                expose_via_mcp: true,
+                generate_slash_commands: false,
+                slash_command_adapters: vec![],
+                target_paths: vec!["C:/repo-a".to_string()],
+            })
+            .unwrap();
+
+        assert_eq!(created.target_paths, vec!["C:/repo-a".to_string()]);
+
+        let updated = db
+            .update_command(
+                &created.id,
+                UpdateCommandInput {
+                    target_paths: Some(vec!["C:/repo-b".to_string(), "C:/repo-c".to_string()]),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+
+        assert_eq!(
+            updated.target_paths,
+            vec!["C:/repo-b".to_string(), "C:/repo-c".to_string()]
+        );
     }
 }

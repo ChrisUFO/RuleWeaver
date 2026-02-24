@@ -16,14 +16,28 @@
   - `Import Folder` bulk-imports supported files recursively.
   - `Import URL` fetches and imports remote rule content.
   - `Import Clipboard` imports text currently in your clipboard.
+  - Drag-and-drop a rule file onto the Rules page import drop zone to trigger file scan/import preview.
 
 Import behavior:
 
 - Duplicate content is skipped automatically.
 - Name collisions default to safe rename behavior.
 - The AI import dialog supports conflict policies: `rename`, `skip`, or `replace`.
+- Import dialog options can override scope (`source`, `global`, `local`) and adapter selection.
 - For same-name rules from different tools, RuleWeaver applies tool suffix naming (example: `quality-cline`, `quality-antigravity`).
 - Imports are idempotent and can be run repeatedly.
+
+Repository setup:
+
+- In `Settings -> Repository Roots`, add all local repositories you want RuleWeaver to use for local artifact targeting and import discovery.
+- Local rules can then select from these configured repositories instead of retyping paths.
+- Commands can optionally target selected repositories so local command-related artifacts can be associated with those repos.
+- Local skills can select configured repositories as their base directory path.
+
+Troubleshooting:
+
+- URL import only allows `http`/`https` and blocks localhost/private IP ranges for safety.
+- If drag-and-drop cannot detect file path on your platform, use `Import File` instead.
 
 Rule storage modes:
 

@@ -20,7 +20,10 @@ use crate::models::{
 };
 use std::time::Instant;
 
-use super::{command_file_targets, validate_command_arguments, validate_command_input};
+use super::{
+    command_file_targets, command_file_targets_for_root, register_local_paths,
+    validate_command_arguments, validate_command_input, validate_path,
+};
 
 #[tauri::command]
 pub fn get_all_commands(db: State<'_, Arc<Database>>) -> Result<Vec<Command>> {
@@ -40,7 +43,11 @@ pub async fn create_command(
 ) -> Result<Command> {
     validate_command_input(&input.name, &input.script)?;
     validate_command_arguments(&input.arguments)?;
+    for path in &input.target_paths {
+        validate_path(path)?;
+    }
     let created = db.create_command(input)?;
+    register_local_paths(&db, &created.target_paths)?;
     mcp.refresh_commands(&db).await?;
     Ok(created)
 }
@@ -68,7 +75,14 @@ pub async fn update_command(
         validate_command_arguments(args)?;
     }
 
+    if let Some(paths) = &input.target_paths {
+        for path in paths {
+            validate_path(path)?;
+        }
+    }
+
     let updated = db.update_command(&id, input)?;
+    register_local_paths(&db, &updated.target_paths)?;
     mcp.refresh_commands(&db).await?;
     Ok(updated)
 }
@@ -203,6 +217,31 @@ pub fn sync_commands(db: State<'_, Arc<Database>>) -> Result<SyncResult> {
         let path = PathBuf::from(&path_str);
         let content = adapter.format(&commands);
         pending_writes.push((path, adapter.name().to_string(), content));
+    }
+
+    let mut local_roots = std::collections::HashSet::new();
+    for command in &commands {
+        for path in &command.target_paths {
+            local_roots.insert(path.clone());
+        }
+    }
+
+    for local_root in local_roots {
+        let local_commands = commands
+            .iter()
+            .filter(|c| c.target_paths.iter().any(|p| p == &local_root))
+            .cloned()
+            .collect::<Vec<_>>();
+
+        if local_commands.is_empty() {
+            continue;
+        }
+
+        for (path_str, adapter) in command_file_targets_for_root(&PathBuf::from(&local_root)) {
+            let path = PathBuf::from(&path_str);
+            let content = adapter.format(&local_commands);
+            pending_writes.push((path, format!("{} (local)", adapter.name()), content));
+        }
     }
 
     // 2. Execute all writes

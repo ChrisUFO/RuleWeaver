@@ -98,6 +98,9 @@ export function Settings() {
   const [mcpAutoStart, setMcpAutoStart] = useState(false);
   const [minimizeToTray, setMinimizeToTray] = useState(true);
   const [mcpLogs, setMcpLogs] = useState<string[]>([]);
+  const [repositoryRoots, setRepositoryRoots] = useState<string[]>([]);
+  const [repoPathsDirty, setRepoPathsDirty] = useState(false);
+  const [isSavingRepos, setIsSavingRepos] = useState(false);
   const { addToast } = useToast();
 
   useEffect(() => {
@@ -117,6 +120,7 @@ export function Settings() {
           minimizeToTraySetting,
           mcpLogsInitial,
           autoStartEnabled,
+          localRulePathsSetting,
         ] = await Promise.all([
           api.app.getAppDataPath(),
           api.app.getVersion(),
@@ -130,6 +134,7 @@ export function Settings() {
           api.settings.get("minimize_to_tray"),
           api.mcp.getLogs(20),
           isEnabled(),
+          api.settings.get("local_rule_paths"),
         ]);
         setAppDataPath(path);
         // Try to get version from version.json first, fallback to API
@@ -153,6 +158,18 @@ export function Settings() {
         setMinimizeToTray(minimizeToTraySetting !== "false");
         setMcpLogs(mcpLogsInitial);
         setLaunchOnStartup(autoStartEnabled);
+
+        if (localRulePathsSetting) {
+          try {
+            const parsed = JSON.parse(localRulePathsSetting) as string[];
+            setRepositoryRoots(Array.isArray(parsed) ? parsed : []);
+          } catch {
+            console.error("Failed to parse local_rule_paths");
+            setRepositoryRoots([]);
+          }
+        } else {
+          setRepositoryRoots([]);
+        }
 
         if (settingsJson) {
           try {
@@ -212,6 +229,51 @@ export function Settings() {
       });
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const addRepositoryRoot = async () => {
+    try {
+      const selected = await open({ directory: true, multiple: false });
+      if (!selected || Array.isArray(selected)) return;
+
+      setRepositoryRoots((prev) => {
+        if (prev.includes(selected)) return prev;
+        setRepoPathsDirty(true);
+        return [...prev, selected];
+      });
+    } catch {
+      addToast({
+        title: "Add Repository Failed",
+        description: "Could not select repository path",
+        variant: "error",
+      });
+    }
+  };
+
+  const removeRepositoryRoot = (path: string) => {
+    setRepositoryRoots((prev) => prev.filter((p) => p !== path));
+    setRepoPathsDirty(true);
+  };
+
+  const saveRepositoryRoots = async () => {
+    setIsSavingRepos(true);
+    try {
+      await api.settings.set("local_rule_paths", JSON.stringify(repositoryRoots));
+      setRepoPathsDirty(false);
+      addToast({
+        title: "Repositories Saved",
+        description: "Repository roots updated for local artifact discovery",
+        variant: "success",
+      });
+    } catch (error) {
+      addToast({
+        title: "Save Failed",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "error",
+      });
+    } finally {
+      setIsSavingRepos(false);
     }
   };
 
@@ -612,6 +674,51 @@ export function Settings() {
               <FolderOpen className="h-4 w-4" aria-hidden="true" />
             </Button>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card className="glass-card premium-shadow border-none overflow-hidden">
+        <CardHeader className="bg-white/5 pb-4">
+          <CardTitle className="text-sm font-semibold tracking-wide uppercase text-muted-foreground/80">
+            Repository Roots
+          </CardTitle>
+          <CardDescription>
+            Configure repositories once, then select them across local artifacts and import
+            workflows.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3 pt-6">
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={addRepositoryRoot}>
+              <FolderOpen className="mr-2 h-4 w-4" /> Add Repository
+            </Button>
+            <Button
+              onClick={saveRepositoryRoots}
+              disabled={!repoPathsDirty || isSavingRepos || isLoading}
+            >
+              {isSavingRepos ? "Saving..." : "Save Repositories"}
+            </Button>
+          </div>
+
+          {repositoryRoots.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No repository roots configured yet.</p>
+          ) : (
+            <div className="space-y-2">
+              {repositoryRoots.map((path) => (
+                <div key={path} className="flex items-center justify-between rounded-md border p-2">
+                  <span className="text-xs break-all">{path}</span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => removeRepositoryRoot(path)}
+                    aria-label={`Remove repository ${path}`}
+                  >
+                    Remove
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
 

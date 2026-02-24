@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { api } from "@/lib/tauri";
 import { useToast } from "@/components/ui/toast";
 import { CommandsListSkeleton } from "@/components/ui/skeleton";
@@ -59,6 +60,8 @@ export function Commands() {
   const [availableAdapters, setAvailableAdapters] = useState<
     { name: string; supports_argument_substitution: boolean }[]
   >([]);
+  const [availableRepos, setAvailableRepos] = useState<string[]>([]);
+  const [targetPaths, setTargetPaths] = useState<string[]>([]);
   const { addToast } = useToast();
 
   const selected = useMemo(
@@ -95,9 +98,23 @@ export function Commands() {
     }
   };
 
+  const loadRepositoryRoots = async () => {
+    try {
+      const stored = await api.settings.get("local_rule_paths");
+      if (!stored) {
+        setAvailableRepos([]);
+        return;
+      }
+      const parsed = JSON.parse(stored) as string[];
+      setAvailableRepos(Array.isArray(parsed) ? parsed : []);
+    } catch {
+      setAvailableRepos([]);
+    }
+  };
+
   useEffect(() => {
     setIsLoading(true);
-    Promise.all([loadCommands(), loadHistory(), loadAvailableAdapters()])
+    Promise.all([loadCommands(), loadHistory(), loadAvailableAdapters(), loadRepositoryRoots()])
       .catch((error) => {
         addToast({
           title: "Failed to Load Commands",
@@ -118,6 +135,7 @@ export function Commands() {
       setExposeViaMcp(true);
       setGenerateSlashCommands(false);
       setSlashCommandAdapters([]);
+      setTargetPaths([]);
       return;
     }
 
@@ -127,6 +145,7 @@ export function Commands() {
     setExposeViaMcp(Boolean(selected.expose_via_mcp));
     setGenerateSlashCommands(Boolean(selected.generate_slash_commands));
     setSlashCommandAdapters(selected.slash_command_adapters ?? []);
+    setTargetPaths(selected.target_paths ?? []);
     const nextArgs: Record<string, string> = {};
     for (const arg of selected.arguments) {
       nextArgs[arg.name] = arg.default_value ?? "";
@@ -143,6 +162,7 @@ export function Commands() {
         script: "echo hello",
         arguments: [],
         expose_via_mcp: true,
+        target_paths: [],
       });
       await loadCommands();
       setSelectedId(created.id);
@@ -169,6 +189,7 @@ export function Commands() {
         expose_via_mcp: exposeViaMcp,
         generate_slash_commands: generateSlashCommands,
         slash_command_adapters: slashCommandAdapters,
+        target_paths: targetPaths,
       });
       setCommands((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
       addToast({ title: "Command Saved", description: updated.name, variant: "success" });
@@ -181,6 +202,16 @@ export function Commands() {
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const toggleTargetPath = (path: string, checked: boolean) => {
+    setTargetPaths((prev) => {
+      if (checked) {
+        if (prev.includes(path)) return prev;
+        return [...prev, path];
+      }
+      return prev.filter((p) => p !== path);
+    });
   };
 
   const handleDelete = async () => {
@@ -442,6 +473,28 @@ export function Commands() {
                   className="min-h-48 rounded-xl border border-white/5 bg-black/40 p-4 text-[13px] font-mono shadow-inner focus:outline-none focus:ring-1 focus:ring-primary/40 leading-relaxed text-primary/90 selection:bg-primary/20"
                   placeholder="echo hello"
                 />
+              </div>
+
+              <div className="grid gap-2">
+                <label className="text-sm font-medium">Target Repositories (Optional)</label>
+                {availableRepos.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    No repositories configured. Add repository roots in Settings.
+                  </p>
+                ) : (
+                  <div className="rounded-md border p-3 space-y-2">
+                    {availableRepos.map((repo) => (
+                      <label key={repo} className="flex items-center gap-2 text-sm">
+                        <Checkbox
+                          checked={targetPaths.includes(repo)}
+                          onChange={(checked) => toggleTargetPath(repo, checked)}
+                          aria-label={`Target repository ${repo}`}
+                        />
+                        <span className="truncate">{repo}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className="flex items-center justify-between rounded-xl border border-white/5 bg-white/5 p-4 transition-colors hover:bg-white/10">

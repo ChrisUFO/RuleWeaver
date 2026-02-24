@@ -21,7 +21,7 @@ pub use system_commands::*;
 
 use parking_lot::Mutex;
 use std::collections::{HashSet, VecDeque};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 use std::time::Instant;
 
@@ -257,6 +257,78 @@ pub fn register_local_rule_paths(db: &Database, rule: &Rule) -> Result<()> {
             if !roots.iter().any(|p| p == path) {
                 roots.push(path.clone());
             }
+        }
+    }
+
+    let encoded = serde_json::to_string(&roots)?;
+    db.set_setting(LOCAL_RULE_PATHS_KEY, &encoded)
+}
+
+pub fn command_file_targets_for_root(root: &Path) -> Vec<(String, Box<dyn CommandAdapter>)> {
+    vec![
+        (
+            root.join(NEW_GEMINI_DIR)
+                .join("COMMANDS.toml")
+                .to_string_lossy()
+                .to_string(),
+            Box::new(GeminiAdapter),
+        ),
+        (
+            root.join(".opencode")
+                .join("COMMANDS.md")
+                .to_string_lossy()
+                .to_string(),
+            Box::new(OpenCodeAdapter),
+        ),
+        (
+            root.join(".claude")
+                .join("COMMANDS.md")
+                .to_string_lossy()
+                .to_string(),
+            Box::new(ClaudeAdapter),
+        ),
+        (
+            root.join(NEW_KILO_DIR)
+                .join("rules")
+                .join("COMMANDS.md")
+                .to_string_lossy()
+                .to_string(),
+            Box::new(KiloAdapter),
+        ),
+        (
+            root.join(NEW_CURSOR_DIR)
+                .join("COMMANDS.md")
+                .to_string_lossy()
+                .to_string(),
+            Box::new(CursorAdapter),
+        ),
+        (
+            root.join(NEW_WINDSURF_DIR)
+                .join("rules")
+                .join("COMMANDS.md")
+                .to_string_lossy()
+                .to_string(),
+            Box::new(WindsurfAdapter),
+        ),
+        (
+            root.join(NEW_ROO_CODE_DIR)
+                .join("COMMANDS.md")
+                .to_string_lossy()
+                .to_string(),
+            Box::new(RooCodeAdapter),
+        ),
+    ]
+}
+
+pub fn register_local_paths(db: &Database, paths: &[String]) -> Result<()> {
+    let mut roots = get_local_rule_roots(db)?
+        .into_iter()
+        .map(|p| p.to_string_lossy().to_string())
+        .collect::<Vec<_>>();
+
+    for path in paths {
+        if !roots.iter().any(|p| p == path) {
+            roots.push(path.clone());
         }
     }
 

@@ -12,6 +12,7 @@ import type { Skill, SkillParameter } from "@/types/skill";
 import { Scope } from "@/types/rule";
 import { SkillSchemaEditor } from "@/components/skills/SkillSchemaEditor";
 import { TemplateBrowser } from "@/components/skills/TemplateBrowser";
+import { Select } from "@/components/ui/select";
 
 export function Skills() {
   const [skills, setSkills] = useState<Skill[]>([]);
@@ -24,6 +25,7 @@ export function Skills() {
   const [scope, setScope] = useState<Scope>("global");
   const [directoryPath, setDirectoryPath] = useState("");
   const [enabled, setEnabled] = useState(true);
+  const [availableRepos, setAvailableRepos] = useState<string[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const { addToast } = useToast();
 
@@ -46,6 +48,23 @@ export function Skills() {
       });
     });
   }, [addToast]);
+
+  useEffect(() => {
+    const loadRepositoryRoots = async () => {
+      try {
+        const stored = await api.settings.get("local_rule_paths");
+        if (!stored) {
+          setAvailableRepos([]);
+          return;
+        }
+        const parsed = JSON.parse(stored) as string[];
+        setAvailableRepos(Array.isArray(parsed) ? parsed : []);
+      } catch {
+        setAvailableRepos([]);
+      }
+    };
+    loadRepositoryRoots();
+  }, []);
 
   useEffect(() => {
     if (!selected) {
@@ -281,11 +300,29 @@ export function Skills() {
                 {scope === "local" && (
                   <div className="space-y-2 md:col-span-2">
                     <label className="text-sm font-medium">Directory Path (for local skill)</label>
+                    {availableRepos.length > 0 && (
+                      <Select
+                        value={availableRepos.includes(directoryPath) ? directoryPath : ""}
+                        onChange={(value) => {
+                          if (value) setDirectoryPath(value);
+                        }}
+                        options={[
+                          { value: "", label: "Select configured repository" },
+                          ...availableRepos.map((repo) => ({ value: repo, label: repo })),
+                        ]}
+                        aria-label="Select local repository"
+                      />
+                    )}
                     <Input
                       value={directoryPath}
                       onChange={(e) => setDirectoryPath(e.target.value)}
                       placeholder="/absolute/path/to/project/.agent/skills/my-skill"
                     />
+                    {availableRepos.length === 0 && (
+                      <p className="text-xs text-muted-foreground">
+                        No configured repositories found. Add them in Settings.
+                      </p>
+                    )}
                   </div>
                 )}
               </div>

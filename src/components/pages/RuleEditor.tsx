@@ -51,7 +51,7 @@ export function RuleEditor({ rule, onBack, isNew = false }: RuleEditorProps) {
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [previewAdapter, setPreviewAdapter] = useState<AdapterType>("gemini");
-  const [newPath, setNewPath] = useState("");
+  const [availableRepos, setAvailableRepos] = useState<string[]>([]);
   const isInitialized = useRef(false);
 
   const wordCount = getWordCount(content);
@@ -101,6 +101,23 @@ export function RuleEditor({ rule, onBack, isNew = false }: RuleEditorProps) {
       setHasUnsavedChanges(true);
     }
   }, [name, content, scope, targetPaths, enabledAdapters]);
+
+  useEffect(() => {
+    const loadRepos = async () => {
+      try {
+        const stored = await api.settings.get("local_rule_paths");
+        if (!stored) {
+          setAvailableRepos([]);
+          return;
+        }
+        const parsed = JSON.parse(stored) as string[];
+        setAvailableRepos(Array.isArray(parsed) ? parsed : []);
+      } catch {
+        setAvailableRepos([]);
+      }
+    };
+    loadRepos();
+  }, []);
 
   const handleSave = useCallback(async () => {
     if (!name.trim()) {
@@ -226,15 +243,14 @@ export function RuleEditor({ rule, onBack, isNew = false }: RuleEditorProps) {
     [previewAdapter]
   );
 
-  const addPath = () => {
-    if (newPath.trim() && !targetPaths.includes(newPath.trim())) {
-      setTargetPaths([...targetPaths, newPath.trim()]);
-      setNewPath("");
-    }
-  };
-
-  const removePath = (path: string) => {
-    setTargetPaths(targetPaths.filter((p) => p !== path));
+  const toggleTargetPath = (path: string, checked: boolean) => {
+    setTargetPaths((prev) => {
+      if (checked) {
+        if (prev.includes(path)) return prev;
+        return [...prev, path];
+      }
+      return prev.filter((p) => p !== path);
+    });
   };
 
   const generatePreview = (): string => {
@@ -444,38 +460,28 @@ export function RuleEditor({ rule, onBack, isNew = false }: RuleEditorProps) {
 
             {scope === "local" && (
               <div className="space-y-2">
-                <label className="text-sm font-medium">Target Paths</label>
-                <div className="flex gap-2">
-                  <Input
-                    placeholder="/path/to/repo"
-                    value={newPath}
-                    onChange={(e) => setNewPath(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && addPath()}
-                    aria-label="New target path"
-                  />
-                  <Button size="sm" onClick={addPath}>
-                    Add
-                  </Button>
-                </div>
-                <div className="space-y-1">
-                  {targetPaths.map((path) => (
-                    <div
-                      key={path}
-                      className="flex items-center justify-between p-2 rounded-md bg-muted text-xs"
-                    >
-                      <span className="truncate">{path}</span>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-6 w-6 p-0"
-                        onClick={() => removePath(path)}
-                        aria-label={`Remove path ${path}`}
+                <label className="text-sm font-medium">Target Repositories</label>
+                {availableRepos.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    No repositories configured. Add repository roots in Settings first.
+                  </p>
+                ) : (
+                  <div className="space-y-1">
+                    {availableRepos.map((repoPath) => (
+                      <label
+                        key={repoPath}
+                        className="flex items-center gap-2 p-2 rounded-md border text-xs"
                       >
-                        ×
-                      </Button>
-                    </div>
-                  ))}
-                </div>
+                        <input
+                          type="checkbox"
+                          checked={targetPaths.includes(repoPath)}
+                          onChange={(e) => toggleTargetPath(repoPath, e.target.checked)}
+                        />
+                        <span className="truncate">{repoPath}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 

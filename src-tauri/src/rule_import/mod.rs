@@ -511,38 +511,59 @@ fn global_tool_paths(home: &Path) -> Vec<(AdapterType, PathBuf)> {
     vec![
         (AdapterType::Gemini, home.join(".gemini").join("GEMINI.md")),
         (
+            AdapterType::Antigravity,
+            home.join(".antigravity").join("GEMINI.md"),
+        ),
+        (
+            AdapterType::Antigravity,
+            home.join(".gemini").join("antigravity").join("GEMINI.md"),
+        ),
+        (
             AdapterType::OpenCode,
             home.join(".config").join("opencode").join("AGENTS.md"),
         ),
+        (AdapterType::OpenCode, home.join(".opencode").join("AGENTS.md")),
         (AdapterType::Cline, home.join(".clinerules")),
         (
             AdapterType::ClaudeCode,
             home.join(".claude").join("CLAUDE.md"),
         ),
         (AdapterType::Codex, home.join(".codex").join("AGENTS.md")),
+        (AdapterType::Codex, home.join(".agents").join("AGENTS.md")),
         (
             AdapterType::Kilo,
             home.join(".kilocode").join("rules").join("AGENTS.md"),
         ),
+        (AdapterType::Kilo, home.join(".kilo").join("rules").join("AGENTS.md")),
         (
             AdapterType::Cursor,
             home.join(".cursor").join("COMMANDS.md"),
         ),
+        (AdapterType::Cursor, home.join(".cursorrules")),
         (
             AdapterType::Windsurf,
             home.join(".windsurf").join("rules").join("AGENTS.md"),
+        ),
+        (AdapterType::Windsurf, home.join(".windsurfrules")),
+        (
+            AdapterType::Windsurf,
+            home.join(".windsurf").join("rules").join("rules.md"),
         ),
         (
             AdapterType::RooCode,
             home.join(".roo").join("rules").join("AGENTS.md"),
         ),
         (
-            AdapterType::Cursor,
-            home.join(".cursor").join(".cursorrules"),
+            AdapterType::RooCode,
+            home.join(".roo").join("rules").join("rules.md"),
         ),
         (
-            AdapterType::Windsurf,
-            home.join(".windsurf").join("rules.md"),
+            AdapterType::RooCode,
+            home.join(".roocode").join("rules").join("AGENTS.md"),
+        ),
+        (
+            AdapterType::RooCode,
+            home.join(".roocode").join("rules").join("rules.md"),
         ),
     ]
 }
@@ -550,16 +571,25 @@ fn global_tool_paths(home: &Path) -> Vec<(AdapterType, PathBuf)> {
 fn local_tool_paths() -> Vec<(AdapterType, &'static str)> {
     vec![
         (AdapterType::Gemini, ".gemini/GEMINI.md"),
+        (AdapterType::Antigravity, ".antigravity/GEMINI.md"),
+        (AdapterType::Antigravity, ".gemini/antigravity/GEMINI.md"),
         (AdapterType::OpenCode, ".opencode/AGENTS.md"),
+        (AdapterType::OpenCode, ".config/opencode/AGENTS.md"),
         (AdapterType::Cline, ".clinerules"),
         (AdapterType::ClaudeCode, ".claude/CLAUDE.md"),
         (AdapterType::Codex, ".codex/AGENTS.md"),
+        (AdapterType::Codex, ".agents/AGENTS.md"),
         (AdapterType::Kilo, ".kilocode/rules/AGENTS.md"),
+        (AdapterType::Kilo, ".kilo/rules/AGENTS.md"),
         (AdapterType::Cursor, ".cursor/COMMANDS.md"),
-        (AdapterType::Windsurf, ".windsurf/rules/AGENTS.md"),
-        (AdapterType::RooCode, ".roo/rules/AGENTS.md"),
         (AdapterType::Cursor, ".cursorrules"),
-        (AdapterType::Windsurf, ".windsurf/rules.md"),
+        (AdapterType::Windsurf, ".windsurf/rules/AGENTS.md"),
+        (AdapterType::Windsurf, ".windsurfrules"),
+        (AdapterType::Windsurf, ".windsurf/rules/rules.md"),
+        (AdapterType::RooCode, ".roo/rules/AGENTS.md"),
+        (AdapterType::RooCode, ".roo/rules/rules.md"),
+        (AdapterType::RooCode, ".roocode/rules/AGENTS.md"),
+        (AdapterType::RooCode, ".roocode/rules/rules.md"),
     ]
 }
 
@@ -876,6 +906,8 @@ mod tests {
     use super::*;
     use crate::database::Database;
     use crate::models::CreateRuleInput;
+    use std::fs;
+    use std::path::PathBuf;
 
     #[test]
     fn unique_name_generation_is_stable() {
@@ -1190,5 +1222,31 @@ enabledAdapters:
             history[0].source_type,
             crate::models::ImportSourceType::File
         );
+    }
+
+    #[test]
+    fn scan_directory_reports_error_for_non_directory_path() {
+        let mut temp_file = std::env::temp_dir();
+        temp_file.push(format!("ruleweaver-import-test-{}.md", uuid::Uuid::new_v4()));
+        fs::write(&temp_file, "test").expect("write temp file");
+
+        let result = scan_directory_to_candidates(&temp_file, 1024);
+        assert!(!result.errors.is_empty());
+
+        let _ = fs::remove_file(temp_file);
+    }
+
+    #[test]
+    fn tool_path_matrix_includes_legacy_and_alternate_locations() {
+        let home = PathBuf::from("/home/test");
+        let global = global_tool_paths(&home)
+            .into_iter()
+            .map(|(_, p)| p.to_string_lossy().to_string())
+            .collect::<Vec<_>>();
+
+        assert!(global.iter().any(|p| p.contains(".antigravity") && p.contains("GEMINI.md")));
+        assert!(global.iter().any(|p| p.contains(".windsurfrules")));
+        assert!(global.iter().any(|p| p.contains(".roocode") && p.contains("rules.md")));
+        assert!(global.iter().any(|p| p.contains(".kilo") && p.contains("AGENTS.md")));
     }
 }

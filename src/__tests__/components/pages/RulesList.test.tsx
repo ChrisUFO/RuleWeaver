@@ -230,4 +230,55 @@ describe("RulesList import workflow", () => {
       );
     });
   });
+
+  it("sends scope and adapter overrides when selected", async () => {
+    const { api } = await import("../../../lib/tauri");
+    vi.mocked(api.ruleImport.scanAiToolCandidates).mockResolvedValue({
+      candidates: [
+        {
+          id: "cand-1",
+          sourceType: "ai_tool",
+          sourceLabel: "Cline",
+          sourcePath: "C:/tmp/.clinerules",
+          sourceTool: "cline",
+          name: "quality",
+          proposedName: "quality-cline",
+          content: "rule content",
+          scope: "global",
+          targetPaths: null,
+          enabledAdapters: ["cline"],
+          contentHash: "hash",
+          fileSize: 12,
+        },
+      ],
+      errors: [],
+    });
+    vi.mocked(api.ruleImport.importAiToolRules).mockResolvedValue({
+      imported: [],
+      skipped: [],
+      conflicts: [],
+      errors: [],
+    });
+
+    renderWithProviders(<RulesList onSelectRule={vi.fn()} onCreateRule={vi.fn()} />);
+
+    await userEvent.click(screen.getByRole("button", { name: /import ai/i }));
+    await waitFor(() => expect(screen.getByText("quality-cline")).toBeInTheDocument());
+
+    await userEvent.selectOptions(screen.getByLabelText(/scope override/i), "local");
+    await userEvent.click(screen.getByLabelText(/enable adapter override/i));
+    await userEvent.click(screen.getByLabelText(/use adapter gemini/i));
+
+    await userEvent.click(screen.getByRole("button", { name: /import selected/i }));
+
+    await waitFor(() => {
+      expect(api.ruleImport.importAiToolRules).toHaveBeenCalledWith(
+        expect.objectContaining({
+          defaultScope: "local",
+          defaultAdapters: ["gemini"],
+          selectedCandidateIds: ["cand-1"],
+        })
+      );
+    });
+  });
 });
