@@ -76,7 +76,17 @@ pub async fn scan_url_to_candidates(url: &str, max_size: u64) -> Result<ImportSc
     Ok(scan)
 }
 
-pub fn scan_clipboard_to_candidates(content: &str, name: Option<&str>) -> ImportScanResult {
+pub fn scan_clipboard_to_candidates(
+    content: &str,
+    name: Option<&str>,
+    max_size: u64,
+) -> Result<ImportScanResult> {
+    if content.len() as u64 > max_size {
+        return Err(AppError::InvalidInput {
+            message: format!("Clipboard content exceeds max size ({} bytes)", max_size),
+        });
+    }
+
     let mut scan = ImportScanResult::default();
     let inferred = name.unwrap_or("clipboard-import");
     scan.candidates.push(candidate_from_text(
@@ -89,7 +99,7 @@ pub fn scan_clipboard_to_candidates(content: &str, name: Option<&str>) -> Import
         Scope::Global,
         None,
     ));
-    scan
+    Ok(scan)
 }
 
 pub fn scan_file_to_candidates(path: &Path, max_size: u64) -> ImportScanResult {
@@ -1046,5 +1056,12 @@ enabledAdapters:
         assert_eq!(second_result.imported.len(), 1);
         assert_eq!(second_result.imported[0].id, imported_id);
         assert_eq!(second_result.imported[0].content, "updated content");
+    }
+
+    #[test]
+    fn scan_clipboard_respects_max_size_limit() {
+        let oversized = "a".repeat(11);
+        let result = scan_clipboard_to_candidates(&oversized, Some("clip"), 10);
+        assert!(result.is_err());
     }
 }

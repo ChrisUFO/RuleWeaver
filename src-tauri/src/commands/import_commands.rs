@@ -105,13 +105,20 @@ pub fn import_rule_from_clipboard(
     db: State<'_, Arc<Database>>,
 ) -> Result<ImportExecutionResult> {
     let opts = options.unwrap_or_default();
-    let scan = rule_import::scan_clipboard_to_candidates(&content, name.as_deref());
+    let max_size = rule_import::resolve_max_size(&opts);
+    let scan = rule_import::scan_clipboard_to_candidates(&content, name.as_deref(), max_size)?;
     rule_import::execute_import(&db, scan, opts)
 }
 
 #[tauri::command]
-pub fn scan_rule_clipboard_import(content: String, name: Option<String>) -> ImportScanResult {
-    rule_import::scan_clipboard_to_candidates(&content, name.as_deref())
+pub fn scan_rule_clipboard_import(
+    content: String,
+    name: Option<String>,
+    options: Option<ImportExecutionOptions>,
+) -> Result<ImportScanResult> {
+    let opts = options.unwrap_or_default();
+    let max_size = rule_import::resolve_max_size(&opts);
+    rule_import::scan_clipboard_to_candidates(&content, name.as_deref(), max_size)
 }
 
 #[tauri::command]

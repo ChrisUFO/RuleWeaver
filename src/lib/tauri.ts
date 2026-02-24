@@ -42,8 +42,8 @@ export const api = {
       invoke<ImportScanResult>("scan_rule_directory_import", { path, options }),
     scanFromUrl: (url: string, options?: ImportExecutionOptions) =>
       invoke<ImportScanResult>("scan_rule_url_import", { url, options }),
-    scanFromClipboard: (content: string, name?: string) =>
-      invoke<ImportScanResult>("scan_rule_clipboard_import", { content, name }),
+    scanFromClipboard: (content: string, name?: string, options?: ImportExecutionOptions) =>
+      invoke<ImportScanResult>("scan_rule_clipboard_import", { content, name, options }),
     importAiToolRules: (options?: ImportExecutionOptions) =>
       invoke<ImportExecutionResult>("import_ai_tool_rules", { options }),
     importFromFile: (path: string, options?: ImportExecutionOptions) =>
