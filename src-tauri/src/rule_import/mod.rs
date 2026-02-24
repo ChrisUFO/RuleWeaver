@@ -30,9 +30,8 @@ struct JsonRulePayload {
     name: Option<String>,
     content: Option<String>,
     scope: Option<String>,
-    #[serde(rename = "targetPaths")]
-    #[allow(dead_code)]
-    target_paths: Option<Vec<String>>,
+    // Security: target_paths is intentionally omitted to prevent arbitrary file writes.
+    // Untrusted payloads cannot specify their own target paths.
     #[serde(rename = "enabledAdapters")]
     enabled_adapters: Option<Vec<String>>,
 }
@@ -714,7 +713,17 @@ fn extract_rule_payload(
 ) -> (String, String, Scope, Option<Vec<String>>, Vec<AdapterType>) {
     let trimmed = content.trim().to_string();
 
-    if let Ok(payload) = serde_json::from_str::<JsonRulePayload>(&trimmed) {
+    let try_parse = |text: &str| -> Option<JsonRulePayload> {
+        if let Ok(payload) = serde_json::from_str::<JsonRulePayload>(text) {
+            return Some(payload);
+        }
+        if let Ok(payload) = serde_yaml::from_str::<JsonRulePayload>(text) {
+            return Some(payload);
+        }
+        None
+    };
+
+    if let Some(payload) = try_parse(&trimmed) {
         let name = payload
             .name
             .filter(|n| !n.trim().is_empty())
@@ -734,48 +743,11 @@ fn extract_rule_payload(
             .filter_map(|a| AdapterType::from_str(a))
             .collect::<Vec<_>>();
         
-        // Security: Ignore target_paths from payload to prevent arbitrary file writes.
-        // Only use fallback_targets from trusted context (e.g. directory scan).
         return (
             sanitize_rule_name(&name),
             body,
             scope,
-            fallback_targets,
-            if adapters.is_empty() {
-                default_adapters(source_tool)
-            } else {
-                adapters
-            },
-        );
-    }
-
-    if let Ok(payload) = serde_yaml::from_str::<JsonRulePayload>(&trimmed) {
-        let name = payload
-            .name
-            .filter(|n| !n.trim().is_empty())
-            .unwrap_or_else(|| fallback_name.to_string());
-        let body = payload
-            .content
-            .filter(|c| !c.trim().is_empty())
-            .unwrap_or(trimmed.clone());
-        let scope = payload
-            .scope
-            .and_then(|s| Scope::from_str(&s))
-            .unwrap_or(fallback_scope);
-        let adapters = payload
-            .enabled_adapters
-            .unwrap_or_default()
-            .iter()
-            .filter_map(|a| AdapterType::from_str(a))
-            .collect::<Vec<_>>();
-            
-        // Security: Ignore target_paths from payload to prevent arbitrary file writes.
-        // Only use fallback_targets from trusted context.
-        return (
-            sanitize_rule_name(&name),
-            body,
-            scope,
-            fallback_targets,
+            fallback_targets, // Always use fallback targets (safe), never payload targets
             if adapters.is_empty() {
                 default_adapters(source_tool)
             } else {

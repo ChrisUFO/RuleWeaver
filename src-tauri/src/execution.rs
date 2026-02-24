@@ -60,30 +60,34 @@ pub fn validate_enum_argument(
 }
 
 pub fn sanitize_argument_value(value: &str) -> Result<String> {
-    if value.len() > MAX_ARG_LENGTH {
-        return Err(AppError::InvalidInput {
-            message: format!("Argument too long (max {} chars)", MAX_ARG_LENGTH),
-        });
-    }
-
     if value.contains('\n') || value.contains('\r') || value.contains('\t') {
         return Err(AppError::InvalidInput {
             message: "Argument contains forbidden control characters".to_string(),
         });
     }
 
-    #[cfg(target_os = "windows")]
-    {
-        Ok(escape_cmd_argument(value))
+    let sanitized = {
+        #[cfg(target_os = "windows")]
+        {
+            escape_cmd_argument(value)
+        }
+
+        #[cfg(not(target_os = "windows"))]
+        {
+            // On Unix, environment variables are treated as data, not code, 
+            // so injection via env vars is not possible unless the script uses `eval`.
+            // We pass the value as-is.
+            value.to_string()
+        }
+    };
+
+    if sanitized.len() > MAX_ARG_LENGTH {
+        return Err(AppError::InvalidInput {
+            message: format!("Argument too long (max {} chars)", MAX_ARG_LENGTH),
+        });
     }
 
-    #[cfg(not(target_os = "windows"))]
-    {
-        // On Unix, environment variables are treated as data, not code, 
-        // so injection via env vars is not possible unless the script uses `eval`.
-        // We pass the value as-is.
-        Ok(value.to_string())
-    }
+    Ok(sanitized)
 }
 
 #[cfg(target_os = "windows")]

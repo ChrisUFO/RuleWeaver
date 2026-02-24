@@ -27,10 +27,6 @@ pub mod limits {
     pub const MCP_SERVER_RETRY_COUNT: u32 = 5;
 }
 
-pub mod security {
-    // regex dfa size limit removed
-}
-
 pub mod skills {
     pub const SKILL_PARAM_PREFIX: &str = "SKILL_PARAM_";
     pub const SKILL_SECRET_PREFIX: &str = "SKILL_SECRET_";
