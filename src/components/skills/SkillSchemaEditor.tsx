@@ -17,19 +17,27 @@ export function SkillSchemaEditor({
       {
         name: "",
         description: "",
-        param_type: SkillParameterType.String,
+        paramType: SkillParameterType.String,
         required: true,
       },
     ]);
   };
 
   const updateParam = (index: number, updates: Partial<SkillParameter>) => {
+    if (index < 0 || index >= schema.length) {
+      console.error("Invalid parameter index", { index, schemaLength: schema.length });
+      return;
+    }
     const next = [...schema];
     next[index] = { ...next[index], ...updates };
     onChange(next);
   };
 
   const removeParam = (index: number) => {
+    if (index < 0 || index >= schema.length) {
+      console.error("Invalid parameter index for removal", { index, schemaLength: schema.length });
+      return;
+    }
     onChange(schema.filter((_, i) => i !== index));
   };
 
@@ -65,9 +73,9 @@ export function SkillSchemaEditor({
                     <label className="text-xs font-medium">Type</label>
                     <select
                       className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-                      value={param.param_type}
+                      value={param.paramType}
                       onChange={(e) =>
-                        updateParam(i, { param_type: e.target.value as SkillParameterType })
+                        updateParam(i, { paramType: e.target.value as SkillParameterType })
                       }
                     >
                       {Object.values(SkillParameterType).map((t) => (
@@ -86,18 +94,18 @@ export function SkillSchemaEditor({
                     />
                   </div>
 
-                  {param.param_type === SkillParameterType.Enum && (
+                  {param.paramType === SkillParameterType.Enum && (
                     <div className="sm:col-span-2 space-y-1">
                       <label className="text-xs font-medium">Enum Values (comma separated)</label>
                       <Input
                         placeholder="Option1, Option2, Option3"
-                        value={param.enum_values?.join(", ") ?? ""}
+                        value={param.enumValues?.join(", ") ?? ""}
                         onChange={(e) => {
                           const vals = e.target.value
                             .split(",")
                             .map((s) => s.trim())
                             .filter(Boolean);
-                          updateParam(i, { enum_values: vals.length > 0 ? vals : null });
+                          updateParam(i, { enumValues: vals.length > 0 ? vals : null });
                         }}
                       />
                     </div>
@@ -107,8 +115,8 @@ export function SkillSchemaEditor({
                     <label className="text-xs font-medium">Default (optional)</label>
                     <Input
                       placeholder="Leave blank for no default"
-                      value={param.default_value ?? ""}
-                      onChange={(e) => updateParam(i, { default_value: e.target.value || null })}
+                      value={param.defaultValue ?? ""}
+                      onChange={(e) => updateParam(i, { defaultValue: e.target.value || null })}
                     />
                   </div>
                 </div>

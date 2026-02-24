@@ -1,26 +1,17 @@
-import { useEffect, useState, useCallback } from "react";
 import {
-  FolderOpen,
-  ExternalLink,
-  Info,
-  RotateCcw,
   Save,
-  ShieldCheck,
-  Server,
-  RefreshCw,
   Download,
   Upload,
-  ShieldAlert,
+  ExternalLink,
+  Info,
   Zap,
+  ShieldAlert,
+  RefreshCw,
 } from "lucide-react";
-import { save, open } from "@tauri-apps/plugin-dialog";
-import { check, type Update } from "@tauri-apps/plugin-updater";
-import { enable, disable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
@@ -29,636 +20,50 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { api } from "@/lib/tauri";
-import { cn } from "@/lib/utils";
 import { useToast } from "@/components/ui/toast";
-import { useRepositoryRoots } from "@/hooks/useRepositoryRoots";
-import { ADAPTERS, type AdapterType, type Rule } from "@/types/rule";
-import type { CommandModel } from "@/types/command";
-import type { Skill } from "@/types/skill";
-
-const ADAPTER_SETTINGS_KEY = "adapter_settings";
-
-interface AdapterSettings {
-  [key: string]: boolean;
-}
+import { useSettingsState } from "@/hooks/useSettingsState";
+import { McpSettingsCard } from "@/components/settings/McpSettingsCard";
+import { StorageSettingsCard } from "@/components/settings/StorageSettingsCard";
+import { AdapterSettingsCard } from "@/components/settings/AdapterSettingsCard";
+import { RepositorySettingsCard } from "@/components/settings/RepositorySettingsCard";
 
 export function Settings() {
-  const [appDataPath, setAppDataPath] = useState<string>("");
-  const [appVersion, setAppVersion] = useState<string>("");
-  const [adapterSettings, setAdapterSettings] = useState<AdapterSettings>(() => {
-    const initial: AdapterSettings = {};
-    ADAPTERS.forEach((a) => {
-      initial[a.id] = a.enabled;
-    });
-    return initial;
-  });
-  const [hasChanges, setHasChanges] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isExporting, setIsExporting] = useState(false);
-  const [isImporting, setIsImporting] = useState(false);
-  const [isCheckingUpdates, setIsCheckingUpdates] = useState(false);
-  const [updateData, setUpdateData] = useState<Update | null>(null);
-  const [isUpdateDialogOpen, setIsUpdateDialogOpen] = useState(false);
-  const [isUpdating, setIsUpdating] = useState(false);
-
-  const [importPreview, setImportPreview] = useState<{
-    path: string;
-    rules: Rule[];
-    commands: CommandModel[];
-    skills: Skill[];
-  } | null>(null);
-  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
-  const [importMode, setImportMode] = useState<"overwrite" | "skip">("overwrite");
-
-  const [launchOnStartup, setLaunchOnStartup] = useState(false);
-  const [storageMode, setStorageMode] = useState<"sqlite" | "file">("sqlite");
-  const [storageInfo, setStorageInfo] = useState<Record<string, string> | null>(null);
-  const [isMigratingStorage, setIsMigratingStorage] = useState(false);
-  const [backupPath, setBackupPath] = useState<string>("");
-  const [migrationProgress, setMigrationProgress] = useState<{
-    total: number;
-    migrated: number;
-    current_rule?: string;
-    status: "NotStarted" | "InProgress" | "Completed" | "Failed" | "RolledBack";
-  } | null>(null);
-  const [isRollingBack, setIsRollingBack] = useState(false);
-  const [isVerifyingMigration, setIsVerifyingMigration] = useState(false);
-  const [mcpStatus, setMcpStatus] = useState<{
-    running: boolean;
-    port: number;
-    uptime_seconds: number;
-  } | null>(null);
-  const [mcpInstructions, setMcpInstructions] = useState<{
-    claude_code_json: string;
-    opencode_json: string;
-    standalone_command: string;
-  } | null>(null);
-  const [isMcpLoading, setIsMcpLoading] = useState(false);
-  const [mcpAutoStart, setMcpAutoStart] = useState(false);
-  const [minimizeToTray, setMinimizeToTray] = useState(true);
-  const [mcpLogs, setMcpLogs] = useState<string[]>([]);
-  const {
-    roots: repositoryRoots,
-    setRoots: setRepositoryRoots,
-    refresh: refreshRepositoryRoots,
-    save: saveRepositoryRootsSetting,
-  } = useRepositoryRoots(false);
-  const [repoPathsDirty, setRepoPathsDirty] = useState(false);
-  const [isSavingRepos, setIsSavingRepos] = useState(false);
   const { addToast } = useToast();
-
-  useEffect(() => {
-    const loadData = async () => {
-      setIsLoading(true);
-      try {
-        const [
-          path,
-          version,
-          settingsJson,
-          mode,
-          info,
-          savedBackupPath,
-          progress,
-          mcpStatusRes,
-          mcpAutoStartSetting,
-          minimizeToTraySetting,
-          mcpLogsInitial,
-          autoStartEnabled,
-        ] = await Promise.all([
-          api.app.getAppDataPath(),
-          api.app.getVersion(),
-          api.settings.get(ADAPTER_SETTINGS_KEY),
-          api.storage.getMode(),
-          api.storage.getInfo(),
-          api.settings.get("file_storage_backup_path"),
-          api.storage.getMigrationProgress(),
-          api.mcp.getStatus(),
-          api.settings.get("mcp_auto_start"),
-          api.settings.get("minimize_to_tray"),
-          api.mcp.getLogs(20),
-          isEnabled(),
-        ]);
-        setAppDataPath(path);
-        // Try to get version from version.json first, fallback to API
-        try {
-          const versionResponse = await fetch("/version.json");
-          if (versionResponse.ok) {
-            const versionData = await versionResponse.json();
-            setAppVersion(versionData.version || version);
-          } else {
-            setAppVersion(version);
-          }
-        } catch {
-          setAppVersion(version);
-        }
-        setStorageMode(mode === "file" ? "file" : "sqlite");
-        setStorageInfo(info);
-        setBackupPath(savedBackupPath ?? "");
-        setMigrationProgress(progress);
-        setMcpStatus(mcpStatusRes);
-        setMcpAutoStart(mcpAutoStartSetting === "true");
-        setMinimizeToTray(minimizeToTraySetting !== "false");
-        setMcpLogs(mcpLogsInitial);
-        setLaunchOnStartup(autoStartEnabled);
-        await refreshRepositoryRoots();
-
-        if (settingsJson) {
-          try {
-            const savedSettings = JSON.parse(settingsJson) as AdapterSettings;
-            setAdapterSettings((prev) => ({ ...prev, ...savedSettings }));
-          } catch {
-            console.error("Failed to parse adapter settings");
-          }
-        }
-      } catch (error) {
-        console.error("Failed to load settings:", error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    loadData();
-  }, [refreshRepositoryRoots]);
-
-  const handleOpenAppData = async () => {
-    try {
-      await api.app.openInExplorer(appDataPath);
-    } catch {
-      addToast({
-        title: "Error",
-        description: "Could not open folder",
-        variant: "error",
-      });
-    }
-  };
-
-  const toggleAdapter = useCallback((adapterId: AdapterType) => {
-    setAdapterSettings((prev) => {
-      const newSettings = {
-        ...prev,
-        [adapterId]: !prev[adapterId],
-      };
-      setHasChanges(true);
-      return newSettings;
-    });
-  }, []);
-
-  const saveSettings = async () => {
-    setIsSaving(true);
-    try {
-      await api.settings.set(ADAPTER_SETTINGS_KEY, JSON.stringify(adapterSettings));
-      setHasChanges(false);
-      addToast({
-        title: "Settings Saved",
-        description: "Adapter settings have been updated",
-        variant: "success",
-      });
-    } catch (error) {
-      addToast({
-        title: "Save Failed",
-        description: error instanceof Error ? error.message : "Unknown error",
-        variant: "error",
-      });
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const addRepositoryRoot = async () => {
-    try {
-      const selected = await open({ directory: true, multiple: false });
-      if (!selected || Array.isArray(selected)) return;
-
-      setRepositoryRoots((prev) => {
-        if (prev.includes(selected)) return prev;
-        setRepoPathsDirty(true);
-        return [...prev, selected];
-      });
-    } catch {
-      addToast({
-        title: "Add Repository Failed",
-        description: "Could not select repository path",
-        variant: "error",
-      });
-    }
-  };
-
-  const removeRepositoryRoot = async (path: string) => {
-    try {
-      const [rules, commands, skills] = await Promise.all([
-        api.rules.getAll(),
-        api.commands.getAll(),
-        api.skills.getAll(),
-      ]);
-
-      const usedByRule = rules.some((rule) => rule.targetPaths?.some((p) => p === path));
-      const usedByCommand = commands.some((command) =>
-        command.target_paths?.some((p) => p === path)
-      );
-      const usedBySkill = skills.some(
-        (skill) =>
-          skill.scope === "local" && skill.directory_path && skill.directory_path.startsWith(path)
-      );
-
-      if (usedByRule || usedByCommand || usedBySkill) {
-        addToast({
-          title: "Repository In Use",
-          description:
-            "Cannot remove this repository root while rules, commands, or skills still reference it.",
-          variant: "error",
-        });
-        return;
-      }
-
-      setRepositoryRoots((prev) => prev.filter((p) => p !== path));
-      setRepoPathsDirty(true);
-    } catch (error) {
-      addToast({
-        title: "Validation Failed",
-        description: error instanceof Error ? error.message : "Could not validate repository usage",
-        variant: "error",
-      });
-    }
-  };
-
-  const saveRepositoryRoots = async () => {
-    setIsSavingRepos(true);
-    try {
-      await saveRepositoryRootsSetting(repositoryRoots);
-      setRepoPathsDirty(false);
-      addToast({
-        title: "Repositories Saved",
-        description: "Repository roots updated for local artifact discovery",
-        variant: "success",
-      });
-    } catch (error) {
-      addToast({
-        title: "Save Failed",
-        description: error instanceof Error ? error.message : "Unknown error",
-        variant: "error",
-      });
-    } finally {
-      setIsSavingRepos(false);
-    }
-  };
-
-  const migrateToFileStorage = async () => {
-    setIsMigratingStorage(true);
-    let poll: ReturnType<typeof setInterval> | null = null;
-    try {
-      poll = setInterval(async () => {
-        try {
-          const progress = await api.storage.getMigrationProgress();
-          setMigrationProgress(progress);
-        } catch {
-          // no-op during migration polling
-        }
-      }, 500);
-
-      const result = await api.storage.migrateToFileStorage();
-      clearInterval(poll);
-      poll = null;
-
-      if (!result.success) {
-        throw new Error(
-          result.errors[0]?.error ?? "Migration completed with errors. Check logs for details."
-        );
-      }
-
-      setBackupPath(result.backup_path ?? "");
-
-      const [mode, info] = await Promise.all([api.storage.getMode(), api.storage.getInfo()]);
-      setStorageMode(mode === "file" ? "file" : "sqlite");
-      setStorageInfo(info);
-      setMigrationProgress(await api.storage.getMigrationProgress());
-
-      addToast({
-        title: "Migration Complete",
-        description: `Migrated ${result.rules_migrated} rules to file storage.`,
-        variant: "success",
-      });
-    } catch (error) {
-      addToast({
-        title: "Migration Failed",
-        description: error instanceof Error ? error.message : "Unknown error",
-        variant: "error",
-      });
-    } finally {
-      if (poll) {
-        clearInterval(poll);
-      }
-      setIsMigratingStorage(false);
-    }
-  };
-
-  const rollbackMigration = async () => {
-    if (!backupPath) {
-      addToast({
-        title: "Rollback Unavailable",
-        description: "No backup path available for rollback.",
-        variant: "error",
-      });
-      return;
-    }
-
-    setIsRollingBack(true);
-    try {
-      await api.storage.rollbackMigration(backupPath);
-      setStorageMode("sqlite");
-      setMigrationProgress(await api.storage.getMigrationProgress());
-      addToast({
-        title: "Rollback Complete",
-        description: "Database backup restored and file storage disabled.",
-        variant: "success",
-      });
-    } catch (error) {
-      addToast({
-        title: "Rollback Failed",
-        description: error instanceof Error ? error.message : "Unknown error",
-        variant: "error",
-      });
-    } finally {
-      setIsRollingBack(false);
-    }
-  };
-
-  const verifyMigration = async () => {
-    setIsVerifyingMigration(true);
-    try {
-      const result = await api.storage.verifyMigration();
-      if (result.is_valid) {
-        addToast({
-          title: "Migration Verified",
-          description: `Verified ${result.file_rule_count} file rules match ${result.db_rule_count} database rules.`,
-          variant: "success",
-        });
-      } else {
-        addToast({
-          title: "Verification Failed",
-          description: `${result.missing_rules.length} missing, ${result.mismatched_rules.length} mismatched, ${result.load_errors} load errors.`,
-          variant: "error",
-        });
-      }
-    } catch (error) {
-      addToast({
-        title: "Verification Error",
-        description: error instanceof Error ? error.message : "Unknown error",
-        variant: "error",
-      });
-    } finally {
-      setIsVerifyingMigration(false);
-    }
-  };
-
-  const refreshMcpStatus = async () => {
-    try {
-      const [status, logs] = await Promise.all([api.mcp.getStatus(), api.mcp.getLogs(20)]);
-      setMcpStatus(status);
-      setMcpLogs(logs);
-    } catch (error) {
-      addToast({
-        title: "MCP Status Error",
-        description: error instanceof Error ? error.message : "Unknown error",
-        variant: "error",
-      });
-    }
-  };
-
-  const startMcp = async () => {
-    setIsMcpLoading(true);
-    try {
-      await api.mcp.start();
-      const [status, instructions] = await Promise.all([
-        api.mcp.getStatus(),
-        api.mcp.getInstructions(),
-      ]);
-      setMcpStatus(status);
-      setMcpInstructions(instructions);
-      setMcpLogs(await api.mcp.getLogs(20));
-      addToast({
-        title: "MCP Started",
-        description: `Server running on port ${status.port}`,
-        variant: "success",
-      });
-    } catch (error) {
-      addToast({
-        title: "MCP Start Failed",
-        description: error instanceof Error ? error.message : "Unknown error",
-        variant: "error",
-      });
-    } finally {
-      setIsMcpLoading(false);
-    }
-  };
-
-  const stopMcp = async () => {
-    setIsMcpLoading(true);
-    try {
-      await api.mcp.stop();
-      await refreshMcpStatus();
-      addToast({
-        title: "MCP Stopped",
-        description: "Server has been stopped",
-        variant: "success",
-      });
-    } catch (error) {
-      addToast({
-        title: "MCP Stop Failed",
-        description: error instanceof Error ? error.message : "Unknown error",
-        variant: "error",
-      });
-    } finally {
-      setIsMcpLoading(false);
-    }
-  };
-
-  const toggleMcpAutoStart = async (enabled: boolean) => {
-    setMcpAutoStart(enabled);
-    try {
-      await api.settings.set("mcp_auto_start", enabled ? "true" : "false");
-      addToast({
-        title: "MCP Setting Saved",
-        description: enabled ? "MCP will auto-start on app launch" : "MCP auto-start disabled",
-        variant: "success",
-      });
-    } catch (error) {
-      setMcpAutoStart(!enabled);
-      addToast({
-        title: "Setting Failed",
-        description: error instanceof Error ? error.message : "Unknown error",
-        variant: "error",
-      });
-    }
-  };
-
-  const toggleMinimizeToTray = async (enabled: boolean) => {
-    setMinimizeToTray(enabled);
-    try {
-      await api.settings.set("minimize_to_tray", enabled ? "true" : "false");
-      addToast({
-        title: "Window Behavior Updated",
-        description: enabled
-          ? "Closing the window will hide RuleWeaver to tray"
-          : "Closing the window will exit RuleWeaver",
-        variant: "success",
-      });
-    } catch (error) {
-      setMinimizeToTray(!enabled);
-      addToast({
-        title: "Setting Failed",
-        description: error instanceof Error ? error.message : "Unknown error",
-        variant: "error",
-      });
-    }
-  };
-
-  const toggleLaunchOnStartup = async (enabled: boolean) => {
-    setLaunchOnStartup(enabled);
-    try {
-      if (enabled) {
-        await enable();
-      } else {
-        await disable();
-      }
-      addToast({
-        title: "Startup Preference Saved",
-        description: enabled
-          ? "RuleWeaver will now launch on startup"
-          : "RuleWeaver will no longer launch on startup",
-        variant: "success",
-      });
-    } catch (error) {
-      setLaunchOnStartup(!enabled);
-      addToast({
-        title: "Setting Failed",
-        description: error instanceof Error ? error.message : "Unknown error",
-        variant: "error",
-      });
-    }
-  };
-
-  const handleExport = async () => {
-    try {
-      const selected = await save({
-        filters: [
-          { name: "JSON", extensions: ["json"] },
-          { name: "YAML", extensions: ["yaml", "yml"] },
-        ],
-        defaultPath: `ruleweaver-config-${new Date().toISOString().split("T")[0]}.json`,
-      });
-
-      if (!selected) return;
-
-      setIsExporting(true);
-      await api.storage.exportConfiguration(selected);
-      addToast({
-        title: "Export Successful",
-        description: `Configuration exported to ${selected}`,
-        variant: "success",
-      });
-    } catch (error) {
-      addToast({
-        title: "Export Failed",
-        description: error instanceof Error ? error.message : "Unknown error",
-        variant: "error",
-      });
-    } finally {
-      setIsExporting(false);
-    }
-  };
-
-  const handleImport = async () => {
-    try {
-      const selected = await open({
-        filters: [{ name: "Configuration", extensions: ["json", "yaml", "yml"] }],
-        multiple: false,
-      });
-
-      if (!selected) return;
-
-      setIsImporting(true);
-      const preview = await api.storage.previewImport(selected as string);
-      setImportPreview({
-        path: selected as string,
-        rules: preview.rules,
-        commands: preview.commands,
-        skills: preview.skills,
-      });
-      setIsImportDialogOpen(true);
-    } catch (error) {
-      addToast({
-        title: "Import Error",
-        description: error instanceof Error ? error.message : "Unknown error",
-        variant: "error",
-      });
-    } finally {
-      setIsImporting(false);
-    }
-  };
-
-  const executeImport = async () => {
-    if (!importPreview) return;
-
-    setIsImporting(true);
-    try {
-      await api.storage.importConfiguration(importPreview.path, importMode);
-      addToast({
-        title: "Import Successful",
-        description: `Configuration imported using ${importMode} mode.`,
-        variant: "success",
-      });
-      setIsImportDialogOpen(false);
-      setImportPreview(null);
-    } catch (error) {
-      addToast({
-        title: "Import Failed",
-        description: error instanceof Error ? error.message : "Unknown error",
-        variant: "error",
-      });
-    } finally {
-      setIsImporting(false);
-    }
-  };
-
-  const handleCheckUpdates = async () => {
-    setIsCheckingUpdates(true);
-    try {
-      const update = await check();
-      if (update) {
-        setUpdateData(update);
-        setIsUpdateDialogOpen(true);
-      } else {
-        addToast({
-          title: "No Updates",
-          description: "You are already using the latest version.",
-        });
-      }
-    } catch (error) {
-      addToast({
-        title: "Update Check Failed",
-        description: error instanceof Error ? error.message : "Unknown error",
-        variant: "error",
-      });
-    } finally {
-      setIsCheckingUpdates(false);
-    }
-  };
-
-  const confirmUpdate = async () => {
-    if (!updateData) return;
-    setIsUpdating(true);
-    try {
-      await updateData.downloadAndInstall();
-    } catch (error) {
-      addToast({
-        title: "Update Failed",
-        description: error instanceof Error ? error.message : "Unknown error",
-        variant: "error",
-      });
-      setIsUpdating(false);
-    }
-  };
+  const {
+    appDataPath,
+    appVersion,
+    isLoading,
+    adapterSettings,
+    hasChanges,
+    isSaving,
+    repositoryRoots,
+    repoPathsDirty,
+    isSavingRepos,
+    storageMode,
+    storageInfo,
+    isMigratingStorage,
+    backupPath,
+    migrationProgress,
+    isRollingBack,
+    isVerifyingMigration,
+    mcpStatus,
+    mcpInstructions,
+    isMcpLoading,
+    mcpAutoStart,
+    minimizeToTray,
+    launchOnStartup,
+    mcpLogs,
+    isExporting,
+    isImporting,
+    importPreview,
+    isImportDialogOpen,
+    importMode,
+    isCheckingUpdates,
+    updateData,
+    isUpdateDialogOpen,
+    isUpdating,
+    handlers,
+  } = useSettingsState(addToast);
 
   return (
     <div className="space-y-6 max-w-3xl">
@@ -668,7 +73,7 @@ export function Settings() {
           <p className="text-muted-foreground">Configure RuleWeaver preferences</p>
         </div>
         {hasChanges && (
-          <Button onClick={saveSettings} disabled={isSaving}>
+          <Button onClick={handlers.saveSettings} disabled={isSaving}>
             <Save className="mr-2 h-4 w-4" />
             {isSaving ? "Saving..." : "Save Changes"}
           </Button>
@@ -692,302 +97,70 @@ export function Settings() {
             <Button
               variant="outline"
               size="icon"
-              onClick={handleOpenAppData}
+              onClick={handlers.handleOpenAppData}
               disabled={isLoading}
               className="glass border-white/5 hover:bg-white/5"
               aria-label="Open app data folder"
             >
-              <FolderOpen className="h-4 w-4" aria-hidden="true" />
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card className="glass-card premium-shadow border-none overflow-hidden">
-        <CardHeader className="bg-white/5 pb-4">
-          <CardTitle className="text-sm font-semibold tracking-wide uppercase text-muted-foreground/80">
-            Repository Roots
-          </CardTitle>
-          <CardDescription>
-            Configure repositories once, then select them across local artifacts and import
-            workflows.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3 pt-6">
-          <div className="flex items-center gap-2">
-            <Button variant="outline" onClick={addRepositoryRoot}>
-              <FolderOpen className="mr-2 h-4 w-4" /> Add Repository
-            </Button>
-            <Button
-              onClick={saveRepositoryRoots}
-              disabled={!repoPathsDirty || isSavingRepos || isLoading}
-            >
-              {isSavingRepos ? "Saving..." : "Save Repositories"}
-            </Button>
-          </div>
-
-          {repositoryRoots.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No repository roots configured yet.</p>
-          ) : (
-            <div className="space-y-2">
-              {repositoryRoots.map((path) => (
-                <div key={path} className="flex items-center justify-between rounded-md border p-2">
-                  <span className="text-xs break-all">{path}</span>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => void removeRepositoryRoot(path)}
-                    aria-label={`Remove repository ${path}`}
-                  >
-                    Remove
-                  </Button>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card className="glass-card premium-shadow border-none overflow-hidden">
-        <CardHeader className="bg-white/5 pb-4">
-          <CardTitle className="text-sm font-semibold tracking-wide uppercase text-muted-foreground/80">
-            MCP Server
-          </CardTitle>
-          <CardDescription>
-            Start and manage the local MCP server for tool integration
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4 pt-6">
-          <div className="flex items-center justify-between rounded-xl border border-white/5 bg-white/5 p-4">
-            <div className="flex items-center gap-3">
-              <div
-                className={cn(
-                  "p-2 rounded-lg",
-                  mcpStatus?.running
-                    ? "bg-primary/10 text-primary"
-                    : "bg-muted text-muted-foreground"
-                )}
+              <svg
+                className="h-4 w-4"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
               >
-                <Server className="h-4 w-4" />
-              </div>
-              <div>
-                <div className="font-semibold text-sm">Status</div>
-                <div className="text-xs text-muted-foreground">
-                  {mcpStatus?.running ? `Running on port ${mcpStatus.port}` : "Stopped"}
-                </div>
-              </div>
-            </div>
-            <Badge
-              variant={mcpStatus?.running ? "default" : "outline"}
-              className={cn(mcpStatus?.running && "glow-active border-primary/20")}
-            >
-              {mcpStatus?.running ? "Running" : "Stopped"}
-            </Badge>
-          </div>
-
-          {mcpStatus?.running && (
-            <p className="text-xs text-muted-foreground">Uptime: {mcpStatus.uptime_seconds}s</p>
-          )}
-
-          <div className="flex flex-wrap gap-2">
-            <Button
-              onClick={startMcp}
-              disabled={isMcpLoading || !!mcpStatus?.running}
-              className="glow-primary"
-            >
-              Start Server
+                <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z" />
+              </svg>
             </Button>
-            <Button
-              variant="outline"
-              onClick={stopMcp}
-              disabled={isMcpLoading || !mcpStatus?.running}
-              className="glass border-white/5"
-            >
-              Stop
-            </Button>
-            <Button
-              variant="ghost"
-              onClick={refreshMcpStatus}
-              disabled={isMcpLoading}
-              className="text-muted-foreground"
-            >
-              <RefreshCw className={cn("mr-2 h-4 w-4", isMcpLoading && "animate-spin")} />
-              Refresh
-            </Button>
-          </div>
-
-          <div className="flex items-center justify-between rounded-md border p-3">
-            <div>
-              <div className="font-medium">Auto-start MCP</div>
-              <div className="text-xs text-muted-foreground">
-                Start MCP automatically when RuleWeaver launches
-              </div>
-            </div>
-            <Switch checked={mcpAutoStart} onCheckedChange={toggleMcpAutoStart} />
-          </div>
-
-          <div className="flex items-center justify-between rounded-md border p-3">
-            <div>
-              <div className="font-medium">Minimize to tray on close</div>
-              <div className="text-xs text-muted-foreground">
-                Keep app and MCP running when closing the main window
-              </div>
-            </div>
-            <Switch checked={minimizeToTray} onCheckedChange={toggleMinimizeToTray} />
-          </div>
-
-          <div className="flex items-center justify-between rounded-xl border border-white/5 bg-white/5 p-4 transition-colors hover:bg-white/10">
-            <div>
-              <div className="font-medium text-sm">Launch on startup</div>
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground/60">
-                Automatically start RuleWeaver when you log in
-              </div>
-            </div>
-            <Switch checked={launchOnStartup} onCheckedChange={toggleLaunchOnStartup} />
-          </div>
-
-          {mcpInstructions && (
-            <div className="space-y-2">
-              <code className="block rounded-md bg-muted p-2 text-xs overflow-auto">
-                {mcpInstructions.standalone_command}
-              </code>
-              <div className="grid gap-2 md:grid-cols-2">
-                <code className="rounded-md bg-muted p-2 text-xs overflow-auto">
-                  {mcpInstructions.claude_code_json}
-                </code>
-                <code className="rounded-md bg-muted p-2 text-xs overflow-auto">
-                  {mcpInstructions.opencode_json}
-                </code>
-              </div>
-            </div>
-          )}
-
-          <div className="rounded-md border p-3">
-            <div className="mb-2 text-sm font-medium">Recent MCP Logs</div>
-            <div className="max-h-40 space-y-1 overflow-auto text-xs text-muted-foreground">
-              {mcpLogs.length === 0 && <div>No logs yet.</div>}
-              {mcpLogs.map((log, idx) => (
-                <div key={`${idx}-${log.slice(0, 20)}`}>{log}</div>
-              ))}
-            </div>
           </div>
         </CardContent>
       </Card>
 
-      <Card className="glass-card premium-shadow border-none overflow-hidden">
-        <CardHeader className="bg-white/5 pb-4">
-          <CardTitle className="text-sm font-semibold tracking-wide uppercase text-muted-foreground/80">
-            Storage
-          </CardTitle>
-          <CardDescription>
-            Manage where rules are stored: legacy SQLite or file-based markdown storage
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4 pt-6">
-          <div className="flex items-center justify-between rounded-md border p-3">
-            <div>
-              <div className="font-medium">Current Mode</div>
-              <div className="text-sm text-muted-foreground">
-                {storageMode === "file"
-                  ? "File storage (.ruleweaver/rules/*.md)"
-                  : "SQLite database (legacy)"}
-              </div>
-            </div>
-            <Badge variant={storageMode === "file" ? "default" : "outline"}>
-              {storageMode === "file" ? "File" : "SQLite"}
-            </Badge>
-          </div>
+      <RepositorySettingsCard
+        repositoryRoots={repositoryRoots}
+        repoPathsDirty={repoPathsDirty}
+        isSavingRepos={isSavingRepos}
+        isLoading={isLoading}
+        onAdd={handlers.addRepositoryRoot}
+        onRemove={handlers.removeRepositoryRoot}
+        onSave={handlers.saveRepositoryRoots}
+      />
 
-          {storageInfo && (
-            <div className="grid grid-cols-1 gap-2 text-sm text-muted-foreground md:grid-cols-3">
-              <div>Rules: {storageInfo.rule_count ?? "0"}</div>
-              <div>Size: {storageInfo.total_size_bytes ?? "0"} bytes</div>
-              <div>Storage Exists: {storageInfo.exists ?? "false"}</div>
-            </div>
-          )}
+      <McpSettingsCard
+        mcpStatus={mcpStatus}
+        mcpInstructions={mcpInstructions}
+        mcpLogs={mcpLogs}
+        isMcpLoading={isMcpLoading}
+        mcpAutoStart={mcpAutoStart}
+        minimizeToTray={minimizeToTray}
+        launchOnStartup={launchOnStartup}
+        onStart={handlers.startMcp}
+        onStop={handlers.stopMcp}
+        onRefresh={handlers.refreshMcpStatus}
+        onToggleAutoStart={handlers.toggleMcpAutoStart}
+        onToggleMinimizeToTray={handlers.toggleMinimizeToTray}
+        onToggleLaunchOnStartup={handlers.toggleLaunchOnStartup}
+      />
 
-          {storageMode !== "file" && (
-            <Button onClick={migrateToFileStorage} disabled={isMigratingStorage || isLoading}>
-              {isMigratingStorage ? "Migrating..." : "Migrate to File Storage"}
-            </Button>
-          )}
+      <StorageSettingsCard
+        storageMode={storageMode}
+        storageInfo={storageInfo}
+        isMigratingStorage={isMigratingStorage}
+        backupPath={backupPath}
+        migrationProgress={migrationProgress}
+        isRollingBack={isRollingBack}
+        isVerifyingMigration={isVerifyingMigration}
+        isLoading={isLoading}
+        onMigrate={handlers.migrateToFileStorage}
+        onRollback={handlers.rollbackMigration}
+        onVerify={handlers.verifyMigration}
+      />
 
-          {migrationProgress && (
-            <div className="rounded-md border p-3 space-y-2">
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">Migration Status</span>
-                <Badge variant="outline">{migrationProgress.status}</Badge>
-              </div>
-              <div className="text-sm">
-                {migrationProgress.migrated} / {migrationProgress.total || 0} rules migrated
-              </div>
-              {migrationProgress.current_rule && (
-                <div className="text-xs text-muted-foreground truncate">
-                  Current: {migrationProgress.current_rule}
-                </div>
-              )}
-            </div>
-          )}
-
-          {storageMode === "file" && (
-            <div className="flex flex-wrap gap-2">
-              <Button variant="outline" onClick={verifyMigration} disabled={isVerifyingMigration}>
-                <ShieldCheck className="mr-2 h-4 w-4" />
-                {isVerifyingMigration ? "Verifying..." : "Verify Migration"}
-              </Button>
-              <Button
-                variant="outline"
-                onClick={rollbackMigration}
-                disabled={isRollingBack || !backupPath}
-              >
-                <RotateCcw className="mr-2 h-4 w-4" />
-                {isRollingBack ? "Rolling Back..." : "Rollback"}
-              </Button>
-            </div>
-          )}
-
-          {backupPath && (
-            <p className="text-xs text-muted-foreground break-all">Backup: {backupPath}</p>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card className="glass-card premium-shadow border-none overflow-hidden">
-        <CardHeader className="bg-white/5 pb-4">
-          <CardTitle className="text-sm font-semibold tracking-wide uppercase text-muted-foreground/80">
-            Adapters
-          </CardTitle>
-          <CardDescription>
-            Enable or disable adapters for syncing rules to different AI tools
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3 pt-6">
-          {ADAPTERS.map((adapter) => (
-            <div
-              key={adapter.id}
-              className="flex items-center justify-between p-3 rounded-md border"
-            >
-              <div className="flex items-center gap-3">
-                <Switch
-                  checked={adapterSettings[adapter.id] ?? true}
-                  onCheckedChange={() => toggleAdapter(adapter.id)}
-                  disabled={isLoading}
-                />
-                <div>
-                  <div className="font-medium">{adapter.name}</div>
-                  <div className="text-sm text-muted-foreground">{adapter.description}</div>
-                </div>
-              </div>
-              <div className="text-right">
-                <Badge variant="outline" className="font-mono text-xs">
-                  {adapter.fileName}
-                </Badge>
-                <div className="text-xs text-muted-foreground mt-1">{adapter.globalPath}</div>
-              </div>
-            </div>
-          ))}
-        </CardContent>
-      </Card>
+      <AdapterSettingsCard
+        adapterSettings={adapterSettings}
+        isLoading={isLoading}
+        onToggle={handlers.toggleAdapter}
+      />
 
       <Card className="glass-card premium-shadow border-none overflow-hidden">
         <CardHeader className="bg-white/5 pb-4">
@@ -1018,26 +191,7 @@ export function Settings() {
           </div>
 
           <div className="pt-2">
-            <Button
-              variant="outline"
-              onClick={async () => {
-                try {
-                  const result = await api.slashCommands.syncAll(true);
-                  addToast({
-                    title: "Slash Commands Synced",
-                    description: `Wrote ${result.files_written} files`,
-                    variant: result.errors.length > 0 ? "warning" : "success",
-                  });
-                } catch (error) {
-                  addToast({
-                    title: "Sync Failed",
-                    description: error instanceof Error ? error.message : "Unknown error",
-                    variant: "error",
-                  });
-                }
-              }}
-              disabled={isLoading}
-            >
+            <Button variant="outline" onClick={handlers.syncAllSlashCommands} disabled={isLoading}>
               Sync All Slash Commands
             </Button>
           </div>
@@ -1064,7 +218,7 @@ export function Settings() {
               <Button
                 variant="outline"
                 className="w-full"
-                onClick={handleExport}
+                onClick={handlers.handleExport}
                 disabled={isExporting}
               >
                 {isExporting ? "Exporting..." : "Export Configuration"}
@@ -1082,7 +236,7 @@ export function Settings() {
               <Button
                 variant="outline"
                 className="w-full"
-                onClick={handleImport}
+                onClick={handlers.handleImport}
                 disabled={isImporting}
               >
                 {isImporting ? "Importing..." : "Import Configuration"}
@@ -1105,7 +259,7 @@ export function Settings() {
                 variant="outline"
                 size="sm"
                 className="h-7 text-xs"
-                onClick={handleCheckUpdates}
+                onClick={handlers.handleCheckUpdates}
                 disabled={isCheckingUpdates || isLoading}
               >
                 {isCheckingUpdates ? "Checking..." : "Check for Updates"}
@@ -1135,7 +289,7 @@ export function Settings() {
         </CardContent>
       </Card>
 
-      <Dialog open={isUpdateDialogOpen} onOpenChange={setIsUpdateDialogOpen}>
+      <Dialog open={isUpdateDialogOpen} onOpenChange={handlers.setIsUpdateDialogOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -1155,12 +309,12 @@ export function Settings() {
           <DialogFooter>
             <Button
               variant="outline"
-              onClick={() => setIsUpdateDialogOpen(false)}
+              onClick={() => handlers.setIsUpdateDialogOpen(false)}
               disabled={isUpdating}
             >
               Later
             </Button>
-            <Button onClick={confirmUpdate} disabled={isUpdating}>
+            <Button onClick={handlers.confirmUpdate} disabled={isUpdating}>
               {isUpdating ? (
                 <>
                   <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
@@ -1174,7 +328,7 @@ export function Settings() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={isImportDialogOpen} onOpenChange={setIsImportDialogOpen}>
+      <Dialog open={isImportDialogOpen} onOpenChange={handlers.setIsImportDialogOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -1208,7 +362,7 @@ export function Settings() {
               <Checkbox
                 id="overwrite"
                 checked={importMode === "overwrite"}
-                onChange={(checked) => setImportMode(checked ? "overwrite" : "skip")}
+                onChange={(checked) => handlers.setImportMode(checked ? "overwrite" : "skip")}
               />
               <label
                 htmlFor="overwrite"
@@ -1221,12 +375,12 @@ export function Settings() {
           <DialogFooter>
             <Button
               variant="outline"
-              onClick={() => setIsImportDialogOpen(false)}
+              onClick={() => handlers.setIsImportDialogOpen(false)}
               disabled={isImporting}
             >
               Cancel
             </Button>
-            <Button onClick={executeImport} disabled={isImporting}>
+            <Button onClick={handlers.executeImport} disabled={isImporting}>
               {isImporting ? (
                 <>
                   <RefreshCw className="mr-2 h-4 w-4 animate-spin" />

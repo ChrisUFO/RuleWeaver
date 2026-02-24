@@ -1,29 +1,13 @@
-import { useEffect, useState, useMemo, useRef, type DragEvent } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
+import type { DragEvent } from "react";
 import { cn } from "@/lib/utils";
-import {
-  Plus,
-  Search,
-  MoreVertical,
-  Copy,
-  Pencil,
-  Trash2,
-  Globe,
-  FolderOpen,
-  X,
-  Upload,
-  FolderUp,
-  Link,
-  Clipboard,
-  FileText,
-} from "lucide-react";
+import { Plus, Upload, FileText, FolderUp, Link, Clipboard } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { Switch } from "@/components/ui/switch";
-import { Select } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -35,44 +19,27 @@ import {
 import { useRulesStore } from "@/stores/rulesStore";
 import { useToast } from "@/components/ui/toast";
 import { RulesListSkeleton } from "@/components/ui/skeleton";
+import { RulesFilterBar } from "@/components/rules/RulesFilterBar";
+import { parseSortValue } from "@/components/rules/filter-utils";
+import { RuleCard } from "@/components/rules/RuleCard";
+import { toast } from "@/lib/toast-helpers";
 import {
   ADAPTERS,
   type Rule,
   type AdapterType,
-  type Scope,
   type ImportCandidate,
   type ImportConflictMode,
   type ImportExecutionOptions,
   type ImportExecutionResult,
-  type ImportHistoryEntry,
 } from "@/types/rule";
 import { api } from "@/lib/tauri";
 
-type SortField = "name" | "createdAt" | "updatedAt" | "enabled";
-type SortDirection = "asc" | "desc";
+type ImportSourceMode = "ai" | "file" | "directory" | "url" | "clipboard";
 
 interface RulesListProps {
   onSelectRule: (rule: Rule) => void;
   onCreateRule: () => void;
 }
-
-type ImportSourceMode = "ai" | "file" | "directory" | "url" | "clipboard";
-
-const SORT_OPTIONS = [
-  { value: "name-asc", label: "Name (A-Z)" },
-  { value: "name-desc", label: "Name (Z-A)" },
-  { value: "createdAt-desc", label: "Newest First" },
-  { value: "createdAt-asc", label: "Oldest First" },
-  { value: "updatedAt-desc", label: "Recently Updated" },
-  { value: "updatedAt-asc", label: "Least Recently Updated" },
-  { value: "enabled-desc", label: "Enabled First" },
-  { value: "enabled-asc", label: "Disabled First" },
-];
-
-const ADAPTER_FILTER_OPTIONS = [
-  { value: "all", label: "All Adapters" },
-  ...ADAPTERS.map((a) => ({ value: a.id, label: a.name })),
-];
 
 export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
   const {
@@ -103,10 +70,6 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
   const [importScanErrors, setImportScanErrors] = useState<string[]>([]);
   const [importConflictMode, setImportConflictMode] = useState<ImportConflictMode>("rename");
   const [importResult, setImportResult] = useState<ImportExecutionResult | null>(null);
-  const [importHistory, setImportHistory] = useState<ImportHistoryEntry[]>([]);
-  const [importHistoryFilter, setImportHistoryFilter] = useState<
-    "all" | "ai_tool" | "file" | "directory" | "url" | "clipboard"
-  >("all");
   const [importSourceMode, setImportSourceMode] = useState<ImportSourceMode>("ai");
   const [importSourceValue, setImportSourceValue] = useState("");
   const [clipboardImportName, setClipboardImportName] = useState<string | undefined>(undefined);
@@ -115,7 +78,9 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
   const [clipboardNameDialogOpen, setClipboardNameDialogOpen] = useState(false);
   const [clipboardPendingContent, setClipboardPendingContent] = useState("");
   const [clipboardNameInput, setClipboardNameInput] = useState("");
-  const [importScopeOverride, setImportScopeOverride] = useState<"source" | Scope>("source");
+  const [importScopeOverride, setImportScopeOverride] = useState<"source" | "global" | "local">(
+    "source"
+  );
   const [useAdapterOverride, setUseAdapterOverride] = useState(false);
   const [adapterOverrideSet, setAdapterOverrideSet] = useState<Set<AdapterType>>(new Set());
   const [isDragImportActive, setIsDragImportActive] = useState(false);
@@ -125,7 +90,6 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
     fetchRules();
   }, [fetchRules]);
 
-  // Handle click outside to close menu
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
@@ -139,10 +103,7 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
     }
   }, [menuOpen]);
 
-  const { sortField, sortDirection } = useMemo(() => {
-    const [field, dir] = sortValue.split("-") as [SortField, SortDirection];
-    return { sortField: field, sortDirection: dir };
-  }, [sortValue]);
+  const { sortField, sortDirection } = useMemo(() => parseSortValue(sortValue), [sortValue]);
 
   const filteredAndSortedRules = useMemo(() => {
     const result = (rules || []).filter((rule) => {
@@ -226,11 +187,7 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
         },
       });
     } catch (error) {
-      addToast({
-        title: "Delete Failed",
-        description: error instanceof Error ? error.message : "Unknown error",
-        variant: "error",
-      });
+      toast.error(addToast, { title: "Delete Failed", error });
     } finally {
       setDeleteDialogOpen(false);
       setRuleToDelete(null);
@@ -248,11 +205,7 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
       });
       setSelectedIds(new Set());
     } catch (error) {
-      addToast({
-        title: "Bulk Delete Failed",
-        description: error instanceof Error ? error.message : "Unknown error",
-        variant: "error",
-      });
+      toast.error(addToast, { title: "Bulk Delete Failed", error });
     } finally {
       setBulkDeleteDialogOpen(false);
     }
@@ -269,11 +222,7 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
       });
       setSelectedIds(new Set());
     } catch (error) {
-      addToast({
-        title: "Bulk Update Failed",
-        description: error instanceof Error ? error.message : "Unknown error",
-        variant: "error",
-      });
+      toast.error(addToast, { title: "Bulk Update Failed", error });
     }
   };
 
@@ -292,18 +241,9 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
         variant: "success",
       });
     } catch (error) {
-      addToast({
-        title: "Duplicate Failed",
-        description: error instanceof Error ? error.message : "Unknown error",
-        variant: "error",
-      });
+      toast.error(addToast, { title: "Duplicate Failed", error });
     }
     setMenuOpen(null);
-  };
-
-  const getAdapterBadge = (adapterId: AdapterType) => {
-    const adapter = ADAPTERS.find((a) => a.id === adapterId);
-    return adapter?.name || adapterId;
   };
 
   const clearFilters = () => {
@@ -327,8 +267,6 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
         variant: "error",
       });
     }
-    const history = await api.ruleImport.getHistory();
-    setImportHistory(history);
   };
 
   const openImportPreview = async (
@@ -350,8 +288,6 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
     setImportScopeOverride("source");
     setUseAdapterOverride(false);
     setAdapterOverrideSet(new Set());
-    const history = await api.ruleImport.getHistory();
-    setImportHistory(history);
   };
 
   const getImportExecutionOptions = (): ImportExecutionOptions => ({
@@ -408,11 +344,7 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
       const scan = await api.ruleImport.scanFromFile(filePath);
       await openImportPreview("file", filePath, scan.candidates, scan.errors);
     } catch (error) {
-      addToast({
-        title: "Scan Failed",
-        description: error instanceof Error ? error.message : "Unknown error",
-        variant: "error",
-      });
+      toast.error(addToast, { title: "Scan Failed", error });
     } finally {
       setIsScanningImport(false);
     }
@@ -424,11 +356,7 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
       const scan = await api.ruleImport.scanAiToolCandidates();
       await openImportPreview("ai", "", scan.candidates, scan.errors);
     } catch (error) {
-      addToast({
-        title: "Scan Failed",
-        description: error instanceof Error ? error.message : "Unknown error",
-        variant: "error",
-      });
+      toast.error(addToast, { title: "Scan Failed", error });
     } finally {
       setIsScanningImport(false);
     }
@@ -446,11 +374,7 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
       const scan = await api.ruleImport.scanFromFile(selected);
       await openImportPreview("file", selected, scan.candidates, scan.errors);
     } catch (error) {
-      addToast({
-        title: "Scan Failed",
-        description: error instanceof Error ? error.message : "Unknown error",
-        variant: "error",
-      });
+      toast.error(addToast, { title: "Scan Failed", error });
     } finally {
       setIsScanningImport(false);
     }
@@ -465,11 +389,7 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
       const scan = await api.ruleImport.scanFromDirectory(selected);
       await openImportPreview("directory", selected, scan.candidates, scan.errors);
     } catch (error) {
-      addToast({
-        title: "Scan Failed",
-        description: error instanceof Error ? error.message : "Unknown error",
-        variant: "error",
-      });
+      toast.error(addToast, { title: "Scan Failed", error });
     } finally {
       setIsScanningImport(false);
     }
@@ -483,18 +403,10 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
       const scan = await api.ruleImport.scanFromUrl(url);
       await openImportPreview("url", url, scan.candidates, scan.errors);
     } catch (error) {
-      addToast({
-        title: "Scan Failed",
-        description: error instanceof Error ? error.message : "Unknown error",
-        variant: "error",
-      });
+      toast.error(addToast, { title: "Scan Failed", error });
     } finally {
       setIsScanningImport(false);
     }
-  };
-
-  const openUrlImportDialog = () => {
-    setUrlImportDialogOpen(true);
   };
 
   const submitUrlImportScan = async () => {
@@ -528,11 +440,7 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
       setClipboardNameInput(clipboardImportName ?? "");
       setClipboardNameDialogOpen(true);
     } catch (error) {
-      addToast({
-        title: "Scan Failed",
-        description: error instanceof Error ? error.message : "Unknown error",
-        variant: "error",
-      });
+      toast.error(addToast, { title: "Scan Failed", error });
     }
   };
 
@@ -550,11 +458,7 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
       const scan = await api.ruleImport.scanFromClipboard(clipboardPendingContent, name);
       await openImportPreview("clipboard", clipboardPendingContent, scan.candidates, scan.errors);
     } catch (error) {
-      addToast({
-        title: "Scan Failed",
-        description: error instanceof Error ? error.message : "Unknown error",
-        variant: "error",
-      });
+      toast.error(addToast, { title: "Scan Failed", error });
     } finally {
       setIsScanningImport(false);
     }
@@ -617,11 +521,7 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
         setClipboardImportName(undefined);
       }
     } catch (error) {
-      addToast({
-        title: "Import Failed",
-        description: error instanceof Error ? error.message : "Unknown error",
-        variant: "error",
-      });
+      toast.error(addToast, { title: "Import Failed", error });
     } finally {
       setIsImporting(false);
     }
@@ -673,7 +573,7 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
           </Button>
           <Button
             variant="outline"
-            onClick={openUrlImportDialog}
+            onClick={() => setUrlImportDialogOpen(true)}
             disabled={isImporting || isScanningImport}
           >
             <Link className="mr-2 h-4 w-4" aria-hidden="true" />
@@ -708,92 +608,17 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
         Drag and drop a rule file here to scan and import.
       </div>
 
-      <div className="flex flex-wrap items-center gap-3 p-4 glass rounded-xl border border-white/5 premium-shadow">
-        <div className="relative flex-1 min-w-[200px] max-w-md">
-          <Search
-            className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/60"
-            aria-hidden="true"
-          />
-          <Input
-            placeholder="Search rules..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9 bg-white/5 border-white/5 focus-visible:ring-primary/40 rounded-lg"
-            aria-label="Search rules"
-          />
-        </div>
-
-        <Select
-          value={sortValue}
-          onChange={setSortValue}
-          options={SORT_OPTIONS}
-          className="w-44 bg-white/5 border-white/5 rounded-lg"
-          aria-label="Sort rules"
-        />
-
-        <Select
-          value={adapterFilter}
-          onChange={setAdapterFilter}
-          options={ADAPTER_FILTER_OPTIONS}
-          className="w-40 bg-white/5 border-white/5 rounded-lg"
-          aria-label="Filter by adapter"
-        />
-
-        <div
-          className="flex items-center gap-1.5 p-1 glass border border-white/5 rounded-lg"
-          role="group"
-          aria-label="Filter by scope"
-        >
-          <Button
-            variant={scopeFilter === "all" ? "default" : "ghost"}
-            size="sm"
-            onClick={() => setScopeFilter("all")}
-            className={cn(
-              "h-8 px-3 rounded-md transition-all",
-              scopeFilter === "all" ? "glow-active shadow-sm" : "text-muted-foreground"
-            )}
-            aria-pressed={scopeFilter === "all"}
-          >
-            All
-          </Button>
-          <Button
-            variant={scopeFilter === "global" ? "default" : "ghost"}
-            size="sm"
-            onClick={() => setScopeFilter("global")}
-            className={cn(
-              "h-8 px-3 rounded-md transition-all",
-              scopeFilter === "global" ? "glow-active shadow-sm" : "text-muted-foreground"
-            )}
-            aria-pressed={scopeFilter === "global"}
-          >
-            Global
-          </Button>
-          <Button
-            variant={scopeFilter === "local" ? "default" : "ghost"}
-            size="sm"
-            onClick={() => setScopeFilter("local")}
-            className={cn(
-              "h-8 px-3 rounded-md transition-all",
-              scopeFilter === "local" ? "glow-active shadow-sm" : "text-muted-foreground"
-            )}
-            aria-pressed={scopeFilter === "local"}
-          >
-            Local
-          </Button>
-        </div>
-
-        {hasActiveFilters && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={clearFilters}
-            className="text-muted-foreground hover:text-foreground"
-          >
-            <X className="mr-1 h-3 w-3" />
-            Clear
-          </Button>
-        )}
-      </div>
+      <RulesFilterBar
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        scopeFilter={scopeFilter}
+        onScopeChange={setScopeFilter}
+        adapterFilter={adapterFilter}
+        onAdapterChange={setAdapterFilter}
+        sortValue={sortValue}
+        onSortChange={setSortValue}
+        onClear={clearFilters}
+      />
 
       {someSelected && (
         <div
@@ -831,120 +656,18 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
         <ul className="space-y-3" role="list" aria-label="Rules list">
           {filteredAndSortedRules.map((rule) => (
             <li key={rule.id}>
-              <Card
-                className={cn(
-                  "group relative overflow-hidden transition-all duration-300",
-                  "glass-card border-white/5 hover:bg-white/10 hover:translate-x-1 premium-shadow",
-                  selectedIds.has(rule.id)
-                    ? "ring-2 ring-primary bg-primary/5"
-                    : "hover:border-primary/20"
-                )}
-              >
-                <CardContent className="flex items-center gap-4 p-4">
-                  <div onClick={(e) => e.stopPropagation()}>
-                    <Checkbox
-                      checked={selectedIds.has(rule.id)}
-                      onChange={(checked) => handleSelectOne(rule.id, checked)}
-                      aria-label={`Select ${rule.name}`}
-                    />
-                  </div>
-
-                  <div
-                    onClick={(e) => e.stopPropagation()}
-                    role="group"
-                    aria-label={`Toggle ${rule.name}`}
-                  >
-                    <Switch
-                      checked={rule.enabled}
-                      onCheckedChange={() => handleToggle(rule)}
-                      aria-label={`${rule.enabled ? "Disable" : "Enable"} ${rule.name}`}
-                    />
-                  </div>
-
-                  <button
-                    className="flex-1 min-w-0 text-left focus:outline-none"
-                    onClick={() => onSelectRule(rule)}
-                    aria-label={`Edit rule: ${rule.name}`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium truncate">{rule.name}</span>
-                      <Badge
-                        variant={rule.scope === "global" ? "default" : "secondary"}
-                        aria-label={`${rule.scope} scope`}
-                      >
-                        {rule.scope === "global" ? (
-                          <Globe className="mr-1 h-3 w-3" aria-hidden="true" />
-                        ) : (
-                          <FolderOpen className="mr-1 h-3 w-3" aria-hidden="true" />
-                        )}
-                        {rule.scope === "global" ? "Global" : "Local"}
-                      </Badge>
-                    </div>
-                    <p className="text-sm text-muted-foreground truncate">
-                      {rule.content.substring(0, 100)}
-                      {rule.content.length > 100 && "..."}
-                    </p>
-                    <div className="flex items-center gap-1 mt-2" aria-label="Adapters">
-                      {rule.enabledAdapters.map((adapter) => (
-                        <Badge key={adapter} variant="outline" className="text-xs">
-                          {getAdapterBadge(adapter)}
-                        </Badge>
-                      ))}
-                    </div>
-                  </button>
-
-                  <div className="relative" ref={menuOpen === rule.id ? menuRef : undefined}>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setMenuOpen(menuOpen === rule.id ? null : rule.id);
-                      }}
-                      aria-label={`Actions for ${rule.name}`}
-                      aria-expanded={menuOpen === rule.id}
-                      aria-haspopup="menu"
-                    >
-                      <MoreVertical className="h-4 w-4" aria-hidden="true" />
-                    </Button>
-                    {menuOpen === rule.id && (
-                      <div
-                        className="absolute right-0 top-full mt-1 z-10 w-40 rounded-md border bg-background shadow-lg"
-                        role="menu"
-                        aria-label={`Actions for ${rule.name}`}
-                      >
-                        <button
-                          className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-accent focus:outline-none focus:bg-accent"
-                          onClick={() => {
-                            onSelectRule(rule);
-                            setMenuOpen(null);
-                          }}
-                          role="menuitem"
-                        >
-                          <Pencil className="h-4 w-4" aria-hidden="true" />
-                          Edit
-                        </button>
-                        <button
-                          className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-accent focus:outline-none focus:bg-accent"
-                          onClick={() => handleDuplicate(rule)}
-                          role="menuitem"
-                        >
-                          <Copy className="h-4 w-4" aria-hidden="true" />
-                          Duplicate
-                        </button>
-                        <button
-                          className="flex w-full items-center gap-2 px-3 py-2 text-sm text-destructive hover:bg-accent focus:outline-none focus:bg-accent"
-                          onClick={() => confirmDelete(rule)}
-                          role="menuitem"
-                        >
-                          <Trash2 className="h-4 w-4" aria-hidden="true" />
-                          Delete
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
+              <RuleCard
+                rule={rule}
+                isSelected={selectedIds.has(rule.id)}
+                menuOpenId={menuOpen}
+                menuRef={menuRef}
+                onSelect={(checked) => handleSelectOne(rule.id, checked)}
+                onToggle={() => handleToggle(rule)}
+                onEdit={() => onSelectRule(rule)}
+                onDuplicate={() => handleDuplicate(rule)}
+                onDelete={() => confirmDelete(rule)}
+                onToggleMenu={() => setMenuOpen(menuOpen === rule.id ? null : rule.id)}
+              />
             </li>
           ))}
         </ul>
@@ -1068,7 +791,7 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
             <div className="grid grid-cols-1 gap-2 rounded-md border p-3">
               <Select
                 value={importScopeOverride}
-                onChange={(value) => setImportScopeOverride(value as "source" | Scope)}
+                onChange={(value) => setImportScopeOverride(value as "source" | "global" | "local")}
                 options={[
                   { value: "source", label: "Scope: Use source" },
                   { value: "global", label: "Scope: Force global" },
@@ -1119,10 +842,14 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
                           <span className="font-medium truncate">{candidate.proposedName}</span>
-                          <Badge variant="outline">{candidate.sourceLabel}</Badge>
-                          <Badge variant={candidate.scope === "global" ? "default" : "secondary"}>
+                          <span className="text-xs px-2 py-0.5 rounded-full border">
+                            {candidate.sourceLabel}
+                          </span>
+                          <span
+                            className={`text-xs px-2 py-0.5 rounded-full ${candidate.scope === "global" ? "bg-primary/20 text-primary" : "bg-secondary"}`}
+                          >
                             {candidate.scope}
-                          </Badge>
+                          </span>
                         </div>
                         <p className="text-xs text-muted-foreground truncate mt-1">
                           {candidate.sourcePath}
@@ -1150,16 +877,6 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
                   {importResult.imported.length} imported, {importResult.skipped.length} skipped,{" "}
                   {importResult.conflicts.length} conflicts, {importResult.errors.length} errors
                 </p>
-                {importResult.imported.length > 0 && (
-                  <p className="text-xs text-muted-foreground mt-2">
-                    Imported:{" "}
-                    {importResult.imported
-                      .slice(0, 3)
-                      .map((r) => r.name)
-                      .join(", ")}
-                    {importResult.imported.length > 3 ? "..." : ""}
-                  </p>
-                )}
                 {importResult.conflicts.length > 0 && (
                   <div className="mt-2 flex items-center justify-between gap-2">
                     <p className="text-xs text-destructive">
@@ -1174,47 +891,6 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
                     </Button>
                   </div>
                 )}
-              </div>
-            )}
-
-            {importHistory.length > 0 && (
-              <div className="rounded-md border p-3 text-xs">
-                <div className="mb-2 flex items-center justify-between gap-2">
-                  <p className="font-medium">Recent Import Runs</p>
-                  <Select
-                    value={importHistoryFilter}
-                    onChange={(value) =>
-                      setImportHistoryFilter(
-                        value as "all" | "ai_tool" | "file" | "directory" | "url" | "clipboard"
-                      )
-                    }
-                    options={[
-                      { value: "all", label: "All sources" },
-                      { value: "ai_tool", label: "AI Tool" },
-                      { value: "file", label: "File" },
-                      { value: "directory", label: "Directory" },
-                      { value: "url", label: "URL" },
-                      { value: "clipboard", label: "Clipboard" },
-                    ]}
-                    className="w-32"
-                    aria-label="Import history source filter"
-                  />
-                </div>
-                <div className="space-y-1 text-muted-foreground">
-                  {importHistory
-                    .filter((entry) =>
-                      importHistoryFilter === "all"
-                        ? true
-                        : entry.sourceType === importHistoryFilter
-                    )
-                    .slice(0, 3)
-                    .map((entry) => (
-                      <p key={entry.id}>
-                        {new Date(entry.timestamp * 1000).toLocaleString()} - {entry.sourceType} -{" "}
-                        {entry.importedCount} imported
-                      </p>
-                    ))}
-                </div>
               </div>
             )}
           </div>
@@ -1257,6 +933,7 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
           </DialogHeader>
 
           <Input
+            type="url"
             value={urlImportValue}
             onChange={(e) => setUrlImportValue(e.target.value)}
             placeholder="https://example.com/rules.md"
@@ -1282,6 +959,7 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
           </DialogHeader>
 
           <Input
+            type="text"
             value={clipboardNameInput}
             onChange={(e) => setClipboardNameInput(e.target.value)}
             placeholder="clipboard-import"

@@ -141,6 +141,9 @@ export function ConflictResolutionDialog({
         setRemoteContent(remote);
 
         const fileName = conflict.filePath.split(/[/\\]/).pop() || "";
+        if (!fileName) {
+          throw new Error("Could not extract filename from conflict path");
+        }
         const adapterName =
           conflict.adapterName === "Detected Adapter"
             ? Object.keys(ADAPTER_NAME_TO_ID).find((k) => k === fileName.toLowerCase()) || fileName
@@ -148,7 +151,10 @@ export function ConflictResolutionDialog({
 
         const adapterId =
           ADAPTER_NAME_TO_ID[adapterName] || (adapterName.replace(" ", "-") as AdapterType);
-        const adapterRules = (localRules || []).filter((r) =>
+        if (!adapterId) {
+          throw new Error(`Unknown adapter: ${adapterName}`);
+        }
+        const adapterRules = (localRules ?? []).filter((r) =>
           r.enabledAdapters.includes(adapterId)
         );
 

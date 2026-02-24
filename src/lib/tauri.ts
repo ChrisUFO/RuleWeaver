@@ -160,24 +160,24 @@ export const api = {
   slashCommands: {
     remove: (commandName: string, adapters: string[]) =>
       invoke<{
-        files_written: number;
-        files_removed: number;
+        filesWritten: number;
+        filesRemoved: number;
         errors: string[];
-        conflicts: Array<{ command_name: string; adapter_name: string; message: string }>;
+        conflicts: Array<{ commandName: string; adapterName: string; message: string }>;
       }>("remove_slash_command_files", { commandName, adapters }),
     sync: (commandId: string, isGlobal: boolean) =>
       invoke<{
-        files_written: number;
-        files_removed: number;
+        filesWritten: number;
+        filesRemoved: number;
         errors: string[];
-        conflicts: Array<{ command_name: string; adapter_name: string; message: string }>;
+        conflicts: Array<{ commandName: string; adapterName: string; message: string }>;
       }>("sync_slash_command", { commandId, isGlobal }),
     syncAll: (isGlobal: boolean) =>
       invoke<{
-        files_written: number;
-        files_removed: number;
+        filesWritten: number;
+        filesRemoved: number;
         errors: string[];
-        conflicts: Array<{ command_name: string; adapter_name: string; message: string }>;
+        conflicts: Array<{ commandName: string; adapterName: string; message: string }>;
       }>("sync_all_slash_commands", { isGlobal }),
     getStatus: (commandId: string) =>
       invoke<Record<string, "Synced" | "OutOfDate" | "NotSynced" | { Error: string }>>(
@@ -190,10 +190,10 @@ export const api = {
       invoke<
         Array<{
           name: string;
-          supports_argument_substitution: boolean;
-          argument_pattern?: string;
-          global_path: string;
-          local_path: string;
+          supportsArgumentSubstitution: boolean;
+          argumentPattern?: string;
+          globalPath: string;
+          localPath: string;
         }>
       >("get_slash_command_adapters"),
     testGeneration: (adapterName: string, commandId: string) =>

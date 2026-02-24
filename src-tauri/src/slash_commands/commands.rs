@@ -17,13 +17,13 @@ pub async fn sync_slash_command(
     database: State<'_, Arc<Database>>,
 ) -> Result<SlashCommandSyncResult> {
     let engine = SlashCommandSyncEngine::new(Arc::clone(&database));
-    
+
     // Get the command from database
     let command = database.get_command_by_id(&command_id)?;
-    
+
     // Sync the command
     let result = engine.sync_command(&command, is_global)?;
-    
+
     Ok(result)
 }
 
@@ -34,10 +34,10 @@ pub async fn sync_all_slash_commands(
     database: State<'_, Arc<Database>>,
 ) -> Result<SlashCommandSyncResult> {
     let engine = SlashCommandSyncEngine::new(Arc::clone(&database));
-    
+
     // Sync all commands
     let result = engine.sync_all_commands(is_global)?;
-    
+
     Ok(result)
 }
 
@@ -48,13 +48,13 @@ pub async fn get_slash_command_status(
     database: State<'_, Arc<Database>>,
 ) -> Result<std::collections::HashMap<String, SyncStatus>> {
     let engine = SlashCommandSyncEngine::new(Arc::clone(&database));
-    
+
     // Get the command from database
     let command = database.get_command_by_id(&command_id)?;
-    
+
     // Get sync status
     let status = engine.get_command_sync_status(&command)?;
-    
+
     Ok(status)
 }
 
@@ -66,10 +66,10 @@ pub async fn cleanup_slash_commands(
     database: State<'_, Arc<Database>>,
 ) -> Result<usize> {
     let engine = SlashCommandSyncEngine::new(Arc::clone(&database));
-    
+
     // Cleanup the adapter
     let count = engine.cleanup_adapter(&adapter_name, is_global)?;
-    
+
     Ok(count)
 }
 
@@ -81,10 +81,10 @@ pub async fn remove_slash_command_files(
     database: State<'_, Arc<Database>>,
 ) -> Result<SlashCommandSyncResult> {
     let engine = SlashCommandSyncEngine::new(Arc::clone(&database));
-    
+
     // Remove command files
     let result = engine.remove_command(&command_name, &adapters)?;
-    
+
     Ok(result)
 }
 
@@ -92,7 +92,7 @@ pub async fn remove_slash_command_files(
 #[tauri::command]
 pub async fn get_slash_command_adapters() -> Result<Vec<AdapterInfo>> {
     let adapters = get_all_adapters();
-    
+
     let info: Vec<AdapterInfo> = adapters
         .iter()
         .map(|adapter| AdapterInfo {
@@ -103,12 +103,13 @@ pub async fn get_slash_command_adapters() -> Result<Vec<AdapterInfo>> {
             local_path: adapter.local_dir().to_string(),
         })
         .collect();
-    
+
     Ok(info)
 }
 
 /// Info about a slash command adapter
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AdapterInfo {
     pub name: String,
     pub supports_argument_substitution: bool,
@@ -125,19 +126,19 @@ pub async fn test_slash_command_generation(
     database: State<'_, Arc<Database>>,
 ) -> Result<String> {
     use crate::slash_commands::get_adapter;
-    
+
     // Get the command from database
     let command = database.get_command_by_id(&command_id)?;
-    
+
     // Get the adapter
-    let adapter = get_adapter(&adapter_name)
-        .ok_or_else(|| crate::error::AppError::InvalidInput {
+    let adapter =
+        get_adapter(&adapter_name).ok_or_else(|| crate::error::AppError::InvalidInput {
             message: format!("Unknown adapter: {}", adapter_name),
         })?;
-    
+
     // Generate the content
     let content = adapter.format_command(&command);
-    
+
     Ok(content)
 }
 
@@ -150,18 +151,18 @@ pub async fn get_slash_command_path(
 ) -> Result<PathBuf> {
     use crate::slash_commands::get_adapter;
     use crate::slash_commands::sync::validate_command_name;
-    
+
     // Get the adapter
-    let adapter = get_adapter(&adapter_name)
-        .ok_or_else(|| crate::error::AppError::InvalidInput {
+    let adapter =
+        get_adapter(&adapter_name).ok_or_else(|| crate::error::AppError::InvalidInput {
             message: format!("Unknown adapter: {}", adapter_name),
         })?;
-    
+
     // Sanitize the command name for consistent paths
     let safe_name = validate_command_name(&command_name)?;
-    
+
     // Get the path
     let path = adapter.get_command_path(&safe_name, is_global)?;
-    
+
     Ok(path)
 }

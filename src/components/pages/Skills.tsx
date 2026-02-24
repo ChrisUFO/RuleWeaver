@@ -63,10 +63,10 @@ export function Skills() {
     setName(selected.name);
     setDescription(selected.description);
     setInstructions(selected.instructions);
-    setInputSchema(selected.input_schema || []);
-    setEntryPoint(selected.entry_point || "");
+    setInputSchema(selected.inputSchema || []);
+    setEntryPoint(selected.entryPoint || "");
     setScope(selected.scope);
-    setDirectoryPath(selected.directory_path || "");
+    setDirectoryPath(selected.directoryPath || "");
     setEnabled(selected.enabled);
   }, [selected]);
 
@@ -78,8 +78,8 @@ export function Skills() {
         description: "Describe this workflow",
         instructions: "Step 1\nStep 2",
         scope: "global",
-        input_schema: [],
-        entry_point: "run.sh",
+        inputSchema: [],
+        entryPoint: "run.sh",
         enabled: true,
       });
       await loadSkills();
@@ -105,9 +105,9 @@ export function Skills() {
         description,
         instructions,
         scope,
-        input_schema: inputSchema,
-        directory_path: scope === "local" ? directoryPath : undefined,
-        entry_point: entryPoint,
+        inputSchema: inputSchema,
+        directoryPath: scope === "local" ? directoryPath : undefined,
+        entryPoint: entryPoint,
         enabled,
       });
       setSkills((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
@@ -143,9 +143,9 @@ export function Skills() {
   };
 
   const openFolder = async () => {
-    if (!selected?.directory_path) return;
+    if (!selected?.directoryPath) return;
     try {
-      await api.app.openInExplorer(selected.directory_path);
+      await api.app.openInExplorer(selected.directoryPath);
     } catch {
       addToast({
         title: "Failed to Open",
@@ -232,7 +232,7 @@ export function Skills() {
               </CardTitle>
               <CardDescription>Define reusable instructions and workflow context.</CardDescription>
             </div>
-            {selected && selected.directory_path && (
+            {selected && selected.directoryPath && (
               <Button
                 variant="outline"
                 size="sm"

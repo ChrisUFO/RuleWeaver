@@ -2,12 +2,14 @@ use crate::models::{CreateSkillInput, Scope, SkillParameter, SkillParameterType}
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TemplateFile {
     pub filename: String,
     pub content: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TemplateSkill {
     pub template_id: String,
     pub metadata: CreateSkillInput,

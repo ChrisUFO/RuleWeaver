@@ -97,25 +97,25 @@ export function TemplateBrowser({ onInstalled }: TemplateBrowserProps) {
             ) : (
               templates.map((t) => (
                 <div
-                  key={t.template_id}
+                  key={t.templateId}
                   className="flex items-center justify-between p-4 border rounded-md bg-card"
                 >
                   <div className="flex-1 pr-4">
                     <h4 className="font-semibold">{t.metadata.name}</h4>
                     <p className="text-sm text-muted-foreground mt-1">{t.metadata.description}</p>
-                    {t.metadata.input_schema.length > 0 && (
+                    {t.metadata.inputSchema.length > 0 && (
                       <div className="text-xs text-muted-foreground mt-2">
-                        Takes {t.metadata.input_schema.length} parameter
-                        {t.metadata.input_schema.length !== 1 ? "s" : ""}
+                        Takes {t.metadata.inputSchema.length} parameter
+                        {t.metadata.inputSchema.length !== 1 ? "s" : ""}
                       </div>
                     )}
                   </div>
                   <Button
                     size="sm"
-                    onClick={() => install(t.template_id)}
+                    onClick={() => install(t.templateId)}
                     disabled={installingId !== null}
                   >
-                    {installingId === t.template_id ? (
+                    {installingId === t.templateId ? (
                       <span className="flex items-center">
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Installing...
                       </span>
