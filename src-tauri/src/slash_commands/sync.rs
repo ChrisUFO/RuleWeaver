@@ -283,7 +283,7 @@ impl SlashCommandSyncEngine {
     }
 
     /// Sync all commands that have slash commands enabled
-    pub fn sync_all_commands(&self, is_global: bool) -> Result<SlashCommandSyncResult> {
+    pub async fn sync_all_commands(&self, is_global: bool) -> Result<SlashCommandSyncResult> {
         // Acquire sync lock to prevent concurrent syncs
         let _lock = self
             .sync_lock
@@ -293,7 +293,7 @@ impl SlashCommandSyncEngine {
         let mut result = SlashCommandSyncResult::new();
 
         // Get all commands from database
-        let commands = self.database.get_all_commands()?;
+        let commands = self.database.get_all_commands().await?;
 
         for command in commands {
             if command.generate_slash_commands {

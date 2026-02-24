@@ -65,7 +65,7 @@ pub struct MigrationError {
     pub error: String,
 }
 
-pub fn migrate_to_file_storage(db: &Database) -> Result<MigrationResult> {
+pub async fn migrate_to_file_storage(db: &Database) -> Result<MigrationResult> {
     MIGRATION_PROGRESS.store(0, Ordering::Relaxed);
     MIGRATION_TOTAL.store(0, Ordering::Relaxed);
     if let Ok(mut state) = migration_state().lock() {
@@ -73,7 +73,7 @@ pub fn migrate_to_file_storage(db: &Database) -> Result<MigrationResult> {
         state.status = MigrationStatus::InProgress;
     }
 
-    let rules = db.get_all_rules()?;
+    let rules = db.get_all_rules().await?;
     let total = rules.len() as u32;
     MIGRATION_TOTAL.store(total, Ordering::Relaxed);
 
@@ -93,7 +93,7 @@ pub fn migrate_to_file_storage(db: &Database) -> Result<MigrationResult> {
         });
     }
 
-    let backup_path = create_backup(db)?;
+    let backup_path = create_backup(db).await?;
 
     let storage_dir = crate::file_storage::get_global_rules_dir()?;
     fs::create_dir_all(&storage_dir)?;
@@ -134,7 +134,7 @@ pub fn migrate_to_file_storage(db: &Database) -> Result<MigrationResult> {
                         }
                     }
                 }
-                if let Err(e) = db.update_rule_file_index(&rule.id, &location) {
+                if let Err(e) = db.update_rule_file_index(&rule.id, &location).await {
                     errors.push(MigrationError {
                         rule_id: rule.id.clone(),
                         rule_name: rule.name.clone(),
@@ -156,7 +156,7 @@ pub fn migrate_to_file_storage(db: &Database) -> Result<MigrationResult> {
     let success = errors.is_empty();
     if success {
         let local_paths_json = serde_json::to_string(&local_rule_paths)?;
-        let _ = db.set_setting("local_rule_paths", &local_paths_json);
+        let _ = db.set_setting("local_rule_paths", &local_paths_json).await;
     }
     if let Ok(mut state) = migration_state().lock() {
         state.current_rule = None;
@@ -177,8 +177,8 @@ pub fn migrate_to_file_storage(db: &Database) -> Result<MigrationResult> {
     })
 }
 
-fn create_backup(db: &Database) -> Result<String> {
-    let db_path = db.get_database_path()?;
+async fn create_backup(db: &Database) -> Result<String> {
+    let db_path = db.get_database_path().await?;
     let now = chrono::Local::now().format("%Y%m%d%H%M%S");
     let backup_path = format!("{}.{}.migration-backup", db_path, now);
 
@@ -196,10 +196,10 @@ fn create_backup(db: &Database) -> Result<String> {
     Ok(backup_path)
 }
 
-pub fn rollback_migration(backup_path: &str, db: Option<&Database>) -> Result<()> {
+pub async fn rollback_migration(backup_path: &str, db: Option<&Database>) -> Result<()> {
     // backup_path: /path/to/db.timestamp.migration-backup
     let db_path_buf = if let Some(d) = db {
-        PathBuf::from(d.get_database_path()?)
+        PathBuf::from(d.get_database_path().await?)
     } else {
         let path = if let Some(stripped) = backup_path.strip_suffix(".migration-backup") {
             if let Some(last_dot_idx) = stripped.rfind('.') {
@@ -279,8 +279,8 @@ pub fn get_migration_progress() -> MigrationProgress {
     }
 }
 
-pub fn verify_migration(db: &Database) -> Result<VerificationResult> {
-    let db_rules = db.get_all_rules()?;
+pub async fn verify_migration(db: &Database) -> Result<VerificationResult> {
+    let db_rules = db.get_all_rules().await?;
 
     let load_result = crate::file_storage::load_rules_from_disk()?;
 
