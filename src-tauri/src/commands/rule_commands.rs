@@ -18,7 +18,7 @@ async fn sync_to_ai_tools(db: &Database) {
     match db.get_all_rules().await {
         Ok(rules) => {
             let engine = SyncEngine::new(db);
-            let sync_result = engine.sync_all(rules);
+            let sync_result = engine.sync_all(rules).await;
             if !sync_result.errors.is_empty() {
                 log::error!("AI tool sync failed with errors: {:?}", sync_result.errors);
             }
@@ -197,12 +197,12 @@ pub async fn toggle_rule(id: String, enabled: bool, db: State<'_, Arc<Database>>
 pub async fn sync_rules(db: State<'_, Arc<Database>>) -> Result<SyncResult> {
     let rules = db.get_all_rules().await?;
     let engine = SyncEngine::new(&db);
-    Ok(engine.sync_all(rules))
+    Ok(engine.sync_all(rules).await)
 }
 
 #[tauri::command]
 pub async fn preview_sync(db: State<'_, Arc<Database>>) -> Result<SyncResult> {
     let rules = db.get_all_rules().await?;
     let engine = SyncEngine::new(&db);
-    Ok(engine.preview(rules))
+    Ok(engine.preview(rules).await)
 }

@@ -47,9 +47,9 @@ pub async fn create_command(
     for path in &input.target_paths {
         validate_path(path)?;
     }
-    validate_paths_within_registered_roots(&db, &input.target_paths)?;
+    validate_paths_within_registered_roots(&db, &input.target_paths).await?;
     let created = db.create_command(input).await?;
-    register_local_paths(&db, &created.target_paths)?;
+    register_local_paths(&db, &created.target_paths).await?;
     mcp.refresh_commands(&db).await?;
     Ok(created)
 }
@@ -81,11 +81,11 @@ pub async fn update_command(
         for path in paths {
             validate_path(path)?;
         }
-        validate_paths_within_registered_roots(&db, paths)?;
+        validate_paths_within_registered_roots(&db, paths).await?;
     }
 
     let updated = db.update_command(&id, input).await?;
-    register_local_paths(&db, &updated.target_paths)?;
+    register_local_paths(&db, &updated.target_paths).await?;
     mcp.refresh_commands(&db).await?;
     Ok(updated)
 }
