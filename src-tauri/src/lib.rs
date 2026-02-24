@@ -113,6 +113,25 @@ pub fn run() {
                                         import_result.skipped.len(),
                                         import_result.conflicts.len()
                                     );
+
+                                    if import_result.imported.len()
+                                        + import_result.skipped.len()
+                                        + import_result.conflicts.len()
+                                        > 0
+                                    {
+                                        use tauri_plugin_notification::NotificationExt;
+                                        app.notification()
+                                            .builder()
+                                            .title("Existing Rules Imported")
+                                            .body(format!(
+                                                "Imported {} rule(s), skipped {}, conflicts {}",
+                                                import_result.imported.len(),
+                                                import_result.skipped.len(),
+                                                import_result.conflicts.len()
+                                            ))
+                                            .show()
+                                            .ok();
+                                    }
                                 }
                                 Err(e) => {
                                     log::error!("Bootstrap import failed: {}", e);

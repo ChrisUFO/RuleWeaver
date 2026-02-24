@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::fs;
+use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 
 use chrono::Utc;
@@ -35,7 +36,8 @@ struct JsonRulePayload {
 }
 
 pub async fn scan_url_to_candidates(url: &str, max_size: u64) -> Result<ImportScanResult> {
-    let response = reqwest::get(url)
+    let parsed_url = validate_url_for_import(url)?;
+    let response = reqwest::get(parsed_url.clone())
         .await
         .map_err(|e| AppError::InvalidInput {
             message: format!("Failed to fetch URL: {}", e),
@@ -58,17 +60,16 @@ pub async fn scan_url_to_candidates(url: &str, max_size: u64) -> Result<ImportSc
     }
 
     let mut scan = ImportScanResult::default();
-    let inferred_name = url
-        .split('/')
-        .next_back()
-        .filter(|s| !s.is_empty())
+    let inferred_name = parsed_url
+        .path_segments()
+        .and_then(|mut segments| segments.rfind(|s| !s.is_empty()))
         .unwrap_or("imported-url");
     scan.candidates.push(candidate_from_text(
         body,
         inferred_name,
         crate::models::ImportSourceType::Url,
         "URL",
-        url,
+        parsed_url.as_str(),
         None,
         Scope::Global,
         None,
@@ -121,7 +122,27 @@ pub fn scan_file_to_candidates(path: &Path, max_size: u64) -> ImportScanResult {
 
 pub fn scan_directory_to_candidates(path: &Path, max_size: u64) -> ImportScanResult {
     let mut scan = ImportScanResult::default();
-    for entry in WalkDir::new(path)
+    let canonical_root = match path.canonicalize() {
+        Ok(p) => p,
+        Err(e) => {
+            scan.errors.push(format!(
+                "Could not resolve directory '{}': {}",
+                path.display(),
+                e
+            ));
+            return scan;
+        }
+    };
+
+    if !canonical_root.is_dir() {
+        scan.errors.push(format!(
+            "Import path '{}' is not a directory",
+            canonical_root.display()
+        ));
+        return scan;
+    }
+
+    for entry in WalkDir::new(&canonical_root)
         .follow_links(false)
         .into_iter()
         .filter_map(|e| e.ok())
@@ -207,6 +228,12 @@ pub fn execute_import(
     options: ImportExecutionOptions,
 ) -> Result<ImportExecutionResult> {
     let mut result = ImportExecutionResult::default();
+    let history_source_type = scan_result
+        .candidates
+        .first()
+        .map(|c| c.source_type.clone())
+        .unwrap_or(crate::models::ImportSourceType::AiTool);
+    let scan_errors = scan_result.errors.clone();
     let selected_set = options
         .selected_candidate_ids
         .as_ref()
@@ -367,11 +394,11 @@ pub fn execute_import(
         ImportHistoryEntry {
             id: uuid::Uuid::new_v4().to_string(),
             timestamp: Utc::now(),
-            source_type: crate::models::ImportSourceType::AiTool,
+            source_type: history_source_type,
             imported_count: result.imported.len(),
             skipped_count: result.skipped.len(),
             conflict_count: result.conflicts.len(),
-            error_count: result.errors.len() + scan_result.errors.len(),
+            error_count: result.errors.len() + scan_errors.len(),
         },
     )?;
 
@@ -384,7 +411,7 @@ pub fn execute_import(
             err.adapter_name, err.message
         ));
     }
-    for err in scan_result.errors {
+    for err in scan_errors {
         result.errors.push(err);
     }
 
@@ -779,6 +806,59 @@ fn is_supported_import_extension(path: &Path) -> bool {
     )
 }
 
+fn validate_url_for_import(input: &str) -> Result<url::Url> {
+    let parsed = url::Url::parse(input).map_err(|e| AppError::InvalidInput {
+        message: format!("Invalid URL: {}", e),
+    })?;
+
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return Err(AppError::InvalidInput {
+            message: "Only http/https URLs are allowed".to_string(),
+        });
+    }
+
+    let host = parsed.host_str().ok_or_else(|| AppError::InvalidInput {
+        message: "URL must include a host".to_string(),
+    })?;
+
+    if host.eq_ignore_ascii_case("localhost") {
+        return Err(AppError::InvalidInput {
+            message: "Localhost URLs are not allowed".to_string(),
+        });
+    }
+
+    if let Ok(ip) = host.parse::<IpAddr>() {
+        if is_disallowed_ip(&ip) {
+            return Err(AppError::InvalidInput {
+                message: "URLs targeting private or local IP ranges are not allowed".to_string(),
+            });
+        }
+    }
+
+    Ok(parsed)
+}
+
+fn is_disallowed_ip(ip: &IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(v4) => {
+            v4.is_private()
+                || v4.is_loopback()
+                || v4.is_link_local()
+                || v4.is_broadcast()
+                || v4.is_unspecified()
+                || v4.is_multicast()
+                || v4.is_documentation()
+        }
+        IpAddr::V6(v6) => {
+            v6.is_loopback()
+                || v6.is_unique_local()
+                || v6.is_unicast_link_local()
+                || v6.is_unspecified()
+                || v6.is_multicast()
+        }
+    }
+}
+
 fn compute_content_hash(content: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(content.as_bytes());
@@ -1063,5 +1143,52 @@ enabledAdapters:
         let oversized = "a".repeat(11);
         let result = scan_clipboard_to_candidates(&oversized, Some("clip"), 10);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn validate_url_blocks_localhost_and_private_ips() {
+        assert!(validate_url_for_import("http://localhost:8080/a").is_err());
+        assert!(validate_url_for_import("http://127.0.0.1:8080/a").is_err());
+        assert!(validate_url_for_import("https://10.0.0.5/a").is_err());
+    }
+
+    #[test]
+    fn validate_url_allows_public_http_https() {
+        assert!(validate_url_for_import("https://example.com/rules.md").is_ok());
+        assert!(validate_url_for_import("http://example.com/rules.md").is_ok());
+        assert!(validate_url_for_import("ftp://example.com/rules.md").is_err());
+    }
+
+    #[test]
+    fn history_source_type_matches_candidate_source() {
+        let db = Database::new_in_memory().expect("in-memory db");
+
+        let candidate = candidate_from_text(
+            "file content".to_string(),
+            "file-rule",
+            crate::models::ImportSourceType::File,
+            "File",
+            "C:/tmp/r.md",
+            None,
+            Scope::Global,
+            None,
+        );
+
+        execute_import(
+            &db,
+            ImportScanResult {
+                candidates: vec![candidate],
+                errors: vec![],
+            },
+            ImportExecutionOptions::default(),
+        )
+        .expect("import succeeds");
+
+        let history = read_import_history(&db);
+        assert!(!history.is_empty());
+        assert_eq!(
+            history[0].source_type,
+            crate::models::ImportSourceType::File
+        );
     }
 }

@@ -105,6 +105,8 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
   const [importSourceMode, setImportSourceMode] = useState<ImportSourceMode>("ai");
   const [importSourceValue, setImportSourceValue] = useState("");
   const [clipboardImportName, setClipboardImportName] = useState<string | undefined>(undefined);
+  const [urlImportDialogOpen, setUrlImportDialogOpen] = useState(false);
+  const [urlImportValue, setUrlImportValue] = useState("");
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -325,6 +327,9 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
   ) => {
     setImportSourceMode(mode);
     setImportSourceValue(sourceValue);
+    if (mode !== "clipboard") {
+      setClipboardImportName(undefined);
+    }
     setImportResult(null);
     setImportCandidates(candidates);
     setImportScanErrors(errors);
@@ -391,9 +396,8 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
     }
   };
 
-  const scanImportFromUrl = async () => {
-    const url = window.prompt("Enter a URL to import:");
-    if (!url) return;
+  const scanImportFromUrl = async (url: string) => {
+    if (!url.trim()) return;
 
     setIsScanningImport(true);
     try {
@@ -408,6 +412,25 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
     } finally {
       setIsScanningImport(false);
     }
+  };
+
+  const openUrlImportDialog = () => {
+    setUrlImportDialogOpen(true);
+  };
+
+  const submitUrlImportScan = async () => {
+    const value = urlImportValue.trim();
+    if (!value) {
+      addToast({
+        title: "URL Required",
+        description: "Enter a URL to scan for import",
+        variant: "error",
+      });
+      return;
+    }
+
+    setUrlImportDialogOpen(false);
+    await scanImportFromUrl(value);
   };
 
   const scanImportFromClipboard = async () => {
@@ -494,6 +517,9 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
 
       setImportResult(result);
       await handleImportResult("Import Complete", result);
+      if (importSourceMode === "clipboard") {
+        setClipboardImportName(undefined);
+      }
     } catch (error) {
       addToast({
         title: "Import Failed",
@@ -542,7 +568,7 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
           </Button>
           <Button
             variant="outline"
-            onClick={scanImportFromUrl}
+            onClick={openUrlImportDialog}
             disabled={isImporting || isScanningImport}
           >
             <Link className="mr-2 h-4 w-4" aria-hidden="true" />
@@ -1015,7 +1041,7 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
                 } else if (importSourceMode === "directory") {
                   void scanImportFromDirectory();
                 } else if (importSourceMode === "url") {
-                  void scanImportFromUrl();
+                  setUrlImportDialogOpen(true);
                 } else {
                   void scanImportFromClipboard();
                 }
@@ -1027,6 +1053,29 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
             <Button onClick={executeImport} disabled={isImporting || selectedImportIds.size === 0}>
               {isImporting ? "Importing..." : "Import Selected"}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={urlImportDialogOpen} onOpenChange={setUrlImportDialogOpen}>
+        <DialogContent onClose={() => setUrlImportDialogOpen(false)}>
+          <DialogHeader>
+            <DialogTitle>Import Rules From URL</DialogTitle>
+            <DialogDescription>Enter a URL to scan before importing.</DialogDescription>
+          </DialogHeader>
+
+          <Input
+            value={urlImportValue}
+            onChange={(e) => setUrlImportValue(e.target.value)}
+            placeholder="https://example.com/rules.md"
+            aria-label="Import URL"
+          />
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setUrlImportDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={submitUrlImportScan}>Scan URL</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
