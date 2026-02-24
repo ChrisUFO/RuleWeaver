@@ -584,6 +584,7 @@ fn candidate_from_path(
     ))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn candidate_from_text(
     content: String,
     default_name: &str,

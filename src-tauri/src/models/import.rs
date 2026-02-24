@@ -13,18 +13,13 @@ pub enum ImportSourceType {
     Clipboard,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum ImportConflictMode {
+    #[default]
     Skip,
     Rename,
     Replace,
-}
-
-impl Default for ImportConflictMode {
-    fn default() -> Self {
-        Self::Skip
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
