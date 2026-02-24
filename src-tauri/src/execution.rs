@@ -2,10 +2,7 @@ use std::time::Duration;
 use tokio::process::Command as TokioCommand;
 use tokio::time::timeout;
 
-use crate::constants::{
-    limits::{MAX_ARG_LENGTH, MAX_SCRIPT_LENGTH},
-    security::REGEX_DFA_SIZE_LIMIT,
-};
+use crate::constants::limits::{MAX_ARG_LENGTH, MAX_SCRIPT_LENGTH};
 use crate::database::{Database, ExecutionLogInput};
 use crate::error::{AppError, Result};
 

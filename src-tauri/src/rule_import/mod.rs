@@ -31,6 +31,7 @@ struct JsonRulePayload {
     content: Option<String>,
     scope: Option<String>,
     #[serde(rename = "targetPaths")]
+    #[allow(dead_code)]
     target_paths: Option<Vec<String>>,
     #[serde(rename = "enabledAdapters")]
     enabled_adapters: Option<Vec<String>>,

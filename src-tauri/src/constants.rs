@@ -28,7 +28,7 @@ pub mod limits {
 }
 
 pub mod security {
-    pub const REGEX_DFA_SIZE_LIMIT: usize = 10_000;
+    // regex dfa size limit removed
 }
 
 pub mod skills {
