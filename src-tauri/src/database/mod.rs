@@ -857,6 +857,37 @@ impl Database {
         Ok(())
     }
 
+    pub fn merge_setting_string_array_unique(&self, key: &str, values: &[String]) -> Result<()> {
+        let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
+        let current: Option<String> = conn
+            .query_row(
+                "SELECT value FROM settings WHERE key = ?",
+                params![key],
+                |row| row.get(0),
+            )
+            .optional()?;
+
+        let mut merged: std::collections::HashSet<String> = match current {
+            Some(raw) => serde_json::from_str::<Vec<String>>(&raw)
+                .unwrap_or_default()
+                .into_iter()
+                .collect(),
+            None => std::collections::HashSet::new(),
+        };
+
+        for value in values {
+            merged.insert(value.clone());
+        }
+
+        let encoded = serde_json::to_string(&merged.into_iter().collect::<Vec<_>>())?;
+        conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+            params![key, encoded],
+        )?;
+
+        Ok(())
+    }
+
     pub fn get_all_settings(&self) -> Result<std::collections::HashMap<String, String>> {
         let conn = self.0.lock().map_err(|_| AppError::DatabasePoisoned)?;
         let mut stmt = conn.prepare("SELECT key, value FROM settings")?;

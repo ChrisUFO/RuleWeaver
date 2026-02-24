@@ -247,21 +247,8 @@ pub fn register_local_rule_paths(db: &Database, rule: &Rule) -> Result<()> {
         return Ok(());
     }
 
-    let mut roots = get_local_rule_roots(db)?
-        .into_iter()
-        .map(|p| p.to_string_lossy().to_string())
-        .collect::<Vec<_>>();
-
-    if let Some(paths) = &rule.target_paths {
-        for path in paths {
-            if !roots.iter().any(|p| p == path) {
-                roots.push(path.clone());
-            }
-        }
-    }
-
-    let encoded = serde_json::to_string(&roots)?;
-    db.set_setting(LOCAL_RULE_PATHS_KEY, &encoded)
+    let paths = rule.target_paths.clone().unwrap_or_default();
+    register_local_paths(db, &paths)
 }
 
 pub fn command_file_targets_for_root(root: &Path) -> Vec<(String, Box<dyn CommandAdapter>)> {
@@ -321,18 +308,7 @@ pub fn command_file_targets_for_root(root: &Path) -> Vec<(String, Box<dyn Comman
 }
 
 pub fn register_local_paths(db: &Database, paths: &[String]) -> Result<()> {
-    let mut roots: std::collections::HashSet<String> = get_local_rule_roots(db)?
-        .into_iter()
-        .map(|p| p.to_string_lossy().to_string())
-        .collect();
-
-    for path in paths {
-        roots.insert(path.clone());
-    }
-
-    let roots_vec: Vec<String> = roots.into_iter().collect();
-    let encoded = serde_json::to_string(&roots_vec)?;
-    db.set_setting(LOCAL_RULE_PATHS_KEY, &encoded)
+    db.merge_setting_string_array_unique(LOCAL_RULE_PATHS_KEY, paths)
 }
 
 pub fn validate_paths_within_registered_roots(db: &Database, paths: &[String]) -> Result<()> {
@@ -347,9 +323,14 @@ pub fn validate_paths_within_registered_roots(db: &Database, paths: &[String]) -
         });
     }
 
+    let canonical_roots = roots
+        .iter()
+        .filter_map(|root| std::fs::canonicalize(root).ok())
+        .collect::<Vec<_>>();
+
     for path in paths {
         let canonical = validate_path(path)?;
-        let in_roots = roots.iter().any(|root| canonical.starts_with(root));
+        let in_roots = canonical_roots.iter().any(|root| canonical.starts_with(root));
         if !in_roots {
             return Err(AppError::InvalidInput {
                 message: format!(

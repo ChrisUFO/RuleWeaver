@@ -251,9 +251,42 @@ export function Settings() {
     }
   };
 
-  const removeRepositoryRoot = (path: string) => {
-    setRepositoryRoots((prev) => prev.filter((p) => p !== path));
-    setRepoPathsDirty(true);
+  const removeRepositoryRoot = async (path: string) => {
+    try {
+      const [rules, commands, skills] = await Promise.all([
+        api.rules.getAll(),
+        api.commands.getAll(),
+        api.skills.getAll(),
+      ]);
+
+      const usedByRule = rules.some((rule) => rule.targetPaths?.some((p) => p === path));
+      const usedByCommand = commands.some((command) =>
+        command.target_paths?.some((p) => p === path)
+      );
+      const usedBySkill = skills.some(
+        (skill) =>
+          skill.scope === "local" && skill.directory_path && skill.directory_path.startsWith(path)
+      );
+
+      if (usedByRule || usedByCommand || usedBySkill) {
+        addToast({
+          title: "Repository In Use",
+          description:
+            "Cannot remove this repository root while rules, commands, or skills still reference it.",
+          variant: "error",
+        });
+        return;
+      }
+
+      setRepositoryRoots((prev) => prev.filter((p) => p !== path));
+      setRepoPathsDirty(true);
+    } catch (error) {
+      addToast({
+        title: "Validation Failed",
+        description: error instanceof Error ? error.message : "Could not validate repository usage",
+        variant: "error",
+      });
+    }
   };
 
   const saveRepositoryRoots = async () => {
@@ -710,7 +743,7 @@ export function Settings() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => removeRepositoryRoot(path)}
+                    onClick={() => void removeRepositoryRoot(path)}
                     aria-label={`Remove repository ${path}`}
                   >
                     Remove
