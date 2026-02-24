@@ -72,6 +72,69 @@ export interface SyncHistoryEntry {
   triggeredBy: "manual" | "auto";
 }
 
+export type ImportSourceType = "ai_tool" | "file" | "directory" | "url" | "clipboard";
+export type ImportConflictMode = "skip" | "rename" | "replace";
+
+export interface ImportCandidate {
+  id: string;
+  sourceType: ImportSourceType;
+  sourceLabel: string;
+  sourcePath: string;
+  sourceTool?: AdapterType;
+  name: string;
+  proposedName: string;
+  content: string;
+  scope: Scope;
+  targetPaths: string[] | null;
+  enabledAdapters: AdapterType[];
+  contentHash: string;
+  fileSize: number;
+}
+
+export interface ImportScanResult {
+  candidates: ImportCandidate[];
+  errors: string[];
+}
+
+export interface ImportExecutionOptions {
+  conflictMode?: ImportConflictMode;
+  defaultScope?: Scope;
+  defaultAdapters?: AdapterType[];
+  selectedCandidateIds?: string[];
+  maxFileSizeBytes?: number;
+}
+
+export interface ImportConflict {
+  candidateId: string;
+  candidateName: string;
+  existingRuleId?: string;
+  existingRuleName?: string;
+  reason: string;
+}
+
+export interface ImportSkip {
+  candidateId: string;
+  name: string;
+  reason: string;
+}
+
+export interface ImportExecutionResult {
+  imported: Rule[];
+  skipped: ImportSkip[];
+  conflicts: ImportConflict[];
+  errors: string[];
+}
+
+export interface ImportHistoryEntry {
+  id: string;
+  timestamp: number;
+  sourceType: ImportSourceType;
+  importedCount: number;
+  skippedCount: number;
+  conflictCount: number;
+  errorCount: number;
+}
+
 export interface AdapterInfo {
   id: AdapterType;
   name: string;

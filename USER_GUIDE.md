@@ -10,6 +10,20 @@
   - enabled adapters
 - Save changes.
 - Use `Sync` to generate adapter-specific rule files.
+- Use import actions on the Rules page to bring in existing rules:
+  - `Import AI` scans known AI tool paths, shows a candidate list, and imports selected items.
+  - `Import File` imports a single `.md`, `.txt`, `.json`, `.yaml`, or `.yml` file.
+  - `Import Folder` bulk-imports supported files recursively.
+  - `Import URL` fetches and imports remote rule content.
+  - `Import Clipboard` imports text currently in your clipboard.
+
+Import behavior:
+
+- Duplicate content is skipped automatically.
+- Name collisions default to safe rename behavior.
+- The AI import dialog supports conflict policies: `rename`, `skip`, or `replace`.
+- For same-name rules from different tools, RuleWeaver applies tool suffix naming (example: `quality-cline`, `quality-antigravity`).
+- Imports are idempotent and can be run repeatedly.
 
 Rule storage modes:
 

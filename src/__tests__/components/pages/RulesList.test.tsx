@@ -1,0 +1,233 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { RulesList } from "../../../components/pages/RulesList";
+import { ToastProvider } from "../../../components/ui/toast";
+import type { Rule } from "../../../types/rule";
+
+vi.mock("@tauri-apps/plugin-dialog", () => ({
+  open: vi.fn(),
+}));
+
+vi.mock("../../../lib/tauri", () => ({
+  api: {
+    ruleImport: {
+      scanAiToolCandidates: vi.fn(),
+      importAiToolRules: vi.fn(),
+      getHistory: vi.fn(),
+      scanFromFile: vi.fn(),
+      scanFromDirectory: vi.fn(),
+      scanFromUrl: vi.fn(),
+      scanFromClipboard: vi.fn(),
+      importFromFile: vi.fn(),
+      importFromDirectory: vi.fn(),
+      importFromUrl: vi.fn(),
+      importFromClipboard: vi.fn(),
+    },
+  },
+}));
+
+const mockStore = {
+  rules: [] as Rule[],
+  fetchRules: vi.fn(),
+  toggleRule: vi.fn(),
+  deleteRule: vi.fn(),
+  bulkDeleteRules: vi.fn(),
+  duplicateRule: vi.fn(),
+  restoreRecentlyDeleted: vi.fn(),
+  isLoading: false,
+};
+
+vi.mock("../../../stores/rulesStore", () => ({
+  useRulesStore: () => mockStore,
+}));
+
+const renderWithProviders = (ui: React.ReactElement) => render(<ToastProvider>{ui}</ToastProvider>);
+
+describe("RulesList import workflow", () => {
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    const { api } = await import("../../../lib/tauri");
+    const { open } = await import("@tauri-apps/plugin-dialog");
+    vi.mocked(api.ruleImport.getHistory).mockResolvedValue([]);
+    vi.mocked(open).mockResolvedValue(null);
+  });
+
+  it("opens AI import preview dialog after scan", async () => {
+    const { api } = await import("../../../lib/tauri");
+    vi.mocked(api.ruleImport.scanAiToolCandidates).mockResolvedValue({
+      candidates: [
+        {
+          id: "cand-1",
+          sourceType: "ai_tool",
+          sourceLabel: "Cline",
+          sourcePath: "C:/tmp/.clinerules",
+          sourceTool: "cline",
+          name: "quality",
+          proposedName: "quality-cline",
+          content: "rule content",
+          scope: "global",
+          targetPaths: null,
+          enabledAdapters: ["cline"],
+          contentHash: "hash",
+          fileSize: 12,
+        },
+      ],
+      errors: [],
+    });
+
+    renderWithProviders(<RulesList onSelectRule={vi.fn()} onCreateRule={vi.fn()} />);
+
+    await userEvent.click(screen.getByRole("button", { name: /import ai/i }));
+
+    await waitFor(() => {
+      expect(api.ruleImport.scanAiToolCandidates).toHaveBeenCalled();
+    });
+
+    expect(screen.getByText("Import Existing AI Tool Rules")).toBeInTheDocument();
+    expect(screen.getByText("quality-cline")).toBeInTheDocument();
+  });
+
+  it("imports selected AI candidates from preview dialog", async () => {
+    const { api } = await import("../../../lib/tauri");
+    vi.mocked(api.ruleImport.scanAiToolCandidates).mockResolvedValue({
+      candidates: [
+        {
+          id: "cand-1",
+          sourceType: "ai_tool",
+          sourceLabel: "Cline",
+          sourcePath: "C:/tmp/.clinerules",
+          sourceTool: "cline",
+          name: "quality",
+          proposedName: "quality-cline",
+          content: "rule content",
+          scope: "global",
+          targetPaths: null,
+          enabledAdapters: ["cline"],
+          contentHash: "hash",
+          fileSize: 12,
+        },
+      ],
+      errors: [],
+    });
+    vi.mocked(api.ruleImport.importAiToolRules).mockResolvedValue({
+      imported: [],
+      skipped: [],
+      conflicts: [],
+      errors: [],
+    });
+
+    renderWithProviders(<RulesList onSelectRule={vi.fn()} onCreateRule={vi.fn()} />);
+
+    await userEvent.click(screen.getByRole("button", { name: /import ai/i }));
+    await waitFor(() => expect(screen.getByText("quality-cline")).toBeInTheDocument());
+
+    await userEvent.click(screen.getByRole("button", { name: /import selected/i }));
+
+    await waitFor(() => {
+      expect(api.ruleImport.importAiToolRules).toHaveBeenCalledWith(
+        expect.objectContaining({
+          conflictMode: "rename",
+          selectedCandidateIds: ["cand-1"],
+        })
+      );
+    });
+  });
+
+  it("uses selected conflict mode when importing", async () => {
+    const { api } = await import("../../../lib/tauri");
+    vi.mocked(api.ruleImport.scanAiToolCandidates).mockResolvedValue({
+      candidates: [
+        {
+          id: "cand-1",
+          sourceType: "ai_tool",
+          sourceLabel: "Cline",
+          sourcePath: "C:/tmp/.clinerules",
+          sourceTool: "cline",
+          name: "quality",
+          proposedName: "quality-cline",
+          content: "rule content",
+          scope: "global",
+          targetPaths: null,
+          enabledAdapters: ["cline"],
+          contentHash: "hash",
+          fileSize: 12,
+        },
+      ],
+      errors: [],
+    });
+    vi.mocked(api.ruleImport.importAiToolRules).mockResolvedValue({
+      imported: [],
+      skipped: [],
+      conflicts: [],
+      errors: [],
+    });
+
+    renderWithProviders(<RulesList onSelectRule={vi.fn()} onCreateRule={vi.fn()} />);
+
+    await userEvent.click(screen.getByRole("button", { name: /import ai/i }));
+    await waitFor(() => expect(screen.getByText("quality-cline")).toBeInTheDocument());
+
+    await userEvent.selectOptions(screen.getByLabelText(/conflict mode/i), "replace");
+    await userEvent.click(screen.getByRole("button", { name: /import selected/i }));
+
+    await waitFor(() => {
+      expect(api.ruleImport.importAiToolRules).toHaveBeenCalledWith(
+        expect.objectContaining({
+          conflictMode: "replace",
+          selectedCandidateIds: ["cand-1"],
+        })
+      );
+    });
+  });
+
+  it("scans and imports from file through preview flow", async () => {
+    const { api } = await import("../../../lib/tauri");
+    const { open } = await import("@tauri-apps/plugin-dialog");
+    vi.mocked(open).mockResolvedValue("C:/tmp/rule.md");
+    vi.mocked(api.ruleImport.scanFromFile).mockResolvedValue({
+      candidates: [
+        {
+          id: "file-1",
+          sourceType: "file",
+          sourceLabel: "File",
+          sourcePath: "C:/tmp/rule.md",
+          sourceTool: undefined,
+          name: "rule",
+          proposedName: "rule",
+          content: "rule content",
+          scope: "global",
+          targetPaths: null,
+          enabledAdapters: ["gemini"],
+          contentHash: "hash",
+          fileSize: 12,
+        },
+      ],
+      errors: [],
+    });
+    vi.mocked(api.ruleImport.importFromFile).mockResolvedValue({
+      imported: [],
+      skipped: [],
+      conflicts: [],
+      errors: [],
+    });
+
+    renderWithProviders(<RulesList onSelectRule={vi.fn()} onCreateRule={vi.fn()} />);
+
+    await userEvent.click(screen.getByRole("button", { name: /import file/i }));
+    await waitFor(() => {
+      expect(api.ruleImport.scanFromFile).toHaveBeenCalledWith("C:/tmp/rule.md");
+    });
+
+    expect(screen.getByText("Import Rules From File")).toBeInTheDocument();
+    expect(screen.getByText(/Source: C:\/tmp\/rule\.md/i)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /import selected/i }));
+
+    await waitFor(() => {
+      expect(api.ruleImport.importFromFile).toHaveBeenCalledWith(
+        "C:/tmp/rule.md",
+        expect.objectContaining({ selectedCandidateIds: ["file-1"] })
+      );
+    });
+  });
+});

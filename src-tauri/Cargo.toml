@@ -47,6 +47,8 @@ toml = "0.8"
 parking_lot = "0.12.5"
 tauri-plugin-notification = "2"
 tauri-plugin-dialog = "2"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+url = "2"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-autostart = "2"

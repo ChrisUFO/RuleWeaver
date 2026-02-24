@@ -1,5 +1,6 @@
 pub mod adapters;
 pub mod command_commands;
+pub mod import_commands;
 pub mod mcp_commands;
 pub mod migration_commands;
 pub mod rule_commands;
@@ -11,6 +12,7 @@ use adapters::{
     RooCodeAdapter, WindsurfAdapter,
 };
 pub use command_commands::*;
+pub use import_commands::*;
 pub use mcp_commands::*;
 pub use migration_commands::*;
 pub use rule_commands::*;
