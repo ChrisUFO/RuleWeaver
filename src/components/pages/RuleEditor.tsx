@@ -28,6 +28,10 @@ interface RuleEditorProps {
   isNew?: boolean;
 }
 
+// TODO: Refactor complexity - Component exceeds 500 lines. Consider extracting:
+// - useRuleEditorState hook for form state management
+// - RulePreview component
+// - AdapterSettings component
 function getWordCount(text: string): number {
   return text.trim() ? text.trim().split(/\s+/).length : 0;
 }
@@ -70,8 +74,8 @@ export function RuleEditor({ rule, onBack, isNew = false }: RuleEditorProps) {
           // Fallback if no settings found yet
           setDefaultAdapters(["gemini", "opencode"]);
         }
-      } catch {
-        console.error("Failed to load default adapters from database");
+      } catch (error) {
+        console.error("Failed to load default adapters from database", { error });
         setDefaultAdapters(["gemini", "opencode"]);
       }
     };
@@ -268,7 +272,8 @@ export function RuleEditor({ rule, onBack, isNew = false }: RuleEditorProps) {
     const dirPath = lastSeparatorIndex >= 0 ? path.substring(0, lastSeparatorIndex) : path;
     try {
       await api.app.openInExplorer(dirPath);
-    } catch {
+    } catch (error) {
+      console.error("Failed to open folder in explorer", { dirPath, error });
       addToast({
         title: "Error",
         description: "Could not open folder",

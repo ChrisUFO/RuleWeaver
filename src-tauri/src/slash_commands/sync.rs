@@ -97,6 +97,7 @@ pub fn atomic_write(path: &PathBuf, content: &str) -> Result<()> {
 
 /// Represents the result of a slash command sync operation
 #[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SlashCommandSyncResult {
     pub files_written: usize,
     pub files_removed: usize,
@@ -123,6 +124,7 @@ impl Default for SlashCommandSyncResult {
 
 /// Represents a conflict in slash command sync
 #[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SlashCommandConflict {
     pub command_name: String,
     pub adapter_name: String,

@@ -28,6 +28,7 @@ fn migration_state() -> &'static Mutex<MigrationState> {
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MigrationProgress {
     pub total: u32,
     pub migrated: u32,
@@ -36,6 +37,7 @@ pub struct MigrationProgress {
 }
 
 #[derive(Debug, Clone, serde::Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub enum MigrationStatus {
     NotStarted,
     InProgress,
@@ -45,6 +47,7 @@ pub enum MigrationStatus {
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MigrationResult {
     pub success: bool,
     pub rules_migrated: u32,
@@ -55,6 +58,7 @@ pub struct MigrationResult {
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MigrationError {
     pub rule_id: String,
     pub rule_name: String,

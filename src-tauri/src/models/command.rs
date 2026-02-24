@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Command {
     pub id: String,
     pub name: String,
@@ -23,6 +24,7 @@ pub struct Command {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CommandArgument {
     pub name: String,
     pub description: String,
@@ -82,6 +84,7 @@ impl Command {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CreateCommandInput {
     pub name: String,
     pub description: String,
@@ -103,6 +106,7 @@ fn default_true() -> bool {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct UpdateCommandInput {
     pub name: Option<String>,
     pub description: Option<String>,
@@ -115,6 +119,7 @@ pub struct UpdateCommandInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TestCommandResult {
     pub success: bool,
     pub stdout: String,

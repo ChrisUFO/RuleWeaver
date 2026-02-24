@@ -12,10 +12,10 @@ export enum SkillParameterType {
 export interface SkillParameter {
   name: string;
   description: string;
-  param_type: SkillParameterType | string;
+  paramType: SkillParameterType | string;
   required: boolean;
-  default_value?: string | null;
-  enum_values?: string[] | null;
+  defaultValue?: string | null;
+  enumValues?: string[] | null;
 }
 
 export interface Skill {
@@ -24,12 +24,12 @@ export interface Skill {
   description: string;
   instructions: string;
   scope: Scope;
-  input_schema: SkillParameter[];
-  directory_path: string;
-  entry_point: string;
+  inputSchema: SkillParameter[];
+  directoryPath: string;
+  entryPoint: string;
   enabled: boolean;
-  created_at: number;
-  updated_at: number;
+  createdAt: number;
+  updatedAt: number;
 }
 
 export interface CreateSkillInput {
@@ -37,9 +37,9 @@ export interface CreateSkillInput {
   description: string;
   instructions: string;
   scope: Scope;
-  input_schema: SkillParameter[];
-  directory_path?: string;
-  entry_point?: string;
+  inputSchema: SkillParameter[];
+  directoryPath?: string;
+  entryPoint?: string;
   enabled?: boolean;
 }
 
@@ -48,9 +48,9 @@ export interface UpdateSkillInput {
   description?: string;
   instructions?: string;
   scope?: Scope;
-  input_schema?: SkillParameter[];
-  directory_path?: string;
-  entry_point?: string;
+  inputSchema?: SkillParameter[];
+  directoryPath?: string;
+  entryPoint?: string;
   enabled?: boolean;
 }
 
@@ -60,7 +60,7 @@ export interface TemplateFile {
 }
 
 export interface TemplateSkill {
-  template_id: string;
+  templateId: string;
   metadata: CreateSkillInput;
   files: TemplateFile[];
 }

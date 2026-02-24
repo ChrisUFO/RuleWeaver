@@ -6,7 +6,8 @@ export function parseRepositoryRoots(raw: string | null | undefined): string[] {
   try {
     const parsed = JSON.parse(raw) as string[];
     return Array.isArray(parsed) ? parsed : [];
-  } catch {
+  } catch (error) {
+    console.error("Failed to parse repository roots", { raw, error });
     return [];
   }
 }
@@ -20,6 +21,9 @@ export function useRepositoryRoots(autoLoad = true) {
     try {
       const raw = await api.settings.get("local_rule_paths");
       setRoots(parseRepositoryRoots(raw));
+    } catch (error) {
+      console.error("Failed to refresh repository roots", { error });
+      setRoots([]);
     } finally {
       setIsLoading(false);
     }

@@ -24,12 +24,20 @@ export function SkillSchemaEditor({
   };
 
   const updateParam = (index: number, updates: Partial<SkillParameter>) => {
+    if (index < 0 || index >= schema.length) {
+      console.error("Invalid parameter index", { index, schemaLength: schema.length });
+      return;
+    }
     const next = [...schema];
     next[index] = { ...next[index], ...updates };
     onChange(next);
   };
 
   const removeParam = (index: number) => {
+    if (index < 0 || index >= schema.length) {
+      console.error("Invalid parameter index for removal", { index, schemaLength: schema.length });
+      return;
+    }
     onChange(schema.filter((_, i) => i !== index));
   };
 

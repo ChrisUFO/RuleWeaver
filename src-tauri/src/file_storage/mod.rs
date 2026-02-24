@@ -336,7 +336,8 @@ pub fn get_storage_info() -> Result<StorageInfo> {
     })
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StorageInfo {
     pub global_dir: PathBuf,
     pub exists: bool,

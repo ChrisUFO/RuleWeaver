@@ -107,6 +107,7 @@ pub struct Rule {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SyncHistoryEntry {
     pub id: String,
     #[serde(with = "crate::models::timestamp")]
@@ -163,6 +164,7 @@ pub struct UpdateRuleInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SyncResult {
     pub success: bool,
     pub files_written: Vec<String>,
@@ -171,6 +173,7 @@ pub struct SyncResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SyncError {
     pub file_path: String,
     pub adapter_name: String,
@@ -178,6 +181,7 @@ pub struct SyncError {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Conflict {
     pub id: String,
     pub file_path: String,

@@ -2,7 +2,7 @@ export interface CommandArgument {
   name: string;
   description: string;
   required: boolean;
-  default_value?: string;
+  defaultValue?: string;
 }
 
 export interface CommandModel {
@@ -11,12 +11,12 @@ export interface CommandModel {
   description: string;
   script: string;
   arguments: CommandArgument[];
-  expose_via_mcp: boolean;
-  generate_slash_commands?: boolean;
-  slash_command_adapters?: string[];
-  target_paths?: string[];
-  created_at: number;
-  updated_at: number;
+  exposeViaMcp: boolean;
+  generateSlashCommands?: boolean;
+  slashCommandAdapters?: string[];
+  targetPaths?: string[];
+  createdAt: number;
+  updatedAt: number;
 }
 
 export interface CreateCommandInput {
@@ -24,8 +24,8 @@ export interface CreateCommandInput {
   description: string;
   script: string;
   arguments?: CommandArgument[];
-  expose_via_mcp?: boolean;
-  target_paths?: string[];
+  exposeViaMcp?: boolean;
+  targetPaths?: string[];
 }
 
 export interface UpdateCommandInput {
@@ -33,18 +33,18 @@ export interface UpdateCommandInput {
   description?: string;
   script?: string;
   arguments?: CommandArgument[];
-  expose_via_mcp?: boolean;
-  generate_slash_commands?: boolean;
-  slash_command_adapters?: string[];
-  target_paths?: string[];
+  exposeViaMcp?: boolean;
+  generateSlashCommands?: boolean;
+  slashCommandAdapters?: string[];
+  targetPaths?: string[];
 }
 
 export interface TestCommandResult {
   success: boolean;
   stdout: string;
   stderr: string;
-  exit_code: number;
-  duration_ms: number;
+  exitCode: number;
+  durationMs: number;
 }
 
 export interface McpStatus {

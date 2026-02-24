@@ -4,6 +4,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Skill {
     pub id: String,
     pub name: String,
@@ -22,6 +23,7 @@ pub struct Skill {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SkillParameter {
     pub name: String,
     pub description: String,
@@ -210,6 +212,7 @@ pub fn validate_skill_entry_point(entry_point: &str) -> Result<()> {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CreateSkillInput {
     pub id: Option<String>,
     pub name: String,
@@ -229,6 +232,7 @@ fn default_true() -> bool {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct UpdateSkillInput {
     pub name: Option<String>,
     pub description: Option<String>,
