@@ -82,6 +82,16 @@ function App() {
   });
 
   const renderContent = () => {
+    const views: Record<string, React.ReactNode> = {
+      dashboard: <Dashboard onNavigate={setActiveView} />,
+      rules: <RulesPage />,
+      commands: <Commands />,
+      skills: <Skills />,
+      settings: <Settings />,
+    };
+
+    const currentViewComponent = views[activeView] || <Dashboard onNavigate={setActiveView} />;
+
     return (
       <AnimatePresence mode="wait">
         <motion.div
@@ -92,22 +102,7 @@ function App() {
           transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
           className="h-full"
         >
-          {(() => {
-            switch (activeView) {
-              case "dashboard":
-                return <Dashboard onNavigate={setActiveView} />;
-              case "rules":
-                return <RulesPage />;
-              case "commands":
-                return <Commands />;
-              case "skills":
-                return <Skills />;
-              case "settings":
-                return <Settings />;
-              default:
-                return <Dashboard onNavigate={setActiveView} />;
-            }
-          })()}
+          {currentViewComponent}
         </motion.div>
       </AnimatePresence>
     );

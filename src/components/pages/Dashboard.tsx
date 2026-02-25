@@ -375,8 +375,13 @@ export function Dashboard({ onNavigate }: { onNavigate: (view: string) => void }
                             <div className="flex items-center gap-2">
                               <Badge
                                 className="h-4 text-[9px] uppercase font-black px-1.5"
-                                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                                variant={entry.status as any}
+                                variant={
+                                  entry.status === "partial"
+                                    ? "warning"
+                                    : entry.status === "failed"
+                                      ? "destructive"
+                                      : "success"
+                                }
                               >
                                 {entry.status}
                               </Badge>

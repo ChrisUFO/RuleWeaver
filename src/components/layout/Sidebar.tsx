@@ -36,7 +36,7 @@ export function Sidebar({ collapsed, onCollapsedChange, activeView, onViewChange
         setAppVersion(data.version || "0.0.0");
       })
       .catch(() => {
-        setAppVersion("0.1.0-refresh"); // Fallback for refresh dev
+        setAppVersion("dev"); // Fallback for development
       });
   }, []);
 
@@ -78,6 +78,8 @@ export function Sidebar({ collapsed, onCollapsedChange, activeView, onViewChange
         <button
           onClick={() => onCollapsedChange(!collapsed)}
           className="p-1.5 rounded-md hover:bg-white/5 text-muted-foreground hover:text-foreground transition-colors"
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          aria-expanded={!collapsed}
         >
           {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
         </button>
@@ -97,6 +99,8 @@ export function Sidebar({ collapsed, onCollapsedChange, activeView, onViewChange
                   ? "text-primary"
                   : "text-muted-foreground hover:bg-white/5 hover:text-foreground"
               )}
+              aria-current={isActive ? "page" : undefined}
+              aria-label={collapsed ? item.label : undefined}
             >
               {isActive && (
                 <motion.div
