@@ -169,7 +169,7 @@ pub fn run() {
             let mcp_manager = McpManager::new(crate::constants::DEFAULT_MCP_PORT);
 
             // Need to block on getting settings for initial setup
-            let (auto_start_mcp, minimize_to_tray, storage_mode) = tauri::async_runtime::block_on(async {
+            let (auto_start_mcp, _minimize_to_tray, storage_mode) = tauri::async_runtime::block_on(async {
                 let auto = db
                     .get_setting("mcp_auto_start")
                     .await
@@ -254,7 +254,7 @@ pub fn run() {
 
                                 // Perform sync asynchronously
                                 let result = async {
-                                    let engine = crate::sync::SyncEngine::new(&*db);
+                                    let engine = crate::sync::SyncEngine::new(&db);
                                     let rules = db.get_all_rules().await?;
                                     Ok::<_, crate::error::AppError>(engine.sync_all(rules).await)
                                 }.await;
