@@ -18,39 +18,15 @@ use crate::mcp::McpManager;
 use crate::models::{
     Command, CreateCommandInput, SyncError, SyncResult, TestCommandResult, UpdateCommandInput,
 };
-use crate::reconciliation::ReconciliationEngine;
+
 use crate::templates::commands::{get_bundled_command_templates, TemplateCommand};
 use std::time::Instant;
 
 use super::{
-    command_file_targets, command_file_targets_for_root, register_local_paths,
-    validate_command_arguments, validate_command_input, validate_path,
+    command_file_targets, command_file_targets_for_root, reconcile_after_mutation,
+    register_local_paths, validate_command_arguments, validate_command_input, validate_path,
     validate_paths_within_registered_roots,
 };
-
-/// Helper function to run reconciliation after mutations.
-async fn reconcile_after_mutation(db: Arc<Database>) {
-    match ReconciliationEngine::new(db) {
-        Ok(engine) => {
-            match engine.reconcile(false).await {
-                Ok(result) => {
-                    if result.removed > 0 {
-                        log::info!("Reconciliation cleaned up {} stale artifacts", result.removed);
-                    }
-                    if !result.errors.is_empty() {
-                        log::warn!("Reconciliation completed with errors: {:?}", result.errors);
-                    }
-                }
-                Err(e) => {
-                    log::error!("Reconciliation failed: {}", e);
-                }
-            }
-        }
-        Err(e) => {
-            log::error!("Failed to create reconciliation engine: {}", e);
-        }
-    }
-}
 
 #[tauri::command]
 pub async fn get_all_commands(db: State<'_, Arc<Database>>) -> Result<Vec<Command>> {
@@ -124,10 +100,10 @@ pub async fn delete_command(
 ) -> Result<()> {
     db.delete_command(&id).await?;
     mcp.refresh_commands(&db).await?;
-    
+
     // Run reconciliation to clean up any orphaned artifacts
     reconcile_after_mutation(db.inner().clone()).await;
-    
+
     Ok(())
 }
 

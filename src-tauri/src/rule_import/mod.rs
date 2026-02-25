@@ -13,9 +13,9 @@ use crate::database::Database;
 use crate::error::{AppError, Result};
 use crate::file_storage;
 use crate::models::{
-    AdapterType, CreateRuleInput, ImportCandidate, ImportConflict, ImportConflictMode,
-    ImportExecutionOptions, ImportExecutionResult, ImportHistoryEntry, ImportScanResult,
-    ImportSkip, Rule, Scope, UpdateRuleInput,
+    AdapterType, CreateRuleInput, ImportArtifactType, ImportCandidate, ImportConflict,
+    ImportConflictMode, ImportExecutionOptions, ImportExecutionResult, ImportHistoryEntry,
+    ImportScanResult, ImportSkip, Rule, Scope, UpdateRuleInput,
 };
 use crate::sync::SyncEngine;
 
@@ -151,11 +151,22 @@ pub fn scan_directory_to_candidates(path: &Path, max_size: u64) -> ImportScanRes
         .filter_map(|e| e.ok())
     {
         let item_path = entry.path();
+        
+        // Skip directories that contain slash commands or skills
+        if is_slash_command_or_skill_directory(item_path) {
+            continue;
+        }
+        
         if !item_path.is_file() {
             continue;
         }
 
         if !is_supported_import_extension(item_path) {
+            continue;
+        }
+
+        // Skip files that are in slash command or skill locations
+        if detect_artifact_type_from_path(item_path) != ImportArtifactType::Rule {
             continue;
         }
 
@@ -189,17 +200,23 @@ pub async fn scan_ai_tool_candidates(db: &Database, max_size: u64) -> Result<Imp
     let home = dirs::home_dir()
         .ok_or_else(|| AppError::Path("Could not determine home directory".to_string()))?;
 
-    for (adapter, path) in global_tool_paths(&home) {
-        if !path.exists() {
+    // Only scan RULE paths, not slash commands or skills
+    for tool_path in global_tool_paths(&home) {
+        // Skip non-rule artifacts
+        if tool_path.artifact_type != ImportArtifactType::Rule {
             continue;
         }
 
-        if path.is_file() {
+        if !tool_path.path.exists() {
+            continue;
+        }
+
+        if tool_path.path.is_file() {
             match candidate_from_path(
-                &path,
+                &tool_path.path,
                 crate::models::ImportSourceType::AiTool,
-                adapter_label(adapter),
-                Some(adapter),
+                adapter_label(tool_path.adapter),
+                Some(tool_path.adapter),
                 Scope::Global,
                 None,
                 max_size,
@@ -207,12 +224,13 @@ pub async fn scan_ai_tool_candidates(db: &Database, max_size: u64) -> Result<Imp
                 Ok(candidate) => scan.candidates.push(candidate),
                 Err(e) => scan.errors.push(e.to_string()),
             }
-        } else if path.is_dir() {
-            let inner_scan = scan_directory_to_candidates(&path, max_size);
+        } else if tool_path.path.is_dir() {
+            // When scanning directories, only include rule-like files, not slash commands or skills
+            let inner_scan = scan_directory_for_rules(&tool_path.path, tool_path.adapter, max_size);
             for mut candidate in inner_scan.candidates {
                 candidate.source_type = crate::models::ImportSourceType::AiTool;
-                candidate.source_tool = Some(adapter);
-                candidate.source_label = adapter_label(adapter).to_string();
+                candidate.source_tool = Some(tool_path.adapter);
+                candidate.source_label = adapter_label(tool_path.adapter).to_string();
                 scan.candidates.push(candidate);
             }
             for err in inner_scan.errors {
@@ -222,8 +240,13 @@ pub async fn scan_ai_tool_candidates(db: &Database, max_size: u64) -> Result<Imp
     }
 
     for local_root in get_local_rule_roots(db).await {
-        for (adapter, relative) in local_tool_paths() {
-            let path = local_root.join(relative);
+        for local_path in local_tool_paths() {
+            // Skip non-rule artifacts
+            if local_path.artifact_type != ImportArtifactType::Rule {
+                continue;
+            }
+
+            let path = local_root.join(local_path.relative_path);
             if !path.exists() || !path.is_file() {
                 continue;
             }
@@ -231,8 +254,8 @@ pub async fn scan_ai_tool_candidates(db: &Database, max_size: u64) -> Result<Imp
             match candidate_from_path(
                 &path,
                 crate::models::ImportSourceType::AiTool,
-                adapter_label(adapter),
-                Some(adapter),
+                adapter_label(local_path.adapter),
+                Some(local_path.adapter),
                 Scope::Local,
                 Some(vec![local_root.to_string_lossy().to_string()]),
                 max_size,
@@ -254,6 +277,97 @@ pub async fn scan_ai_tool_candidates(db: &Database, max_size: u64) -> Result<Imp
 
     apply_tool_suffix_name_policy(&mut scan.candidates);
     Ok(scan)
+}
+
+/// Scan a directory for rule files, excluding slash command and skill directories
+fn scan_directory_for_rules(dir: &Path, adapter: AdapterType, max_size: u64) -> ImportScanResult {
+    let mut scan = ImportScanResult::default();
+
+    for entry in WalkDir::new(dir)
+        .follow_links(false)
+        .into_iter()
+        .filter_map(|e| e.ok())
+    {
+        let item_path = entry.path();
+        
+        // Skip directories that contain slash commands or skills
+        if is_slash_command_or_skill_directory(item_path) {
+            continue;
+        }
+        
+        if !item_path.is_file() {
+            continue;
+        }
+
+        if !is_supported_import_extension(item_path) {
+            continue;
+        }
+
+        // Double-check: detect artifact type from path and skip non-rules
+        if detect_artifact_type_from_path(item_path) != ImportArtifactType::Rule {
+            continue;
+        }
+
+        match candidate_from_path(
+            item_path,
+            crate::models::ImportSourceType::AiTool,
+            adapter_label(adapter),
+            Some(adapter),
+            Scope::Global,
+            None,
+            max_size,
+        ) {
+            Ok(candidate) => {
+                if scan.candidates.len() >= MAX_IMPORT_CANDIDATES {
+                    scan.errors.push(format!(
+                        "Import candidate limit reached ({}). Narrow directory scope or import in batches.",
+                        MAX_IMPORT_CANDIDATES
+                    ));
+                    break;
+                }
+                scan.candidates.push(candidate)
+            }
+            Err(e) => scan.errors.push(e.to_string()),
+        }
+    }
+
+    scan
+}
+
+/// Check if a path is within a slash command or skill directory
+fn is_slash_command_or_skill_directory(path: &Path) -> bool {
+    let path_str = path.to_string_lossy().to_lowercase();
+    
+    // Slash command directory patterns (case-insensitive)
+    let slash_command_patterns = [
+        "/commands/",
+        "/workflows/",
+        "/.gemini/antigravity/global_workflows/",
+        "/documents/cline/workflows/",
+        "\\commands\\",
+        "\\workflows\\",
+    ];
+    
+    // Skill directory patterns (case-insensitive)
+    let skill_patterns = [
+        "/skills/",
+        "/documents/cline/skills/",
+        "\\skills\\",
+    ];
+    
+    for pattern in &slash_command_patterns {
+        if path_str.contains(pattern) {
+            return true;
+        }
+    }
+    
+    for pattern in &skill_patterns {
+        if path_str.contains(pattern) {
+            return true;
+        }
+    }
+    
+    false
 }
 
 pub async fn execute_import(
@@ -557,103 +671,253 @@ fn apply_tool_suffix_name_policy(candidates: &mut [ImportCandidate]) {
     }
 }
 
-fn global_tool_paths(home: &Path) -> Vec<(AdapterType, PathBuf)> {
+/// Represents a tool path with its artifact type (rules vs slash commands vs skills)
+#[derive(Debug, Clone)]
+struct ToolPath {
+    adapter: AdapterType,
+    path: PathBuf,
+    artifact_type: ImportArtifactType,
+}
+
+/// Represents a local tool path with its artifact type
+#[derive(Debug, Clone)]
+struct LocalToolPath {
+    adapter: AdapterType,
+    relative_path: &'static str,
+    artifact_type: ImportArtifactType,
+}
+
+/// Detect artifact type based on directory patterns in the path
+fn detect_artifact_type_from_path(path: &Path) -> ImportArtifactType {
+    let path_str = path.to_string_lossy().to_lowercase();
+    let path_str_lower = path_str.to_lowercase();
+    
+    // Slash command directories - these are workflow/command files
+    let slash_command_patterns = [
+        "/commands/",
+        "/workflows/",
+        "\\commands\\",
+        "\\workflows\\",
+        ".gemini/antigravity/global_workflows",
+        "documents/cline/workflows",
+        ".agents/workflows",
+        ".clinerules/workflows",
+    ];
+    
+    // Skill directories - these contain skill definitions
+    let skill_patterns = [
+        "/skills/",
+        "\\skills\\",
+        "documents/cline/skills",
+    ];
+    
+    // Check for slash command patterns
+    for pattern in &slash_command_patterns {
+        if path_str_lower.contains(pattern) {
+            return ImportArtifactType::SlashCommand;
+        }
+    }
+    
+    // Check for skill patterns
+    for pattern in &skill_patterns {
+        if path_str_lower.contains(pattern) {
+            return ImportArtifactType::Skill;
+        }
+    }
+    
+    // Default to rule
+    ImportArtifactType::Rule
+}
+
+fn global_tool_paths(home: &Path) -> Vec<ToolPath> {
+    // Rule paths only - these are the main rule/configuration files
     vec![
-        (AdapterType::Gemini, home.join(".gemini").join("GEMINI.md")),
-        (
-            AdapterType::Antigravity,
-            home.join(".antigravity").join("GEMINI.md"),
-        ),
-        (
-            AdapterType::Antigravity,
-            home.join(".gemini").join("antigravity").join("GEMINI.md"),
-        ),
-        (
-            AdapterType::OpenCode,
-            home.join(".config").join("opencode").join("AGENTS.md"),
-        ),
-        (
-            AdapterType::OpenCode,
-            home.join(".opencode").join("AGENTS.md"),
-        ),
-        (AdapterType::Cline, home.join(".clinerules")),
-        (
-            AdapterType::Cline,
-            home.join("Documents").join("Cline").join("Rules"),
-        ),
-        (
-            AdapterType::Cline,
-            home.join("Documents").join("Cline").join("Workflows"),
-        ),
-        (
-            AdapterType::ClaudeCode,
-            home.join(".claude").join("CLAUDE.md"),
-        ),
-        (AdapterType::Codex, home.join(".codex").join("AGENTS.md")),
-        (AdapterType::Codex, home.join(".agents").join("AGENTS.md")),
-        (
-            AdapterType::Kilo,
-            home.join(".kilocode").join("rules").join("AGENTS.md"),
-        ),
-        (
-            AdapterType::Kilo,
-            home.join(".kilo").join("rules").join("AGENTS.md"),
-        ),
-        (
-            AdapterType::Cursor,
-            home.join(".cursor").join("COMMANDS.md"),
-        ),
-        (AdapterType::Cursor, home.join(".cursorrules")),
-        (
-            AdapterType::Windsurf,
-            home.join(".windsurf").join("rules").join("AGENTS.md"),
-        ),
-        (AdapterType::Windsurf, home.join(".windsurfrules")),
-        (
-            AdapterType::Windsurf,
-            home.join(".windsurf").join("rules").join("rules.md"),
-        ),
-        (
-            AdapterType::RooCode,
-            home.join(".roo").join("rules").join("AGENTS.md"),
-        ),
-        (
-            AdapterType::RooCode,
-            home.join(".roo").join("rules").join("rules.md"),
-        ),
-        (
-            AdapterType::RooCode,
-            home.join(".roocode").join("rules").join("AGENTS.md"),
-        ),
-        (
-            AdapterType::RooCode,
-            home.join(".roocode").join("rules").join("rules.md"),
-        ),
+        ToolPath {
+            adapter: AdapterType::Gemini,
+            path: home.join(".gemini").join("GEMINI.md"),
+            artifact_type: ImportArtifactType::Rule,
+        },
+        ToolPath {
+            adapter: AdapterType::Antigravity,
+            path: home.join(".antigravity").join("GEMINI.md"),
+            artifact_type: ImportArtifactType::Rule,
+        },
+        ToolPath {
+            adapter: AdapterType::Antigravity,
+            path: home.join(".gemini").join("antigravity").join("GEMINI.md"),
+            artifact_type: ImportArtifactType::Rule,
+        },
+        ToolPath {
+            adapter: AdapterType::OpenCode,
+            path: home.join(".config").join("opencode").join("AGENTS.md"),
+            artifact_type: ImportArtifactType::Rule,
+        },
+        ToolPath {
+            adapter: AdapterType::OpenCode,
+            path: home.join(".opencode").join("AGENTS.md"),
+            artifact_type: ImportArtifactType::Rule,
+        },
+        ToolPath {
+            adapter: AdapterType::Cline,
+            path: home.join(".clinerules"),
+            artifact_type: ImportArtifactType::Rule,
+        },
+        ToolPath {
+            adapter: AdapterType::Cline,
+            path: home.join("Documents").join("Cline").join("Rules"),
+            artifact_type: ImportArtifactType::Rule,
+        },
+        ToolPath {
+            adapter: AdapterType::ClaudeCode,
+            path: home.join(".claude").join("CLAUDE.md"),
+            artifact_type: ImportArtifactType::Rule,
+        },
+        ToolPath {
+            adapter: AdapterType::Codex,
+            path: home.join(".codex").join("AGENTS.md"),
+            artifact_type: ImportArtifactType::Rule,
+        },
+        ToolPath {
+            adapter: AdapterType::Codex,
+            path: home.join(".agents").join("AGENTS.md"),
+            artifact_type: ImportArtifactType::Rule,
+        },
+        ToolPath {
+            adapter: AdapterType::Kilo,
+            path: home.join(".kilocode").join("rules").join("AGENTS.md"),
+            artifact_type: ImportArtifactType::Rule,
+        },
+        ToolPath {
+            adapter: AdapterType::Kilo,
+            path: home.join(".kilo").join("rules").join("AGENTS.md"),
+            artifact_type: ImportArtifactType::Rule,
+        },
+        ToolPath {
+            adapter: AdapterType::Cursor,
+            path: home.join(".cursorrules"),
+            artifact_type: ImportArtifactType::Rule,
+        },
+        ToolPath {
+            adapter: AdapterType::Windsurf,
+            path: home.join(".windsurf").join("rules").join("AGENTS.md"),
+            artifact_type: ImportArtifactType::Rule,
+        },
+        ToolPath {
+            adapter: AdapterType::Windsurf,
+            path: home.join(".windsurfrules"),
+            artifact_type: ImportArtifactType::Rule,
+        },
+        ToolPath {
+            adapter: AdapterType::Windsurf,
+            path: home.join(".windsurf").join("rules").join("rules.md"),
+            artifact_type: ImportArtifactType::Rule,
+        },
+        ToolPath {
+            adapter: AdapterType::RooCode,
+            path: home.join(".roo").join("rules").join("AGENTS.md"),
+            artifact_type: ImportArtifactType::Rule,
+        },
+        ToolPath {
+            adapter: AdapterType::RooCode,
+            path: home.join(".roo").join("rules").join("rules.md"),
+            artifact_type: ImportArtifactType::Rule,
+        },
+        ToolPath {
+            adapter: AdapterType::RooCode,
+            path: home.join(".roocode").join("rules").join("AGENTS.md"),
+            artifact_type: ImportArtifactType::Rule,
+        },
+        ToolPath {
+            adapter: AdapterType::RooCode,
+            path: home.join(".roocode").join("rules").join("rules.md"),
+            artifact_type: ImportArtifactType::Rule,
+        },
     ]
 }
 
-fn local_tool_paths() -> Vec<(AdapterType, &'static str)> {
+fn local_tool_paths() -> Vec<LocalToolPath> {
+    // Rule paths only - local repository rule files
     vec![
-        (AdapterType::Gemini, ".gemini/GEMINI.md"),
-        (AdapterType::Antigravity, ".antigravity/GEMINI.md"),
-        (AdapterType::Antigravity, ".gemini/antigravity/GEMINI.md"),
-        (AdapterType::OpenCode, ".opencode/AGENTS.md"),
-        (AdapterType::OpenCode, ".config/opencode/AGENTS.md"),
-        (AdapterType::Cline, ".clinerules"),
-        (AdapterType::ClaudeCode, ".claude/CLAUDE.md"),
-        (AdapterType::Codex, ".codex/AGENTS.md"),
-        (AdapterType::Codex, ".agents/AGENTS.md"),
-        (AdapterType::Kilo, ".kilocode/rules/AGENTS.md"),
-        (AdapterType::Kilo, ".kilo/rules/AGENTS.md"),
-        (AdapterType::Cursor, ".cursor/COMMANDS.md"),
-        (AdapterType::Cursor, ".cursorrules"),
-        (AdapterType::Windsurf, ".windsurf/rules/AGENTS.md"),
-        (AdapterType::Windsurf, ".windsurfrules"),
-        (AdapterType::Windsurf, ".windsurf/rules/rules.md"),
-        (AdapterType::RooCode, ".roo/rules/AGENTS.md"),
-        (AdapterType::RooCode, ".roo/rules/rules.md"),
-        (AdapterType::RooCode, ".roocode/rules/AGENTS.md"),
-        (AdapterType::RooCode, ".roocode/rules/rules.md"),
+        LocalToolPath {
+            adapter: AdapterType::Gemini,
+            relative_path: ".gemini/GEMINI.md",
+            artifact_type: ImportArtifactType::Rule,
+        },
+        LocalToolPath {
+            adapter: AdapterType::Antigravity,
+            relative_path: ".antigravity/GEMINI.md",
+            artifact_type: ImportArtifactType::Rule,
+        },
+        LocalToolPath {
+            adapter: AdapterType::Antigravity,
+            relative_path: ".gemini/antigravity/GEMINI.md",
+            artifact_type: ImportArtifactType::Rule,
+        },
+        LocalToolPath {
+            adapter: AdapterType::OpenCode,
+            relative_path: ".opencode/AGENTS.md",
+            artifact_type: ImportArtifactType::Rule,
+        },
+        LocalToolPath {
+            adapter: AdapterType::OpenCode,
+            relative_path: ".config/opencode/AGENTS.md",
+            artifact_type: ImportArtifactType::Rule,
+        },
+        LocalToolPath {
+            adapter: AdapterType::Cline,
+            relative_path: ".clinerules",
+            artifact_type: ImportArtifactType::Rule,
+        },
+        LocalToolPath {
+            adapter: AdapterType::ClaudeCode,
+            relative_path: ".claude/CLAUDE.md",
+            artifact_type: ImportArtifactType::Rule,
+        },
+        LocalToolPath {
+            adapter: AdapterType::Codex,
+            relative_path: ".codex/AGENTS.md",
+            artifact_type: ImportArtifactType::Rule,
+        },
+        LocalToolPath {
+            adapter: AdapterType::Codex,
+            relative_path: ".agents/AGENTS.md",
+            artifact_type: ImportArtifactType::Rule,
+        },
+        LocalToolPath {
+            adapter: AdapterType::Kilo,
+            relative_path: ".kilocode/rules/AGENTS.md",
+            artifact_type: ImportArtifactType::Rule,
+        },
+        LocalToolPath {
+            adapter: AdapterType::Kilo,
+            relative_path: ".kilo/rules/AGENTS.md",
+            artifact_type: ImportArtifactType::Rule,
+        },
+        LocalToolPath {
+            adapter: AdapterType::Cursor,
+            relative_path: ".cursorrules",
+            artifact_type: ImportArtifactType::Rule,
+        },
+        LocalToolPath {
+            adapter: AdapterType::Windsurf,
+            relative_path: ".windsurf/rules/AGENTS.md",
+            artifact_type: ImportArtifactType::Rule,
+        },
+        LocalToolPath {
+            adapter: AdapterType::Windsurf,
+            relative_path: ".windsurfrules",
+            artifact_type: ImportArtifactType::Rule,
+        },
+        LocalToolPath {
+            adapter: AdapterType::RooCode,
+            relative_path: ".roo/rules/AGENTS.md",
+            artifact_type: ImportArtifactType::Rule,
+        },
+        LocalToolPath {
+            adapter: AdapterType::RooCode,
+            relative_path: ".roo/rules/rules.md",
+            artifact_type: ImportArtifactType::Rule,
+        },
     ]
 }
 
@@ -744,6 +1008,7 @@ fn candidate_from_text(
         enabled_adapters: parsed_adapters,
         content_hash,
         file_size: parsed_content.len() as u64,
+        artifact_type: ImportArtifactType::Rule,
     }
 }
 
@@ -1333,7 +1598,7 @@ enabledAdapters:
         let home = PathBuf::from("/home/test");
         let global = global_tool_paths(&home)
             .into_iter()
-            .map(|(_, p)| p.to_string_lossy().to_string())
+            .map(|tp| tp.path.to_string_lossy().to_string())
             .collect::<Vec<_>>();
 
         assert!(global
@@ -1346,5 +1611,92 @@ enabledAdapters:
         assert!(global
             .iter()
             .any(|p| p.contains(".kilo") && p.contains("AGENTS.md")));
+        
+        // Verify no slash command or skill directories are included in rule paths
+        assert!(!global.iter().any(|p| p.contains("/commands/")));
+        assert!(!global.iter().any(|p| p.contains("/workflows/")));
+        assert!(!global.iter().any(|p| p.contains("/skills/")));
+    }
+
+    #[test]
+    fn detect_artifact_type_identifies_rules_vs_commands_vs_skills() {
+        // Rule paths
+        assert_eq!(
+            detect_artifact_type_from_path(Path::new("/home/.gemini/GEMINI.md")),
+            ImportArtifactType::Rule
+        );
+        assert_eq!(
+            detect_artifact_type_from_path(Path::new("/home/.clinerules")),
+            ImportArtifactType::Rule
+        );
+        assert_eq!(
+            detect_artifact_type_from_path(Path::new("/repo/.claude/CLAUDE.md")),
+            ImportArtifactType::Rule
+        );
+
+        // Slash command paths
+        assert_eq!(
+            detect_artifact_type_from_path(Path::new("/home/.claude/commands/test.md")),
+            ImportArtifactType::SlashCommand
+        );
+        assert_eq!(
+            detect_artifact_type_from_path(Path::new("/home/Documents/Cline/Workflows/my-workflow.md")),
+            ImportArtifactType::SlashCommand
+        );
+        assert_eq!(
+            detect_artifact_type_from_path(Path::new("C:/Users/test/.gemini/antigravity/global_workflows/workflow.md")),
+            ImportArtifactType::SlashCommand
+        );
+
+        // Skill paths
+        assert_eq!(
+            detect_artifact_type_from_path(Path::new("/home/.claude/skills/my-skill/SKILL.md")),
+            ImportArtifactType::Skill
+        );
+        assert_eq!(
+            detect_artifact_type_from_path(Path::new("/home/Documents/Cline/Skills/test-skill/skill.md")),
+            ImportArtifactType::Skill
+        );
+    }
+
+    #[test]
+    fn scan_directory_excludes_slash_commands_and_skills() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        
+        // Create rule file
+        let rule_file = temp_dir.path().join("GEMINI.md");
+        fs::write(&rule_file, "# Rule content\n\nSome rule text").unwrap();
+        
+        // Create slash command file
+        let commands_dir = temp_dir.path().join("commands");
+        fs::create_dir_all(&commands_dir).unwrap();
+        let command_file = commands_dir.join("my-command.md");
+        fs::write(&command_file, "# My Command\n\nCommand content").unwrap();
+        
+        // Create skill file
+        let skills_dir = temp_dir.path().join("skills");
+        fs::create_dir_all(&skills_dir).unwrap();
+        let skill_file = skills_dir.join("my-skill.md");
+        fs::write(&skill_file, "# My Skill\n\nSkill content").unwrap();
+        
+        // Scan the directory
+        let result = scan_directory_to_candidates(temp_dir.path(), 1024 * 1024);
+        
+        // Should only have 1 candidate (the rule file)
+        assert_eq!(result.candidates.len(), 1, "Should only find rule files, not commands or skills");
+        assert!(result.candidates[0].name.to_lowercase().contains("gemini"));
+    }
+
+    #[test]
+    fn is_slash_command_or_skill_directory_detects_correctly() {
+        // Should be detected as command/skill directories
+        assert!(is_slash_command_or_skill_directory(Path::new("/home/.claude/commands/test.md")));
+        assert!(is_slash_command_or_skill_directory(Path::new("C:/Users/test/Documents/Cline/Workflows/workflow.md")));
+        assert!(is_slash_command_or_skill_directory(Path::new("/home/.gemini/skills/my-skill/skill.md")));
+        
+        // Should NOT be detected as command/skill directories (these are rule files)
+        assert!(!is_slash_command_or_skill_directory(Path::new("/home/.gemini/GEMINI.md")));
+        assert!(!is_slash_command_or_skill_directory(Path::new("/home/.clinerules")));
+        assert!(!is_slash_command_or_skill_directory(Path::new("/repo/.claude/CLAUDE.md")));
     }
 }

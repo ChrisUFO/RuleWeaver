@@ -4,10 +4,10 @@ use tauri::{Manager, State};
 use crate::database::Database;
 use crate::error::Result;
 use crate::file_storage;
-use crate::reconciliation::ReconciliationEngine;
+
 use crate::sync::SyncEngine;
 
-use super::validate_path;
+use super::{reconcile_after_mutation, validate_path};
 
 #[tauri::command]
 pub async fn migrate_to_file_storage(
@@ -24,7 +24,10 @@ pub async fn migrate_to_file_storage(
 }
 
 #[tauri::command]
-pub async fn rollback_file_migration(backup_path: String, db: State<'_, Arc<Database>>) -> Result<()> {
+pub async fn rollback_file_migration(
+    backup_path: String,
+    db: State<'_, Arc<Database>>,
+) -> Result<()> {
     file_storage::rollback_migration(&backup_path, Some(&db)).await?;
     db.set_storage_mode("sqlite").await?;
     db.set_setting("file_storage_backup_path", "").await
@@ -204,14 +207,14 @@ pub async fn preview_import(path: String) -> Result<crate::models::ExportConfigu
         message: e.to_string(),
     })??;
 
-    let config: crate::models::ExportConfiguration = if path.ends_with(".yaml") || path.ends_with(".yml")
-    {
-        serde_yaml::from_str(&content).map_err(|e| crate::error::AppError::InvalidInput {
-            message: e.to_string(),
-        })?
-    } else {
-        serde_json::from_str(&content)?
-    };
+    let config: crate::models::ExportConfiguration =
+        if path.ends_with(".yaml") || path.ends_with(".yml") {
+            serde_yaml::from_str(&content).map_err(|e| crate::error::AppError::InvalidInput {
+                message: e.to_string(),
+            })?
+        } else {
+            serde_json::from_str(&content)?
+        };
 
     validate_config_version(&config)?;
     validate_config_data(&config)?;
@@ -264,18 +267,7 @@ pub async fn import_configuration(
     let _ = engine.sync_all(rules).await;
 
     // Run reconciliation to clean up any orphaned artifacts from the import
-    if let Ok(reconcile_engine) = ReconciliationEngine::new(db.inner().clone()) {
-        match reconcile_engine.reconcile(false).await {
-            Ok(result) => {
-                if result.removed > 0 {
-                    log::info!("Post-import reconciliation cleaned up {} stale artifacts", result.removed);
-                }
-            }
-            Err(e) => {
-                log::warn!("Post-import reconciliation failed: {}", e);
-            }
-        }
-    }
+    reconcile_after_mutation(db.inner().clone()).await;
 
     {
         if let Some(s) = app.try_state::<crate::GlobalStatus>() {

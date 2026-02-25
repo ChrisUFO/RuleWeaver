@@ -356,3 +356,30 @@ pub async fn validate_local_rule_paths(
     }
     Ok(())
 }
+
+/// Helper function to run reconciliation after mutations.
+/// This cleans up stale artifacts that may have been orphaned.
+pub async fn reconcile_after_mutation(db: Arc<Database>) {
+    use crate::reconciliation::ReconciliationEngine;
+    match ReconciliationEngine::new(db) {
+        Ok(engine) => match engine.reconcile(false).await {
+            Ok(result) => {
+                if result.removed > 0 {
+                    log::info!(
+                        "Reconciliation cleaned up {} stale artifacts",
+                        result.removed
+                    );
+                }
+                if !result.errors.is_empty() {
+                    log::warn!("Reconciliation completed with errors: {:?}", result.errors);
+                }
+            }
+            Err(e) => {
+                log::error!("Reconciliation failed: {}", e);
+            }
+        },
+        Err(e) => {
+            log::error!("Failed to create reconciliation engine: {}", e);
+        }
+    }
+}

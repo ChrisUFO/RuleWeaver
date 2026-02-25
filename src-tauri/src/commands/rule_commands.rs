@@ -5,13 +5,13 @@ use crate::database::Database;
 use crate::error::{AppError, Result};
 use crate::file_storage;
 use crate::models::{CreateRuleInput, Rule, SyncResult, UpdateRuleInput};
-use crate::reconciliation::ReconciliationEngine;
+
 use crate::sync::SyncEngine;
 use crate::templates::rules::{get_bundled_rule_templates, TemplateRule};
 
 use super::{
-    get_local_rule_roots, register_local_rule_paths, storage_location_for_rule, use_file_storage,
-    validate_local_rule_paths, validate_rule_input,
+    get_local_rule_roots, reconcile_after_mutation, register_local_rule_paths,
+    storage_location_for_rule, use_file_storage, validate_local_rule_paths, validate_rule_input,
 };
 
 /// Helper function to sync all rules to AI tool locations.
@@ -27,31 +27,6 @@ async fn sync_to_ai_tools(db: &Database) {
         }
         Err(e) => {
             log::error!("Failed to get rules for AI tool sync: {}", e);
-        }
-    }
-}
-
-/// Helper function to run reconciliation after mutations.
-/// This cleans up stale artifacts that may have been orphaned.
-async fn reconcile_after_mutation(db: Arc<Database>) {
-    match ReconciliationEngine::new(db) {
-        Ok(engine) => {
-            match engine.reconcile(false).await {
-                Ok(result) => {
-                    if result.removed > 0 {
-                        log::info!("Reconciliation cleaned up {} stale artifacts", result.removed);
-                    }
-                    if !result.errors.is_empty() {
-                        log::warn!("Reconciliation completed with errors: {:?}", result.errors);
-                    }
-                }
-                Err(e) => {
-                    log::error!("Reconciliation failed: {}", e);
-                }
-            }
-        }
-        Err(e) => {
-            log::error!("Failed to create reconciliation engine: {}", e);
         }
     }
 }

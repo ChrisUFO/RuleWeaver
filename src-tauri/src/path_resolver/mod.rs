@@ -67,7 +67,7 @@ fn validate_skill_name(skill_name: &str) -> Result<()> {
 /// Sanitize a skill name for use in file paths.
 ///
 /// Converts the name to lowercase and replaces invalid characters with dashes.
-fn sanitize_skill_name(skill_name: &str) -> String {
+pub fn sanitize_skill_name(skill_name: &str) -> String {
     skill_name
         .to_lowercase()
         .chars()
