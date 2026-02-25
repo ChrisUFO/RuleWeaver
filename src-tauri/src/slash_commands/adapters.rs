@@ -6,27 +6,28 @@ use crate::constants::{
 };
 use crate::models::Command;
 use serde::Serialize;
+use std::borrow::Cow;
 
 #[derive(Serialize)]
-struct StandardFrontmatter {
-    name: String,
-    description: String,
+struct StandardFrontmatter<'a> {
+    name: Cow<'a, str>,
+    description: Cow<'a, str>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    arguments: Option<Vec<ArgumentEntry>>,
+    arguments: Option<Vec<ArgumentEntry<'a>>>,
     #[serde(rename = "argument-hint", skip_serializing_if = "Option::is_none")]
-    argument_hint: Option<String>,
+    argument_hint: Option<Cow<'a, str>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    tools: Option<Vec<String>>,
+    tools: Option<Vec<Cow<'a, str>>>,
 }
 
 #[derive(Serialize)]
-struct ArgumentEntry {
-    name: String,
-    description: String,
+struct ArgumentEntry<'a> {
+    name: Cow<'a, str>,
+    description: Cow<'a, str>,
     required: bool,
 }
 
-fn format_with_frontmatter(frontmatter: &StandardFrontmatter, script: &str) -> String {
+fn format_with_frontmatter(frontmatter: &StandardFrontmatter<'_>, script: &str) -> String {
     let yaml = match serde_yaml::to_string(frontmatter) {
         Ok(y) => y,
         Err(e) => {
@@ -75,8 +76,8 @@ impl SlashCommandAdapter for OpenCodeSlashAdapter {
                     .arguments
                     .iter()
                     .map(|arg| ArgumentEntry {
-                        name: arg.name.clone(),
-                        description: arg.description.clone(),
+                        name: Cow::from(&arg.name),
+                        description: Cow::from(&arg.description),
                         required: arg.required,
                     })
                     .collect(),
@@ -84,8 +85,8 @@ impl SlashCommandAdapter for OpenCodeSlashAdapter {
         };
 
         let frontmatter = StandardFrontmatter {
-            name: command.name.clone(),
-            description: command.description.clone(),
+            name: Cow::from(&command.name),
+            description: Cow::from(&command.description),
             arguments,
             argument_hint: None,
             tools: None,
@@ -127,11 +128,11 @@ impl SlashCommandAdapter for ClaudeCodeSlashAdapter {
 
     fn format_command(&self, command: &Command) -> String {
         let frontmatter = StandardFrontmatter {
-            name: command.name.clone(),
-            description: command.description.clone(),
+            name: Cow::from(&command.name),
+            description: Cow::from(&command.description),
             arguments: None,
             argument_hint: None,
-            tools: Some(vec!["bash".to_string()]),
+            tools: Some(vec![Cow::from("bash")]),
         };
 
         format_with_frontmatter(&frontmatter, &command.script)
@@ -298,10 +299,10 @@ impl SlashCommandAdapter for RooCodeSlashAdapter {
         };
 
         let frontmatter = StandardFrontmatter {
-            name: command.name.clone(),
-            description: command.description.clone(),
+            name: Cow::from(&command.name),
+            description: Cow::from(&command.description),
             arguments: None,
-            argument_hint,
+            argument_hint: argument_hint.map(Cow::from),
             tools: None,
         };
 
@@ -337,8 +338,8 @@ impl SlashCommandAdapter for AntigravitySlashAdapter {
 
     fn format_command(&self, command: &Command) -> String {
         let frontmatter = StandardFrontmatter {
-            name: command.name.clone(),
-            description: command.description.clone(),
+            name: Cow::from(&command.name),
+            description: Cow::from(&command.description),
             arguments: None,
             argument_hint: None,
             tools: None,
@@ -376,8 +377,8 @@ impl SlashCommandAdapter for CodexSlashAdapter {
 
     fn format_command(&self, command: &Command) -> String {
         let frontmatter = StandardFrontmatter {
-            name: command.name.clone(),
-            description: command.description.clone(),
+            name: Cow::from(&command.name),
+            description: Cow::from(&command.description),
             arguments: None,
             argument_hint: None,
             tools: None,
@@ -517,28 +518,34 @@ mod tests {
         );
 
         let frontmatter = StandardFrontmatter {
-            name: command.name.clone(),
-            description: command.description.clone(),
+            name: Cow::from(&command.name),
+            description: Cow::from(&command.description),
             arguments: Some(vec![ArgumentEntry {
-                name: "arg1".to_string(),
-                description: "desc1".to_string(),
+                name: Cow::from("arg1"),
+                description: Cow::from("desc1"),
                 required: true,
             }]),
-            argument_hint: Some("<arg1>".to_string()),
-            tools: Some(vec!["bash".to_string()]),
+            argument_hint: Some(Cow::from("<arg1>")),
+            tools: Some(vec![Cow::from("bash")]),
         };
 
         let result = format_with_frontmatter(&frontmatter, &command.script);
-        assert!(result.contains("<!-- Generated by RuleWeaver - Do not edit manually -->"));
-        assert!(result.contains("---\n"));
-        assert!(result.contains("name: test-cmd"));
-        assert!(result.contains("description: Description"));
-        assert!(result.contains("arguments:"));
-        assert!(result.contains("- name: arg1"));
-        assert!(result.contains("argument-hint: <arg1>"));
-        assert!(result.contains("tools:"));
-        assert!(result.contains("- bash"));
-        assert!(result.contains("---\n\necho hello"));
+
+        let expected_yaml = r#"name: test-cmd
+description: Description
+arguments:
+- name: arg1
+  description: desc1
+  required: true
+argument-hint: <arg1>
+tools:
+- bash
+"#;
+        let expected = format!(
+            "<!-- Generated by RuleWeaver - Do not edit manually -->\n---\n{}---\n\n{}",
+            expected_yaml, &command.script
+        );
+        assert_eq!(result, expected);
     }
 
     #[test]
