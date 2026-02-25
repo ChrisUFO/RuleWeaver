@@ -46,8 +46,7 @@ export interface ButtonProps
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, variant, size, asChild = false, motionProps, ...props }, ref) => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const Comp = asChild ? Slot : (motion.button as any);
+    const Comp = asChild ? Slot : (motion.button as React.ElementType);
     return (
       <Comp
         className={cn(buttonVariants({ variant, size, className }))}

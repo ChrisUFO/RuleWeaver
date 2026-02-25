@@ -12,6 +12,7 @@ import {
   History,
   Activity,
   ShieldAlert,
+  AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -68,7 +69,7 @@ export function Dashboard({ onNavigate }: { onNavigate: (view: string) => void }
   const [resultsOpen, setResultsOpen] = useState(false);
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
   const [syncHistory, setSyncHistory] = useState<SyncHistoryEntry[]>([]);
-  const [hasDrift, setHasDrift] = useState<boolean | null>(null);
+  const [hasDrift, setHasDrift] = useState<boolean | null | "error">(null);
   const [isCheckingDrift, setIsCheckingDrift] = useState(false);
 
   useEffect(() => {
@@ -84,7 +85,7 @@ export function Dashboard({ onNavigate }: { onNavigate: (view: string) => void }
       setHasDrift(preview.filesWritten.length > 0 || preview.conflicts.length > 0);
     } catch (error) {
       console.error("Drift check failed:", error);
-      setHasDrift(null);
+      setHasDrift("error");
     } finally {
       setIsCheckingDrift(false);
     }
@@ -288,7 +289,14 @@ export function Dashboard({ onNavigate }: { onNavigate: (view: string) => void }
                   <CardHeader className="flex flex-row items-center justify-between">
                     <CardTitle className="text-lg font-bold flex items-center gap-2">
                       <ShieldAlert
-                        className={cn("h-5 w-5", hasDrift ? "text-amber-500" : "text-primary")}
+                        className={cn(
+                          "h-5 w-5",
+                          hasDrift === "error"
+                            ? "text-destructive"
+                            : hasDrift
+                              ? "text-amber-500"
+                              : "text-primary"
+                        )}
                       />
                       Health Monitor
                     </CardTitle>
@@ -318,7 +326,9 @@ export function Dashboard({ onNavigate }: { onNavigate: (view: string) => void }
                             hasDrift ? "border-amber-500/10" : "border-primary/10"
                           )}
                         >
-                          {hasDrift ? (
+                          {hasDrift === "error" ? (
+                            <AlertTriangle className="h-12 w-12 text-destructive/80" />
+                          ) : hasDrift ? (
                             <ShieldAlert className="h-12 w-12 text-amber-500/80" />
                           ) : (
                             <CheckCircle className="h-12 w-12 text-primary/80" />
@@ -330,16 +340,20 @@ export function Dashboard({ onNavigate }: { onNavigate: (view: string) => void }
                       <h3 className="font-bold text-lg">
                         {hasDrift === null
                           ? "Initializing Audit..."
-                          : hasDrift
-                            ? "Drift Detected"
-                            : "System Synchronized"}
+                          : hasDrift === "error"
+                            ? "Audit Failure"
+                            : hasDrift
+                              ? "Drift Detected"
+                              : "System Synchronized"}
                       </h3>
                       <p className="text-sm text-muted-foreground max-w-sm mx-auto">
                         {hasDrift === null
                           ? "Analyzing local artifacts and tool configurations..."
-                          : hasDrift
-                            ? "Some local files have drifted from the master rules. Audit suggested."
-                            : "All tool configurations are in alignment with the master rules metadata."}
+                          : hasDrift === "error"
+                            ? "An error occurred while analyzing tool configurations. Check console for details."
+                            : hasDrift
+                              ? "Some local files have drifted from the master rules. Audit suggested."
+                              : "All tool configurations are in alignment with the master rules metadata."}
                       </p>
                     </div>
                   </CardContent>

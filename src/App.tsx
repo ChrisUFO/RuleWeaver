@@ -14,6 +14,7 @@ import { useKeyboardShortcuts, SHORTCUTS } from "./hooks/useKeyboardShortcuts";
 import { useRulesStore } from "./stores/rulesStore";
 import { motion, AnimatePresence } from "framer-motion";
 import type { Conflict } from "./types/rule";
+import { ADAPTERS } from "./types/rule";
 import "./index.css";
 
 function App() {
@@ -29,10 +30,14 @@ function App() {
 
     const unlisten = listen<string>("rule-conflict", async (event) => {
       const filePath = event.payload;
+      const fileName = filePath.split(/[/\\]/).pop() || "";
+      const adapter = ADAPTERS.find((a) => a.fileName === fileName);
+
       setActiveConflict({
         id: crypto.randomUUID(),
         filePath,
-        adapterName: "Detected Adapter",
+        adapterName: adapter?.name || "Detected Adapter",
+        adapterId: adapter?.id,
         localHash: "",
         currentHash: "",
       });
@@ -100,7 +105,7 @@ function App() {
           animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
           exit={{ opacity: 0, y: -10, filter: "blur(10px)" }}
           transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
-          className="h-full"
+          className=""
         >
           {currentViewComponent}
         </motion.div>
@@ -112,7 +117,7 @@ function App() {
     <ToastProvider>
       <ErrorBoundary>
         <MainLayout activeView={activeView} onViewChange={setActiveView}>
-          <div className="h-full relative overflow-hidden">
+          <div className="relative">
             {/* Ambient Background Glow */}
             <div className="absolute top-[-10%] right-[-10%] w-[40%] h-[40%] bg-primary/5 blur-[120px] rounded-full animate-luminescence pointer-events-none" />
             <div className="absolute bottom-[-5%] left-[-5%] w-[30%] h-[30%] bg-primary/5 blur-[100px] rounded-full animate-luminescence pointer-events-none [animation-delay:2s]" />
