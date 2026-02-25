@@ -9,6 +9,7 @@ use crate::models::Rule;
 pub struct RuleFrontmatter {
     pub id: String,
     pub name: String,
+    pub description: String,
     pub scope: String,
     #[serde(skip_serializing_if = "Option::is_none", rename = "targetPaths")]
     pub target_paths: Option<Vec<String>>,
@@ -26,6 +27,7 @@ impl From<&Rule> for RuleFrontmatter {
         Self {
             id: rule.id.clone(),
             name: rule.name.clone(),
+            description: rule.description.clone(),
             scope: rule.scope.as_str().to_string(),
             target_paths: rule.target_paths.clone(),
             enabled_adapters: rule
@@ -111,6 +113,7 @@ mod tests {
         Rule {
             id: "test-id-123".to_string(),
             name: name.to_string(),
+            description: "Test description".to_string(),
             content: "Test content".to_string(),
             scope,
             target_paths: None,

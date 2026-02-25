@@ -53,15 +53,20 @@ pub fn get_bundled_skill_templates() -> Vec<TemplateSkill> {
             metadata: CreateSkillInput {
                 id: None,
                 name: "Book Writing Assistant".to_string(),
-                description: "Structured workflow for authors".to_string(),
-                instructions: "Help authors plan/write books...".to_string(),
+                description:
+                    "Structured workflow for authors to plan chapters and brainstorm plot beats."
+                        .to_string(),
+                instructions: include_str!("write_instructions.md").to_string(),
                 scope: Scope::Global,
                 input_schema: vec![],
                 directory_path: "".to_string(),
-                entry_point: "write.sh".to_string(),
+                entry_point: "python write.py".to_string(),
                 enabled: true,
             },
-            files: vec![],
+            files: vec![TemplateFile {
+                filename: "write.py".to_string(),
+                content: include_str!("write.py").to_string(),
+            }],
         },
         TemplateSkill {
             template_id: "project-planner".to_string(),
@@ -69,15 +74,19 @@ pub fn get_bundled_skill_templates() -> Vec<TemplateSkill> {
             metadata: CreateSkillInput {
                 id: None,
                 name: "Project Planner".to_string(),
-                description: "Generates project plans and Gantt charts".to_string(),
-                instructions: "Help PMs build project plans...".to_string(),
+                description: "Generates project plans and Mermaid Gantt charts from feature lists."
+                    .to_string(),
+                instructions: include_str!("plan_instructions.md").to_string(),
                 scope: Scope::Global,
                 input_schema: vec![],
                 directory_path: "".to_string(),
-                entry_point: "plan.sh".to_string(),
+                entry_point: "python plan.py".to_string(),
                 enabled: true,
             },
-            files: vec![],
+            files: vec![TemplateFile {
+                filename: "plan.py".to_string(),
+                content: include_str!("plan.py").to_string(),
+            }],
         },
         TemplateSkill {
             template_id: "tmpl_system_info".to_string(),

@@ -126,8 +126,7 @@ pub async fn install_skill_template(
         .ok_or_else(|| AppError::Validation(format!("Template '{}' not found", template_id)))?;
 
     // 3. Check for name collisions
-    let all_skills = db.get_all_skills().await?;
-    if all_skills.iter().any(|s| s.name == template.metadata.name) {
+    if db.skill_exists_with_name(&template.metadata.name).await? {
         return Err(AppError::Validation(format!(
             "A skill with the name '{}' already exists. Please rename or delete it before installing this template.",
             template.metadata.name

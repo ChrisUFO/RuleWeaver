@@ -33,6 +33,7 @@ export interface Skill {
 }
 
 export interface CreateSkillInput {
+  id?: string;
   name: string;
   description: string;
   instructions: string;

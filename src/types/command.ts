@@ -12,6 +12,7 @@ export interface CommandModel {
   script: string;
   arguments: CommandArgument[];
   exposeViaMcp: boolean;
+  isPlaceholder: boolean;
   generateSlashCommands?: boolean;
   slashCommandAdapters?: string[];
   targetPaths?: string[];
@@ -20,9 +21,11 @@ export interface CommandModel {
 }
 
 export interface CreateCommandInput {
+  id?: string;
   name: string;
   description: string;
   script: string;
+  isPlaceholder: boolean;
   arguments?: CommandArgument[];
   exposeViaMcp?: boolean;
   targetPaths?: string[];
@@ -32,6 +35,7 @@ export interface UpdateCommandInput {
   name?: string;
   description?: string;
   script?: string;
+  isPlaceholder?: boolean;
   arguments?: CommandArgument[];
   exposeViaMcp?: boolean;
   generateSlashCommands?: boolean;

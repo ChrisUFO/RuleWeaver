@@ -12,6 +12,8 @@ pub struct Command {
     pub arguments: Vec<CommandArgument>,
     pub expose_via_mcp: bool,
     #[serde(default)]
+    pub is_placeholder: bool,
+    #[serde(default)]
     pub generate_slash_commands: bool,
     #[serde(default)]
     pub slash_command_adapters: Vec<String>,
@@ -66,7 +68,7 @@ pub struct ExecutionLog {
 
 impl Command {
     #[allow(dead_code)]
-    pub fn new(name: String, description: String, script: String) -> Self {
+    pub fn new(name: String, description: String, script: String, is_placeholder: bool) -> Self {
         let now = Utc::now();
         Self {
             id: Uuid::new_v4().to_string(),
@@ -75,6 +77,7 @@ impl Command {
             script,
             arguments: Vec::new(),
             expose_via_mcp: true,
+            is_placeholder,
             generate_slash_commands: false,
             slash_command_adapters: Vec::new(),
             target_paths: Vec::new(),
@@ -87,6 +90,7 @@ impl Command {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateCommandInput {
+    pub id: Option<String>,
     pub name: String,
     pub description: String,
     pub script: String,
@@ -94,6 +98,8 @@ pub struct CreateCommandInput {
     pub arguments: Vec<CommandArgument>,
     #[serde(default = "default_true")]
     pub expose_via_mcp: bool,
+    #[serde(default)]
+    pub is_placeholder: bool,
     #[serde(default)]
     pub generate_slash_commands: bool,
     #[serde(default)]
@@ -114,6 +120,7 @@ pub struct UpdateCommandInput {
     pub script: Option<String>,
     pub arguments: Option<Vec<CommandArgument>>,
     pub expose_via_mcp: Option<bool>,
+    pub is_placeholder: Option<bool>,
     pub generate_slash_commands: Option<bool>,
     pub slash_command_adapters: Option<Vec<String>>,
     pub target_paths: Option<Vec<String>>,
@@ -139,6 +146,7 @@ mod tests {
             "Fmt".to_string(),
             "Format".to_string(),
             "npm run fmt".to_string(),
+            false,
         );
         assert_eq!(command.name, "Fmt");
         assert!(command.expose_via_mcp);
@@ -149,6 +157,7 @@ mod tests {
     #[test]
     fn test_command_roundtrip() {
         let input = CreateCommandInput {
+            id: None,
             name: "Run Tests".to_string(),
             description: "Run unit tests".to_string(),
             script: "npm test".to_string(),
@@ -161,6 +170,7 @@ mod tests {
                 options: None,
             }],
             expose_via_mcp: true,
+            is_placeholder: false,
             generate_slash_commands: false,
             slash_command_adapters: vec![],
             target_paths: vec![],

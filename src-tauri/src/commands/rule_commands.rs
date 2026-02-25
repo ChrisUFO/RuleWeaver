@@ -232,29 +232,15 @@ pub async fn install_rule_template(
         .ok_or_else(|| AppError::Validation(format!("Template '{}' not found", template_id)))?;
 
     // 3. Check for name collisions
-    let all_rules = db.get_all_rules().await?;
-    if all_rules.iter().any(|r| r.name == template.metadata.name) {
+    if db.rule_exists_with_name(&template.metadata.name).await? {
         return Err(AppError::Validation(format!(
             "A rule with the name '{}' already exists. Please rename or delete it before installing this template.",
             template.metadata.name
         )));
     }
 
-    let input = template.metadata.clone();
-
-    // We don't have a direct 'id' field in CreateRuleInput, but we can wrap it if needed.
-    // However, create_rule usually generates a new ID.
-    // For templates, we might want to keep the template ID as the rule ID for idempotency checks.
-    // Let's see if Database::create_rule supports passing an ID.
-    // Checking models/rule.rs: CreateRuleInput doesn't have an ID.
-    // But Rule has an ID.
-
-    // Actually, create_skill had an id: Option<String>.
-    // Let's check Database::create_rule signature if possible, or just generate a new one.
-    // Given the idempotency check above uses template_id, we SHOULD use template_id as the ID.
-
-    // I'll assume for now we might need to update CreateRuleInput to support an optional ID if we want idempotency by ID.
-    // Or just accept it creates a new one each time if renamed.
+    let mut input = template.metadata.clone();
+    input.id = Some(template_id);
 
     let created = db.create_rule(input).await?;
 

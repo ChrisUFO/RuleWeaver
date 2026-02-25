@@ -15,6 +15,7 @@ export type AdapterType =
 export interface Rule {
   id: string;
   name: string;
+  description: string;
   content: string;
   scope: Scope;
   targetPaths: string[] | null;
@@ -25,7 +26,9 @@ export interface Rule {
 }
 
 export interface CreateRuleInput {
+  id?: string;
   name: string;
+  description: string;
   content: string;
   scope: Scope;
   targetPaths?: string[];
@@ -35,6 +38,7 @@ export interface CreateRuleInput {
 
 export interface UpdateRuleInput {
   name?: string;
+  description?: string;
   content?: string;
   scope?: Scope;
   targetPaths?: string[];

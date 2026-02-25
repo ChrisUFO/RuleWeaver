@@ -618,7 +618,9 @@ async fn handle_external_rule_change(
         // New rule created externally - this is always an update
         log::info!("New rule detected externally: {}", rule_from_disk.name);
         db.create_rule(crate::models::CreateRuleInput {
+            id: None,
             name: rule_from_disk.name.clone(),
+            description: String::new(), // Default for externally created rules
             content: rule_from_disk.content.clone(),
             scope: rule_from_disk.scope,
             target_paths: rule_from_disk.target_paths.clone(),

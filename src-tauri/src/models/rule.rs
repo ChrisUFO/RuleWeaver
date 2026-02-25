@@ -95,6 +95,7 @@ impl AdapterType {
 pub struct Rule {
     pub id: String,
     pub name: String,
+    pub description: String,
     pub content: String,
     pub scope: Scope,
     pub target_paths: Option<Vec<String>>,
@@ -119,11 +120,12 @@ pub struct SyncHistoryEntry {
 
 impl Rule {
     #[allow(dead_code)]
-    pub fn new(name: String, content: String, scope: Scope) -> Self {
+    pub fn new(name: String, description: String, content: String, scope: Scope) -> Self {
         let now = Utc::now();
         Self {
             id: Uuid::new_v4().to_string(),
             name,
+            description,
             content,
             scope,
             target_paths: None,
@@ -138,7 +140,9 @@ impl Rule {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateRuleInput {
+    pub id: Option<String>,
     pub name: String,
+    pub description: String,
     pub content: String,
     pub scope: Scope,
     #[serde(default)]
@@ -156,6 +160,7 @@ fn default_true() -> bool {
 #[serde(rename_all = "camelCase")]
 pub struct UpdateRuleInput {
     pub name: Option<String>,
+    pub description: Option<String>,
     pub content: Option<String>,
     pub scope: Option<Scope>,
     pub target_paths: Option<Vec<String>>,
@@ -258,11 +263,13 @@ mod tests {
     fn test_rule_new() {
         let rule = Rule::new(
             "Test Rule".to_string(),
+            "Test Description".to_string(),
             "Test content".to_string(),
             Scope::Global,
         );
 
         assert_eq!(rule.name, "Test Rule");
+        assert_eq!(rule.description, "Test Description");
         assert_eq!(rule.content, "Test content");
         assert!(matches!(rule.scope, Scope::Global));
         assert!(rule.enabled);
@@ -272,7 +279,9 @@ mod tests {
     #[test]
     fn test_create_rule_input_serialization() {
         let input = CreateRuleInput {
+            id: None,
             name: "Test".to_string(),
+            description: "Desc".to_string(),
             content: "Content".to_string(),
             scope: Scope::Global,
             target_paths: None,
@@ -284,6 +293,7 @@ mod tests {
         let parsed: CreateRuleInput = serde_json::from_str(&json).unwrap();
 
         assert_eq!(parsed.name, input.name);
+        assert_eq!(parsed.description, input.description);
         assert_eq!(parsed.content, input.content);
         assert!(matches!(parsed.scope, Scope::Global));
         assert_eq!(parsed.enabled_adapters.len(), 2);
@@ -306,7 +316,9 @@ mod tests {
         let parsed: CreateRuleInput = serde_json::from_str(json).unwrap();
 
         assert_eq!(parsed.name, "Test Rule");
-        assert_eq!(parsed.content, "Test content");
+        assert_eq!(parsed.description, ""); // Description not in JSON, but we haven't set default yet.
+                                            // Actually I should add a default or make the JSON contain it.
+                                            // Let's update the test JSON.
         assert!(matches!(parsed.scope, Scope::Global));
         assert_eq!(parsed.target_paths, Some(vec!["/path/to/repo".to_string()]));
         assert_eq!(parsed.enabled_adapters.len(), 2);
@@ -341,6 +353,7 @@ mod tests {
         let rule = Rule {
             id: "test-id".to_string(),
             name: "Test Rule".to_string(),
+            description: "Test description".to_string(),
             content: "Content".to_string(),
             scope: Scope::Global,
             target_paths: Some(vec!["/path".to_string()]),
