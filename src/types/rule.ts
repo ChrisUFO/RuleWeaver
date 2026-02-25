@@ -15,38 +15,102 @@ export type AdapterType =
 export const ADAPTERS: {
   id: AdapterType;
   name: string;
+  description: string;
   icon: string;
   enabled: boolean;
   fileName: string;
+  globalPath: string;
 }[] = [
   {
     id: "antigravity",
     name: "Antigravity",
+    description: "Antigravity AI coding assistant",
     icon: "antigravity",
     enabled: true,
     fileName: "GEMINI.md",
+    globalPath: "~/.gemini/GEMINI.md",
   },
-  { id: "gemini", name: "Gemini", icon: "gemini", enabled: true, fileName: "GEMINI.md" },
+  {
+    id: "gemini",
+    name: "Gemini",
+    description: "Google's Gemini AI coding assistant",
+    icon: "gemini",
+    enabled: true,
+    fileName: "GEMINI.md",
+    globalPath: "~/.gemini/GEMINI.md",
+  },
   {
     id: "opencode",
     name: "OpenCode",
+    description: "OpenCode AI coding assistant",
     icon: "opencode",
     enabled: true,
     fileName: "AGENTS.md",
+    globalPath: "~/.config/opencode/AGENTS.md",
   },
-  { id: "cline", name: "Cline", icon: "cline", enabled: true, fileName: ".clinerules" },
+  {
+    id: "cline",
+    name: "Cline",
+    description: "Cline VS Code extension",
+    icon: "cline",
+    enabled: true,
+    fileName: ".clinerules",
+    globalPath: "~/.clinerules",
+  },
   {
     id: "claude-code",
     name: "Claude Code",
+    description: "Anthropic's Claude Code assistant",
     icon: "claude",
     enabled: true,
     fileName: "CLAUDE.md",
+    globalPath: "~/.claude/CLAUDE.md",
   },
-  { id: "codex", name: "Codex", icon: "codex", enabled: true, fileName: "AGENTS.md" },
-  { id: "kilo", name: "Kilo", icon: "kilo", enabled: true, fileName: "AGENTS.md" },
-  { id: "cursor", name: "Cursor", icon: "cursor", enabled: true, fileName: "COMMANDS.md" },
-  { id: "windsurf", name: "Windsurf", icon: "windsurf", enabled: true, fileName: "AGENTS.md" },
-  { id: "roocode", name: "Roo Code", icon: "roo", enabled: true, fileName: "AGENTS.md" },
+  {
+    id: "codex",
+    name: "Codex",
+    description: "OpenAI Codex assistant",
+    icon: "codex",
+    enabled: true,
+    fileName: "AGENTS.md",
+    globalPath: "~/.codex/AGENTS.md",
+  },
+  {
+    id: "kilo",
+    name: "Kilo Code",
+    description: "Kilo Code AI assistant",
+    icon: "kilo",
+    enabled: true,
+    fileName: "AGENTS.md",
+    globalPath: "~/.kilocode/rules/AGENTS.md",
+  },
+  {
+    id: "cursor",
+    name: "Cursor",
+    description: "Cursor AI code editor",
+    icon: "cursor",
+    enabled: true,
+    fileName: ".cursorrules",
+    globalPath: "~/.cursorrules",
+  },
+  {
+    id: "windsurf",
+    name: "Windsurf",
+    description: "Windsurf AI assistant",
+    icon: "windsurf",
+    enabled: true,
+    fileName: "rules.md",
+    globalPath: "~/.windsurf/rules/rules.md",
+  },
+  {
+    id: "roocode",
+    name: "Roo Code",
+    description: "Roo Code AI assistant",
+    icon: "roocode",
+    enabled: true,
+    fileName: "rules.md",
+    globalPath: "~/.roo/rules/rules.md",
+  },
 ];
 
 export interface Rule {
