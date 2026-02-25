@@ -91,7 +91,7 @@ pub struct ReconcilePlan {
     pub to_update: Vec<ResolvedArtifact>,
     /// Paths that need to be removed (stale)
     #[serde(default)]
-    pub to_remove: Vec<PathBuf>,
+    pub to_remove: Vec<FoundArtifact>,
     /// Paths that are unchanged
     #[serde(default)]
     pub unchanged: Vec<PathBuf>,
@@ -327,9 +327,9 @@ impl ReconciliationEngine {
         }
 
         // Find paths that exist but shouldn't (to remove - stale artifacts)
-        for (path_str, found) in &actual.found_paths {
-            if !desired.expected_paths.contains_key(path_str) {
-                plan.to_remove.push(found.path.clone());
+        for found in actual.found_paths.values() {
+            if !desired.expected_paths.contains_key(&found.path.to_string_lossy().to_string()) {
+                plan.to_remove.push(found.clone());
             }
         }
 
@@ -418,33 +418,33 @@ impl ReconciliationEngine {
         }
 
         // Handle removes
-        for path in &plan.to_remove {
+        for artifact in &plan.to_remove {
             if dry_run {
-                log::info!("[DRY RUN] Would remove: {}", path.display());
+                log::info!("[DRY RUN] Would remove: {}", artifact.path.display());
                 result.removed += 1;
             } else {
-                match fs::remove_file(path) {
+                match fs::remove_file(&artifact.path) {
                     Ok(()) => {
                         result.removed += 1;
                         self.log_operation(
                             ReconcileOperation::Remove,
-                            ArtifactType::Rule,
-                            AdapterType::Antigravity, // Unknown for removes
+                            artifact.artifact_type.unwrap_or(ArtifactType::Rule),
+                            artifact.adapter.unwrap_or(AdapterType::Antigravity),
                             Scope::Global,
-                            path,
+                            &artifact.path,
                             ReconcileResultType::Success,
                         )
                         .await;
                     }
                     Err(e) => {
                         result.success = false;
-                        result.errors.push(format!("Failed to remove {}: {}", path.display(), e));
+                        result.errors.push(format!("Failed to remove {}: {}", artifact.path.display(), e));
                         self.log_operation(
                             ReconcileOperation::Remove,
-                            ArtifactType::Rule,
-                            AdapterType::Antigravity,
+                            artifact.artifact_type.unwrap_or(ArtifactType::Rule),
+                            artifact.adapter.unwrap_or(AdapterType::Antigravity),
                             Scope::Global,
-                            path,
+                            &artifact.path,
                             ReconcileResultType::Failed,
                         )
                         .await;

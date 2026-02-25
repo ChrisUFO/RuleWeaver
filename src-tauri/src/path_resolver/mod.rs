@@ -64,9 +64,8 @@ impl PathResolver {
     ///
     /// Returns an error if the home directory cannot be determined.
     pub fn new() -> Result<Self> {
-        let home_dir = dirs::home_dir().ok_or_else(|| {
-            AppError::Path("Could not determine home directory".to_string())
-        })?;
+        let home_dir = dirs::home_dir()
+            .ok_or_else(|| AppError::Path("Could not determine home directory".to_string()))?;
 
         Ok(Self {
             home_dir,
@@ -80,9 +79,8 @@ impl PathResolver {
     ///
     /// Returns an error if the home directory cannot be determined.
     pub fn with_repository_roots(repository_roots: Vec<PathBuf>) -> Result<Self> {
-        let home_dir = dirs::home_dir().ok_or_else(|| {
-            AppError::Path("Could not determine home directory".to_string())
-        })?;
+        let home_dir = dirs::home_dir()
+            .ok_or_else(|| AppError::Path("Could not determine home directory".to_string()))?;
 
         Ok(Self {
             home_dir,
@@ -121,39 +119,45 @@ impl PathResolver {
             .validate_support(&adapter, &Scope::Global, artifact)
             .map_err(|e| AppError::InvalidInput { message: e })?;
 
-        let entry = REGISTRY.get(&adapter).ok_or_else(|| {
-            AppError::InvalidInput {
+        let entry = REGISTRY
+            .get(&adapter)
+            .ok_or_else(|| AppError::InvalidInput {
                 message: format!("Unknown adapter: {}", adapter.as_str()),
-            }
-        })?;
+            })?;
 
         // Get the appropriate path template based on artifact type
         let path_template: String = match artifact {
             ArtifactType::Rule => entry.paths.global_path.to_string(),
             ArtifactType::CommandStub => {
-                // Command stubs use global_commands_dir + COMMANDS.md
-                let commands_dir = entry.paths.global_commands_dir.ok_or_else(|| {
-                    AppError::InvalidInput {
-                        message: format!(
-                            "Adapter {} does not support command stubs",
-                            adapter.as_str()
-                        ),
-                    }
-                })?;
-                // Append COMMANDS.md to get the full file path
-                format!("{}/COMMANDS.md", commands_dir.trim_end_matches('/'))
+                let commands_dir =
+                    entry
+                        .paths
+                        .global_commands_dir
+                        .ok_or_else(|| AppError::InvalidInput {
+                            message: format!(
+                                "Adapter {} does not support command stubs",
+                                adapter.as_str()
+                            ),
+                        })?;
+                format!(
+                    "{}/{}",
+                    commands_dir.trim_end_matches('/'),
+                    entry.paths.command_stub_filename
+                )
             }
             ArtifactType::SlashCommand => {
                 // Slash commands are handled differently - they need a command name
                 // This method returns the directory containing slash commands
-                entry.paths.global_commands_dir.ok_or_else(|| {
-                    AppError::InvalidInput {
+                entry
+                    .paths
+                    .global_commands_dir
+                    .ok_or_else(|| AppError::InvalidInput {
                         message: format!(
                             "Adapter {} does not support slash commands",
                             adapter.as_str()
                         ),
-                    }
-                })?.to_string()
+                    })?
+                    .to_string()
             }
             ArtifactType::Skill => {
                 // Skills not yet implemented in Phase 3
@@ -193,34 +197,36 @@ impl PathResolver {
             .validate_support(&adapter, &Scope::Local, artifact)
             .map_err(|e| AppError::InvalidInput { message: e })?;
 
-        let entry = REGISTRY.get(&adapter).ok_or_else(|| {
-            AppError::InvalidInput {
+        let entry = REGISTRY
+            .get(&adapter)
+            .ok_or_else(|| AppError::InvalidInput {
                 message: format!("Unknown adapter: {}", adapter.as_str()),
-            }
-        })?;
+            })?;
 
         // Get the appropriate path template based on artifact type
         let path_template = match artifact {
             ArtifactType::Rule => entry.paths.local_path_template,
             ArtifactType::CommandStub => {
-                entry.paths.local_commands_dir.ok_or_else(|| {
-                    AppError::InvalidInput {
+                entry
+                    .paths
+                    .local_commands_dir
+                    .ok_or_else(|| AppError::InvalidInput {
                         message: format!(
                             "Adapter {} does not support command stubs",
                             adapter.as_str()
                         ),
-                    }
-                })?
+                    })?
             }
             ArtifactType::SlashCommand => {
-                entry.paths.local_commands_dir.ok_or_else(|| {
-                    AppError::InvalidInput {
+                entry
+                    .paths
+                    .local_commands_dir
+                    .ok_or_else(|| AppError::InvalidInput {
                         message: format!(
                             "Adapter {} does not support slash commands",
                             adapter.as_str()
                         ),
-                    }
-                })?
+                    })?
             }
             ArtifactType::Skill => {
                 return Err(AppError::InvalidInput {
@@ -229,21 +235,12 @@ impl PathResolver {
             }
         };
 
-        // First resolve any ~ in the template
-        let mut resolved = self.resolve_template(path_template, None)?;
-        
-        // If the resolved path doesn't start with the repo root, prepend it
-        // This handles both cases:
-        // 1. Template contains {repo} placeholder - already substituted
-        // 2. Template is relative (e.g., ".claude/CLAUDE.md") - need to prepend
-        let resolved_str = resolved.to_string_lossy();
-        let repo_str: &str = &repo_root.to_string_lossy();
-        
-        // Prepend repo_root if the path doesn't already contain it
-        if !resolved_str.starts_with(repo_str) && !resolved_str.contains(repo_str) {
-            resolved = repo_root.join(&resolved);
+        let mut resolved = self.resolve_template(path_template, Some(repo_root))?;
+
+        if resolved.is_relative() {
+            resolved = repo_root.join(resolved);
         }
-        
+
         let exists = resolved.exists();
 
         Ok(ResolvedPath {
@@ -267,39 +264,41 @@ impl PathResolver {
         command_name: &str,
         is_global: bool,
     ) -> Result<ResolvedPath> {
-        let entry = REGISTRY.get(&adapter).ok_or_else(|| {
-            AppError::InvalidInput {
+        let entry = REGISTRY
+            .get(&adapter)
+            .ok_or_else(|| AppError::InvalidInput {
                 message: format!("Unknown adapter: {}", adapter.as_str()),
-            }
-        })?;
+            })?;
 
-        let extension = entry.slash_command_extension.ok_or_else(|| {
-            AppError::InvalidInput {
+        let extension = entry
+            .slash_command_extension
+            .ok_or_else(|| AppError::InvalidInput {
                 message: format!(
                     "Adapter {} does not support slash commands",
                     adapter.as_str()
                 ),
-            }
-        })?;
+            })?;
 
         let dir = if is_global {
-            entry.paths.global_commands_dir.ok_or_else(|| {
-                AppError::InvalidInput {
+            entry
+                .paths
+                .global_commands_dir
+                .ok_or_else(|| AppError::InvalidInput {
                     message: format!(
                         "Adapter {} does not support global slash commands",
                         adapter.as_str()
                     ),
-                }
-            })?
+                })?
         } else {
-            entry.paths.local_commands_dir.ok_or_else(|| {
-                AppError::InvalidInput {
+            entry
+                .paths
+                .local_commands_dir
+                .ok_or_else(|| AppError::InvalidInput {
                     message: format!(
                         "Adapter {} does not support local slash commands",
                         adapter.as_str()
                     ),
-                }
-            })?
+                })?
         };
 
         let filename = format!("{}.{}", command_name, extension);
@@ -310,8 +309,9 @@ impl PathResolver {
             // For local, we need a repo root - this is handled differently
             // The caller must provide the repo root context
             return Err(AppError::InvalidInput {
-                message: "Local slash command path requires repo_root. Use local_slash_command_path()"
-                    .to_string(),
+                message:
+                    "Local slash command path requires repo_root. Use local_slash_command_path()"
+                        .to_string(),
             });
         };
 
@@ -321,7 +321,11 @@ impl PathResolver {
             path,
             adapter,
             artifact: ArtifactType::SlashCommand,
-            scope: if is_global { Scope::Global } else { Scope::Local },
+            scope: if is_global {
+                Scope::Global
+            } else {
+                Scope::Local
+            },
             exists,
             repo_root: None,
         })
@@ -338,29 +342,30 @@ impl PathResolver {
         command_name: &str,
         repo_root: &Path,
     ) -> Result<ResolvedPath> {
-        let entry = REGISTRY.get(&adapter).ok_or_else(|| {
-            AppError::InvalidInput {
+        let entry = REGISTRY
+            .get(&adapter)
+            .ok_or_else(|| AppError::InvalidInput {
                 message: format!("Unknown adapter: {}", adapter.as_str()),
-            }
-        })?;
+            })?;
 
-        let extension = entry.slash_command_extension.ok_or_else(|| {
-            AppError::InvalidInput {
+        let extension = entry
+            .slash_command_extension
+            .ok_or_else(|| AppError::InvalidInput {
                 message: format!(
                     "Adapter {} does not support slash commands",
                     adapter.as_str()
                 ),
-            }
-        })?;
+            })?;
 
-        let dir = entry.paths.local_commands_dir.ok_or_else(|| {
-            AppError::InvalidInput {
+        let dir = entry
+            .paths
+            .local_commands_dir
+            .ok_or_else(|| AppError::InvalidInput {
                 message: format!(
                     "Adapter {} does not support local slash commands",
                     adapter.as_str()
                 ),
-            }
-        })?;
+            })?;
 
         let filename = format!("{}.{}", command_name, extension);
         let path = repo_root.join(dir).join(&filename);
@@ -395,7 +400,8 @@ impl PathResolver {
         let normalized = normalize_path(path)?;
 
         // Check for traversal by comparing against home directory after normalization
-        let canonical_home = normalize_path(&self.home_dir).unwrap_or_else(|_| self.home_dir.clone());
+        let canonical_home =
+            normalize_path(&self.home_dir).unwrap_or_else(|_| self.home_dir.clone());
 
         if !normalized.starts_with(&canonical_home) {
             return Err(AppError::InvalidInput {
@@ -546,12 +552,14 @@ impl Default for PathResolver {
 /// Unlike std::fs::canonicalize, this does NOT require the path to exist.
 fn normalize_path(path: &Path) -> std::result::Result<PathBuf, AppError> {
     let mut components = Vec::new();
-    
+
     for component in path.components() {
         match component {
             std::path::Component::ParentDir => {
                 // Don't pop if we're at the root
-                if !components.is_empty() && components.last() != Some(&std::path::Component::RootDir) {
+                if !components.is_empty()
+                    && components.last() != Some(&std::path::Component::RootDir)
+                {
                     components.pop();
                 }
             }
@@ -563,15 +571,18 @@ fn normalize_path(path: &Path) -> std::result::Result<PathBuf, AppError> {
             }
         }
     }
-    
+
     // Reconstruct the path
     let normalized: PathBuf = components.iter().map(|c| c.as_os_str()).collect();
-    
+
     // Ensure we have an absolute path
     if normalized.is_relative() {
-        return Err(AppError::Path(format!("Cannot normalize relative path: {}", path.display())));
+        return Err(AppError::Path(format!(
+            "Cannot normalize relative path: {}",
+            path.display()
+        )));
     }
-    
+
     Ok(normalized)
 }
 
@@ -579,9 +590,8 @@ fn normalize_path(path: &Path) -> std::result::Result<PathBuf, AppError> {
 ///
 /// This is a convenience function for backward compatibility.
 pub fn resolve_registry_path(path: &str) -> Result<PathBuf> {
-    let home = dirs::home_dir().ok_or_else(|| {
-        AppError::Path("Could not determine home directory".to_string())
-    })?;
+    let home = dirs::home_dir()
+        .ok_or_else(|| AppError::Path("Could not determine home directory".to_string()))?;
 
     if let Some(stripped) = path.strip_prefix("~/") {
         Ok(home.join(stripped))
@@ -623,7 +633,9 @@ mod tests {
         assert!(resolver.is_ok());
 
         let resolver = resolver.unwrap();
-        assert!(resolver.home_dir().exists() || resolver.home_dir().to_string_lossy().contains("Users"));
+        assert!(
+            resolver.home_dir().exists() || resolver.home_dir().to_string_lossy().contains("Users")
+        );
     }
 
     #[test]
@@ -652,8 +664,11 @@ mod tests {
         let resolved = result.unwrap();
         // Use normalized path comparison that works on both Windows and Unix
         let path_str = resolved.path.to_string_lossy();
-        assert!(path_str.contains("test") && path_str.contains("repo"),
-            "Path should contain repo reference, got: {}", path_str);
+        assert!(
+            path_str.contains("test") && path_str.contains("repo"),
+            "Path should contain repo reference, got: {}",
+            path_str
+        );
         assert!(path_str.contains(".claude"));
         assert_eq!(resolved.scope, Scope::Local);
     }
@@ -666,7 +681,10 @@ mod tests {
         let home_dir = resolver.home_dir();
         let valid_path = home_dir.join("test/path");
         let result = resolver.validate_target_path(&valid_path);
-        assert!(result.is_ok(), "Should succeed for a path within the home directory");
+        assert!(
+            result.is_ok(),
+            "Should succeed for a path within the home directory"
+        );
 
         // Test relative path should fail
         let result = resolver.validate_target_path(&PathBuf::from("relative/path"));
