@@ -231,7 +231,15 @@ pub async fn install_rule_template(
         .find(|t| t.template_id == template_id)
         .ok_or_else(|| AppError::Validation(format!("Template '{}' not found", template_id)))?;
 
-    // 3. Ensure the metadata uses our specific template ID
+    // 3. Check for name collisions
+    let all_rules = db.get_all_rules().await?;
+    if all_rules.iter().any(|r| r.name == template.metadata.name) {
+        return Err(AppError::Validation(format!(
+            "A rule with the name '{}' already exists. Please rename or delete it before installing this template.",
+            template.metadata.name
+        )));
+    }
+
     let input = template.metadata.clone();
 
     // We don't have a direct 'id' field in CreateRuleInput, but we can wrap it if needed.

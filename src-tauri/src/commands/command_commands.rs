@@ -319,7 +319,18 @@ pub async fn install_command_template(
         .find(|t| t.template_id == template_id)
         .ok_or_else(|| AppError::Validation(format!("Template '{}' not found", template_id)))?;
 
-    // 3. Metadata
+    // 3. Check for name collisions
+    let all_commands = db.get_all_commands().await?;
+    if all_commands
+        .iter()
+        .any(|c| c.name == template.metadata.name)
+    {
+        return Err(AppError::Validation(format!(
+            "A command with the name '{}' already exists. Please rename or delete it before installing this template.",
+            template.metadata.name
+        )));
+    }
+
     let input = template.metadata.clone();
 
     // 4. Create in DB

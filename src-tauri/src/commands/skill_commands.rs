@@ -98,10 +98,13 @@ pub fn get_skill_templates() -> Result<Vec<TemplateSkill>> {
 }
 
 #[tauri::command]
-pub async fn install_skill_template(template_id: String, db: State<'_, Arc<Database>>) -> Result<Skill> {
+pub async fn install_skill_template(
+    template_id: String,
+    db: State<'_, Arc<Database>>,
+) -> Result<Skill> {
     // Clone Arc for use in rollback closure
     let db_clone = Arc::clone(&db);
-    
+
     // Helper closure for rollback on failure after disk write
     let rollback = |skill_id: String, dir_path: std::path::PathBuf| async move {
         let _ = db_clone.delete_skill(&skill_id).await;
@@ -122,7 +125,16 @@ pub async fn install_skill_template(template_id: String, db: State<'_, Arc<Datab
         .find(|t| t.template_id == template_id)
         .ok_or_else(|| AppError::Validation(format!("Template '{}' not found", template_id)))?;
 
-    // 3. Ensure the metadata uses our specific template ID
+    // 3. Check for name collisions
+    let all_skills = db.get_all_skills().await?;
+    if all_skills.iter().any(|s| s.name == template.metadata.name) {
+        return Err(AppError::Validation(format!(
+            "A skill with the name '{}' already exists. Please rename or delete it before installing this template.",
+            template.metadata.name
+        )));
+    }
+
+    // 4. Ensure the metadata uses our specific template ID
     let mut metadata = template.metadata.clone();
     metadata.id = Some(template_id.clone());
 
