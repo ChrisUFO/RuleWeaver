@@ -1,51 +1,115 @@
 # RuleWeaver Roadmap
 
-This roadmap defines the path to the Minimum Viable Product (MVP), structured around the requested priority: Rules > Commands > Skills.
+This roadmap reflects current implementation status and the next strategic push: robust, end-to-end lifecycle management for Rules, Custom Commands/Workflows, and Skills across all supported AI coding tools.
 
-## Phase 1: Foundation & "Rules" MVP (High Priority)
+## Current Status Snapshot
 
-_Goal: Establish the GUI, database, and the File Sync Engine to manage static context._
+### Delivered Foundations
 
-- [ ] Initialize Tauri (Rust + React/TypeScript) project.
-- [ ] Set up local embedded database (SQLite or JSON store) for configuration state.
-- [ ] **UI:** Build the main dashboard, Scope Selection (Global vs. Local repo paths), and a Markdown editor.
-- [ ] **Feature:** "Rules Manager". Create, edit, and delete rules.
-- [ ] **Core Engine:** "Sync Engine". Detect changes in the database and run rules through **Tool-Specific Adapters/Post-Processors** to automatically transpile and copy rule files to the correct target directories on the host operating system (e.g., `.clinerules`, `AGENTS.md`, `~/.gemini/GEMINI.md`).
+- [x] Desktop app foundation (Tauri + React + Rust + SQLite)
+- [x] Rules CRUD, sync adapters, and import pipeline (AI tools/files/folders/URL/clipboard)
+- [x] Commands CRUD, MCP exposure, test execution, and command stub sync
+- [x] Native slash command generation for supported tools
+- [x] Embedded + standalone MCP runtime (`ruleweaver-mcp`)
+- [x] Skills CRUD, templates, and MCP skill execution path
+- [x] System tray lifecycle and background keep-alive
 
-## Phase 2: "Custom Commands" MVP & MCP Integration (Medium Priority)
+### Remaining Gaps to Close
 
-_Goal: Introduce the built-in MCP server to serve simple executable commands._
+- [ ] Single source of truth for tool capabilities/paths (currently duplicated across docs/frontend/backend)
+- [ ] Full lifecycle parity for commands and skills import/reconcile (rules are ahead)
+- [ ] Consistent adapter-specific local path resolution for all artifacts
+- [ ] Unified artifact status/drift visibility and repair UX
+- [ ] Documentation alignment with actual shipped behavior
 
-- [x] **Core Engine:** Integrate a lightweight MCP Server running in the Rust backend of the Tauri app.
-- [x] **UI:** Build the "Commands Manager". Interface to define shell commands, scripts, and their required arguments.
-- [x] **Feature:** Map defined Custom Commands to dynamically generated MCP `tools`.
-- [x] Document instructions on how to connect the target AI tools (Claude Code, OpenCode, etc.) to the local RuleWeaver MCP port.
-- [x] Add standalone MCP binary mode (`ruleweaver-mcp`) for tool-managed process startup.
-- [x] Add MCP auto-start setting in desktop app.
-- [x] Add command stub sync output generation (`COMMANDS.toml`/`COMMANDS.md`) for supported tools.
-- [x] Add in-app command execution history view.
+## Strategic Initiative: Cross-Tool Lifecycle Hardening
 
-## Phase 3: "Skills" MVP (Lower Priority)
+Primary objective: make RuleWeaver the authoritative control plane for Rules, Commands/Workflows, and Skills with deterministic sync, import, validation, and reconciliation across tools.
 
-_Goal: Support complex, multi-file execution environments (Agent Skills)._
+### Track 1: Registry and Path Unification
 
-- [ ] **UI:** Build the "Skills Manager". UI to manage bundled workflows (directories with a `SKILL.md` and auxiliary scripts).
-- [ ] **Feature:** Expand the MCP Server to expose complex "Skills" as tools that return structured output or execute multi-stage python/bash scripts securely.
-- [ ] Provide templates for common skills (e.g., "Run Linter and auto-fix", "Fetch Jira Ticket").
-- [x] **Backend Foundation:** Add Skills data model + CRUD persistence scaffolding.
+_Goal: remove path/capability drift by centralizing tool metadata and path templates._
 
-## Phase 4: Polish & Extensibility
+- [ ] Build canonical tool capability registry in backend (rules, command stubs, slash/workflows, skills, scope support, import support).
+- [ ] Refactor backend sync/import/cleanup to consume registry-driven resolution.
+- [ ] Replace duplicated frontend adapter metadata with shared/generated model.
+- [ ] Add startup/runtime consistency checks for unsupported combinations.
 
-_Goal: Harden the application for daily use._
+### Track 2: Lifecycle Completeness (Create/Update/Delete/Import/Reconcile)
 
-- [x] Add system tray icon to keep embedded MCP running in background.
-- [ ] Conflict resolution (if a tool overwrites a synced file manually).
-- [ ] Support for importing/exporting configurations to share with teams.
+_Goal: achieve full lifecycle coverage beyond rules._
 
-## Phase 5: Advanced Ecosystem (Post-MVP)
+- [ ] Add command/workflow import scan+execute pipeline.
+- [ ] Add skills import scan+execute pipeline.
+- [ ] Add reconciliation for rename/delete/deselection and stale artifact cleanup.
+- [ ] Ensure config import/export triggers full post-import reconciliation.
 
-_Goal: Make the central repository a true power-user control center._
+### Track 3: Skills Distribution Across Tools
 
-- [ ] **Secrets & Vault Management:** Integrating a secure key-store so "Skills" (like creating a GitHub issue or fetching a Jira ticket) can access API tokens securely without hardcoding them in the sync rules.
-- [ ] **Live Execution Logging:** A "Logs" dashboard in the GUI that tracks every single connection to the MCP Server. You can audit exactly _which_ AI agent ran _what_ command and when, and read the `stdout` they were provided.
-- [ ] **Community Hub / Registry:** Support for pasting a GitHub URL to instantly import community-created rule sets (e.g., "Google Chrome Official Extension Developer Pattern") or advanced Skills directly into your database.
+_Goal: support capability-aware skills delivery in addition to MCP execution._
+
+- [ ] Add skills sync adapters for tools that support native skill files.
+- [ ] Add per-skill adapter targeting and scope-aware path controls.
+- [ ] Add strict schema/type serialization parity tests between frontend and backend.
+
+### Track 4: Operator UX and Observability
+
+_Goal: make drift and state actionable._
+
+- [ ] Add unified Artifact Status view (synced, missing, out-of-date, conflicted, unsupported).
+- [ ] Add dry-run previews for command/slash/skill syncs (rules parity).
+- [ ] Add one-click repair actions (sync, cleanup, resolve).
+
+### Track 5: Testing and Documentation Hardening
+
+_Goal: ship safely and keep docs truthful._
+
+- [ ] Add Rust integration tests for registry/path resolution/import/reconcile flows.
+- [ ] Add frontend tests for lifecycle flows and status UI.
+- [ ] Maintain >=80% coverage for new lifecycle modules and avoid overall regression.
+- [ ] Update `architecture.md`, `README.md`, `USER_GUIDE.md`, and `docs/ai-tools-commands-reference.md` to match implementation.
+
+## Milestone Mapping (GitHub)
+
+- Milestone #6: Cross-Tool Lifecycle Hardening (single milestone for all 13 lifecycle issues)
+
+## GitHub Execution Plan
+
+### Milestone #6: Cross-Tool Lifecycle Hardening
+
+Implementation order is tracked inside this single milestone:
+
+1. Foundation & Registry
+
+- [ ] #31 - [6.1][Lifecycle] Canonical tool capability registry
+- [ ] #42 - [6.2][Lifecycle] Replace duplicated frontend adapter metadata
+- [ ] #38 - [6.3][Lifecycle] Add capability and path consistency checks
+
+2. Sync & Reconciliation
+
+- [ ] #41 - [6.4][Lifecycle] Adapter-specific local rule path resolver
+- [ ] #43 - [6.5][Lifecycle] Harden slash cleanup/remove path resolution
+- [ ] #39 - [6.6][Lifecycle] Artifact reconciliation engine (rename/delete/deselect)
+
+3. Import Expansion
+
+- [ ] #37 - [6.7][Lifecycle] Command/workflow import pipeline
+- [ ] #33 - [6.8][Lifecycle] Skills import pipeline
+- [ ] #40 - [6.9][Lifecycle] Full post-import reconciliation across artifacts
+
+4. Skills Distribution & UX
+
+- [ ] #45 - [6.10][Lifecycle] Skills sync adapters with capability-aware targeting
+- [ ] #47 - [6.11][Lifecycle] Unified artifact status and repair actions
+
+5. Testing & Documentation
+
+- [ ] #44 - [6.12][Lifecycle] Integration test matrix and coverage gates
+- [ ] #46 - [6.13][Lifecycle] Align architecture and user docs with shipped behavior
+
+## Success Criteria
+
+- One canonical capability/path definition drives frontend, backend, and docs.
+- Rules/Commands/Skills all support deterministic lifecycle operations across tools.
+- Drift is visible, diagnosable, and repairable from the UI.
+- Regression risk is constrained by integration coverage and updated operator docs.

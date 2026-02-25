@@ -426,7 +426,7 @@ pub async fn execute_import(
     let engine = SyncEngine::new(db);
     let all_rules = db.get_all_rules().await?;
     let sync_res = engine.sync_all(all_rules);
-    for err in sync_res.errors {
+    for err in sync_res.await.errors {
         result.errors.push(format!(
             "Sync error for {}: {}",
             err.adapter_name, err.message
