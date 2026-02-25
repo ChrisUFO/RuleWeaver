@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,10 +32,13 @@ export function RulesFilterBar({
 }: RulesFilterBarProps) {
   const hasActiveFilters = searchQuery || scopeFilter !== "all" || adapterFilter !== "all";
   const { tools } = useRegistryStore();
-  const adapterOptions = [
-    { value: "all", label: "All Adapters" },
-    ...tools.map((a) => ({ value: a.id, label: a.name })),
-  ];
+  const adapterOptions = useMemo(
+    () => [
+      { value: "all", label: "All Adapters" },
+      ...tools.map((a) => ({ value: a.id, label: a.name })),
+    ],
+    [tools]
+  );
 
   return (
     <div className="flex flex-wrap items-center gap-3 p-4 glass rounded-xl border border-white/5 premium-shadow">

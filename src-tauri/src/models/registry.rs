@@ -3,6 +3,14 @@ use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+/// Global tool registry singleton.
+///
+/// Thread-safety: `once_cell::sync::Lazy` provides thread-safe one-time initialization
+/// via internal `Once` synchronization. Safe for concurrent access from multiple Tauri
+/// command handlers. All reads after initialization are lock-free.
+///
+/// Completeness: All `AdapterType` enum variants MUST have a corresponding entry.
+/// The `test_registry_contains_all_adapters` test enforces this at compile-time.
 pub static REGISTRY: Lazy<ToolRegistry> = Lazy::new(ToolRegistry::new);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
