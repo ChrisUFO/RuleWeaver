@@ -11,6 +11,11 @@
 //! - **Pure Functions**: Path resolution functions are deterministic and testable.
 //! - **Artifact-Agnostic**: Handles all artifact types uniformly via `ArtifactType` enum.
 //! - **Platform-Aware**: Normalizes paths for Windows and Unix platforms.
+//!
+//! # Status
+//!
+//! Some public APIs are exposed for future integration and tested via unit tests.
+//! The `allow(dead_code)` attribute suppresses warnings for these pre-built APIs.
 
 #![allow(dead_code)]
 
@@ -20,6 +25,25 @@ use std::sync::LazyLock;
 use crate::error::{AppError, Result};
 use crate::models::registry::{ArtifactType, REGISTRY};
 use crate::models::{AdapterType, Scope};
+
+/// Validate a command name for path safety.
+///
+/// Prevents path traversal attacks by rejecting names containing:
+/// - Path separators (`/` or `\`)
+/// - Parent directory references (`..`)
+fn validate_command_name(command_name: &str) -> Result<()> {
+    if command_name.contains("..") || command_name.contains('/') || command_name.contains('\\') {
+        return Err(AppError::InvalidInput {
+            message: "Invalid command name: path separators and '..' not allowed".to_string(),
+        });
+    }
+    if command_name.is_empty() {
+        return Err(AppError::InvalidInput {
+            message: "Command name cannot be empty".to_string(),
+        });
+    }
+    Ok(())
+}
 
 /// Global shared PathResolver instance.
 ///
@@ -265,13 +289,16 @@ impl PathResolver {
     ///
     /// # Errors
     ///
-    /// Returns an error if the adapter doesn't support slash commands.
+    /// Returns an error if the adapter doesn't support slash commands,
+    /// or if the command name contains invalid characters.
     pub fn slash_command_path(
         &self,
         adapter: AdapterType,
         command_name: &str,
         is_global: bool,
     ) -> Result<ResolvedPath> {
+        validate_command_name(command_name)?;
+
         let entry = REGISTRY
             .get(&adapter)
             .ok_or_else(|| AppError::InvalidInput {
@@ -343,13 +370,16 @@ impl PathResolver {
     ///
     /// # Errors
     ///
-    /// Returns an error if the adapter doesn't support slash commands.
+    /// Returns an error if the adapter doesn't support slash commands,
+    /// or if the command name contains invalid characters.
     pub fn local_slash_command_path(
         &self,
         adapter: AdapterType,
         command_name: &str,
         repo_root: &Path,
     ) -> Result<ResolvedPath> {
+        validate_command_name(command_name)?;
+
         let entry = REGISTRY
             .get(&adapter)
             .ok_or_else(|| AppError::InvalidInput {
@@ -939,5 +969,49 @@ mod tests {
 
         let paths = resolver.preview_paths(&specs).unwrap();
         assert_eq!(paths.len(), 1);
+    }
+
+    #[test]
+    fn test_command_name_validation_rejects_traversal() {
+        let resolver = PathResolver::new().unwrap();
+
+        let result = resolver.slash_command_path(AdapterType::ClaudeCode, "../escape", true);
+        assert!(result.is_err());
+
+        let result = resolver.slash_command_path(AdapterType::ClaudeCode, "nested/../escape", true);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_command_name_validation_rejects_separators() {
+        let resolver = PathResolver::new().unwrap();
+
+        let result = resolver.slash_command_path(AdapterType::ClaudeCode, "path/to/cmd", true);
+        assert!(result.is_err());
+
+        let result = resolver.slash_command_path(AdapterType::ClaudeCode, "path\\to\\cmd", true);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_command_name_validation_rejects_empty() {
+        let resolver = PathResolver::new().unwrap();
+
+        let result = resolver.slash_command_path(AdapterType::ClaudeCode, "", true);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_command_name_validation_accepts_valid() {
+        let resolver = PathResolver::new().unwrap();
+
+        let result = resolver.slash_command_path(AdapterType::ClaudeCode, "valid-command", true);
+        assert!(result.is_ok());
+
+        let result = resolver.slash_command_path(AdapterType::ClaudeCode, "valid_command", true);
+        assert!(result.is_ok());
+
+        let result = resolver.slash_command_path(AdapterType::ClaudeCode, "valid.command", true);
+        assert!(result.is_ok());
     }
 }

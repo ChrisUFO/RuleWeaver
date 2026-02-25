@@ -10,6 +10,11 @@
 //! - **Idempotent**: Safe to run multiple times; produces same result
 //! - **Dry-Run First**: All operations support preview mode
 //! - **Audit Logging**: All operations are logged for diagnostics
+//!
+//! # Status
+//!
+//! This module exposes public APIs that are not yet integrated into the main application.
+//! The `allow(dead_code)` attribute suppresses warnings during this transitional phase.
 
 #![allow(dead_code)]
 
