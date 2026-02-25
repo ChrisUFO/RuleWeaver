@@ -35,13 +35,13 @@ RuleWeaver is a unified desktop application that centrally manages configuration
 
 ### Navigation
 
-The sidebar provides access to:
+RuleWeaver 2.0 uses a streamlined navigation structure:
 
-- **Dashboard** — Overview and quick actions
-- **Rules** — Manage coding rules/standards
-- **Commands** — Manage executable commands
-- **Skills** — Manage complex workflows
-- **Settings** — Configure the application
+- **Dashboard**: Your Command Center. Monitor system health, drift status, and recent activity.
+- **Rules**: Manage your core rule definitions and artifact metadata.
+- **Commands**: Execute script-based tools and repo-local shortcuts.
+- **Skills**: Orchestrate complex workflows through structured skill sets.
+- **Settings**: Configure global and local application contexts.
 
 The sidebar can be collapsed/expanded using the chevron buttons.
 
