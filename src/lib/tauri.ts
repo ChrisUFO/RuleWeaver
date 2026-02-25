@@ -10,6 +10,7 @@ import type {
   ImportExecutionResult,
   ImportHistoryEntry,
   ImportScanResult,
+  TemplateRule,
 } from "@/types/rule";
 import type {
   CommandModel,
@@ -19,6 +20,7 @@ import type {
   McpStatus,
   McpConnectionInstructions,
   ExecutionLog,
+  TemplateCommand,
 } from "@/types/command";
 import type { CreateSkillInput, Skill, UpdateSkillInput, TemplateSkill } from "@/types/skill";
 
@@ -31,6 +33,8 @@ export const api = {
     delete: (id: string) => invoke<void>("delete_rule", { id }),
     bulkDelete: (ids: string[]) => invoke<void>("bulk_delete_rules", { ids }),
     toggle: (id: string, enabled: boolean) => invoke<Rule>("toggle_rule", { id, enabled }),
+    getTemplates: () => invoke<TemplateRule[]>("get_rule_templates"),
+    installTemplate: (templateId: string) => invoke<Rule>("install_rule_template", { templateId }),
   },
 
   ruleImport: {
@@ -130,6 +134,9 @@ export const api = {
     test: (id: string, args: Record<string, string>) =>
       invoke<TestCommandResult>("test_command", { id, args }),
     sync: () => invoke<SyncResult>("sync_commands"),
+    getTemplates: () => invoke<TemplateCommand[]>("get_command_templates"),
+    installTemplate: (templateId: string) =>
+      invoke<CommandModel>("install_command_template", { templateId }),
   },
 
   skills: {

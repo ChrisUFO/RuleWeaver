@@ -1,4 +1,5 @@
 import { Plus, Search } from "lucide-react";
+import { CommandTemplateBrowser } from "./CommandTemplateBrowser";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -36,10 +37,13 @@ export function CommandList({
           <CardTitle className="text-sm font-semibold tracking-wide uppercase text-muted-foreground/80">
             Commands
           </CardTitle>
-          <Button size="sm" onClick={onCreate} disabled={isSaving} className="glow-primary h-8">
-            <Plus className="mr-1.5 h-3.5 w-3.5" />
-            New
-          </Button>
+          <div className="flex items-center gap-2">
+            <CommandTemplateBrowser onInstalled={onCreate} />
+            <Button size="sm" onClick={onCreate} disabled={isSaving} className="glow-primary h-8">
+              <Plus className="mr-1.5 h-3.5 w-3.5" />
+              New
+            </Button>
+          </div>
         </div>
         <Button
           variant="outline"

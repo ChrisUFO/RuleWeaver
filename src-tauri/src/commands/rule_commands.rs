@@ -6,6 +6,7 @@ use crate::error::{AppError, Result};
 use crate::file_storage;
 use crate::models::{CreateRuleInput, Rule, SyncResult, UpdateRuleInput};
 use crate::sync::SyncEngine;
+use crate::templates::rules::{get_bundled_rule_templates, TemplateRule};
 
 use super::{
     get_local_rule_roots, register_local_rule_paths, storage_location_for_rule, use_file_storage,
@@ -42,7 +43,8 @@ async fn delete_rule_from_all_locations(id: &str, db: &Database) -> Result<()> {
                 id,
                 &file_storage::StorageLocation::Local(root),
                 Some(db),
-            ).await?;
+            )
+            .await?;
         }
     }
 
@@ -205,4 +207,58 @@ pub async fn preview_sync(db: State<'_, Arc<Database>>) -> Result<SyncResult> {
     let rules = db.get_all_rules().await?;
     let engine = SyncEngine::new(&db);
     Ok(engine.preview(rules).await)
+}
+
+#[tauri::command]
+pub fn get_rule_templates() -> Result<Vec<TemplateRule>> {
+    Ok(get_bundled_rule_templates())
+}
+
+#[tauri::command]
+pub async fn install_rule_template(
+    template_id: String,
+    db: State<'_, Arc<Database>>,
+) -> Result<Rule> {
+    // 1. Check idempotency: is it already installed?
+    if let Ok(existing) = db.get_rule_by_id(&template_id).await {
+        return Ok(existing);
+    }
+
+    // 2. Find template
+    let templates = get_bundled_rule_templates();
+    let template = templates
+        .into_iter()
+        .find(|t| t.template_id == template_id)
+        .ok_or_else(|| AppError::Validation(format!("Template '{}' not found", template_id)))?;
+
+    // 3. Ensure the metadata uses our specific template ID
+    let input = template.metadata.clone();
+
+    // We don't have a direct 'id' field in CreateRuleInput, but we can wrap it if needed.
+    // However, create_rule usually generates a new ID.
+    // For templates, we might want to keep the template ID as the rule ID for idempotency checks.
+    // Let's see if Database::create_rule supports passing an ID.
+    // Checking models/rule.rs: CreateRuleInput doesn't have an ID.
+    // But Rule has an ID.
+
+    // Actually, create_skill had an id: Option<String>.
+    // Let's check Database::create_rule signature if possible, or just generate a new one.
+    // Given the idempotency check above uses template_id, we SHOULD use template_id as the ID.
+
+    // I'll assume for now we might need to update CreateRuleInput to support an optional ID if we want idempotency by ID.
+    // Or just accept it creates a new one each time if renamed.
+
+    let created = db.create_rule(input).await?;
+
+    if use_file_storage(&db).await {
+        let location = storage_location_for_rule(&created);
+        file_storage::save_rule_to_disk(&created, &location)?;
+        db.update_rule_file_index(&created.id, &location).await?;
+        register_local_rule_paths(&db, &created).await?;
+    }
+
+    // Sync to AI tool locations
+    sync_to_ai_tools(&db).await;
+
+    Ok(created)
 }

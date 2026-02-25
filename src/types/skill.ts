@@ -61,6 +61,7 @@ export interface TemplateFile {
 
 export interface TemplateSkill {
   templateId: string;
+  theme: string;
   metadata: CreateSkillInput;
   files: TemplateFile[];
 }

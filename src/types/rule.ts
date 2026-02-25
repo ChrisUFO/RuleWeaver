@@ -237,3 +237,8 @@ export const ADAPTERS: AdapterInfo[] = [
     enabled: true,
   },
 ];
+export interface TemplateRule {
+  templateId: string;
+  theme: string;
+  metadata: CreateRuleInput;
+}

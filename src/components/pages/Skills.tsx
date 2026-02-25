@@ -156,7 +156,7 @@ export function Skills() {
   };
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[320px,1fr]">
+    <div className="grid gap-6 lg:grid-cols-[320px,1fr] max-w-7xl mx-auto">
       <Card className="glass-card premium-shadow border-none overflow-hidden">
         <CardHeader className="space-y-4 bg-white/5 pb-6">
           <div className="flex items-center justify-between">

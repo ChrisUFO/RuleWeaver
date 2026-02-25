@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
-import { Download, Library, Loader2, Info, ChevronLeft } from "lucide-react";
+import { Download, Library, Loader2, Info, ChevronLeft, Search } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
@@ -24,6 +25,7 @@ export function TemplateBrowser({ onInstalled }: TemplateBrowserProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [installingId, setInstallingId] = useState<string | null>(null);
   const [selectedTemplate, setSelectedTemplate] = useState<TemplateSkill | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
   const { addToast } = useToast();
 
   useEffect(() => {
@@ -160,6 +162,15 @@ export function TemplateBrowser({ onInstalled }: TemplateBrowserProps) {
                 <DialogDescription>
                   Browse built-in skill templates to quickly add new workflows to your toolkit.
                 </DialogDescription>
+                <div className="relative mt-4">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search templates..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-9 bg-white/5 border-white/10"
+                  />
+                </div>
               </DialogHeader>
               <div className="flex flex-col gap-3 py-4 max-h-[60vh] overflow-y-auto pr-1">
                 {isLoading ? (
@@ -180,36 +191,74 @@ export function TemplateBrowser({ onInstalled }: TemplateBrowserProps) {
                     No templates found.
                   </div>
                 ) : (
-                  templates.map((t) => (
-                    <div
-                      key={t.templateId}
-                      className={cn(
-                        "group flex items-center justify-between p-4 border border-white/5 rounded-xl bg-white/5 transition-all hover:bg-white/10 hover:border-white/10 cursor-pointer"
-                      )}
-                      onClick={() => setSelectedTemplate(t)}
-                    >
-                      <div className="flex-1 pr-4">
-                        <h4 className="font-semibold text-sm group-hover:text-primary transition-colors">
-                          {t.metadata.name}
-                        </h4>
-                        <p className="text-xs text-muted-foreground mt-1 line-clamp-1">
-                          {t.metadata.description}
-                        </p>
+                  (() => {
+                    const filtered = templates.filter(
+                      (t) =>
+                        t.metadata.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                        t.metadata.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                        t.theme.toLowerCase().includes(searchQuery.toLowerCase())
+                    );
+
+                    const groups = filtered.reduce(
+                      (acc, t) => {
+                        const theme = t.theme || "General";
+                        if (!acc[theme]) acc[theme] = [];
+                        acc[theme].push(t);
+                        return acc;
+                      },
+                      {} as Record<string, TemplateSkill[]>
+                    );
+
+                    const sortedThemes = Object.keys(groups).sort();
+
+                    if (filtered.length === 0) {
+                      return (
+                        <div className="text-center text-sm text-muted-foreground py-12 border border-dashed border-white/5 rounded-xl">
+                          No matching templates found.
+                        </div>
+                      );
+                    }
+
+                    return sortedThemes.map((theme) => (
+                      <div key={theme} className="space-y-3">
+                        <h5 className="text-[10px] uppercase font-bold tracking-widest text-muted-foreground/60 px-1 pt-2">
+                          {theme}
+                        </h5>
+                        <div className="flex flex-col gap-3">
+                          {groups[theme].map((t) => (
+                            <div
+                              key={t.templateId}
+                              className={cn(
+                                "group flex items-center justify-between p-4 border border-white/5 rounded-xl bg-white/5 transition-all hover:bg-white/10 hover:border-white/10 cursor-pointer"
+                              )}
+                              onClick={() => setSelectedTemplate(t)}
+                            >
+                              <div className="flex-1 pr-4">
+                                <h4 className="font-semibold text-sm group-hover:text-primary transition-colors">
+                                  {t.metadata.name}
+                                </h4>
+                                <p className="text-xs text-muted-foreground mt-1 line-clamp-1">
+                                  {t.metadata.description}
+                                </p>
+                              </div>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="opacity-0 group-hover:opacity-100 transition-opacity"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedTemplate(t);
+                                }}
+                              >
+                                <Info className="h-4 w-4 mr-2" />
+                                Details
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
                       </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="opacity-0 group-hover:opacity-100 transition-opacity"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedTemplate(t);
-                        }}
-                      >
-                        <Info className="h-4 w-4 mr-2" />
-                        Details
-                      </Button>
-                    </div>
-                  ))
+                    ));
+                  })()
                 )}
               </div>
             </>

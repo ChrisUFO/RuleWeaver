@@ -71,3 +71,8 @@ export interface ExecutionLog {
   executedAt: number;
   triggeredBy: string;
 }
+export interface TemplateCommand {
+  templateId: string;
+  theme: string;
+  metadata: CreateCommandInput;
+}

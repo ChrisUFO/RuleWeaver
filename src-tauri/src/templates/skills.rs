@@ -12,6 +12,7 @@ pub struct TemplateFile {
 #[serde(rename_all = "camelCase")]
 pub struct TemplateSkill {
     pub template_id: String,
+    pub theme: String,
     pub metadata: CreateSkillInput,
     pub files: Vec<TemplateFile>,
 }
@@ -20,6 +21,7 @@ pub fn get_bundled_skill_templates() -> Vec<TemplateSkill> {
     vec![
         TemplateSkill {
             template_id: "tmpl_code_review".to_string(),
+            theme: "Engineering".to_string(),
             metadata: CreateSkillInput {
                 id: None,
                 name: "Basic Code Reviewer".to_string(),
@@ -46,7 +48,40 @@ pub fn get_bundled_skill_templates() -> Vec<TemplateSkill> {
             }],
         },
         TemplateSkill {
+            template_id: "book-writing-assistant".to_string(),
+            theme: "Writing".to_string(),
+            metadata: CreateSkillInput {
+                id: None,
+                name: "Book Writing Assistant".to_string(),
+                description: "Structured workflow for authors".to_string(),
+                instructions: "Help authors plan/write books...".to_string(),
+                scope: Scope::Global,
+                input_schema: vec![],
+                directory_path: "".to_string(),
+                entry_point: "write.sh".to_string(),
+                enabled: true,
+            },
+            files: vec![],
+        },
+        TemplateSkill {
+            template_id: "project-planner".to_string(),
+            theme: "Project Management".to_string(),
+            metadata: CreateSkillInput {
+                id: None,
+                name: "Project Planner".to_string(),
+                description: "Generates project plans and Gantt charts".to_string(),
+                instructions: "Help PMs build project plans...".to_string(),
+                scope: Scope::Global,
+                input_schema: vec![],
+                directory_path: "".to_string(),
+                entry_point: "plan.sh".to_string(),
+                enabled: true,
+            },
+            files: vec![],
+        },
+        TemplateSkill {
             template_id: "tmpl_system_info".to_string(),
+            theme: "Project Management".to_string(),
             metadata: CreateSkillInput {
                 id: None,
                 name: "System Information".to_string(),
