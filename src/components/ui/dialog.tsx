@@ -1,4 +1,6 @@
 import * as React from "react";
+import { createPortal } from "react-dom";
+
 import { cn } from "@/lib/utils";
 import { X } from "lucide-react";
 
@@ -11,11 +13,15 @@ interface DialogProps {
 const Dialog: React.FC<DialogProps> = ({ open, onOpenChange, children }) => {
   if (!open) return null;
 
-  return (
-    <div className="fixed inset-0 z-50">
-      <div className="fixed inset-0 bg-black/80" onClick={() => onOpenChange(false)} />
-      {children}
-    </div>
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none">
+      <div
+        className="fixed inset-0 bg-black/80 pointer-events-auto"
+        onClick={() => onOpenChange(false)}
+      />
+      <div className="relative z-50 pointer-events-auto">{children}</div>
+    </div>,
+    document.body
   );
 };
 
@@ -26,7 +32,7 @@ const DialogContent = React.forwardRef<
   <div
     ref={ref}
     className={cn(
-      "fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-6 shadow-lg sm:rounded-lg",
+      "grid w-full max-w-lg gap-4 border bg-background p-6 shadow-lg sm:rounded-lg",
       className
     )}
     {...props}
