@@ -49,7 +49,7 @@ logs
 
 # Review files
 review*
-*.jsonson
+review*.json
 
 # Temporary plan files
 PLAN.md
@@ -61,6 +61,7 @@ plan.md
 .DS_Store
 Thumbs.db
 coverage/
+test_output.txt
 test*.txt
 test*.md
 test*.json

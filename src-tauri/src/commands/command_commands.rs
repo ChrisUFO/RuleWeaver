@@ -328,14 +328,22 @@ pub async fn install_command_template(
     }
 
     let mut input = template.metadata.clone();
-    input.id = Some(template_id);
+    input.id = Some(template_id.clone());
 
     // 4. Create in DB
     let created = db.create_command(input).await?;
 
     // 5. Registration
-    register_local_paths(&db, &created.target_paths).await?;
-    mcp.refresh_commands(&db).await?;
+    // If registration fails, we must rollback the DB entry
+    if let Err(e) = register_local_paths(&db, &created.target_paths).await {
+        let _ = db.delete_command(&created.id).await;
+        return Err(e);
+    }
+
+    if let Err(e) = mcp.refresh_commands(&db).await {
+        let _ = db.delete_command(&created.id).await;
+        return Err(e);
+    }
 
     Ok(created)
 }

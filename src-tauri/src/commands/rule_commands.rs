@@ -240,15 +240,30 @@ pub async fn install_rule_template(
     }
 
     let mut input = template.metadata.clone();
-    input.id = Some(template_id);
+    input.id = Some(template_id.clone());
 
     let created = db.create_rule(input).await?;
 
     if use_file_storage(&db).await {
         let location = storage_location_for_rule(&created);
-        file_storage::save_rule_to_disk(&created, &location)?;
-        db.update_rule_file_index(&created.id, &location).await?;
-        register_local_rule_paths(&db, &created).await?;
+
+        if let Err(e) = file_storage::save_rule_to_disk(&created, &location) {
+            let _ = db.delete_rule(&created.id).await;
+            return Err(e);
+        }
+
+        if let Err(e) = db.update_rule_file_index(&created.id, &location).await {
+            let _ = db.delete_rule(&created.id).await;
+            let _ = file_storage::delete_rule_file(&created.id, &location, Some(&db)).await;
+            return Err(e);
+        }
+
+        if let Err(e) = register_local_rule_paths(&db, &created).await {
+            let _ = db.delete_rule(&created.id).await;
+            let _ = file_storage::delete_rule_file(&created.id, &location, Some(&db)).await;
+            let _ = db.remove_rule_file_index(&created.id).await;
+            return Err(e);
+        }
     }
 
     // Sync to AI tool locations

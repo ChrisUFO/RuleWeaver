@@ -318,8 +318,6 @@ mod tests {
 
         assert_eq!(parsed.name, "Test Rule");
         assert_eq!(parsed.description, "Test description");
-        // Actually I should add a default or make the JSON contain it.
-        // Let's update the test JSON.
         assert!(matches!(parsed.scope, Scope::Global));
         assert_eq!(parsed.target_paths, Some(vec!["/path/to/repo".to_string()]));
         assert_eq!(parsed.enabled_adapters.len(), 2);

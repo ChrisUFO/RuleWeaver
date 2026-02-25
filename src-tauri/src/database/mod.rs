@@ -745,7 +745,7 @@ impl Database {
     pub async fn rule_exists_with_name(&self, name: &str) -> Result<bool> {
         let conn = self.0.lock().await;
         let count: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM rules WHERE name = ?",
+            "SELECT COUNT(*) FROM rules WHERE name = ? COLLATE NOCASE",
             params![name],
             |row| row.get(0),
         )?;
@@ -755,7 +755,7 @@ impl Database {
     pub async fn command_exists_with_name(&self, name: &str) -> Result<bool> {
         let conn = self.0.lock().await;
         let count: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM commands WHERE name = ?",
+            "SELECT COUNT(*) FROM commands WHERE name = ? COLLATE NOCASE",
             params![name],
             |row| row.get(0),
         )?;
@@ -765,7 +765,7 @@ impl Database {
     pub async fn skill_exists_with_name(&self, name: &str) -> Result<bool> {
         let conn = self.0.lock().await;
         let count: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM skills WHERE name = ?",
+            "SELECT COUNT(*) FROM skills WHERE name = ? COLLATE NOCASE",
             params![name],
             |row| row.get(0),
         )?;
