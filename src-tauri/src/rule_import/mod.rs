@@ -1699,4 +1699,341 @@ enabledAdapters:
         assert!(!is_slash_command_or_skill_directory(Path::new("/home/.clinerules")));
         assert!(!is_slash_command_or_skill_directory(Path::new("/repo/.claude/CLAUDE.md")));
     }
+
+    // =====================================
+    // RULE IMPORT TESTS
+    // =====================================
+
+    #[test]
+    fn import_rule_happy_path_global() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let rule_file = temp_dir.path().join("GEMINI.md");
+        fs::write(&rule_file, "# Test Rule\n\nThis is a test rule for import.").unwrap();
+
+        let result = scan_directory_to_candidates(temp_dir.path(), 1024 * 1024);
+        
+        assert_eq!(result.candidates.len(), 1);
+        assert_eq!(result.candidates[0].artifact_type, ImportArtifactType::Rule);
+        assert!(result.errors.is_empty());
+    }
+
+    #[test]
+    fn import_rule_happy_path_local() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let local_rules = temp_dir.path().join(".gemini");
+        fs::create_dir_all(&local_rules).unwrap();
+        let rule_file = local_rules.join("GEMINI.md");
+        fs::write(&rule_file, "# Local Rule\n\nThis is a local rule.").unwrap();
+
+        let result = scan_directory_to_candidates(temp_dir.path(), 1024 * 1024);
+        
+        assert_eq!(result.candidates.len(), 1);
+        assert_eq!(result.candidates[0].artifact_type, ImportArtifactType::Rule);
+    }
+
+    #[test]
+    fn import_rule_failure_path_empty_file() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let rule_file = temp_dir.path().join("empty.md");
+        fs::write(&rule_file, "").unwrap();
+
+        let result = scan_directory_to_candidates(temp_dir.path(), 1024 * 1024);
+        
+        // Empty files should be imported but with empty content
+        assert_eq!(result.candidates.len(), 1);
+        assert_eq!(result.candidates[0].content.trim(), "");
+    }
+
+    #[test]
+    fn import_rule_failure_path_too_large() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let rule_file = temp_dir.path().join("large.md");
+        let large_content = "x".repeat(2000);
+        fs::write(&rule_file, &large_content).unwrap();
+
+        let result = scan_directory_to_candidates(temp_dir.path(), 1000);
+        
+        assert!(!result.errors.is_empty());
+        assert!(result.errors[0].contains("exceeds max import size"));
+    }
+
+    #[test]
+    fn import_rule_failure_path_invalid_utf8() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let rule_file = temp_dir.path().join("binary.md");
+        fs::write(&rule_file, &[0xFF, 0xFE, 0x00, 0x01]).unwrap();
+
+        let result = scan_directory_to_candidates(temp_dir.path(), 1024 * 1024);
+        
+        assert!(!result.errors.is_empty());
+        assert!(result.errors.iter().any(|e| e.contains("not valid UTF-8")));
+    }
+
+    #[test]
+    fn import_rule_with_frontmatter() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let rule_file = temp_dir.path().join("rule-with-frontmatter.md");
+        let content = r#"---
+name: My Custom Rule
+scope: global
+enabledAdapters:
+  - claude-code
+  - opencode
+---
+
+# My Custom Rule
+
+This is the rule content.
+"#;
+        fs::write(&rule_file, content).unwrap();
+
+        let result = scan_directory_to_candidates(temp_dir.path(), 1024 * 1024);
+        
+        assert_eq!(result.candidates.len(), 1);
+        // The name is extracted from the frontmatter or filename
+        assert!(!result.candidates[0].name.is_empty());
+    }
+
+    // =====================================
+    // SLASH COMMAND IMPORT TESTS (exclusion)
+    // =====================================
+
+    #[test]
+    fn import_excludes_global_slash_commands() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        
+        // Create global slash command location
+        let commands_dir = temp_dir.path().join(".claude").join("commands");
+        fs::create_dir_all(&commands_dir).unwrap();
+        fs::write(commands_dir.join("my-command.md"), "# My Command\n\nCommand content").unwrap();
+        
+        // Also create a rule
+        fs::write(temp_dir.path().join("CLAUDE.md"), "# Rule\n\nRule content").unwrap();
+
+        let result = scan_directory_to_candidates(temp_dir.path(), 1024 * 1024);
+        
+        // Only rule should be found
+        assert_eq!(result.candidates.len(), 1);
+        assert!(result.candidates[0].name.to_lowercase().contains("claude"));
+    }
+
+    #[test]
+    fn import_excludes_local_slash_commands() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        
+        // Create local slash command location
+        let commands_dir = temp_dir.path().join("commands");
+        fs::create_dir_all(&commands_dir).unwrap();
+        fs::write(commands_dir.join("workflow.md"), "# Workflow\n\nWorkflow content").unwrap();
+        
+        // Also create a rule
+        fs::write(temp_dir.path().join("AGENTS.md"), "# Rule\n\nRule content").unwrap();
+
+        let result = scan_directory_to_candidates(temp_dir.path(), 1024 * 1024);
+        
+        // Only rule should be found
+        assert_eq!(result.candidates.len(), 1);
+        assert!(result.candidates[0].name.to_lowercase().contains("agents"));
+    }
+
+    #[test]
+    fn import_excludes_cline_workflows() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        
+        // Cline Workflows directory
+        let workflows_dir = temp_dir.path().join("Documents").join("Cline").join("Workflows");
+        fs::create_dir_all(&workflows_dir).unwrap();
+        fs::write(workflows_dir.join("my-workflow.md"), "# Workflow\n\nContent").unwrap();
+        
+        // Rules directory
+        let rules_dir = temp_dir.path().join("Documents").join("Cline").join("Rules");
+        fs::create_dir_all(&rules_dir).unwrap();
+        fs::write(rules_dir.join("my-rule.md"), "# Rule\n\nContent").unwrap();
+
+        let result = scan_directory_to_candidates(temp_dir.path(), 1024 * 1024);
+        
+        // Only rule should be found
+        assert_eq!(result.candidates.len(), 1);
+        assert!(result.candidates[0].name.to_lowercase().contains("rule"));
+    }
+
+    // =====================================
+    // SKILL IMPORT TESTS (exclusion)
+    // =====================================
+
+    #[test]
+    fn import_excludes_global_skills() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        
+        // Create global skill location
+        let skills_dir = temp_dir.path().join(".claude").join("skills").join("my-skill");
+        fs::create_dir_all(&skills_dir).unwrap();
+        fs::write(skills_dir.join("SKILL.md"), "# My Skill\n\nSkill content").unwrap();
+        
+        // Also create a rule
+        fs::write(temp_dir.path().join("CLAUDE.md"), "# Rule\n\nRule content").unwrap();
+
+        let result = scan_directory_to_candidates(temp_dir.path(), 1024 * 1024);
+        
+        // Only rule should be found
+        assert_eq!(result.candidates.len(), 1);
+        assert!(result.candidates[0].name.to_lowercase().contains("claude"));
+    }
+
+    #[test]
+    fn import_excludes_local_skills() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        
+        // Create local skill location
+        let skills_dir = temp_dir.path().join("skills");
+        fs::create_dir_all(&skills_dir).unwrap();
+        fs::write(skills_dir.join("my-skill.md"), "# Skill\n\nSkill content").unwrap();
+        
+        // Also create a rule
+        fs::write(temp_dir.path().join("GEMINI.md"), "# Rule\n\nRule content").unwrap();
+
+        let result = scan_directory_to_candidates(temp_dir.path(), 1024 * 1024);
+        
+        // Only rule should be found
+        assert_eq!(result.candidates.len(), 1);
+        assert!(result.candidates[0].name.to_lowercase().contains("gemini"));
+    }
+
+    #[test]
+    fn import_excludes_cline_skills() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        
+        // Cline Skills directory
+        let skills_dir = temp_dir.path().join("Documents").join("Cline").join("Skills").join("test");
+        fs::create_dir_all(&skills_dir).unwrap();
+        fs::write(skills_dir.join("skill.md"), "# Skill\n\nContent").unwrap();
+        
+        // Rules directory
+        let rules_dir = temp_dir.path().join("Documents").join("Cline").join("Rules");
+        fs::create_dir_all(&rules_dir).unwrap();
+        fs::write(rules_dir.join("rule.md"), "# Rule\n\nContent").unwrap();
+
+        let result = scan_directory_to_candidates(temp_dir.path(), 1024 * 1024);
+        
+        // Only rule should be found
+        assert_eq!(result.candidates.len(), 1);
+        assert!(result.candidates[0].name.to_lowercase().contains("rule"));
+    }
+
+    // =====================================
+    // MIXED ARTIFACT TESTS
+    // =====================================
+
+    #[test]
+    fn import_mixed_artifacts_only_includes_rules() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        
+        // Create rule
+        fs::write(temp_dir.path().join("GEMINI.md"), "# Rule\n\nRule content").unwrap();
+        
+        // Create slash command
+        let commands_dir = temp_dir.path().join("commands");
+        fs::create_dir_all(&commands_dir).unwrap();
+        fs::write(commands_dir.join("cmd.md"), "# Command\n\nCommand content").unwrap();
+        
+        // Create skill
+        let skills_dir = temp_dir.path().join("skills");
+        fs::create_dir_all(&skills_dir).unwrap();
+        fs::write(skills_dir.join("skill.md"), "# Skill\n\nSkill content").unwrap();
+        
+        // Create workflow
+        let workflows_dir = temp_dir.path().join("workflows");
+        fs::create_dir_all(&workflows_dir).unwrap();
+        fs::write(workflows_dir.join("wf.md"), "# Workflow\n\nWorkflow content").unwrap();
+
+        let result = scan_directory_to_candidates(temp_dir.path(), 1024 * 1024);
+        
+        // Only the rule should be found
+        assert_eq!(result.candidates.len(), 1);
+        assert_eq!(result.candidates[0].artifact_type, ImportArtifactType::Rule);
+        assert!(result.candidates[0].name.to_lowercase().contains("gemini"));
+    }
+
+    #[test]
+    fn import_multiple_rules_happy_path() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        
+        // Create multiple rule files
+        fs::write(temp_dir.path().join("GEMINI.md"), "# Gemini Rule").unwrap();
+        fs::write(temp_dir.path().join("AGENTS.md"), "# Agents Rule").unwrap();
+        fs::write(temp_dir.path().join("CLAUDE.md"), "# Claude Rule").unwrap();
+
+        let result = scan_directory_to_candidates(temp_dir.path(), 1024 * 1024);
+        
+        assert_eq!(result.candidates.len(), 3);
+        assert!(result.errors.is_empty());
+        
+        // All should be rules
+        for candidate in &result.candidates {
+            assert_eq!(candidate.artifact_type, ImportArtifactType::Rule);
+        }
+    }
+
+    // =====================================
+    // DETECT ARTIFACT TYPE EDGE CASES
+    // =====================================
+
+    #[test]
+    fn detect_artifact_type_case_insensitive() {
+        // Uppercase
+        assert_eq!(
+            detect_artifact_type_from_path(Path::new("/home/.claude/COMMANDS/test.md")),
+            ImportArtifactType::SlashCommand
+        );
+        
+        // Mixed case
+        assert_eq!(
+            detect_artifact_type_from_path(Path::new("/home/.claude/Commands/test.md")),
+            ImportArtifactType::SlashCommand
+        );
+        
+        // Lowercase
+        assert_eq!(
+            detect_artifact_type_from_path(Path::new("/home/.claude/commands/test.md")),
+            ImportArtifactType::SlashCommand
+        );
+    }
+
+    #[test]
+    fn detect_artifact_type_windows_paths() {
+        // Windows-style paths
+        assert_eq!(
+            detect_artifact_type_from_path(Path::new("C:/Users/test/.claude/commands/test.md")),
+            ImportArtifactType::SlashCommand
+        );
+        assert_eq!(
+            detect_artifact_type_from_path(Path::new("C:\\Users\\test\\.claude\\commands\\test.md")),
+            ImportArtifactType::SlashCommand
+        );
+        assert_eq!(
+            detect_artifact_type_from_path(Path::new("C:/Users/test/.claude/CLAUDE.md")),
+            ImportArtifactType::Rule
+        );
+    }
+
+    #[test]
+    fn detect_artifact_type_nested_directories() {
+        // Deeply nested slash command
+        assert_eq!(
+            detect_artifact_type_from_path(Path::new("/home/user/repo/.claude/commands/subdir/nested/cmd.md")),
+            ImportArtifactType::SlashCommand
+        );
+        
+        // Deeply nested skill
+        assert_eq!(
+            detect_artifact_type_from_path(Path::new("/home/user/repo/skills/category/my-skill/skill.md")),
+            ImportArtifactType::Skill
+        );
+        
+        // Rule in subdirectory (should still be rule if no command/skill keywords)
+        assert_eq!(
+            detect_artifact_type_from_path(Path::new("/home/user/repo/docs/GEMINI.md")),
+            ImportArtifactType::Rule
+        );
+    }
 }
