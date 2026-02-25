@@ -285,6 +285,7 @@ impl ToolRegistry {
         self.entries.values().collect()
     }
 
+    #[allow(dead_code)]
     pub fn validate_support(
         &self,
         adapter: &AdapterType,
