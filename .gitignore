@@ -61,3 +61,9 @@ plan.md
 .DS_Store
 Thumbs.db
 coverage/
+test*.txt
+test*.md
+test*.json
+comments*.txt
+comments*.md
+comments*.json
