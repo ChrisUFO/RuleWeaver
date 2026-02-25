@@ -351,3 +351,134 @@ impl ToolRegistry {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn get_registry() -> &'static ToolRegistry {
+        &REGISTRY
+    }
+
+    #[test]
+    fn test_registry_contains_all_adapters() {
+        let registry = get_registry();
+        assert!(registry.get(&AdapterType::Antigravity).is_some());
+        assert!(registry.get(&AdapterType::Gemini).is_some());
+        assert!(registry.get(&AdapterType::OpenCode).is_some());
+        assert!(registry.get(&AdapterType::Cline).is_some());
+        assert!(registry.get(&AdapterType::ClaudeCode).is_some());
+        assert!(registry.get(&AdapterType::Codex).is_some());
+        assert!(registry.get(&AdapterType::Kilo).is_some());
+        assert!(registry.get(&AdapterType::Cursor).is_some());
+        assert!(registry.get(&AdapterType::Windsurf).is_some());
+        assert!(registry.get(&AdapterType::RooCode).is_some());
+    }
+
+    #[test]
+    fn test_registry_returns_all_ten_adapters() {
+        let registry = get_registry();
+        let all = registry.all();
+        assert_eq!(all.len(), 10);
+    }
+
+    #[test]
+    fn test_full_support_adapter_capabilities() {
+        let registry = get_registry();
+        let gemini = registry.get(&AdapterType::Gemini).unwrap();
+        assert!(gemini.capabilities.supports_rules);
+        assert!(gemini.capabilities.supports_command_stubs);
+        assert!(gemini.capabilities.supports_slash_commands);
+        assert!(gemini.capabilities.supports_skills);
+        assert!(gemini.capabilities.supports_global_scope);
+        assert!(gemini.capabilities.supports_local_scope);
+    }
+
+    #[test]
+    fn test_cursor_limited_capabilities() {
+        let registry = get_registry();
+        let cursor = registry.get(&AdapterType::Cursor).unwrap();
+        assert!(cursor.capabilities.supports_rules);
+        assert!(!cursor.capabilities.supports_command_stubs);
+        assert!(cursor.capabilities.supports_slash_commands);
+        assert!(!cursor.capabilities.supports_skills);
+    }
+
+    #[test]
+    fn test_validate_support_rules_globally() {
+        let registry = get_registry();
+        let result =
+            registry.validate_support(&AdapterType::Gemini, &Scope::Global, ArtifactType::Rule);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_support_rules_locally() {
+        let registry = get_registry();
+        let result =
+            registry.validate_support(&AdapterType::Gemini, &Scope::Local, ArtifactType::Rule);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_support_skills_for_gemini() {
+        let registry = get_registry();
+        let result =
+            registry.validate_support(&AdapterType::Gemini, &Scope::Global, ArtifactType::Skill);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_support_rejects_cursor_skills() {
+        let registry = get_registry();
+        let result =
+            registry.validate_support(&AdapterType::Cursor, &Scope::Global, ArtifactType::Skill);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .contains("does not support artifact type"));
+    }
+
+    #[test]
+    fn test_validate_support_rejects_cursor_command_stubs() {
+        let registry = get_registry();
+        let result = registry.validate_support(
+            &AdapterType::Cursor,
+            &Scope::Global,
+            ArtifactType::CommandStub,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_path_templates_resolution() {
+        let registry = get_registry();
+        let opencode = registry.get(&AdapterType::OpenCode).unwrap();
+        assert_eq!(opencode.paths.global_path, "~/.config/opencode/AGENTS.md");
+        assert_eq!(
+            opencode.paths.local_path_template,
+            ".config/opencode/AGENTS.md"
+        );
+    }
+
+    #[test]
+    fn test_slash_command_extensions() {
+        let registry = get_registry();
+        let gemini = registry.get(&AdapterType::Gemini).unwrap();
+        assert_eq!(gemini.slash_command_extension, Some("toml"));
+
+        let opencode = registry.get(&AdapterType::OpenCode).unwrap();
+        assert_eq!(opencode.slash_command_extension, Some("md"));
+
+        let kilo = registry.get(&AdapterType::Kilo).unwrap();
+        assert_eq!(kilo.slash_command_extension, None);
+    }
+
+    #[test]
+    fn test_artifact_type_as_str() {
+        assert_eq!(ArtifactType::Rule.as_str(), "rule");
+        assert_eq!(ArtifactType::CommandStub.as_str(), "command_stub");
+        assert_eq!(ArtifactType::SlashCommand.as_str(), "slash_command");
+        assert_eq!(ArtifactType::Skill.as_str(), "skill");
+    }
+}

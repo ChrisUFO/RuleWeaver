@@ -13,6 +13,15 @@ use crate::error::{AppError, Result};
 use crate::models::registry::{ArtifactType, REGISTRY};
 use crate::models::{AdapterType, Conflict, Rule, Scope, SyncError, SyncResult};
 
+fn registry_entry(adapter: &AdapterType) -> &'static crate::models::registry::ToolEntry {
+    REGISTRY.get(adapter).unwrap_or_else(|| {
+        panic!(
+            "ToolRegistry missing entry for adapter '{}'. All AdapterType variants must be registered.",
+            adapter.as_str()
+        )
+    })
+}
+
 fn get_home_dir() -> Result<PathBuf> {
     dirs::home_dir().ok_or_else(|| AppError::Path("Could not determine home directory".to_string()))
 }
@@ -127,11 +136,11 @@ impl SyncAdapter for AntigravityAdapter {
     }
 
     fn name(&self) -> &str {
-        REGISTRY.get(&self.id()).unwrap().name
+        registry_entry(&self.id()).name
     }
 
     fn file_name(&self) -> &str {
-        let entry = REGISTRY.get(&self.id()).unwrap();
+        let entry = registry_entry(&self.id());
         Path::new(entry.paths.local_path_template)
             .file_name()
             .and_then(|s| s.to_str())
@@ -139,11 +148,11 @@ impl SyncAdapter for AntigravityAdapter {
     }
 
     fn description(&self) -> &str {
-        REGISTRY.get(&self.id()).unwrap().description
+        registry_entry(&self.id()).description
     }
 
     fn global_path(&self) -> Result<PathBuf> {
-        let entry = REGISTRY.get(&self.id()).unwrap();
+        let entry = registry_entry(&self.id());
         resolve_registry_path(entry.paths.global_path)
     }
 
@@ -164,11 +173,11 @@ impl SyncAdapter for GeminiAdapter {
     }
 
     fn name(&self) -> &str {
-        REGISTRY.get(&self.id()).unwrap().name
+        registry_entry(&self.id()).name
     }
 
     fn file_name(&self) -> &str {
-        let entry = REGISTRY.get(&self.id()).unwrap();
+        let entry = registry_entry(&self.id());
         Path::new(entry.paths.local_path_template)
             .file_name()
             .and_then(|s| s.to_str())
@@ -176,11 +185,11 @@ impl SyncAdapter for GeminiAdapter {
     }
 
     fn description(&self) -> &str {
-        REGISTRY.get(&self.id()).unwrap().description
+        registry_entry(&self.id()).description
     }
 
     fn global_path(&self) -> Result<PathBuf> {
-        let entry = REGISTRY.get(&self.id()).unwrap();
+        let entry = registry_entry(&self.id());
         resolve_registry_path(entry.paths.global_path)
     }
 
@@ -201,11 +210,11 @@ impl SyncAdapter for OpenCodeAdapter {
     }
 
     fn name(&self) -> &str {
-        REGISTRY.get(&self.id()).unwrap().name
+        registry_entry(&self.id()).name
     }
 
     fn file_name(&self) -> &str {
-        let entry = REGISTRY.get(&self.id()).unwrap();
+        let entry = registry_entry(&self.id());
         Path::new(entry.paths.local_path_template)
             .file_name()
             .and_then(|s| s.to_str())
@@ -213,11 +222,11 @@ impl SyncAdapter for OpenCodeAdapter {
     }
 
     fn description(&self) -> &str {
-        REGISTRY.get(&self.id()).unwrap().description
+        registry_entry(&self.id()).description
     }
 
     fn global_path(&self) -> Result<PathBuf> {
-        let entry = REGISTRY.get(&self.id()).unwrap();
+        let entry = registry_entry(&self.id());
         resolve_registry_path(entry.paths.global_path)
     }
 
@@ -238,11 +247,11 @@ impl SyncAdapter for ClineAdapter {
     }
 
     fn name(&self) -> &str {
-        REGISTRY.get(&self.id()).unwrap().name
+        registry_entry(&self.id()).name
     }
 
     fn file_name(&self) -> &str {
-        let entry = REGISTRY.get(&self.id()).unwrap();
+        let entry = registry_entry(&self.id());
         Path::new(entry.paths.local_path_template)
             .file_name()
             .and_then(|s| s.to_str())
@@ -250,11 +259,11 @@ impl SyncAdapter for ClineAdapter {
     }
 
     fn description(&self) -> &str {
-        REGISTRY.get(&self.id()).unwrap().description
+        registry_entry(&self.id()).description
     }
 
     fn global_path(&self) -> Result<PathBuf> {
-        let entry = REGISTRY.get(&self.id()).unwrap();
+        let entry = registry_entry(&self.id());
         resolve_registry_path(entry.paths.global_path)
     }
 
@@ -275,11 +284,11 @@ impl SyncAdapter for ClaudeCodeAdapter {
     }
 
     fn name(&self) -> &str {
-        REGISTRY.get(&self.id()).unwrap().name
+        registry_entry(&self.id()).name
     }
 
     fn file_name(&self) -> &str {
-        let entry = REGISTRY.get(&self.id()).unwrap();
+        let entry = registry_entry(&self.id());
         Path::new(entry.paths.local_path_template)
             .file_name()
             .and_then(|s| s.to_str())
@@ -287,11 +296,11 @@ impl SyncAdapter for ClaudeCodeAdapter {
     }
 
     fn description(&self) -> &str {
-        REGISTRY.get(&self.id()).unwrap().description
+        registry_entry(&self.id()).description
     }
 
     fn global_path(&self) -> Result<PathBuf> {
-        let entry = REGISTRY.get(&self.id()).unwrap();
+        let entry = registry_entry(&self.id());
         resolve_registry_path(entry.paths.global_path)
     }
 
@@ -312,11 +321,11 @@ impl SyncAdapter for CodexAdapter {
     }
 
     fn name(&self) -> &str {
-        REGISTRY.get(&self.id()).unwrap().name
+        registry_entry(&self.id()).name
     }
 
     fn file_name(&self) -> &str {
-        let entry = REGISTRY.get(&self.id()).unwrap();
+        let entry = registry_entry(&self.id());
         Path::new(entry.paths.local_path_template)
             .file_name()
             .and_then(|s| s.to_str())
@@ -324,11 +333,11 @@ impl SyncAdapter for CodexAdapter {
     }
 
     fn description(&self) -> &str {
-        REGISTRY.get(&self.id()).unwrap().description
+        registry_entry(&self.id()).description
     }
 
     fn global_path(&self) -> Result<PathBuf> {
-        let entry = REGISTRY.get(&self.id()).unwrap();
+        let entry = registry_entry(&self.id());
         resolve_registry_path(entry.paths.global_path)
     }
 
@@ -349,11 +358,11 @@ impl SyncAdapter for KiloAdapter {
     }
 
     fn name(&self) -> &str {
-        REGISTRY.get(&self.id()).unwrap().name
+        registry_entry(&self.id()).name
     }
 
     fn file_name(&self) -> &str {
-        let entry = REGISTRY.get(&self.id()).unwrap();
+        let entry = registry_entry(&self.id());
         Path::new(entry.paths.local_path_template)
             .file_name()
             .and_then(|s| s.to_str())
@@ -361,11 +370,11 @@ impl SyncAdapter for KiloAdapter {
     }
 
     fn description(&self) -> &str {
-        REGISTRY.get(&self.id()).unwrap().description
+        registry_entry(&self.id()).description
     }
 
     fn global_path(&self) -> Result<PathBuf> {
-        let entry = REGISTRY.get(&self.id()).unwrap();
+        let entry = registry_entry(&self.id());
         resolve_registry_path(entry.paths.global_path)
     }
 
@@ -386,11 +395,11 @@ impl SyncAdapter for CursorAdapter {
     }
 
     fn name(&self) -> &str {
-        REGISTRY.get(&self.id()).unwrap().name
+        registry_entry(&self.id()).name
     }
 
     fn file_name(&self) -> &str {
-        let entry = REGISTRY.get(&self.id()).unwrap();
+        let entry = registry_entry(&self.id());
         Path::new(entry.paths.local_path_template)
             .file_name()
             .and_then(|s| s.to_str())
@@ -398,11 +407,11 @@ impl SyncAdapter for CursorAdapter {
     }
 
     fn description(&self) -> &str {
-        REGISTRY.get(&self.id()).unwrap().description
+        registry_entry(&self.id()).description
     }
 
     fn global_path(&self) -> Result<PathBuf> {
-        let entry = REGISTRY.get(&self.id()).unwrap();
+        let entry = registry_entry(&self.id());
         resolve_registry_path(entry.paths.global_path)
     }
 
@@ -423,11 +432,11 @@ impl SyncAdapter for WindsurfAdapter {
     }
 
     fn name(&self) -> &str {
-        REGISTRY.get(&self.id()).unwrap().name
+        registry_entry(&self.id()).name
     }
 
     fn file_name(&self) -> &str {
-        let entry = REGISTRY.get(&self.id()).unwrap();
+        let entry = registry_entry(&self.id());
         Path::new(entry.paths.local_path_template)
             .file_name()
             .and_then(|s| s.to_str())
@@ -435,11 +444,11 @@ impl SyncAdapter for WindsurfAdapter {
     }
 
     fn description(&self) -> &str {
-        REGISTRY.get(&self.id()).unwrap().description
+        registry_entry(&self.id()).description
     }
 
     fn global_path(&self) -> Result<PathBuf> {
-        let entry = REGISTRY.get(&self.id()).unwrap();
+        let entry = registry_entry(&self.id());
         resolve_registry_path(entry.paths.global_path)
     }
 
@@ -460,11 +469,11 @@ impl SyncAdapter for RooCodeAdapter {
     }
 
     fn name(&self) -> &str {
-        REGISTRY.get(&self.id()).unwrap().name
+        registry_entry(&self.id()).name
     }
 
     fn file_name(&self) -> &str {
-        let entry = REGISTRY.get(&self.id()).unwrap();
+        let entry = registry_entry(&self.id());
         Path::new(entry.paths.local_path_template)
             .file_name()
             .and_then(|s| s.to_str())
@@ -472,11 +481,11 @@ impl SyncAdapter for RooCodeAdapter {
     }
 
     fn description(&self) -> &str {
-        REGISTRY.get(&self.id()).unwrap().description
+        registry_entry(&self.id()).description
     }
 
     fn global_path(&self) -> Result<PathBuf> {
-        let entry = REGISTRY.get(&self.id()).unwrap();
+        let entry = registry_entry(&self.id());
         resolve_registry_path(entry.paths.global_path)
     }
 
