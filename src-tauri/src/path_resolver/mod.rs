@@ -227,11 +227,25 @@ impl PathResolver {
             }
         };
 
-        let path = self.resolve_template(path_template, Some(repo_root))?;
-        let exists = path.exists();
+        // First resolve any ~ in the template
+        let mut resolved = self.resolve_template(path_template, None)?;
+        
+        // If the resolved path doesn't start with the repo root, prepend it
+        // This handles both cases:
+        // 1. Template contains {repo} placeholder - already substituted
+        // 2. Template is relative (e.g., ".claude/CLAUDE.md") - need to prepend
+        let resolved_str = resolved.to_string_lossy();
+        let repo_str: &str = &repo_root.to_string_lossy();
+        
+        // Prepend repo_root if the path doesn't already contain it
+        if !resolved_str.starts_with(repo_str) && !resolved_str.contains(repo_str) {
+            resolved = repo_root.join(&resolved);
+        }
+        
+        let exists = resolved.exists();
 
         Ok(ResolvedPath {
-            path,
+            path: resolved,
             adapter,
             artifact,
             scope: Scope::Local,
@@ -595,8 +609,11 @@ mod tests {
         assert!(result.is_ok());
 
         let resolved = result.unwrap();
-        assert!(resolved.path.to_string_lossy().contains("/test/repo"));
-        assert!(resolved.path.to_string_lossy().contains(".claude"));
+        // Use normalized path comparison that works on both Windows and Unix
+        let path_str = resolved.path.to_string_lossy();
+        assert!(path_str.contains("test") && path_str.contains("repo"),
+            "Path should contain repo reference, got: {}", path_str);
+        assert!(path_str.contains(".claude"));
         assert_eq!(resolved.scope, Scope::Local);
     }
 
