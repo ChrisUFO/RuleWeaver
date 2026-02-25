@@ -39,6 +39,21 @@ pub struct ExecutionLogInput<'a> {
     pub triggered_by: &'a str,
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReconciliationLogEntry {
+    pub id: String,
+    #[serde(with = "crate::models::timestamp")]
+    pub timestamp: DateTime<Utc>,
+    pub operation: String,
+    pub artifact_type: Option<String>,
+    pub adapter: Option<String>,
+    pub scope: Option<String>,
+    pub path: String,
+    pub result: String,
+    pub error_message: Option<String>,
+}
+
 impl Database {
     async fn new_with_db_path(db_path: PathBuf) -> Result<Self> {
         if let Some(parent) = db_path.parent() {
@@ -1169,6 +1184,74 @@ impl Database {
     pub async fn set_storage_mode(&self, mode: &str) -> Result<()> {
         self.set_setting("storage_mode", mode).await
     }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn log_reconciliation(
+        &self,
+        operation: &str,
+        artifact_type: Option<&str>,
+        adapter: Option<&str>,
+        scope: Option<&str>,
+        path: &str,
+        result: &str,
+        error_message: Option<&str>,
+    ) -> Result<()> {
+        let conn = self.0.lock().await;
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = chrono::Utc::now().timestamp();
+
+        conn.execute(
+            "INSERT INTO reconciliation_logs (id, timestamp, operation, artifact_type, adapter, scope, path, result, error_message)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            rusqlite::params![
+                id,
+                now,
+                operation,
+                artifact_type,
+                adapter,
+                scope,
+                path,
+                result,
+                error_message
+            ],
+        )?;
+
+        Ok(())
+    }
+
+    pub async fn get_reconciliation_logs(&self, limit: i64) -> Result<Vec<ReconciliationLogEntry>> {
+        let conn = self.0.lock().await;
+        let mut stmt = conn.prepare(
+            "SELECT id, timestamp, operation, artifact_type, adapter, scope, path, result, error_message
+             FROM reconciliation_logs
+             ORDER BY timestamp DESC
+             LIMIT ?",
+        )?;
+
+        let logs = stmt
+            .query_map(rusqlite::params![limit], |row| {
+                Ok(ReconciliationLogEntry {
+                    id: row.get(0)?,
+                    timestamp: parse_timestamp_or_now(row.get(1)?),
+                    operation: row.get(2)?,
+                    artifact_type: row.get(3)?,
+                    adapter: row.get(4)?,
+                    scope: row.get(5)?,
+                    path: row.get(6)?,
+                    result: row.get(7)?,
+                    error_message: row.get(8)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+
+        Ok(logs)
+    }
+
+    pub async fn clear_reconciliation_logs(&self) -> Result<()> {
+        let conn = self.0.lock().await;
+        conn.execute("DELETE FROM reconciliation_logs", [])?;
+        Ok(())
+    }
 }
 
 fn run_migrations(conn: &mut Connection) -> Result<()> {
@@ -1424,7 +1507,29 @@ fn run_migrations(conn: &mut Connection) -> Result<()> {
         }
     }
 
-    transaction.execute("PRAGMA user_version = 11", [])?;
+    if current_version < 12 {
+        transaction.execute(
+            "CREATE TABLE IF NOT EXISTS reconciliation_logs (
+                id TEXT PRIMARY KEY NOT NULL,
+                timestamp INTEGER NOT NULL,
+                operation TEXT NOT NULL,
+                artifact_type TEXT,
+                adapter TEXT,
+                scope TEXT,
+                path TEXT NOT NULL,
+                result TEXT NOT NULL,
+                error_message TEXT
+            )",
+            [],
+        )?;
+
+        transaction.execute(
+            "CREATE INDEX IF NOT EXISTS idx_reconciliation_logs_timestamp ON reconciliation_logs(timestamp)",
+            [],
+        )?;
+    }
+
+    transaction.execute("PRAGMA user_version = 12", [])?;
     transaction.commit()?;
 
     Ok(())

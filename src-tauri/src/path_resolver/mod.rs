@@ -45,6 +45,44 @@ fn validate_command_name(command_name: &str) -> Result<()> {
     Ok(())
 }
 
+/// Validate a skill name for path safety.
+///
+/// Prevents path traversal attacks by rejecting names containing:
+/// - Path separators (`/` or `\`)
+/// - Parent directory references (`..`)
+fn validate_skill_name(skill_name: &str) -> Result<()> {
+    if skill_name.contains("..") || skill_name.contains('/') || skill_name.contains('\\') {
+        return Err(AppError::InvalidInput {
+            message: "Invalid skill name: path separators and '..' not allowed".to_string(),
+        });
+    }
+    if skill_name.is_empty() {
+        return Err(AppError::InvalidInput {
+            message: "Skill name cannot be empty".to_string(),
+        });
+    }
+    Ok(())
+}
+
+/// Sanitize a skill name for use in file paths.
+///
+/// Converts the name to lowercase and replaces invalid characters with dashes.
+fn sanitize_skill_name(skill_name: &str) -> String {
+    skill_name
+        .to_lowercase()
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>()
+        .trim_matches('-')
+        .to_string()
+}
+
 /// Global shared PathResolver instance.
 ///
 /// This singleton ensures consistent path resolution across all modules.
@@ -198,9 +236,17 @@ impl PathResolver {
                 });
             }
             ArtifactType::Skill => {
-                return Err(AppError::InvalidInput {
-                    message: "Skills path resolution not yet implemented".to_string(),
-                });
+                let skills_dir =
+                    entry
+                        .paths
+                        .global_skills_dir
+                        .ok_or_else(|| AppError::InvalidInput {
+                            message: format!(
+                                "Adapter {} does not support skills",
+                                adapter.as_str()
+                            ),
+                        })?;
+                self.home_dir.join(skills_dir)
             }
         };
 
@@ -261,9 +307,13 @@ impl PathResolver {
                 });
             }
             ArtifactType::Skill => {
-                return Err(AppError::InvalidInput {
-                    message: "Skills path resolution not yet implemented".to_string(),
-                });
+                let dir = entry
+                    .paths
+                    .local_skills_dir
+                    .ok_or_else(|| AppError::InvalidInput {
+                        message: format!("Adapter {} does not support skills", adapter.as_str()),
+                    })?;
+                PathBuf::from(dir).to_string_lossy().to_string()
             }
         };
 
@@ -413,6 +463,153 @@ impl PathResolver {
             path,
             adapter,
             artifact: ArtifactType::SlashCommand,
+            scope: Scope::Local,
+            exists,
+            repo_root: Some(repo_root.to_path_buf()),
+        })
+    }
+
+    /// Resolve the global skill directory path for an adapter.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the adapter doesn't support skills.
+    pub fn skill_dir(&self, adapter: AdapterType) -> Result<ResolvedPath> {
+        let entry = REGISTRY
+            .get(&adapter)
+            .ok_or_else(|| AppError::InvalidInput {
+                message: format!("Unknown adapter: {}", adapter.as_str()),
+            })?;
+
+        let skills_dir = entry
+            .paths
+            .global_skills_dir
+            .ok_or_else(|| AppError::InvalidInput {
+                message: format!("Adapter {} does not support skills", adapter.as_str()),
+            })?;
+
+        let path = self.home_dir.join(skills_dir);
+        let exists = path.exists();
+
+        Ok(ResolvedPath {
+            path,
+            adapter,
+            artifact: ArtifactType::Skill,
+            scope: Scope::Global,
+            exists,
+            repo_root: None,
+        })
+    }
+
+    /// Resolve the local skill directory path for an adapter in a repository.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the adapter doesn't support skills.
+    pub fn local_skill_dir(&self, adapter: AdapterType, repo_root: &Path) -> Result<ResolvedPath> {
+        let entry = REGISTRY
+            .get(&adapter)
+            .ok_or_else(|| AppError::InvalidInput {
+                message: format!("Unknown adapter: {}", adapter.as_str()),
+            })?;
+
+        let skills_dir = entry
+            .paths
+            .local_skills_dir
+            .ok_or_else(|| AppError::InvalidInput {
+                message: format!("Adapter {} does not support skills", adapter.as_str()),
+            })?;
+
+        let path = repo_root.join(skills_dir);
+        let exists = path.exists();
+
+        Ok(ResolvedPath {
+            path,
+            adapter,
+            artifact: ArtifactType::Skill,
+            scope: Scope::Local,
+            exists,
+            repo_root: Some(repo_root.to_path_buf()),
+        })
+    }
+
+    /// Resolve a path for a specific skill file (global).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the adapter doesn't support skills,
+    /// or if the skill name contains invalid characters.
+    pub fn skill_path(&self, adapter: AdapterType, skill_name: &str) -> Result<ResolvedPath> {
+        validate_skill_name(skill_name)?;
+
+        let entry = REGISTRY
+            .get(&adapter)
+            .ok_or_else(|| AppError::InvalidInput {
+                message: format!("Unknown adapter: {}", adapter.as_str()),
+            })?;
+
+        let skills_dir = entry
+            .paths
+            .global_skills_dir
+            .ok_or_else(|| AppError::InvalidInput {
+                message: format!("Adapter {} does not support skills", adapter.as_str()),
+            })?;
+
+        let filename = entry.paths.skill_filename;
+        let safe_name = sanitize_skill_name(skill_name);
+        let path = self
+            .home_dir
+            .join(skills_dir)
+            .join(&safe_name)
+            .join(filename);
+        let exists = path.exists();
+
+        Ok(ResolvedPath {
+            path,
+            adapter,
+            artifact: ArtifactType::Skill,
+            scope: Scope::Global,
+            exists,
+            repo_root: None,
+        })
+    }
+
+    /// Resolve a local path for a specific skill file in a repository.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the adapter doesn't support skills,
+    /// or if the skill name contains invalid characters.
+    pub fn local_skill_path(
+        &self,
+        adapter: AdapterType,
+        skill_name: &str,
+        repo_root: &Path,
+    ) -> Result<ResolvedPath> {
+        validate_skill_name(skill_name)?;
+
+        let entry = REGISTRY
+            .get(&adapter)
+            .ok_or_else(|| AppError::InvalidInput {
+                message: format!("Unknown adapter: {}", adapter.as_str()),
+            })?;
+
+        let skills_dir = entry
+            .paths
+            .local_skills_dir
+            .ok_or_else(|| AppError::InvalidInput {
+                message: format!("Adapter {} does not support skills", adapter.as_str()),
+            })?;
+
+        let filename = entry.paths.skill_filename;
+        let safe_name = sanitize_skill_name(skill_name);
+        let path = repo_root.join(skills_dir).join(&safe_name).join(filename);
+        let exists = path.exists();
+
+        Ok(ResolvedPath {
+            path,
+            adapter,
+            artifact: ArtifactType::Skill,
             scope: Scope::Local,
             exists,
             repo_root: Some(repo_root.to_path_buf()),
@@ -863,10 +1060,117 @@ mod tests {
     }
 
     #[test]
-    fn test_skill_not_implemented() {
+    fn test_skill_global_path() {
         let resolver = PathResolver::new().unwrap();
 
         let result = resolver.global_path(AdapterType::ClaudeCode, ArtifactType::Skill);
+        assert!(result.is_ok());
+        let resolved = result.unwrap();
+        assert_eq!(resolved.artifact, ArtifactType::Skill);
+        assert_eq!(resolved.scope, Scope::Global);
+        let path_str = resolved.path.to_string_lossy();
+        assert!(path_str.contains("skills"));
+    }
+
+    #[test]
+    fn test_skill_local_path() {
+        let resolver = PathResolver::new().unwrap();
+        let repo_root = PathBuf::from("/test/repo");
+
+        let result = resolver.local_path(AdapterType::ClaudeCode, ArtifactType::Skill, &repo_root);
+        assert!(result.is_ok());
+        let resolved = result.unwrap();
+        assert_eq!(resolved.artifact, ArtifactType::Skill);
+        assert_eq!(resolved.scope, Scope::Local);
+        let path_str = resolved.path.to_string_lossy();
+        assert!(path_str.contains("skills"));
+    }
+
+    #[test]
+    fn test_skill_path_global() {
+        let resolver = PathResolver::new().unwrap();
+
+        let result = resolver.skill_path(AdapterType::ClaudeCode, "test-skill");
+        assert!(result.is_ok());
+        let resolved = result.unwrap();
+        assert_eq!(resolved.artifact, ArtifactType::Skill);
+        assert_eq!(resolved.scope, Scope::Global);
+        let path_str = resolved.path.to_string_lossy();
+        assert!(path_str.contains("test-skill"));
+        assert!(path_str.contains("SKILL.md"));
+    }
+
+    #[test]
+    fn test_local_skill_path() {
+        let resolver = PathResolver::new().unwrap();
+        let repo_root = PathBuf::from("/test/repo");
+
+        let result = resolver.local_skill_path(AdapterType::ClaudeCode, "test-skill", &repo_root);
+        assert!(result.is_ok());
+        let resolved = result.unwrap();
+        assert_eq!(resolved.scope, Scope::Local);
+        let path_str = resolved.path.to_string_lossy();
+        assert!(path_str.contains("test-skill"));
+    }
+
+    #[test]
+    fn test_skill_path_validation_rejects_traversal() {
+        let resolver = PathResolver::new().unwrap();
+
+        let result = resolver.skill_path(AdapterType::ClaudeCode, "../escape");
+        assert!(result.is_err());
+
+        let result = resolver.skill_path(AdapterType::ClaudeCode, "nested/../escape");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_skill_path_validation_rejects_separators() {
+        let resolver = PathResolver::new().unwrap();
+
+        let result = resolver.skill_path(AdapterType::ClaudeCode, "path/to/skill");
+        assert!(result.is_err());
+
+        let result = resolver.skill_path(AdapterType::ClaudeCode, "path\\to\\skill");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_skill_path_validation_rejects_empty() {
+        let resolver = PathResolver::new().unwrap();
+
+        let result = resolver.skill_path(AdapterType::ClaudeCode, "");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_skill_dir_global() {
+        let resolver = PathResolver::new().unwrap();
+
+        let result = resolver.skill_dir(AdapterType::ClaudeCode);
+        assert!(result.is_ok());
+        let resolved = result.unwrap();
+        assert_eq!(resolved.artifact, ArtifactType::Skill);
+        assert_eq!(resolved.scope, Scope::Global);
+    }
+
+    #[test]
+    fn test_skill_dir_local() {
+        let resolver = PathResolver::new().unwrap();
+        let repo_root = PathBuf::from("/test/repo");
+
+        let result = resolver.local_skill_dir(AdapterType::ClaudeCode, &repo_root);
+        assert!(result.is_ok());
+        let resolved = result.unwrap();
+        assert_eq!(resolved.artifact, ArtifactType::Skill);
+        assert_eq!(resolved.scope, Scope::Local);
+    }
+
+    #[test]
+    fn test_skill_path_cursor_unsupported() {
+        let resolver = PathResolver::new().unwrap();
+
+        let result = resolver.skill_path(AdapterType::Cursor, "test-skill");
         assert!(result.is_err());
     }
 

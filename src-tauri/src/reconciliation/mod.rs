@@ -31,6 +31,7 @@ use crate::error::Result;
 use crate::models::registry::{ArtifactType, REGISTRY};
 use crate::models::{AdapterType, Scope};
 use crate::path_resolver::PathResolver;
+use crate::slash_commands::adapters::get_adapter;
 
 const MAX_FILE_SIZE_BYTES: u64 = 10 * 1024 * 1024;
 
@@ -186,16 +187,23 @@ impl ReconciliationEngine {
         Ok(Self { db, path_resolver })
     }
 
-    /// Compute desired state from database rules.
+    /// Compute desired state from all database artifacts.
     ///
-    /// This scans all rules in the database and computes what paths should exist.
-    ///
-    /// TODO: Currently only handles `ArtifactType::Rule`. Support for other artifact types
-    /// (`CommandStub`, `SlashCommand`, `Skill`) is pending and will be added in future phases.
+    /// This scans all rules, commands, and skills in the database and computes
+    /// what paths should exist for each artifact type.
     pub async fn compute_desired_state(&self) -> Result<DesiredState> {
         let mut desired = DesiredState::default();
 
-        // Get all rules from database
+        self.compute_desired_state_rules(&mut desired).await?;
+        self.compute_desired_state_command_stubs(&mut desired).await?;
+        self.compute_desired_state_slash_commands(&mut desired).await?;
+        self.compute_desired_state_skills(&mut desired).await?;
+
+        Ok(desired)
+    }
+
+    /// Compute desired state for rules.
+    async fn compute_desired_state_rules(&self, desired: &mut DesiredState) -> Result<()> {
         let rules = self.db.get_all_rules().await?;
 
         for rule in rules {
@@ -203,9 +211,7 @@ impl ReconciliationEngine {
                 continue;
             }
 
-            // For each enabled adapter
             for adapter in &rule.enabled_adapters {
-                // Skip adapters that don't support rules
                 if REGISTRY
                     .validate_support(adapter, &rule.scope, ArtifactType::Rule)
                     .is_err()
@@ -217,42 +223,219 @@ impl ReconciliationEngine {
 
                 match rule.scope {
                     Scope::Global => {
-                        // Global rules go to a single path per adapter
-                        let resolved = self.path_resolver.global_path(*adapter, ArtifactType::Rule)?;
-                        let path_str = resolved.path.to_string_lossy().to_string();
-
-                        desired.expected_paths.insert(
-                            path_str.clone(),
-                            ExpectedArtifact {
-                                adapter: *adapter,
-                                artifact_type: ArtifactType::Rule,
-                                scope: Scope::Global,
-                                repo_root: None,
-                                content_hash,
-                                content: Some(rule.content.clone()),
-                            },
-                        );
+                        if let Ok(resolved) = self.path_resolver.global_path(*adapter, ArtifactType::Rule) {
+                            let path_str = resolved.path.to_string_lossy().to_string();
+                            desired.expected_paths.insert(
+                                path_str.clone(),
+                                ExpectedArtifact {
+                                    adapter: *adapter,
+                                    artifact_type: ArtifactType::Rule,
+                                    scope: Scope::Global,
+                                    repo_root: None,
+                                    content_hash: content_hash.clone(),
+                                    content: Some(rule.content.clone()),
+                                },
+                            );
+                        }
                     }
                     Scope::Local => {
-                        // Local rules go to each target path
                         if let Some(target_paths) = &rule.target_paths {
                             for target_path in target_paths {
-                                let resolved = self.path_resolver.local_path(
+                                if let Ok(resolved) = self.path_resolver.local_path(
                                     *adapter,
                                     ArtifactType::Rule,
                                     Path::new(target_path),
-                                )?;
-                                let path_str = resolved.path.to_string_lossy().to_string();
+                                ) {
+                                    let path_str = resolved.path.to_string_lossy().to_string();
+                                    desired.expected_paths.insert(
+                                        path_str.clone(),
+                                        ExpectedArtifact {
+                                            adapter: *adapter,
+                                            artifact_type: ArtifactType::Rule,
+                                            scope: Scope::Local,
+                                            repo_root: Some(PathBuf::from(target_path)),
+                                            content_hash: content_hash.clone(),
+                                            content: Some(rule.content.clone()),
+                                        },
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
+        Ok(())
+    }
+
+    /// Compute desired state for command stubs (COMMANDS.md/COMMANDS.toml files).
+    async fn compute_desired_state_command_stubs(&self, desired: &mut DesiredState) -> Result<()> {
+        let commands = self.db.get_all_commands().await?;
+
+        let exposed_commands: Vec<_> = commands.into_iter().filter(|c| c.expose_via_mcp).collect();
+        if exposed_commands.is_empty() {
+            return Ok(());
+        }
+
+        for adapter in AdapterType::all() {
+            if REGISTRY
+                .validate_support(&adapter, &Scope::Global, ArtifactType::CommandStub)
+                .is_err()
+            {
+                continue;
+            }
+
+            if let Ok(resolved) = self.path_resolver.global_path(adapter, ArtifactType::CommandStub) {
+                let content = self.format_command_stub_content(&adapter, &exposed_commands);
+                let content_hash = compute_content_hash(&content);
+                let path_str = resolved.path.to_string_lossy().to_string();
+
+                desired.expected_paths.insert(
+                    path_str.clone(),
+                    ExpectedArtifact {
+                        adapter,
+                        artifact_type: ArtifactType::CommandStub,
+                        scope: Scope::Global,
+                        repo_root: None,
+                        content_hash,
+                        content: Some(content),
+                    },
+                );
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Compute desired state for slash commands (individual command files).
+    async fn compute_desired_state_slash_commands(&self, desired: &mut DesiredState) -> Result<()> {
+        let commands = self.db.get_all_commands().await?;
+
+        for command in commands {
+            if !command.generate_slash_commands {
+                continue;
+            }
+
+            for adapter_name in &command.slash_command_adapters {
+                let adapter_type = match AdapterType::from_str(adapter_name) {
+                    Some(a) => a,
+                    None => continue,
+                };
+
+                if REGISTRY
+                    .validate_support(&adapter_type, &Scope::Global, ArtifactType::SlashCommand)
+                    .is_err()
+                {
+                    continue;
+                }
+
+                let slash_adapter = match get_adapter(adapter_name) {
+                    Some(a) => a,
+                    None => continue,
+                };
+
+                let safe_name = match crate::slash_commands::sync::validate_command_name(&command.name) {
+                    Ok(name) => name,
+                    Err(_) => continue,
+                };
+
+                let content = slash_adapter.format_command(&command);
+                let content_hash = compute_content_hash(&content);
+
+                if let Ok(resolved) = self.path_resolver.slash_command_path(adapter_type, &safe_name, true) {
+                    let path_str = resolved.path.to_string_lossy().to_string();
+                    desired.expected_paths.insert(
+                        path_str.clone(),
+                        ExpectedArtifact {
+                            adapter: adapter_type,
+                            artifact_type: ArtifactType::SlashCommand,
+                            scope: Scope::Global,
+                            repo_root: None,
+                            content_hash: content_hash.clone(),
+                            content: Some(content.clone()),
+                        },
+                    );
+                }
+
+                for target_path in &command.target_paths {
+                    if let Ok(resolved) = self.path_resolver.local_slash_command_path(
+                        adapter_type,
+                        &safe_name,
+                        Path::new(target_path),
+                    ) {
+                        let path_str = resolved.path.to_string_lossy().to_string();
+                        desired.expected_paths.insert(
+                            path_str.clone(),
+                            ExpectedArtifact {
+                                adapter: adapter_type,
+                                artifact_type: ArtifactType::SlashCommand,
+                                scope: Scope::Local,
+                                repo_root: Some(PathBuf::from(target_path)),
+                                content_hash: content_hash.clone(),
+                                content: Some(content.clone()),
+                            },
+                        );
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Compute desired state for skills.
+    async fn compute_desired_state_skills(&self, desired: &mut DesiredState) -> Result<()> {
+        let skills = self.db.get_all_skills().await?;
+
+        for skill in skills {
+            if !skill.enabled {
+                continue;
+            }
+
+            for adapter in AdapterType::all() {
+                if REGISTRY
+                    .validate_support(&adapter, &skill.scope, ArtifactType::Skill)
+                    .is_err()
+                {
+                    continue;
+                }
+
+                let content = self.format_skill_content(&skill);
+                let content_hash = compute_content_hash(&content);
+                let safe_name = sanitize_skill_name_for_path(&skill.name);
+
+                match skill.scope {
+                    Scope::Global => {
+                        if let Ok(resolved) = self.path_resolver.skill_path(adapter, &safe_name) {
+                            let path_str = resolved.path.to_string_lossy().to_string();
+                            desired.expected_paths.insert(
+                                path_str.clone(),
+                                ExpectedArtifact {
+                                    adapter,
+                                    artifact_type: ArtifactType::Skill,
+                                    scope: Scope::Global,
+                                    repo_root: None,
+                                    content_hash: content_hash.clone(),
+                                    content: Some(content.clone()),
+                                },
+                            );
+                        }
+                    }
+                    Scope::Local => {
+                        let repo_roots = self.path_resolver.repository_roots();
+                        for repo_root in repo_roots {
+                            if let Ok(resolved) = self.path_resolver.local_skill_path(adapter, &safe_name, repo_root) {
+                                let path_str = resolved.path.to_string_lossy().to_string();
                                 desired.expected_paths.insert(
                                     path_str.clone(),
                                     ExpectedArtifact {
-                                        adapter: *adapter,
-                                        artifact_type: ArtifactType::Rule,
+                                        adapter,
+                                        artifact_type: ArtifactType::Skill,
                                         scope: Scope::Local,
-                                        repo_root: Some(PathBuf::from(target_path)),
+                                        repo_root: Some(repo_root.clone()),
                                         content_hash: content_hash.clone(),
-                                        content: Some(rule.content.clone()),
+                                        content: Some(content.clone()),
                                     },
                                 );
                             }
@@ -262,7 +445,99 @@ impl ReconciliationEngine {
             }
         }
 
-        Ok(desired)
+        Ok(())
+    }
+
+    /// Format command stub content for a specific adapter.
+    fn format_command_stub_content(&self, _adapter: &AdapterType, commands: &[crate::models::Command]) -> String {
+        use std::collections::HashMap;
+        
+        #[derive(serde::Serialize)]
+        struct CommandStubArg {
+            arg_type: String,
+            required: bool,
+        }
+
+        #[derive(serde::Serialize)]
+        struct CommandStub {
+            description: String,
+            script: String,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            arguments: Option<HashMap<String, CommandStubArg>>,
+        }
+
+        #[derive(serde::Serialize)]
+        struct CommandsFile {
+            command: Vec<CommandStub>,
+        }
+
+        let stubs: Vec<CommandStub> = commands
+            .iter()
+            .map(|cmd| {
+                let mut args = HashMap::new();
+                for arg in &cmd.arguments {
+                    args.insert(
+                        arg.name.clone(),
+                        CommandStubArg {
+                            arg_type: "string".to_string(),
+                            required: arg.required,
+                        },
+                    );
+                }
+
+                CommandStub {
+                    description: cmd.description.clone(),
+                    script: cmd.script.clone(),
+                    arguments: if args.is_empty() { None } else { Some(args) },
+                }
+            })
+            .collect();
+
+        let file = CommandsFile { command: stubs };
+        let toml_content = toml::to_string(&file).unwrap_or_default();
+        
+        format!(
+            "# Generated by RuleWeaver - Do not edit manually\n# Last synced: {}\n\n{}",
+            chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ"),
+            toml_content
+        )
+    }
+
+    /// Format skill content for writing to SKILL.md files.
+    fn format_skill_content(&self, skill: &crate::models::Skill) -> String {
+        let mut content = format!(
+            "# {}\n\n{}\n\n## Instructions\n\n{}\n",
+            skill.name,
+            skill.description,
+            skill.instructions
+        );
+
+        if !skill.input_schema.is_empty() {
+            content.push_str("\n## Parameters\n\n");
+            for param in &skill.input_schema {
+                content.push_str(&format!(
+                    "- **{}** ({}{}): {}\n",
+                    param.name,
+                    match param.param_type {
+                        crate::models::SkillParameterType::String => "string",
+                        crate::models::SkillParameterType::Number => "number",
+                        crate::models::SkillParameterType::Boolean => "boolean",
+                        crate::models::SkillParameterType::Enum => "enum",
+                        crate::models::SkillParameterType::Array => "array",
+                        crate::models::SkillParameterType::Object => "object",
+                    },
+                    if param.required { ", required" } else { "" },
+                    param.description
+                ));
+            }
+        }
+
+        content.push_str(&format!(
+            "\n## Entry Point\n\n`{}`\n",
+            skill.entry_point
+        ));
+
+        content
     }
 
     /// Scan filesystem for actual state.
@@ -271,28 +546,218 @@ impl ReconciliationEngine {
     pub async fn scan_actual_state(&self) -> Result<ActualState> {
         let mut actual = ActualState::default();
 
-        // Scan global paths for all adapters
+        self.scan_actual_state_rules(&mut actual)?;
+        self.scan_actual_state_command_stubs(&mut actual)?;
+        self.scan_actual_state_slash_commands(&mut actual)?;
+        self.scan_actual_state_skills(&mut actual)?;
+
+        Ok(actual)
+    }
+
+    /// Scan for rule artifacts.
+    fn scan_actual_state_rules(&self, actual: &mut ActualState) -> Result<()> {
         for adapter in AdapterType::all() {
             if let Ok(resolved) = self.path_resolver.global_path(adapter, ArtifactType::Rule) {
-                if let Some(found) = self.scan_artifact_file(&resolved.path, Some(adapter), Some(ArtifactType::Rule), Scope::Global)? {
+                if let Some(found) = self.scan_artifact_file(
+                    &resolved.path,
+                    Some(adapter),
+                    Some(ArtifactType::Rule),
+                    Scope::Global,
+                )? {
                     actual.found_paths.insert(resolved.path.to_string_lossy().to_string(), found);
                 }
             }
         }
 
-        // Scan local paths for configured repository roots
         let repo_roots = self.path_resolver.repository_roots();
         for repo_root in repo_roots {
             for adapter in AdapterType::all() {
                 if let Ok(resolved) = self.path_resolver.local_path(adapter, ArtifactType::Rule, repo_root) {
-                    if let Some(found) = self.scan_artifact_file(&resolved.path, Some(adapter), Some(ArtifactType::Rule), Scope::Local)? {
+                    if let Some(found) = self.scan_artifact_file(
+                        &resolved.path,
+                        Some(adapter),
+                        Some(ArtifactType::Rule),
+                        Scope::Local,
+                    )? {
                         actual.found_paths.insert(resolved.path.to_string_lossy().to_string(), found);
                     }
                 }
             }
         }
 
-        Ok(actual)
+        Ok(())
+    }
+
+    /// Scan for command stub artifacts (COMMANDS.md files).
+    fn scan_actual_state_command_stubs(&self, actual: &mut ActualState) -> Result<()> {
+        for adapter in AdapterType::all() {
+            if let Ok(resolved) = self.path_resolver.global_path(adapter, ArtifactType::CommandStub) {
+                if let Some(found) = self.scan_artifact_file(
+                    &resolved.path,
+                    Some(adapter),
+                    Some(ArtifactType::CommandStub),
+                    Scope::Global,
+                )? {
+                    actual.found_paths.insert(resolved.path.to_string_lossy().to_string(), found);
+                }
+            }
+        }
+
+        let repo_roots = self.path_resolver.repository_roots();
+        for repo_root in repo_roots {
+            for adapter in AdapterType::all() {
+                if let Ok(resolved) = self.path_resolver.local_path(adapter, ArtifactType::CommandStub, repo_root) {
+                    if let Some(found) = self.scan_artifact_file(
+                        &resolved.path,
+                        Some(adapter),
+                        Some(ArtifactType::CommandStub),
+                        Scope::Local,
+                    )? {
+                        actual.found_paths.insert(resolved.path.to_string_lossy().to_string(), found);
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Scan for slash command artifacts.
+    fn scan_actual_state_slash_commands(&self, actual: &mut ActualState) -> Result<()> {
+        for adapter in AdapterType::all() {
+            let entry = match REGISTRY.get(&adapter) {
+                Some(e) => e,
+                None => continue,
+            };
+
+            let extension = match entry.slash_command_extension {
+                Some(ext) => ext,
+                None => continue,
+            };
+
+            if let Some(global_dir) = entry.paths.global_commands_dir {
+                let dir_path = self.path_resolver.home_dir().join(global_dir);
+                self.scan_command_directory(&dir_path, adapter, extension, Scope::Global, actual)?;
+            }
+        }
+
+        let repo_roots = self.path_resolver.repository_roots();
+        for repo_root in repo_roots {
+            for adapter in AdapterType::all() {
+                let entry = match REGISTRY.get(&adapter) {
+                    Some(e) => e,
+                    None => continue,
+                };
+
+                let extension = match entry.slash_command_extension {
+                    Some(ext) => ext,
+                    None => continue,
+                };
+
+                if let Some(local_dir) = entry.paths.local_commands_dir {
+                    let dir_path = repo_root.join(local_dir);
+                    self.scan_command_directory(&dir_path, adapter, extension, Scope::Local, actual)?;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Scan a directory for command files.
+    fn scan_command_directory(
+        &self,
+        dir: &Path,
+        adapter: AdapterType,
+        extension: &str,
+        scope: Scope,
+        actual: &mut ActualState,
+    ) -> Result<()> {
+        if !dir.exists() {
+            return Ok(());
+        }
+
+        let entries = match fs::read_dir(dir) {
+            Ok(e) => e,
+            Err(_) => return Ok(()),
+        };
+
+        for entry in entries {
+            let entry = entry?;
+            let path = entry.path();
+
+            if path.is_file() && path.extension().map(|e| e == extension).unwrap_or(false) {
+                if let Some(found) = self.scan_artifact_file(
+                    &path,
+                    Some(adapter),
+                    Some(ArtifactType::SlashCommand),
+                    scope,
+                )? {
+                    actual.found_paths.insert(path.to_string_lossy().to_string(), found);
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Scan for skill artifacts.
+    fn scan_actual_state_skills(&self, actual: &mut ActualState) -> Result<()> {
+        for adapter in AdapterType::all() {
+            if let Ok(resolved) = self.path_resolver.skill_dir(adapter) {
+                self.scan_skill_directory(&resolved.path, adapter, Scope::Global, actual)?;
+            }
+        }
+
+        let repo_roots = self.path_resolver.repository_roots();
+        for repo_root in repo_roots {
+            for adapter in AdapterType::all() {
+                if let Ok(resolved) = self.path_resolver.local_skill_dir(adapter, repo_root) {
+                    self.scan_skill_directory(&resolved.path, adapter, Scope::Local, actual)?;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Scan a skill directory for SKILL.md files.
+    fn scan_skill_directory(
+        &self,
+        dir: &Path,
+        adapter: AdapterType,
+        scope: Scope,
+        actual: &mut ActualState,
+    ) -> Result<()> {
+        if !dir.exists() {
+            return Ok(());
+        }
+
+        let entries = match fs::read_dir(dir) {
+            Ok(e) => e,
+            Err(_) => return Ok(()),
+        };
+
+        for entry in entries {
+            let entry = entry?;
+            let path = entry.path();
+
+            if path.is_dir() {
+                let skill_file = path.join("SKILL.md");
+                if skill_file.exists() {
+                    if let Some(found) = self.scan_artifact_file(
+                        &skill_file,
+                        Some(adapter),
+                        Some(ArtifactType::Skill),
+                        scope,
+                    )? {
+                        actual.found_paths.insert(skill_file.to_string_lossy().to_string(), found);
+                    }
+                }
+            }
+        }
+
+        Ok(())
     }
 
     fn scan_artifact_file(&self, path: &Path, adapter: Option<AdapterType>, artifact_type: Option<ArtifactType>, scope: Scope) -> Result<Option<FoundArtifact>> {
@@ -551,7 +1016,7 @@ impl ReconciliationEngine {
         Ok(())
     }
 
-    /// Log a reconciliation operation.
+    /// Log a reconciliation operation to both console and database.
     async fn log_operation(
         &self,
         operation: ReconcileOperation,
@@ -572,6 +1037,29 @@ impl ReconciliationEngine {
         };
 
         log::debug!("Reconciliation log: {:?}", entry);
+
+        let operation_str = match operation {
+            ReconcileOperation::Create => "create",
+            ReconcileOperation::Update => "update",
+            ReconcileOperation::Remove => "remove",
+            ReconcileOperation::Check => "check",
+        };
+
+        let result_str = match result {
+            ReconcileResultType::Success => "success",
+            ReconcileResultType::Failed => "failed",
+            ReconcileResultType::Skipped => "skipped",
+        };
+
+        let _ = self.db.log_reconciliation(
+            operation_str,
+            artifact_type.map(|a| a.as_str()),
+            adapter.map(|a| a.as_str()),
+            scope.map(|s| s.as_str()),
+            &path.to_string_lossy(),
+            result_str,
+            None,
+        ).await;
     }
 }
 
@@ -591,6 +1079,22 @@ fn generate_placeholder_content(adapter: &AdapterType, artifact_type: ArtifactTy
         artifact_type,
         scope
     )
+}
+
+/// Sanitize a skill name for use in file paths.
+fn sanitize_skill_name_for_path(name: &str) -> String {
+    name.to_lowercase()
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>()
+        .trim_matches('-')
+        .to_string()
 }
 
 #[cfg(test)]
@@ -882,5 +1386,100 @@ mod tests {
         assert!(json.contains("create"));
         assert!(json.contains("rule"));
         assert!(json.contains("claude") || json.contains("Claude"));
+    }
+
+    #[test]
+    fn test_sanitize_skill_name_for_path() {
+        assert_eq!(sanitize_skill_name_for_path("Test Skill"), "test-skill");
+        assert_eq!(sanitize_skill_name_for_path("My-Cool_Skill"), "my-cool_skill");
+        assert_eq!(sanitize_skill_name_for_path("Skill With  Spaces"), "skill-with--spaces");
+        assert_eq!(sanitize_skill_name_for_path("--Leading--Trailing--"), "leading--trailing");
+    }
+
+    #[tokio::test]
+    async fn test_compute_desired_state_includes_command_stubs() {
+        let db = std::sync::Arc::new(crate::database::Database::new_in_memory().await.unwrap());
+        
+        db.create_command(crate::models::CreateCommandInput {
+            id: None,
+            name: "Test Command".to_string(),
+            description: "A test command".to_string(),
+            script: "echo test".to_string(),
+            arguments: vec![],
+            expose_via_mcp: true,
+            is_placeholder: false,
+            generate_slash_commands: false,
+            slash_command_adapters: vec![],
+            target_paths: vec![],
+        }).await.unwrap();
+
+        let engine = ReconciliationEngine::new(db).unwrap();
+        let desired = engine.compute_desired_state().await.unwrap();
+
+        let has_command_stub = desired.expected_paths.values().any(|a| {
+            a.artifact_type == ArtifactType::CommandStub
+        });
+        assert!(has_command_stub, "Desired state should include command stub artifacts");
+    }
+
+    #[tokio::test]
+    async fn test_compute_desired_state_includes_slash_commands() {
+        let db = std::sync::Arc::new(crate::database::Database::new_in_memory().await.unwrap());
+        
+        db.create_command(crate::models::CreateCommandInput {
+            id: None,
+            name: "Test Slash Command".to_string(),
+            description: "A test slash command".to_string(),
+            script: "echo test".to_string(),
+            arguments: vec![],
+            expose_via_mcp: false,
+            is_placeholder: false,
+            generate_slash_commands: true,
+            slash_command_adapters: vec!["claude-code".to_string()],
+            target_paths: vec![],
+        }).await.unwrap();
+
+        let engine = ReconciliationEngine::new(db).unwrap();
+        let desired = engine.compute_desired_state().await.unwrap();
+
+        let has_slash_command = desired.expected_paths.values().any(|a| {
+            a.artifact_type == ArtifactType::SlashCommand
+        });
+        assert!(has_slash_command, "Desired state should include slash command artifacts");
+    }
+
+    #[tokio::test]
+    async fn test_compute_desired_state_includes_skills() {
+        let db = std::sync::Arc::new(crate::database::Database::new_in_memory().await.unwrap());
+        
+        db.create_skill(crate::models::CreateSkillInput {
+            id: None,
+            name: "Test Skill".to_string(),
+            description: "A test skill".to_string(),
+            instructions: "echo test".to_string(),
+            scope: crate::models::Scope::Global,
+            input_schema: vec![],
+            directory_path: "/test/skills".to_string(),
+            entry_point: "main.sh".to_string(),
+            enabled: true,
+        }).await.unwrap();
+
+        let engine = ReconciliationEngine::new(db).unwrap();
+        let desired = engine.compute_desired_state().await.unwrap();
+
+        let has_skill = desired.expected_paths.values().any(|a| {
+            a.artifact_type == ArtifactType::Skill
+        });
+        assert!(has_skill, "Desired state should include skill artifacts");
+    }
+
+    #[tokio::test]
+    async fn test_reconcile_all_artifact_types() {
+        let db = std::sync::Arc::new(crate::database::Database::new_in_memory().await.unwrap());
+        let engine = ReconciliationEngine::new(db).unwrap();
+
+        let result = engine.reconcile(true).await.unwrap();
+        
+        assert!(result.success, "Dry-run reconciliation should succeed");
     }
 }
