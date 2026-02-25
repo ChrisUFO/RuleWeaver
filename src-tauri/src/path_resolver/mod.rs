@@ -146,18 +146,11 @@ impl PathResolver {
                 )
             }
             ArtifactType::SlashCommand => {
-                // Slash commands are handled differently - they need a command name
-                // This method returns the directory containing slash commands
-                entry
-                    .paths
-                    .global_commands_dir
-                    .ok_or_else(|| AppError::InvalidInput {
-                        message: format!(
-                            "Adapter {} does not support slash commands",
-                            adapter.as_str()
-                        ),
-                    })?
-                    .to_string()
+                return Err(AppError::InvalidInput {
+                    message:
+                        "Slash commands require a command name. Use slash_command_path() instead."
+                            .to_string(),
+                });
             }
             ArtifactType::Skill => {
                 // Skills not yet implemented in Phase 3
@@ -218,15 +211,9 @@ impl PathResolver {
                     })?
             }
             ArtifactType::SlashCommand => {
-                entry
-                    .paths
-                    .local_commands_dir
-                    .ok_or_else(|| AppError::InvalidInput {
-                        message: format!(
-                            "Adapter {} does not support slash commands",
-                            adapter.as_str()
-                        ),
-                    })?
+                return Err(AppError::InvalidInput {
+                    message: "Slash commands require a command name. Use local_slash_command_path() instead.".to_string(),
+                });
             }
             ArtifactType::Skill => {
                 return Err(AppError::InvalidInput {

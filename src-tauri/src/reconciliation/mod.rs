@@ -259,9 +259,6 @@ impl ReconciliationEngine {
     /// Scan filesystem for actual state.
     ///
     /// This scans known paths for all adapters to find what artifacts currently exist.
-    ///
-    /// TODO: Currently only handles `ArtifactType::Rule`. Support for other artifact types
-    /// (`CommandStub`, `SlashCommand`, `Skill`) is pending and will be added in future phases.
     pub async fn scan_actual_state(&self) -> Result<ActualState> {
         let mut actual = ActualState::default();
 
@@ -285,8 +282,28 @@ impl ReconciliationEngine {
             }
         }
 
-        // TODO: Scan local paths for configured repository roots
-        // This requires getting the repository roots from settings
+        // Scan local paths for configured repository roots
+        let repo_roots = self.path_resolver.repository_roots();
+        for repo_root in repo_roots {
+            for adapter in AdapterType::all() {
+                if let Ok(resolved) = self.path_resolver.local_path(adapter, ArtifactType::Rule, repo_root) {
+                    if resolved.path.exists() {
+                        let content = fs::read_to_string(&resolved.path)?;
+                        let hash = compute_content_hash(&content);
+
+                        actual.found_paths.insert(
+                            resolved.path.to_string_lossy().to_string(),
+                            FoundArtifact {
+                                path: resolved.path,
+                                adapter: Some(adapter),
+                                artifact_type: Some(ArtifactType::Rule),
+                                content_hash: hash,
+                            },
+                        );
+                    }
+                }
+            }
+        }
 
         Ok(actual)
     }
