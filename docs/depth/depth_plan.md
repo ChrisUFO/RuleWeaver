@@ -4,7 +4,7 @@ This plan prioritizes **depth-first** improvements that make current RuleWeaver 
 
 ## Prioritized Execution Order
 
-### Phase 1 - Single Source of Truth and Validation Baseline
+### Group 1 - Single Source of Truth and Validation Baseline
 
 1. **Canonical Tool Capability Registry** (`#31`)  
    Establish the authoritative model for capability/path support.
@@ -13,14 +13,14 @@ This plan prioritizes **depth-first** improvements that make current RuleWeaver 
 3. **Capability/Path Consistency Checks** (`#38`)  
    Enforce runtime/test validation to catch unsupported combinations and path drift early.
 
-### Phase 2 - Path Correctness and Deterministic Lifecycle
+### Group 2 - Path Correctness and Deterministic Lifecycle
 
 4. **Path/Scope Resolution Invariants Across Artifacts** (`#41`)  
    Standardize resolver behavior for preview/sync/write/cleanup across all artifacts.
 5. **Cross-Artifact Reconciliation Engine** (`#39`)  
    Make rename/delete/deselect operations converge cleanly without stale files.
 
-### Phase 3 - Import Completeness and Post-Import Convergence
+### Group 3 - Import Completeness and Post-Import Convergence
 
 6. **Command/Workflow Import Pipeline** (`#37`)  
    Add scan/preview/execute parity for commands.
@@ -31,14 +31,14 @@ This plan prioritizes **depth-first** improvements that make current RuleWeaver 
 9. **Full Import Parity (Unified Delivery)** (`#59`)  
    Consolidate command+skill import lifecycle parity into one operator-grade workflow.
 
-### Phase 4 - Slash and Conflict Hardening
+### Group 4 - Slash and Conflict Hardening
 
 10. **Slash Lifecycle Completeness** (`#43`)  
     Harden cleanup/remove/autosync/status behavior for slash files.
 11. **Deterministic Conflict Handling + Race Mitigation** (`#58`)  
     Improve confidence in preview conflict detection and resolution outcomes.
 
-### Phase 5 - Operator Experience and Artifact Distribution Depth
+### Group 5 - Operator Experience and Artifact Distribution Depth
 
 12. **Unified Artifact Status + One-Click Repair UX** (`#47`)  
     Provide one health surface with actionable remediation.
@@ -47,7 +47,7 @@ This plan prioritizes **depth-first** improvements that make current RuleWeaver 
 14. **Command Execution Reliability, Safety, and Diagnostics** (`#57`)  
     Improve runtime trust with stronger diagnostics and safety controls.
 
-### Phase 6 - Quality Gate and Docs Truthfulness
+### Group 6 - Quality Gate and Docs Truthfulness
 
 15. **Lifecycle Integration Tests and Coverage Gates** (`#44`)  
     Lock behavior with integration coverage across the lifecycle matrix.
@@ -79,4 +79,4 @@ This plan prioritizes **depth-first** improvements that make current RuleWeaver 
 - `#41` -> `#39`, `#43`, `#58`, `#47`
 - `#37` + `#33` + `#40` -> `#59`
 - `#39` + `#43` + `#58` -> `#47`
-- `#44` is a milestone-wide quality gate and should run continuously while phases progress.
+- `#44` is a milestone-wide quality gate and should run continuously while Groups progress.
