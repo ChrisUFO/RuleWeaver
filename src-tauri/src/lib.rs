@@ -75,93 +75,117 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
-            let db = Arc::new(Database::new(app.handle())?);
-            let watcher = RuleFileWatcher::new();
+            // Initialize database asynchronously blocking the setup
+            let db = tauri::async_runtime::block_on(async {
+                let db = Arc::new(Database::new(app.handle()).await?);
 
-            // Sync skills to database on startup
-            if let Err(e) = crate::file_storage::skills::sync_skills_to_db(&db) {
-                log::error!("Failed to sync skills on startup: {}", e);
-                let _ = app.emit("startup-sync-error", e.to_string());
-            }
+                // Sync skills to database on startup
+                // Note: sync_skills_to_db likely needs to be async or internal calls do.
+                // Assuming sync_skills_to_db handles sync logic, we might need to update it.
+                // For now, if it uses DB it must be awaited if we made DB async.
+                // Checking previous code: sync_skills calls sync_skills_to_db(&db).await.
+                // So sync_skills_to_db must be async.
+                if let Err(e) = crate::file_storage::skills::sync_skills_to_db(&db).await {
+                    log::error!("Failed to sync skills on startup: {}", e);
+                    let _ = app.emit("startup-sync-error", e.to_string());
+                }
 
-            // Migrate legacy configurations
-            if let Err(e) = crate::sync::check_and_migrate_legacy_paths() {
-                log::error!("Failed to migrate legacy paths: {}", e);
-            }
+                // Migrate legacy configurations
+                if let Err(e) = crate::sync::check_and_migrate_legacy_paths() {
+                    log::error!("Failed to migrate legacy paths: {}", e);
+                }
 
-            // First-run bootstrap import from existing AI tool files
-            let bootstrap_done = db
-                .get_setting("ai_tool_import_bootstrap_done")
-                .ok()
-                .flatten()
-                .map(|v| v == "true")
-                .unwrap_or(false);
-            if !bootstrap_done {
-                let mut mark_bootstrap_done = false;
-                let options = crate::models::ImportExecutionOptions {
-                    conflict_mode: crate::models::ImportConflictMode::Rename,
-                    ..Default::default()
-                };
-                let max_size = crate::rule_import::resolve_max_size(&options);
-                match crate::rule_import::scan_ai_tool_candidates(&db, max_size) {
-                    Ok(scan) => {
-                        if scan.candidates.is_empty() {
-                            mark_bootstrap_done = true;
-                        } else {
-                            match crate::rule_import::execute_import(&db, scan, options) {
-                                Ok(import_result) => {
-                                    mark_bootstrap_done = true;
-                                    log::info!(
-                                        "Bootstrap import complete: {} imported, {} skipped, {} conflicts",
-                                        import_result.imported.len(),
-                                        import_result.skipped.len(),
-                                        import_result.conflicts.len()
-                                    );
+                // First-run bootstrap import from existing AI tool files
+                let bootstrap_done = db
+                    .get_setting("ai_tool_import_bootstrap_done")
+                    .await
+                    .ok()
+                    .flatten()
+                    .map(|v| v == "true")
+                    .unwrap_or(false);
 
-                                    if import_result.imported.len()
-                                        + import_result.skipped.len()
-                                        + import_result.conflicts.len()
-                                        > 0
-                                    {
-                                        use tauri_plugin_notification::NotificationExt;
-                                        app.notification()
-                                            .builder()
-                                            .title("Existing Rules Imported")
-                                            .body(format!(
-                                                "Imported {} rule(s), skipped {}, conflicts {}",
-                                                import_result.imported.len(),
-                                                import_result.skipped.len(),
-                                                import_result.conflicts.len()
-                                            ))
-                                            .show()
-                                            .ok();
+                if !bootstrap_done {
+                    let mut mark_bootstrap_done = false;
+                    let options = crate::models::ImportExecutionOptions {
+                        conflict_mode: crate::models::ImportConflictMode::Rename,
+                        ..Default::default()
+                    };
+                    let max_size = crate::rule_import::resolve_max_size(&options);
+                    match crate::rule_import::scan_ai_tool_candidates(&db, max_size).await {
+                        Ok(scan) => {
+                            if scan.candidates.is_empty() {
+                                mark_bootstrap_done = true;
+                            } else {
+                                match crate::rule_import::execute_import(&db, scan, options).await {
+                                    Ok(import_result) => {
+                                        mark_bootstrap_done = true;
+                                        log::info!(
+                                            "Bootstrap import complete: {} imported, {} skipped, {} conflicts",
+                                            import_result.imported.len(),
+                                            import_result.skipped.len(),
+                                            import_result.conflicts.len()
+                                        );
+
+                                        if import_result.imported.len()
+                                            + import_result.skipped.len()
+                                            + import_result.conflicts.len()
+                                            > 0
+                                        {
+                                            use tauri_plugin_notification::NotificationExt;
+                                            app.notification()
+                                                .builder()
+                                                .title("Existing Rules Imported")
+                                                .body(format!(
+                                                    "Imported {} rule(s), skipped {}, conflicts {}",
+                                                    import_result.imported.len(),
+                                                    import_result.skipped.len(),
+                                                    import_result.conflicts.len()
+                                                ))
+                                                .show()
+                                                .ok();
+                                        }
                                     }
-                                }
-                                Err(e) => {
-                                    log::error!("Bootstrap import failed: {}", e);
+                                    Err(e) => {
+                                        log::error!("Bootstrap import failed: {}", e);
+                                    }
                                 }
                             }
                         }
+                        Err(e) => {
+                            log::error!("Bootstrap import scan failed: {}", e);
+                        }
                     }
-                    Err(e) => {
-                        log::error!("Bootstrap import scan failed: {}", e);
+                    if mark_bootstrap_done {
+                        if let Err(e) = db.set_setting("ai_tool_import_bootstrap_done", "true").await {
+                            log::error!("Failed to persist bootstrap import flag: {}", e);
+                        }
                     }
                 }
-                if mark_bootstrap_done {
-                    if let Err(e) = db.set_setting("ai_tool_import_bootstrap_done", "true") {
-                        log::error!("Failed to persist bootstrap import flag: {}", e);
-                    }
-                }
-            }
+                
+                Ok::<_, Box<dyn std::error::Error>>(db)
+            })?;
 
+            let watcher = RuleFileWatcher::new();
             let mcp_manager = McpManager::new(crate::constants::DEFAULT_MCP_PORT);
 
-            let auto_start_mcp = db
-                .get_setting("mcp_auto_start")
-                .ok()
-                .flatten()
-                .map(|v| v == "true")
-                .unwrap_or(false);
+            // Need to block on getting settings for initial setup
+            let (auto_start_mcp, _minimize_to_tray, storage_mode) = tauri::async_runtime::block_on(async {
+                let auto = db
+                    .get_setting("mcp_auto_start")
+                    .await
+                    .ok()
+                    .flatten()
+                    .map(|v| v == "true")
+                    .unwrap_or(false);
+                
+                let min = db.get_setting(MINIMIZE_TO_TRAY_KEY).await.ok().flatten();
+                if min.is_none() {
+                    db.set_setting(MINIMIZE_TO_TRAY_KEY, "true").await?;
+                }
+                
+                let storage = db.get_storage_mode().await?;
+                Ok::<_, crate::error::AppError>((auto, min, storage))
+            })?;
 
             if auto_start_mcp {
                 let mcp_for_setup = mcp_manager.clone();
@@ -172,20 +196,16 @@ pub fn run() {
             }
 
             // Start file watcher if in file storage mode
-            if db.get_storage_mode()? == "file" {
+            if storage_mode == "file" {
                 let app_handle = app.handle().clone();
                 let db_clone = Arc::clone(&db);
                 let watcher_clone = watcher.clone();
 
                 tauri::async_runtime::spawn(async move {
-                    if let Err(e) = setup_watcher(app_handle, db_clone, watcher_clone) {
+                    if let Err(e) = setup_watcher(app_handle, db_clone, watcher_clone).await {
                         log::error!("Failed to setup file watcher: {}", e);
                     }
                 });
-            }
-
-            if db.get_setting(MINIMIZE_TO_TRAY_KEY)?.is_none() {
-                db.set_setting(MINIMIZE_TO_TRAY_KEY, "true")?;
             }
 
             let status_label = MenuItemBuilder::with_id("status", "Status: Idle")
@@ -232,18 +252,12 @@ pub fn run() {
                                     status.update_tray();
                                 }
 
-                                let db_for_sync = Arc::clone(&db);
-                                let result = tokio::task::spawn_blocking(move || {
-                                    let engine = crate::sync::SyncEngine::new(&db_for_sync);
-                                    if let Ok(rules) = db_for_sync.get_all_rules() {
-                                        Ok(engine.sync_all(rules))
-                                    } else {
-                                        Err(crate::error::AppError::InvalidInput {
-                                            message: "Failed to fetch rules".to_string(),
-                                        })
-                                    }
-                                })
-                                .await;
+                                // Perform sync asynchronously
+                                let result = async {
+                                    let engine = crate::sync::SyncEngine::new(&db);
+                                    let rules = db.get_all_rules().await?;
+                                    Ok::<_, crate::error::AppError>(engine.sync_all(rules).await)
+                                }.await;
 
                                 {
                                     *status.sync_status.lock() = "Idle".to_string();
@@ -251,7 +265,7 @@ pub fn run() {
                                 }
 
                                 match result {
-                                    Ok(Ok(sync_result)) => {
+                                    Ok(sync_result) => {
                                         use tauri_plugin_notification::NotificationExt;
                                         if sync_result.success {
                                             app_handle
@@ -274,8 +288,8 @@ pub fn run() {
                                                 .ok();
                                         }
                                     }
-                                    _ => {
-                                        log::error!("Sync task failed or panicked");
+                                    Err(e) => {
+                                        log::error!("Sync task failed: {}", e);
                                     }
                                 }
                             }
@@ -334,25 +348,37 @@ pub fn run() {
                 window.on_window_event(move |event| {
                     if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                         api.prevent_close();
-                        let minimize_to_tray = app_for_events
-                            .try_state::<Arc<Database>>()
-                            .and_then(|db| db.get_setting(MINIMIZE_TO_TRAY_KEY).ok().flatten())
-                            .map(|v| v == "true")
-                            .unwrap_or(true);
+                        
+                        // Need a way to check setting synchronously or fire async check
+                        // Since on_window_event is sync, we'll spawn a check.
+                        // However, preventing close is immediate.
+                        // Standard pattern: Prevent close, check setting, if minimize -> hide, else -> exit.
+                        
+                        let app = app_for_events.clone();
+                        tauri::async_runtime::spawn(async move {
+                            let should_minimize = if let Some(db) = app.try_state::<Arc<Database>>() {
+                                db.get_setting(MINIMIZE_TO_TRAY_KEY)
+                                    .await
+                                    .ok()
+                                    .flatten()
+                                    .map(|v| v == "true")
+                                    .unwrap_or(true)
+                            } else {
+                                true
+                            };
 
-                        if minimize_to_tray {
-                            if let Some(main) = app_for_events.get_webview_window("main") {
-                                let _ = main.hide();
-                            }
-                        } else {
-                            if let Some(mcp) = app_for_events.try_state::<McpManager>() {
-                                let mcp_clone = mcp.inner().clone();
-                                tauri::async_runtime::spawn(async move {
+                            if should_minimize {
+                                if let Some(main) = app.get_webview_window("main") {
+                                    let _ = main.hide();
+                                }
+                            } else {
+                                if let Some(mcp) = app.try_state::<McpManager>() {
+                                    let mcp_clone = mcp.inner().clone();
                                     let _ = mcp_clone.stop().await;
-                                });
+                                }
+                                app.exit(0);
                             }
-                            app_for_events.exit(0);
-                        }
+                        });
                     }
                 });
             }
@@ -438,11 +464,12 @@ pub fn run() {
 }
 
 pub fn run_mcp_cli(port: u16, token: Option<String>) -> std::result::Result<(), String> {
-    let db = Arc::new(Database::new_for_cli().map_err(|e| e.to_string())?);
-    let manager = McpManager::new(port);
-
     let rt = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
+    
     rt.block_on(async {
+        let db = Arc::new(Database::new_for_cli().await.map_err(|e| e.to_string())?);
+        let manager = McpManager::new(port);
+        
         if let Some(t) = token {
             manager.set_api_token(t).await;
         }
@@ -456,7 +483,7 @@ pub fn run_mcp_cli(port: u16, token: Option<String>) -> std::result::Result<(), 
     })
 }
 
-fn setup_watcher(
+async fn setup_watcher(
     app: tauri::AppHandle,
     db: Arc<Database>,
     watcher: RuleFileWatcher,
@@ -478,27 +505,16 @@ fn setup_watcher(
             | crate::file_storage::FileChangeEvent::Modified(path) => {
                 log::info!("File watcher detected change in: {}", path.display());
 
-                // Use spawn_blocking for all FS and DB operations
-                let app_clone = app.clone();
-                let app_for_blocking = app.clone();
                 tauri::async_runtime::spawn(async move {
-                    let result = tokio::task::spawn_blocking(move || {
-                        handle_external_rule_change(&app_for_blocking, &db, path)
-                    })
-                    .await;
-
-                    if let Err(e) = result {
-                        log::error!("Join error in watcher task: {}", e);
+                    if let Err(e) = handle_external_rule_change(&app, &db, path).await {
+                        log::error!("Failed to handle external rule change: {}", e);
                         use tauri_plugin_notification::NotificationExt;
-                        app_clone
-                            .notification()
+                        app.notification()
                             .builder()
                             .title("Sync Error")
                             .body("Failed to process file changes")
                             .show()
                             .ok();
-                    } else if let Ok(Err(e)) = result {
-                        log::error!("Failed to handle external rule change: {}", e);
                     }
                 });
             }
@@ -511,7 +527,7 @@ fn setup_watcher(
 
     watcher.start(&global_dir, callback.clone())?;
 
-    if let Ok(local_roots) = crate::commands::get_local_rule_roots(&db) {
+    if let Ok(local_roots) = crate::commands::get_local_rule_roots(&db).await {
         for root in local_roots {
             let local_rules_dir = crate::file_storage::get_local_rules_dir(&root);
             if local_rules_dir.exists() {
@@ -529,7 +545,7 @@ fn setup_watcher(
     Ok(())
 }
 
-fn handle_external_rule_change(
+async fn handle_external_rule_change(
     app: &tauri::AppHandle,
     db: &Database,
     path: std::path::PathBuf,
@@ -546,7 +562,7 @@ fn handle_external_rule_change(
     let rule_from_disk = crate::file_storage::load_rule_from_file(&canonical_path)?;
 
     // 2. Check if it exists in DB
-    let existing_rule = db.get_rule_by_id(&rule_from_disk.id).ok();
+    let existing_rule = db.get_rule_by_id(&rule_from_disk.id).await.ok();
 
     if let Some(_existing) = existing_rule {
         // Compute what we *would* write to disk for this rule if we synced from DB
@@ -554,8 +570,8 @@ fn handle_external_rule_change(
         let engine = crate::sync::SyncEngine::new(db);
 
         // Check for conflicts using hashes
-        let rules = db.get_all_rules()?;
-        let preview = engine.preview(rules);
+        let rules = db.get_all_rules().await?;
+        let preview = engine.preview(rules).await;
 
         let conflict = preview.conflicts.iter().find(|c| {
             if let Ok(c_path) = std::fs::canonicalize(std::path::Path::new(&c.file_path)) {
@@ -604,7 +620,7 @@ fn handle_external_rule_change(
             target_paths: rule_from_disk.target_paths.clone(),
             enabled_adapters: rule_from_disk.enabled_adapters.clone(),
             enabled: rule_from_disk.enabled,
-        })?;
+        }).await?;
     }
 
     // If we reached here, we need to sync other adapters/files affected by this rule
@@ -614,7 +630,7 @@ fn handle_external_rule_change(
     }
 
     let engine = crate::sync::SyncEngine::new(db);
-    let sync_result = engine.sync_rule(rule_from_disk.clone());
+    let sync_result = engine.sync_rule(rule_from_disk.clone()).await;
 
     if let Some(ref s) = status {
         *s.sync_status.lock() = "Idle".to_string();

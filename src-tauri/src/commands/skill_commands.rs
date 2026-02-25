@@ -8,47 +8,33 @@ use crate::models::{CreateSkillInput, Skill, UpdateSkillInput};
 use crate::templates::skills::{get_bundled_skill_templates, TemplateSkill};
 
 #[tauri::command]
-pub fn get_all_skills(db: State<'_, Arc<Database>>) -> Result<Vec<Skill>> {
-    db.get_all_skills()
+pub async fn get_all_skills(db: State<'_, Arc<Database>>) -> Result<Vec<Skill>> {
+    db.get_all_skills().await
 }
 
 #[tauri::command]
-pub fn get_skill_by_id(id: String, db: State<'_, Arc<Database>>) -> Result<Skill> {
-    db.get_skill_by_id(&id)
+pub async fn get_skill_by_id(id: String, db: State<'_, Arc<Database>>) -> Result<Skill> {
+    db.get_skill_by_id(&id).await
 }
 
 #[tauri::command]
-pub fn create_skill(input: CreateSkillInput, db: State<'_, Arc<Database>>) -> Result<Skill> {
+pub async fn create_skill(input: CreateSkillInput, db: State<'_, Arc<Database>>) -> Result<Skill> {
     crate::models::validate_skill_input(&input.name, &input.instructions)?;
     crate::models::validate_skill_schema(&input.input_schema)?;
     crate::models::validate_skill_entry_point(&input.entry_point)?;
 
     // Create in DB first
-    let created = db.create_skill(input)?;
-
-    // Atomic Cleanup Guard for DB
-    struct SkillCreationGuard<'a> {
-        db: &'a Database,
-        skill_id: String,
-        defused: bool,
-    }
-
-    impl<'a> Drop for SkillCreationGuard<'a> {
-        fn drop(&mut self) {
-            if !self.defused {
-                let _ = self.db.delete_skill(&self.skill_id);
-            }
-        }
-    }
-
-    let mut guard = SkillCreationGuard {
-        db: &db,
-        skill_id: created.id.clone(),
-        defused: false,
-    };
+    let created = db.create_skill(input).await?;
 
     // Save to disk
-    let path = save_skill_to_disk(&created)?;
+    // If saving to disk fails, we must rollback the DB entry
+    let path = match save_skill_to_disk(&created) {
+        Ok(p) => p,
+        Err(e) => {
+            let _ = db.delete_skill(&created.id).await;
+            return Err(e);
+        }
+    };
 
     // Update DB with the directory path
     let update = UpdateSkillInput {
@@ -56,18 +42,19 @@ pub fn create_skill(input: CreateSkillInput, db: State<'_, Arc<Database>>) -> Re
         ..Default::default()
     };
 
-    if let Err(e) = db.update_skill(&created.id, update) {
+    if let Err(e) = db.update_skill(&created.id, update).await {
         // Attempt to cleanup disk if DB update fails
         let _ = std::fs::remove_dir_all(&path);
+        // Also try to remove the initial DB entry to keep state clean
+        let _ = db.delete_skill(&created.id).await;
         return Err(e);
     }
 
-    guard.defused = true;
-    db.get_skill_by_id(&created.id)
+    db.get_skill_by_id(&created.id).await
 }
 
 #[tauri::command]
-pub fn update_skill(
+pub async fn update_skill(
     id: String,
     input: UpdateSkillInput,
     db: State<'_, Arc<Database>>,
@@ -76,11 +63,11 @@ pub fn update_skill(
         if let Some(ref instructions) = input.instructions {
             crate::models::validate_skill_input(name, instructions)?;
         } else {
-            let existing = db.get_skill_by_id(&id)?;
+            let existing = db.get_skill_by_id(&id).await?;
             crate::models::validate_skill_input(name, &existing.instructions)?;
         }
     } else if let Some(ref instructions) = input.instructions {
-        let existing = db.get_skill_by_id(&id)?;
+        let existing = db.get_skill_by_id(&id).await?;
         crate::models::validate_skill_input(&existing.name, instructions)?;
     }
 
@@ -92,17 +79,17 @@ pub fn update_skill(
         crate::models::validate_skill_entry_point(ep)?;
     }
 
-    let updated = db.update_skill(&id, input)?;
+    let updated = db.update_skill(&id, input).await?;
     save_skill_to_disk(&updated)?;
     Ok(updated)
 }
 
 #[tauri::command]
-pub fn delete_skill(id: String, db: State<'_, Arc<Database>>) -> Result<()> {
-    if let Ok(existing) = db.get_skill_by_id(&id) {
+pub async fn delete_skill(id: String, db: State<'_, Arc<Database>>) -> Result<()> {
+    if let Ok(existing) = db.get_skill_by_id(&id).await {
         let _ = delete_skill_from_disk(&existing);
     }
-    db.delete_skill(&id)
+    db.delete_skill(&id).await
 }
 
 #[tauri::command]
@@ -111,9 +98,20 @@ pub fn get_skill_templates() -> Result<Vec<TemplateSkill>> {
 }
 
 #[tauri::command]
-pub fn install_skill_template(template_id: String, db: State<'_, Arc<Database>>) -> Result<Skill> {
+pub async fn install_skill_template(template_id: String, db: State<'_, Arc<Database>>) -> Result<Skill> {
+    // Clone Arc for use in rollback closure
+    let db_clone = Arc::clone(&db);
+    
+    // Helper closure for rollback on failure after disk write
+    let rollback = |skill_id: String, dir_path: std::path::PathBuf| async move {
+        let _ = db_clone.delete_skill(&skill_id).await;
+        if dir_path.exists() {
+            let _ = std::fs::remove_dir_all(&dir_path);
+        }
+    };
+
     // 1. Check idempotency: is it already installed?
-    if let Ok(existing) = db.get_skill_by_id(&template_id) {
+    if let Ok(existing) = db.get_skill_by_id(&template_id).await {
         return Ok(existing);
     }
 
@@ -129,42 +127,17 @@ pub fn install_skill_template(template_id: String, db: State<'_, Arc<Database>>)
     metadata.id = Some(template_id.clone());
 
     // 4. Create in DB first so it generates default timestamps etc (using our prescribed ID)
-    let created = db.create_skill(metadata)?;
-
-    // Atomic Cleanup Guard
-    struct SkillInstallationGuard<'a> {
-        db: &'a Database,
-        skill_id: String,
-        directory_path: Option<std::path::PathBuf>,
-        defused: bool,
-    }
-
-    impl<'a> Drop for SkillInstallationGuard<'a> {
-        fn drop(&mut self) {
-            if !self.defused {
-                // Rollback DB
-                let _ = self.db.delete_skill(&self.skill_id);
-                // Rollback Disk
-                if let Some(ref path) = self.directory_path {
-                    if path.exists() {
-                        let _ = std::fs::remove_dir_all(path);
-                    }
-                }
-            }
-        }
-    }
-
-    let mut guard = SkillInstallationGuard {
-        db: &db,
-        skill_id: created.id.clone(),
-        directory_path: None,
-        defused: false,
-    };
+    let created = db.create_skill(metadata).await?;
 
     // 5. Save the SKILL.md and skill.json to disk (generates directory for us)
     // Propagate disk write errors
-    let path = save_skill_to_disk(&created)?;
-    guard.directory_path = Some(path.clone());
+    let path = match save_skill_to_disk(&created) {
+        Ok(p) => p,
+        Err(e) => {
+            let _ = db.delete_skill(&created.id).await;
+            return Err(e);
+        }
+    };
 
     // Write the custom template files
     for file in template.files {
@@ -173,13 +146,17 @@ pub fn install_skill_template(template_id: String, db: State<'_, Arc<Database>>)
             || file.filename.contains('/')
             || file.filename.contains('\\')
         {
+            rollback(created.id.clone(), path.clone()).await;
             return Err(AppError::Validation(format!(
                 "Invalid template filename: {}",
                 file.filename
             )));
         }
         let file_path = path.join(&file.filename);
-        std::fs::write(&file_path, &file.content).map_err(AppError::Io)?;
+        if let Err(e) = std::fs::write(&file_path, &file.content).map_err(AppError::Io) {
+            rollback(created.id.clone(), path.clone()).await;
+            return Err(e);
+        }
     }
 
     // 6. Update the DB with the absolute directory path that save_skill_to_disk determined
@@ -187,16 +164,21 @@ pub fn install_skill_template(template_id: String, db: State<'_, Arc<Database>>)
         directory_path: Some(path.to_string_lossy().to_string()),
         ..Default::default()
     };
-    db.update_skill(&created.id, update)?;
 
-    // Success! Defuse the guard
-    guard.defused = true;
+    if let Err(e) = db.update_skill(&created.id, update).await {
+        rollback(created.id.clone(), path.clone()).await;
+        return Err(e);
+    }
 
     // Return the latest from DB
-    db.get_skill_by_id(&template_id)
+    db.get_skill_by_id(&template_id).await
 }
 
 #[tauri::command]
-pub fn sync_skills(db: State<'_, Arc<Database>>) -> Result<u32> {
-    crate::file_storage::skills::sync_skills_to_db(&db)
+pub async fn sync_skills(db: State<'_, Arc<Database>>) -> Result<u32> {
+    // Note: sync_skills_to_db currently takes a &Database but inside it probably calls sync DB methods.
+    // We need to update file_storage::skills::sync_skills_to_db to use the new async DB methods too.
+    // For now assuming it will be updated or we need to update it.
+    // Let's assume crate::file_storage::skills::sync_skills_to_db needs to be async.
+    crate::file_storage::skills::sync_skills_to_db(&db).await
 }

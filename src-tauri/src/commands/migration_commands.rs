@@ -9,31 +9,31 @@ use crate::sync::SyncEngine;
 use super::validate_path;
 
 #[tauri::command]
-pub fn migrate_to_file_storage(
+pub async fn migrate_to_file_storage(
     db: State<'_, Arc<Database>>,
 ) -> Result<file_storage::MigrationResult> {
-    let result = file_storage::migrate_to_file_storage(&db)?;
+    let result = file_storage::migrate_to_file_storage(&db).await?;
     if result.success {
-        db.set_storage_mode("file")?;
+        db.set_storage_mode("file").await?;
         if let Some(path) = &result.backup_path {
-            db.set_setting("file_storage_backup_path", path)?;
+            db.set_setting("file_storage_backup_path", path).await?;
         }
     }
     Ok(result)
 }
 
 #[tauri::command]
-pub fn rollback_file_migration(backup_path: String, db: State<'_, Arc<Database>>) -> Result<()> {
-    file_storage::rollback_migration(&backup_path, Some(&db))?;
-    db.set_storage_mode("sqlite")?;
-    db.set_setting("file_storage_backup_path", "")
+pub async fn rollback_file_migration(backup_path: String, db: State<'_, Arc<Database>>) -> Result<()> {
+    file_storage::rollback_migration(&backup_path, Some(&db)).await?;
+    db.set_storage_mode("sqlite").await?;
+    db.set_setting("file_storage_backup_path", "").await
 }
 
 #[tauri::command]
-pub fn verify_file_migration(
+pub async fn verify_file_migration(
     db: State<'_, Arc<Database>>,
 ) -> Result<file_storage::VerificationResult> {
-    file_storage::verify_migration(&db)
+    file_storage::verify_migration(&db).await
 }
 
 #[tauri::command]
@@ -49,16 +49,9 @@ pub async fn resolve_conflict(
 ) -> Result<()> {
     match resolution.as_str() {
         "overwrite" => {
-            let db_clone = Arc::clone(&db);
-            tokio::task::spawn_blocking(move || {
-                let rules = db_clone.get_all_rules()?;
-                let engine = SyncEngine::new(&db_clone);
-                engine.sync_file_by_path(&rules, &file_path)
-            })
-            .await
-            .map_err(|e| crate::error::AppError::InvalidInput {
-                message: e.to_string(),
-            })??;
+            let rules = db.get_all_rules().await?;
+            let engine = SyncEngine::new(&db);
+            engine.sync_file_by_path(&rules, &file_path).await?;
         }
         "keep-remote" => {
             let validated_path = validate_path(&file_path)?;
@@ -70,7 +63,7 @@ pub async fn resolve_conflict(
                 message: e.to_string(),
             })??;
             let hash = crate::sync::compute_content_hash_public(&content);
-            db.set_file_hash(&file_path, &hash)?;
+            db.set_file_hash(&file_path, &hash).await?;
         }
         _ => {
             return Err(crate::error::AppError::InvalidInput {
@@ -99,15 +92,15 @@ pub fn get_storage_info() -> Result<std::collections::HashMap<String, String>> {
 }
 
 #[tauri::command]
-pub fn get_storage_mode(db: State<'_, Arc<Database>>) -> Result<String> {
-    db.get_storage_mode()
+pub async fn get_storage_mode(db: State<'_, Arc<Database>>) -> Result<String> {
+    db.get_storage_mode().await
 }
 
 #[tauri::command]
 pub async fn export_configuration(path: String, db: State<'_, Arc<Database>>) -> Result<()> {
-    let rules = db.get_all_rules()?;
-    let commands = db.get_all_commands()?;
-    let skills = db.get_all_skills()?;
+    let rules = db.get_all_rules().await?;
+    let commands = db.get_all_commands().await?;
+    let skills = db.get_all_skills().await?;
 
     let config = crate::models::ExportConfiguration::new(rules, commands, skills);
 
@@ -254,16 +247,8 @@ pub async fn import_configuration(
     validate_config_version(&config)?;
     validate_config_data(&config)?;
 
-    let db_clone = Arc::clone(&db);
-
-    // Perform DB operations in a blocking task to keep UI responsive
-    tokio::task::spawn_blocking(move || -> Result<()> {
-        db_clone.import_configuration(config, mode)
-    })
-    .await
-    .map_err(|e| crate::error::AppError::InvalidInput {
-        message: e.to_string(),
-    })??;
+    // DB operations are now async, so we can await them directly
+    db.import_configuration(config, mode).await?;
 
     // Trigger sync after import
     {
@@ -273,17 +258,9 @@ pub async fn import_configuration(
         }
     }
 
-    let db_for_sync = Arc::clone(&db);
-    tokio::task::spawn_blocking(move || -> Result<()> {
-        let engine = SyncEngine::new(&db_for_sync);
-        let rules = db_for_sync.get_all_rules()?;
-        let _ = engine.sync_all(rules);
-        Ok(())
-    })
-    .await
-    .map_err(|e| crate::error::AppError::Internal {
-        message: e.to_string(),
-    })??;
+    let engine = SyncEngine::new(&db);
+    let rules = db.get_all_rules().await?;
+    let _ = engine.sync_all(rules).await;
 
     {
         if let Some(s) = app.try_state::<crate::GlobalStatus>() {

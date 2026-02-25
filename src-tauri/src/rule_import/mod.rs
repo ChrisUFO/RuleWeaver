@@ -184,7 +184,7 @@ pub fn scan_directory_to_candidates(path: &Path, max_size: u64) -> ImportScanRes
     scan
 }
 
-pub fn scan_ai_tool_candidates(db: &Database, max_size: u64) -> Result<ImportScanResult> {
+pub async fn scan_ai_tool_candidates(db: &Database, max_size: u64) -> Result<ImportScanResult> {
     let mut scan = ImportScanResult::default();
     let home = dirs::home_dir()
         .ok_or_else(|| AppError::Path("Could not determine home directory".to_string()))?;
@@ -208,7 +208,7 @@ pub fn scan_ai_tool_candidates(db: &Database, max_size: u64) -> Result<ImportSca
         }
     }
 
-    for local_root in get_local_rule_roots(db) {
+    for local_root in get_local_rule_roots(db).await {
         for (adapter, relative) in local_tool_paths() {
             let path = local_root.join(relative);
             if !path.exists() || !path.is_file() {
@@ -243,7 +243,7 @@ pub fn scan_ai_tool_candidates(db: &Database, max_size: u64) -> Result<ImportSca
     Ok(scan)
 }
 
-pub fn execute_import(
+pub async fn execute_import(
     db: &Database,
     scan_result: ImportScanResult,
     options: ImportExecutionOptions,
@@ -259,8 +259,8 @@ pub fn execute_import(
         .selected_candidate_ids
         .as_ref()
         .map(|ids| ids.iter().cloned().collect::<HashSet<String>>());
-    let mut existing_rules = db.get_all_rules()?;
-    let mut source_map = read_source_map(db);
+    let mut existing_rules = db.get_all_rules().await?;
+    let mut source_map = read_source_map(db).await;
 
     for candidate in scan_result.candidates {
         if let Some(selected) = selected_set.as_ref() {
@@ -312,9 +312,9 @@ pub fn execute_import(
                     enabled_adapters: Some(effective_adapters.clone()),
                     enabled: Some(true),
                 },
-            )?;
+            ).await?;
 
-            persist_rule_to_file_if_needed(db, &update)?;
+            persist_rule_to_file_if_needed(db, &update).await?;
             existing_rules.retain(|r| r.id != update.id);
             existing_rules.push(update.clone());
             result.imported.push(update);
@@ -361,8 +361,8 @@ pub fn execute_import(
                             enabled_adapters: Some(effective_adapters.clone()),
                             enabled: Some(true),
                         },
-                    )?;
-                    persist_rule_to_file_if_needed(db, &update)?;
+                    ).await?;
+                    persist_rule_to_file_if_needed(db, &update).await?;
                     source_map.insert(source_key, update.id.clone());
                     existing_rules.retain(|r| r.id != update.id);
                     existing_rules.push(update.clone());
@@ -385,8 +385,8 @@ pub fn execute_import(
                         target_paths: candidate.target_paths.clone(),
                         enabled_adapters: effective_adapters.clone(),
                         enabled: true,
-                    })?;
-                    persist_rule_to_file_if_needed(db, &created)?;
+                    }).await?;
+                    persist_rule_to_file_if_needed(db, &created).await?;
                     source_map.insert(source_key, created.id.clone());
                     existing_rules.push(created.clone());
                     result.imported.push(created);
@@ -402,14 +402,14 @@ pub fn execute_import(
             target_paths: candidate.target_paths.clone(),
             enabled_adapters: effective_adapters,
             enabled: true,
-        })?;
-        persist_rule_to_file_if_needed(db, &created)?;
+        }).await?;
+        persist_rule_to_file_if_needed(db, &created).await?;
         source_map.insert(source_key, created.id.clone());
         existing_rules.push(created.clone());
         result.imported.push(created);
     }
 
-    write_source_map(db, &source_map)?;
+    write_source_map(db, &source_map).await?;
     append_history(
         db,
         ImportHistoryEntry {
@@ -421,12 +421,12 @@ pub fn execute_import(
             conflict_count: result.conflicts.len(),
             error_count: result.errors.len() + scan_errors.len(),
         },
-    )?;
+    ).await?;
 
     let engine = SyncEngine::new(db);
-    let all_rules = db.get_all_rules()?;
+    let all_rules = db.get_all_rules().await?;
     let sync_res = engine.sync_all(all_rules);
-    for err in sync_res.errors {
+    for err in sync_res.await.errors {
         result.errors.push(format!(
             "Sync error for {}: {}",
             err.adapter_name, err.message
@@ -439,37 +439,38 @@ pub fn execute_import(
     Ok(result)
 }
 
-pub fn read_import_history(db: &Database) -> Vec<ImportHistoryEntry> {
-    let json = match db.get_setting(IMPORT_HISTORY_KEY) {
+pub async fn read_import_history(db: &Database) -> Vec<ImportHistoryEntry> {
+    let json = match db.get_setting(IMPORT_HISTORY_KEY).await {
         Ok(Some(value)) => value,
         _ => return Vec::new(),
     };
     serde_json::from_str(&json).unwrap_or_default()
 }
 
-fn append_history(db: &Database, entry: ImportHistoryEntry) -> Result<()> {
-    let mut history = read_import_history(db);
+async fn append_history(db: &Database, entry: ImportHistoryEntry) -> Result<()> {
+    let mut history = read_import_history(db).await;
     history.insert(0, entry);
     if history.len() > 50 {
         history.truncate(50);
     }
     let encoded = serde_json::to_string(&history)?;
-    db.set_setting(IMPORT_HISTORY_KEY, &encoded)
+    db.set_setting(IMPORT_HISTORY_KEY, &encoded).await
 }
 
-fn persist_rule_to_file_if_needed(db: &Database, rule: &Rule) -> Result<()> {
-    if use_file_storage(db) {
+async fn persist_rule_to_file_if_needed(db: &Database, rule: &Rule) -> Result<()> {
+    if use_file_storage(db).await {
         let location = storage_location_for_rule(rule);
         file_storage::save_rule_to_disk(rule, &location)?;
-        db.update_rule_file_index(&rule.id, &location)?;
-        register_local_rule_paths(db, rule)?;
+        db.update_rule_file_index(&rule.id, &location).await?;
+        register_local_rule_paths(db, rule).await?;
     }
     Ok(())
 }
 
-fn get_local_rule_roots(db: &Database) -> Vec<PathBuf> {
+async fn get_local_rule_roots(db: &Database) -> Vec<PathBuf> {
     let roots_json = db
         .get_setting(LOCAL_RULE_PATHS_KEY)
+        .await
         .ok()
         .flatten()
         .unwrap_or_else(|| "[]".to_string());
@@ -477,17 +478,17 @@ fn get_local_rule_roots(db: &Database) -> Vec<PathBuf> {
     roots.into_iter().map(PathBuf::from).collect()
 }
 
-fn read_source_map(db: &Database) -> HashMap<String, String> {
-    let encoded = match db.get_setting(IMPORT_SOURCE_MAP_KEY) {
+async fn read_source_map(db: &Database) -> HashMap<String, String> {
+    let encoded = match db.get_setting(IMPORT_SOURCE_MAP_KEY).await {
         Ok(Some(v)) => v,
         _ => return HashMap::new(),
     };
     serde_json::from_str(&encoded).unwrap_or_default()
 }
 
-fn write_source_map(db: &Database, map: &HashMap<String, String>) -> Result<()> {
+async fn write_source_map(db: &Database, map: &HashMap<String, String>) -> Result<()> {
     let encoded = serde_json::to_string(map)?;
-    db.set_setting(IMPORT_SOURCE_MAP_KEY, &encoded)
+    db.set_setting(IMPORT_SOURCE_MAP_KEY, &encoded).await
 }
 
 fn source_identity(candidate: &ImportCandidate) -> String {
@@ -955,9 +956,9 @@ mod tests {
             .any(|c| c.proposed_name == "quality-antigravity"));
     }
 
-    #[test]
-    fn execute_import_skips_duplicate_content() {
-        let db = Database::new_in_memory().expect("in-memory db");
+    #[tokio::test]
+    async fn execute_import_skips_duplicate_content() {
+        let db = Database::new_in_memory().await.expect("in-memory db");
         db.create_rule(CreateRuleInput {
             name: "Existing".to_string(),
             content: "same-content".to_string(),
@@ -966,6 +967,7 @@ mod tests {
             enabled_adapters: vec![AdapterType::Gemini],
             enabled: true,
         })
+        .await
         .expect("seed rule");
 
         let candidate = candidate_from_text(
@@ -987,15 +989,16 @@ mod tests {
             },
             ImportExecutionOptions::default(),
         )
+        .await
         .expect("execute import");
 
         assert_eq!(result.imported.len(), 0);
         assert_eq!(result.skipped.len(), 1);
     }
 
-    #[test]
-    fn execute_import_rename_mode_creates_unique_name() {
-        let db = Database::new_in_memory().expect("in-memory db");
+    #[tokio::test]
+    async fn execute_import_rename_mode_creates_unique_name() {
+        let db = Database::new_in_memory().await.expect("in-memory db");
         db.create_rule(CreateRuleInput {
             name: "quality".to_string(),
             content: "old".to_string(),
@@ -1004,6 +1007,7 @@ mod tests {
             enabled_adapters: vec![AdapterType::Gemini],
             enabled: true,
         })
+        .await
         .expect("seed rule");
 
         let candidate = candidate_from_text(
@@ -1028,15 +1032,16 @@ mod tests {
                 ..Default::default()
             },
         )
+        .await
         .expect("execute import");
 
         assert_eq!(result.imported.len(), 1);
         assert_eq!(result.imported[0].name, "quality-2");
     }
 
-    #[test]
-    fn execute_import_replace_mode_updates_existing_rule() {
-        let db = Database::new_in_memory().expect("in-memory db");
+    #[tokio::test]
+    async fn execute_import_replace_mode_updates_existing_rule() {
+        let db = Database::new_in_memory().await.expect("in-memory db");
         let existing = db
             .create_rule(CreateRuleInput {
                 name: "policy".to_string(),
@@ -1046,6 +1051,7 @@ mod tests {
                 enabled_adapters: vec![AdapterType::Gemini],
                 enabled: true,
             })
+            .await
             .expect("seed rule");
 
         let candidate = candidate_from_text(
@@ -1070,6 +1076,7 @@ mod tests {
                 ..Default::default()
             },
         )
+        .await
         .expect("execute import");
 
         assert_eq!(result.imported.len(), 1);
@@ -1142,9 +1149,9 @@ enabledAdapters:
         assert_eq!(adapters, vec![AdapterType::Cline]);
     }
 
-    #[test]
-    fn execute_import_reimport_updates_mapped_rule_idempotently() {
-        let db = Database::new_in_memory().expect("in-memory db");
+    #[tokio::test]
+    async fn execute_import_reimport_updates_mapped_rule_idempotently() {
+        let db = Database::new_in_memory().await.expect("in-memory db");
 
         let first_candidate = candidate_from_text(
             "original content".to_string(),
@@ -1165,6 +1172,7 @@ enabledAdapters:
             },
             ImportExecutionOptions::default(),
         )
+        .await
         .expect("first import");
 
         assert_eq!(first_result.imported.len(), 1);
@@ -1189,6 +1197,7 @@ enabledAdapters:
             },
             ImportExecutionOptions::default(),
         )
+        .await
         .expect("second import");
 
         assert_eq!(second_result.imported.len(), 1);
@@ -1217,9 +1226,9 @@ enabledAdapters:
         assert!(validate_url_for_import("ftp://example.com/rules.md").is_err());
     }
 
-    #[test]
-    fn history_source_type_matches_candidate_source() {
-        let db = Database::new_in_memory().expect("in-memory db");
+    #[tokio::test]
+    async fn history_source_type_matches_candidate_source() {
+        let db = Database::new_in_memory().await.expect("in-memory db");
 
         let candidate = candidate_from_text(
             "file content".to_string(),
@@ -1240,9 +1249,10 @@ enabledAdapters:
             },
             ImportExecutionOptions::default(),
         )
+        .await
         .expect("import succeeds");
 
-        let history = read_import_history(&db);
+        let history = read_import_history(&db).await;
         assert!(!history.is_empty());
         assert_eq!(
             history[0].source_type,

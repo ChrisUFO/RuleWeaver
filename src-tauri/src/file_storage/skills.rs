@@ -225,13 +225,13 @@ pub fn save_skill_to_disk(skill: &Skill) -> Result<PathBuf> {
     Ok(skill_dir)
 }
 
-pub fn sync_skills_to_db(db: &Database) -> Result<u32> {
+pub async fn sync_skills_to_db(db: &Database) -> Result<u32> {
     let skills = load_skills_from_disk()?;
     let mut count = 0;
 
     for skill in skills {
         // Try to update, if not found, create
-        if db.get_skill_by_id(&skill.id).is_ok() {
+        if db.get_skill_by_id(&skill.id).await.is_ok() {
             let update_input = UpdateSkillInput {
                 name: Some(skill.name.clone()),
                 description: Some(skill.description.clone()),
@@ -242,7 +242,7 @@ pub fn sync_skills_to_db(db: &Database) -> Result<u32> {
                 entry_point: Some(skill.entry_point.clone()),
                 enabled: Some(skill.enabled),
             };
-            db.update_skill(&skill.id, update_input)?;
+            db.update_skill(&skill.id, update_input).await?;
         } else {
             let create_input = CreateSkillInput {
                 id: Some(skill.id.clone()),
@@ -255,7 +255,7 @@ pub fn sync_skills_to_db(db: &Database) -> Result<u32> {
                 entry_point: skill.entry_point.clone(),
                 enabled: skill.enabled,
             };
-            db.create_skill(create_input)?;
+            db.create_skill(create_input).await?;
         }
         count += 1;
     }

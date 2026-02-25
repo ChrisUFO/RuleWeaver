@@ -201,14 +201,14 @@ fn find_or_create_rule_file(base_dir: &Path, rule: &Rule) -> Result<PathBuf> {
     Ok(generate_rule_file_path(base_dir, rule))
 }
 
-pub fn delete_rule_file(
+pub async fn delete_rule_file(
     rule_id: &str,
     location: &StorageLocation,
     db: Option<&Database>,
 ) -> Result<bool> {
     // Optimization: try to use database index first
     if let Some(db) = db {
-        if let Ok(Some(path_str)) = db.get_rule_file_path(rule_id) {
+        if let Ok(Some(path_str)) = db.get_rule_file_path(rule_id).await {
             let path = PathBuf::from(path_str);
             if path.exists() {
                 fs::remove_file(path)?;
@@ -253,14 +253,14 @@ pub fn delete_rule_file(
 }
 
 #[allow(dead_code)]
-pub fn get_rule_file_path(
+pub async fn get_rule_file_path(
     rule_id: &str,
     location: &StorageLocation,
     db: Option<&Database>,
 ) -> Result<Option<PathBuf>> {
     // Optimization: try to use database index first
     if let Some(db) = db {
-        if let Ok(Some(path_str)) = db.get_rule_file_path(rule_id) {
+        if let Ok(Some(path_str)) = db.get_rule_file_path(rule_id).await {
             let path = PathBuf::from(path_str);
             if path.exists() {
                 return Ok(Some(path));
@@ -484,8 +484,8 @@ mod tests {
         cleanup_temp_dir(&temp_dir);
     }
 
-    #[test]
-    fn test_delete_rule_file() {
+    #[tokio::test]
+    async fn test_delete_rule_file() {
         let temp_dir = create_temp_test_dir();
         let rules_dir = temp_dir.join(".ruleweaver").join("rules");
         fs::create_dir_all(&rules_dir).expect("Failed to create rules dir");
@@ -497,21 +497,22 @@ mod tests {
         assert!(rule_path.exists());
 
         let deleted =
-            delete_rule_file("to-delete", &StorageLocation::Local(temp_dir.clone()), None).unwrap();
+            delete_rule_file("to-delete", &StorageLocation::Local(temp_dir.clone()), None).await.unwrap();
         assert!(deleted);
         assert!(!rule_path.exists());
 
         cleanup_temp_dir(&temp_dir);
     }
 
-    #[test]
-    fn test_delete_rule_file_not_found() {
+    #[tokio::test]
+    async fn test_delete_rule_file_not_found() {
         let temp_dir = create_temp_test_dir();
         let result = delete_rule_file(
             "nonexistent",
             &StorageLocation::Local(temp_dir.clone()),
             None,
         )
+        .await
         .unwrap();
         assert!(!result);
         cleanup_temp_dir(&temp_dir);

@@ -27,13 +27,13 @@ use super::{
 };
 
 #[tauri::command]
-pub fn get_all_commands(db: State<'_, Arc<Database>>) -> Result<Vec<Command>> {
-    db.get_all_commands()
+pub async fn get_all_commands(db: State<'_, Arc<Database>>) -> Result<Vec<Command>> {
+    db.get_all_commands().await
 }
 
 #[tauri::command]
-pub fn get_command_by_id(id: String, db: State<'_, Arc<Database>>) -> Result<Command> {
-    db.get_command_by_id(&id)
+pub async fn get_command_by_id(id: String, db: State<'_, Arc<Database>>) -> Result<Command> {
+    db.get_command_by_id(&id).await
 }
 
 #[tauri::command]
@@ -47,9 +47,9 @@ pub async fn create_command(
     for path in &input.target_paths {
         validate_path(path)?;
     }
-    validate_paths_within_registered_roots(&db, &input.target_paths)?;
-    let created = db.create_command(input)?;
-    register_local_paths(&db, &created.target_paths)?;
+    validate_paths_within_registered_roots(&db, &input.target_paths).await?;
+    let created = db.create_command(input).await?;
+    register_local_paths(&db, &created.target_paths).await?;
     mcp.refresh_commands(&db).await?;
     Ok(created)
 }
@@ -65,11 +65,11 @@ pub async fn update_command(
         if let Some(script) = &input.script {
             validate_command_input(name, script)?;
         } else {
-            let existing = db.get_command_by_id(&id)?;
+            let existing = db.get_command_by_id(&id).await?;
             validate_command_input(name, &existing.script)?;
         }
     } else if let Some(script) = &input.script {
-        let existing = db.get_command_by_id(&id)?;
+        let existing = db.get_command_by_id(&id).await?;
         validate_command_input(&existing.name, script)?;
     }
 
@@ -81,11 +81,11 @@ pub async fn update_command(
         for path in paths {
             validate_path(path)?;
         }
-        validate_paths_within_registered_roots(&db, paths)?;
+        validate_paths_within_registered_roots(&db, paths).await?;
     }
 
-    let updated = db.update_command(&id, input)?;
-    register_local_paths(&db, &updated.target_paths)?;
+    let updated = db.update_command(&id, input).await?;
+    register_local_paths(&db, &updated.target_paths).await?;
     mcp.refresh_commands(&db).await?;
     Ok(updated)
 }
@@ -96,7 +96,7 @@ pub async fn delete_command(
     db: State<'_, Arc<Database>>,
     mcp: State<'_, McpManager>,
 ) -> Result<()> {
-    db.delete_command(&id)?;
+    db.delete_command(&id).await?;
     mcp.refresh_commands(&db).await
 }
 
@@ -160,7 +160,7 @@ async fn test_command_internal(
     args: HashMap<String, String>,
     db: &State<'_, Arc<Database>>,
 ) -> Result<TestCommandResult> {
-    let cmd = db.get_command_by_id(id)?;
+    let cmd = db.get_command_by_id(id).await?;
     let mut script = cmd.script.clone();
     let mut envs: Vec<(String, String)> = Vec::new();
 
@@ -208,8 +208,8 @@ async fn test_command_internal(
 }
 
 #[tauri::command]
-pub fn sync_commands(db: State<'_, Arc<Database>>) -> Result<SyncResult> {
-    let commands = db.get_all_commands()?;
+pub async fn sync_commands(db: State<'_, Arc<Database>>) -> Result<SyncResult> {
+    let commands = db.get_all_commands().await?;
     let mut files_written = Vec::new();
     let mut errors = Vec::new();
 

@@ -210,29 +210,30 @@ pub fn command_file_targets() -> Result<Vec<(String, Arc<dyn CommandAdapter>)>> 
     Ok(targets)
 }
 
-pub fn use_file_storage(db: &Database) -> bool {
+pub async fn use_file_storage(db: &Database) -> bool {
     db.get_storage_mode()
+        .await
         .map(|mode| mode == "file")
         .unwrap_or(false)
 }
 
 pub const LOCAL_RULE_PATHS_KEY: &str = "local_rule_paths";
 
-pub fn get_local_rule_roots(db: &Database) -> Result<Vec<PathBuf>> {
+pub async fn get_local_rule_roots(db: &Database) -> Result<Vec<PathBuf>> {
     let roots_json = db
-        .get_setting(LOCAL_RULE_PATHS_KEY)?
+        .get_setting(LOCAL_RULE_PATHS_KEY).await?
         .unwrap_or_else(|| "[]".to_string());
     let roots: Vec<String> = serde_json::from_str(&roots_json)?;
     Ok(roots.into_iter().map(PathBuf::from).collect())
 }
 
-pub fn register_local_rule_paths(db: &Database, rule: &Rule) -> Result<()> {
+pub async fn register_local_rule_paths(db: &Database, rule: &Rule) -> Result<()> {
     if !matches!(rule.scope, crate::models::Scope::Local) {
         return Ok(());
     }
 
     let paths = rule.target_paths.clone().unwrap_or_default();
-    register_local_paths(db, &paths)
+    register_local_paths(db, &paths).await
 }
 
 pub fn command_file_targets_for_root(root: &Path) -> Vec<(String, Arc<dyn CommandAdapter>)> {
@@ -245,16 +246,16 @@ pub fn command_file_targets_for_root(root: &Path) -> Vec<(String, Arc<dyn Comman
     targets
 }
 
-pub fn register_local_paths(db: &Database, paths: &[String]) -> Result<()> {
-    db.merge_setting_string_array_unique(LOCAL_RULE_PATHS_KEY, paths)
+pub async fn register_local_paths(db: &Database, paths: &[String]) -> Result<()> {
+    db.merge_setting_string_array_unique(LOCAL_RULE_PATHS_KEY, paths).await
 }
 
-pub fn validate_paths_within_registered_roots(db: &Database, paths: &[String]) -> Result<()> {
+pub async fn validate_paths_within_registered_roots(db: &Database, paths: &[String]) -> Result<()> {
     if paths.is_empty() {
         return Ok(());
     }
 
-    let roots = get_local_rule_roots(db)?;
+    let roots = get_local_rule_roots(db).await?;
     if roots.is_empty() {
         return Err(AppError::InvalidInput {
             message: "No repository roots configured. Add roots in Settings first.".to_string(),
@@ -296,7 +297,7 @@ pub fn storage_location_for_rule(rule: &Rule) -> file_storage::StorageLocation {
     }
 }
 
-pub fn validate_local_rule_paths(
+pub async fn validate_local_rule_paths(
     db: &Database,
     id: Option<&str>,
     scope: Option<crate::models::Scope>,
@@ -305,7 +306,7 @@ pub fn validate_local_rule_paths(
     let final_scope = if let Some(s) = scope {
         s
     } else if let Some(rule_id) = id {
-        db.get_rule_by_id(rule_id)?.scope
+        db.get_rule_by_id(rule_id).await?.scope
     } else {
         return Ok(());
     };
@@ -316,7 +317,7 @@ pub fn validate_local_rule_paths(
                 validate_path(path)?;
             }
         } else if let Some(rule_id) = id {
-            let existing = db.get_rule_by_id(rule_id)?;
+            let existing = db.get_rule_by_id(rule_id).await?;
             if let Some(ref paths) = existing.target_paths {
                 for path in paths {
                     validate_path(path)?;
@@ -327,7 +328,7 @@ pub fn validate_local_rule_paths(
         let paths_exist = if let Some(p) = target_paths {
             !p.is_empty()
         } else if let Some(rule_id) = id {
-            let existing = db.get_rule_by_id(rule_id)?;
+            let existing = db.get_rule_by_id(rule_id).await?;
             existing
                 .target_paths
                 .as_ref()

@@ -482,8 +482,8 @@ impl<'a> SyncEngine<'a> {
         Self { db }
     }
 
-    fn get_disabled_adapters(&self) -> HashSet<AdapterType> {
-        match self.db.get_setting("adapter_settings") {
+    async fn get_disabled_adapters(&self) -> HashSet<AdapterType> {
+        match self.db.get_setting("adapter_settings").await {
             Ok(Some(settings_json)) => {
                 match serde_json::from_str::<HashMap<String, bool>>(&settings_json) {
                     Ok(settings_map) => settings_map
@@ -508,12 +508,12 @@ impl<'a> SyncEngine<'a> {
         }
     }
 
-    pub fn sync_all(&self, rules: Vec<Rule>) -> SyncResult {
+    pub async fn sync_all(&self, rules: Vec<Rule>) -> SyncResult {
         let mut files_written = Vec::new();
         let mut errors = Vec::new();
         let conflicts = Vec::new();
 
-        let disabled_adapters = self.get_disabled_adapters();
+        let disabled_adapters = self.get_disabled_adapters().await;
         let adapters = get_all_adapters();
 
         for adapter in &adapters {
@@ -549,7 +549,7 @@ impl<'a> SyncEngine<'a> {
                         continue;
                     }
                 };
-                match self.sync_file(adapter.as_ref(), &global_rules, &path) {
+                match self.sync_file(adapter.as_ref(), &global_rules, &path).await {
                     Ok(()) => files_written.push(path.to_string_lossy().to_string()),
                     Err(e) => errors.push(SyncError {
                         file_path: path.to_string_lossy().to_string(),
@@ -584,7 +584,7 @@ impl<'a> SyncEngine<'a> {
 
             for (base_path, path_rules) in local_rules_by_path {
                 let path = PathBuf::from(&base_path).join(adapter.file_name());
-                match self.sync_file(adapter.as_ref(), &path_rules, &path) {
+                match self.sync_file(adapter.as_ref(), &path_rules, &path).await {
                     Ok(()) => files_written.push(path.to_string_lossy().to_string()),
                     Err(e) => errors.push(SyncError {
                         file_path: path.to_string_lossy().to_string(),
@@ -607,7 +607,8 @@ impl<'a> SyncEngine<'a> {
 
         let _ = self
             .db
-            .add_sync_log(files_written.len() as u32, status, "manual");
+            .add_sync_log(files_written.len() as u32, status, "manual")
+            .await;
 
         SyncResult {
             success,
@@ -618,15 +619,15 @@ impl<'a> SyncEngine<'a> {
     }
 
     #[allow(dead_code)]
-    pub fn sync_rule(&self, rule: Rule) -> SyncResult {
+    pub async fn sync_rule(&self, rule: Rule) -> SyncResult {
         let mut files_written = Vec::new();
         let mut errors = Vec::new();
         let conflicts = Vec::new();
 
-        let disabled_adapters = self.get_disabled_adapters();
+        let disabled_adapters = self.get_disabled_adapters().await;
         let adapters = get_all_adapters();
 
-        let all_rules = match self.db.get_all_rules() {
+        let all_rules = match self.db.get_all_rules().await {
             Ok(r) => r,
             Err(e) => {
                 return SyncResult {
@@ -673,7 +674,7 @@ impl<'a> SyncEngine<'a> {
                     .cloned()
                     .collect();
 
-                match self.sync_file(adapter.as_ref(), &global_rules, &path) {
+                match self.sync_file(adapter.as_ref(), &global_rules, &path).await {
                     Ok(()) => files_written.push(path.to_string_lossy().to_string()),
                     Err(e) => errors.push(SyncError {
                         file_path: path.to_string_lossy().to_string(),
@@ -700,7 +701,7 @@ impl<'a> SyncEngine<'a> {
                                 .cloned()
                                 .collect();
 
-                            match self.sync_file(adapter.as_ref(), &path_rules, &path) {
+                            match self.sync_file(adapter.as_ref(), &path_rules, &path).await {
                                 Ok(()) => files_written.push(path.to_string_lossy().to_string()),
                                 Err(e) => errors.push(SyncError {
                                     file_path: path.to_string_lossy().to_string(),
@@ -724,7 +725,8 @@ impl<'a> SyncEngine<'a> {
 
         let _ = self
             .db
-            .add_sync_log(files_written.len() as u32, status, "auto");
+            .add_sync_log(files_written.len() as u32, status, "auto")
+            .await;
 
         SyncResult {
             success: errors.is_empty(),
@@ -734,11 +736,11 @@ impl<'a> SyncEngine<'a> {
         }
     }
 
-    pub fn preview(&self, rules: Vec<Rule>) -> SyncResult {
+    pub async fn preview(&self, rules: Vec<Rule>) -> SyncResult {
         let mut files_written = Vec::new();
         let mut conflicts = Vec::new();
 
-        let disabled_adapters = self.get_disabled_adapters();
+        let disabled_adapters = self.get_disabled_adapters().await;
         let adapters = get_all_adapters();
 
         for adapter in &adapters {
@@ -776,6 +778,7 @@ impl<'a> SyncEngine<'a> {
                 if let Some(local_hash) = self
                     .db
                     .get_file_hash(&path.to_string_lossy())
+                    .await
                     .ok()
                     .flatten()
                 {
@@ -818,6 +821,7 @@ impl<'a> SyncEngine<'a> {
                 if let Some(local_hash) = self
                     .db
                     .get_file_hash(&path.to_string_lossy())
+                    .await
                     .ok()
                     .flatten()
                 {
@@ -845,7 +849,7 @@ impl<'a> SyncEngine<'a> {
         }
     }
 
-    fn sync_file(&self, adapter: &dyn SyncAdapter, rules: &[Rule], path: &Path) -> Result<()> {
+    async fn sync_file(&self, adapter: &dyn SyncAdapter, rules: &[Rule], path: &Path) -> Result<()> {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
@@ -855,12 +859,12 @@ impl<'a> SyncEngine<'a> {
 
         fs::write(path, &content)?;
 
-        self.db.set_file_hash(&path.to_string_lossy(), &hash)?;
+        self.db.set_file_hash(&path.to_string_lossy(), &hash).await?;
 
         Ok(())
     }
 
-    pub fn sync_file_by_path(&self, rules: &[Rule], file_path: &str) -> Result<()> {
+    pub async fn sync_file_by_path(&self, rules: &[Rule], file_path: &str) -> Result<()> {
         validate_target_path(file_path)?;
 
         let path = PathBuf::from(file_path);
@@ -878,7 +882,7 @@ impl<'a> SyncEngine<'a> {
                         .collect();
 
                     if !adapter_rules.is_empty() {
-                        return self.sync_file(adapter.as_ref(), &adapter_rules, &path);
+                        return self.sync_file(adapter.as_ref(), &adapter_rules, &path).await;
                     }
                 }
             }
@@ -901,7 +905,7 @@ impl<'a> SyncEngine<'a> {
                         .collect();
 
                     if !local_rules.is_empty() {
-                        return self.sync_file(adapter.as_ref(), &local_rules, &path);
+                        return self.sync_file(adapter.as_ref(), &local_rules, &path).await;
                     }
                 }
             }

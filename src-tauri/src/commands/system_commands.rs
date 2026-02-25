@@ -10,19 +10,19 @@ use crate::models::{ExecutionLog, SyncHistoryEntry};
 use super::validate_path;
 
 #[tauri::command]
-pub fn get_execution_history(
+pub async fn get_execution_history(
     limit: Option<u32>,
     db: State<'_, Arc<Database>>,
 ) -> Result<Vec<ExecutionLog>> {
-    db.get_execution_history(limit.unwrap_or(100))
+    db.get_execution_history(limit.unwrap_or(100)).await
 }
 
 #[tauri::command]
-pub fn get_sync_history(
+pub async fn get_sync_history(
     limit: Option<u32>,
     db: State<'_, Arc<Database>>,
 ) -> Result<Vec<SyncHistoryEntry>> {
-    db.get_sync_history(limit.unwrap_or(50))
+    db.get_sync_history(limit.unwrap_or(50)).await
 }
 
 #[tauri::command]
@@ -44,18 +44,18 @@ pub fn get_app_version() -> String {
 }
 
 #[tauri::command]
-pub fn get_setting(key: String, db: State<'_, Arc<Database>>) -> Result<Option<String>> {
-    db.get_setting(&key)
+pub async fn get_setting(key: String, db: State<'_, Arc<Database>>) -> Result<Option<String>> {
+    db.get_setting(&key).await
 }
 
 #[tauri::command]
-pub fn set_setting(key: String, value: String, db: State<'_, Arc<Database>>) -> Result<()> {
-    db.set_setting(&key, &value)
+pub async fn set_setting(key: String, value: String, db: State<'_, Arc<Database>>) -> Result<()> {
+    db.set_setting(&key, &value).await
 }
 
 #[tauri::command]
-pub fn get_all_settings(db: State<'_, Arc<Database>>) -> Result<HashMap<String, String>> {
-    db.get_all_settings()
+pub async fn get_all_settings(db: State<'_, Arc<Database>>) -> Result<HashMap<String, String>> {
+    db.get_all_settings().await
 }
 
 #[tauri::command]

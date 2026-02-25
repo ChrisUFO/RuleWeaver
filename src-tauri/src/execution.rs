@@ -228,16 +228,18 @@ pub async fn execute_and_log(input: ExecuteAndLogInput<'_>) -> Result<(i32, Stri
     match result {
         Ok((exit_code, stdout, stderr)) => {
             if let Some(db) = input.db {
-                let _ = db.add_execution_log(&ExecutionLogInput {
-                    command_id: input.command_id,
-                    command_name: input.command_name,
-                    arguments_json: input.arguments_json,
-                    stdout: &stdout,
-                    stderr: &stderr,
-                    exit_code,
-                    duration_ms,
-                    triggered_by: input.triggered_by,
-                });
+                let _ = db
+                    .add_execution_log(&ExecutionLogInput {
+                        command_id: input.command_id,
+                        command_name: input.command_name,
+                        arguments_json: input.arguments_json,
+                        stdout: &stdout,
+                        stderr: &stderr,
+                        exit_code,
+                        duration_ms,
+                        triggered_by: input.triggered_by,
+                    })
+                    .await;
             }
             Ok((exit_code, stdout, stderr, duration_ms))
         }

@@ -129,7 +129,7 @@ impl McpManager {
     }
 
     pub async fn refresh_commands(&self, db: &Database) -> Result<()> {
-        let (commands, skills) = db.get_mcp_data()?;
+        let (commands, skills) = db.get_mcp_data().await?;
         let mut state = self.inner.lock().await;
         state.commands = commands;
         state.skills = skills;
@@ -843,6 +843,7 @@ async fn handle_skill_call(
     if let Some(db) = shared_db {
         let allowlist = db
             .get_setting("mcp_secrets_allowlist")
+            .await
             .ok()
             .flatten()
             .unwrap_or_default();
@@ -852,7 +853,7 @@ async fn handle_skill_call(
             .filter(|s| !s.is_empty())
             .collect();
 
-        if let Ok(settings) = db.get_all_settings() {
+        if let Ok(settings) = db.get_all_settings().await {
             for (k, v) in settings {
                 let low_k = k.to_lowercase();
                 if allowed_keys.contains(&low_k) {
@@ -998,16 +999,18 @@ async fn handle_skill_call(
             }
         };
         let skill_name = format!("skill:{}", skill.name);
-        let _ = db.add_execution_log(&ExecutionLogInput {
-            command_id: &skill.id,
-            command_name: &skill_name,
-            arguments_json: &args_json,
-            stdout: &output,
-            stderr: "",
-            exit_code: if is_error { 1 } else { 0 },
-            duration_ms,
-            triggered_by: "mcp-skill",
-        });
+        let _ = db
+            .add_execution_log(&ExecutionLogInput {
+                command_id: &skill.id,
+                command_name: &skill_name,
+                arguments_json: &args_json,
+                stdout: &output,
+                stderr: "",
+                exit_code: if is_error { 1 } else { 0 },
+                duration_ms,
+                triggered_by: "mcp-skill",
+            })
+            .await;
     }
 
     json!({

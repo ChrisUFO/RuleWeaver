@@ -19,7 +19,7 @@ pub async fn sync_slash_command(
     let engine = SlashCommandSyncEngine::new(Arc::clone(&database));
 
     // Get the command from database
-    let command = database.get_command_by_id(&command_id)?;
+    let command = database.get_command_by_id(&command_id).await?;
 
     // Sync the command
     let result = engine.sync_command(&command, is_global)?;
@@ -36,7 +36,7 @@ pub async fn sync_all_slash_commands(
     let engine = SlashCommandSyncEngine::new(Arc::clone(&database));
 
     // Sync all commands
-    let result = engine.sync_all_commands(is_global)?;
+    let result = engine.sync_all_commands(is_global).await?;
 
     Ok(result)
 }
@@ -50,7 +50,7 @@ pub async fn get_slash_command_status(
     let engine = SlashCommandSyncEngine::new(Arc::clone(&database));
 
     // Get the command from database
-    let command = database.get_command_by_id(&command_id)?;
+    let command = database.get_command_by_id(&command_id).await?;
 
     // Get sync status
     let status = engine.get_command_sync_status(&command)?;
@@ -128,7 +128,7 @@ pub async fn test_slash_command_generation(
     use crate::slash_commands::get_adapter;
 
     // Get the command from database
-    let command = database.get_command_by_id(&command_id)?;
+    let command = database.get_command_by_id(&command_id).await?;
 
     // Get the adapter
     let adapter =

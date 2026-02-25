@@ -1,9 +1,10 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use sha2::{Digest, Sha256};
+use tokio::sync::Mutex;
 
 use crate::database::Database;
 use crate::error::{AppError, Result};
@@ -283,17 +284,17 @@ impl SlashCommandSyncEngine {
     }
 
     /// Sync all commands that have slash commands enabled
-    pub fn sync_all_commands(&self, is_global: bool) -> Result<SlashCommandSyncResult> {
+    pub async fn sync_all_commands(&self, is_global: bool) -> Result<SlashCommandSyncResult> {
         // Acquire sync lock to prevent concurrent syncs
         let _lock = self
             .sync_lock
             .lock()
-            .map_err(|_| AppError::DatabasePoisoned)?;
+            .await;
 
         let mut result = SlashCommandSyncResult::new();
 
         // Get all commands from database
-        let commands = self.database.get_all_commands()?;
+        let commands = self.database.get_all_commands().await?;
 
         for command in commands {
             if command.generate_slash_commands {
