@@ -5,17 +5,27 @@ use std::path::{Path, PathBuf};
 use sha2::{Digest, Sha256};
 
 use crate::constants::{
-    ANTIGRAVITY_FILENAME, CLAUDE_CODE_FILENAME, CLINE_FILENAME, CODEX_FILENAME, CURSOR_FILENAME,
-    GEMINI_FILENAME, KILO_FILENAME, LEGACY_ANTIGRAVITY_DIR, LEGACY_OPENCODE_DIR, NEW_CURSOR_DIR,
-    NEW_GEMINI_DIR, NEW_KILO_DIR, NEW_OPENCODE_DIR, NEW_ROO_CODE_DIR, NEW_WINDSURF_DIR,
-    OPENCODE_FILENAME, ROO_CODE_FILENAME, WINDSURF_FILENAME,
+    ANTIGRAVITY_FILENAME, GEMINI_FILENAME, LEGACY_ANTIGRAVITY_DIR, LEGACY_OPENCODE_DIR,
+    NEW_GEMINI_DIR, NEW_OPENCODE_DIR, OPENCODE_FILENAME,
 };
 use crate::database::Database;
 use crate::error::{AppError, Result};
+use crate::models::registry::REGISTRY;
 use crate::models::{AdapterType, Conflict, Rule, Scope, SyncError, SyncResult};
 
 fn get_home_dir() -> Result<PathBuf> {
     dirs::home_dir().ok_or_else(|| AppError::Path("Could not determine home directory".to_string()))
+}
+
+fn resolve_registry_path(path: &str) -> Result<PathBuf> {
+    let home = get_home_dir()?;
+    if path.starts_with("~/") {
+        Ok(home.join(&path[2..]))
+    } else if path == "~" {
+        Ok(home)
+    } else {
+        Ok(PathBuf::from(path))
+    }
 }
 
 fn validate_target_path(base_path: &str) -> Result<PathBuf> {
@@ -119,19 +129,24 @@ impl SyncAdapter for AntigravityAdapter {
     }
 
     fn name(&self) -> &str {
-        "Antigravity"
+        REGISTRY.get(&self.id()).unwrap().name
     }
 
     fn file_name(&self) -> &str {
-        "GEMINI.md"
+        let entry = REGISTRY.get(&self.id()).unwrap();
+        Path::new(entry.paths.local_path_template)
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("GEMINI.md")
     }
 
     fn description(&self) -> &str {
-        "Antigravity AI coding assistant"
+        REGISTRY.get(&self.id()).unwrap().description
     }
 
     fn global_path(&self) -> Result<PathBuf> {
-        Ok(get_home_dir()?.join(NEW_GEMINI_DIR).join(GEMINI_FILENAME))
+        let entry = REGISTRY.get(&self.id()).unwrap();
+        resolve_registry_path(entry.paths.global_path)
     }
 
     fn format_content(&self, rules: &[Rule], _enabled_rules_only: bool) -> String {
@@ -151,19 +166,24 @@ impl SyncAdapter for GeminiAdapter {
     }
 
     fn name(&self) -> &str {
-        "Gemini CLI"
+        REGISTRY.get(&self.id()).unwrap().name
     }
 
     fn file_name(&self) -> &str {
-        "GEMINI.md"
+        let entry = REGISTRY.get(&self.id()).unwrap();
+        Path::new(entry.paths.local_path_template)
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("GEMINI.md")
     }
 
     fn description(&self) -> &str {
-        "Google's Gemini AI coding assistant"
+        REGISTRY.get(&self.id()).unwrap().description
     }
 
     fn global_path(&self) -> Result<PathBuf> {
-        Ok(get_home_dir()?.join(NEW_GEMINI_DIR).join(GEMINI_FILENAME))
+        let entry = REGISTRY.get(&self.id()).unwrap();
+        resolve_registry_path(entry.paths.global_path)
     }
 
     fn format_content(&self, rules: &[Rule], _enabled_rules_only: bool) -> String {
@@ -183,21 +203,24 @@ impl SyncAdapter for OpenCodeAdapter {
     }
 
     fn name(&self) -> &str {
-        "OpenCode"
+        REGISTRY.get(&self.id()).unwrap().name
     }
 
     fn file_name(&self) -> &str {
-        "AGENTS.md"
+        let entry = REGISTRY.get(&self.id()).unwrap();
+        Path::new(entry.paths.local_path_template)
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("AGENTS.md")
     }
 
     fn description(&self) -> &str {
-        "OpenCode AI coding assistant"
+        REGISTRY.get(&self.id()).unwrap().description
     }
 
     fn global_path(&self) -> Result<PathBuf> {
-        Ok(get_home_dir()?
-            .join(NEW_OPENCODE_DIR)
-            .join(OPENCODE_FILENAME))
+        let entry = REGISTRY.get(&self.id()).unwrap();
+        resolve_registry_path(entry.paths.global_path)
     }
 
     fn format_content(&self, rules: &[Rule], _enabled_rules_only: bool) -> String {
@@ -217,19 +240,24 @@ impl SyncAdapter for ClineAdapter {
     }
 
     fn name(&self) -> &str {
-        "Cline"
+        REGISTRY.get(&self.id()).unwrap().name
     }
 
     fn file_name(&self) -> &str {
-        ".clinerules"
+        let entry = REGISTRY.get(&self.id()).unwrap();
+        Path::new(entry.paths.local_path_template)
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or(".clinerules")
     }
 
     fn description(&self) -> &str {
-        "Cline VS Code extension"
+        REGISTRY.get(&self.id()).unwrap().description
     }
 
     fn global_path(&self) -> Result<PathBuf> {
-        Ok(get_home_dir()?.join(CLINE_FILENAME))
+        let entry = REGISTRY.get(&self.id()).unwrap();
+        resolve_registry_path(entry.paths.global_path)
     }
 
     fn format_content(&self, rules: &[Rule], _enabled_rules_only: bool) -> String {
@@ -249,19 +277,24 @@ impl SyncAdapter for ClaudeCodeAdapter {
     }
 
     fn name(&self) -> &str {
-        "Claude Code"
+        REGISTRY.get(&self.id()).unwrap().name
     }
 
     fn file_name(&self) -> &str {
-        "CLAUDE.md"
+        let entry = REGISTRY.get(&self.id()).unwrap();
+        Path::new(entry.paths.local_path_template)
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("CLAUDE.md")
     }
 
     fn description(&self) -> &str {
-        "Anthropic's Claude Code assistant"
+        REGISTRY.get(&self.id()).unwrap().description
     }
 
     fn global_path(&self) -> Result<PathBuf> {
-        Ok(get_home_dir()?.join(".claude").join(CLAUDE_CODE_FILENAME))
+        let entry = REGISTRY.get(&self.id()).unwrap();
+        resolve_registry_path(entry.paths.global_path)
     }
 
     fn format_content(&self, rules: &[Rule], _enabled_rules_only: bool) -> String {
@@ -281,19 +314,24 @@ impl SyncAdapter for CodexAdapter {
     }
 
     fn name(&self) -> &str {
-        "Codex"
+        REGISTRY.get(&self.id()).unwrap().name
     }
 
     fn file_name(&self) -> &str {
-        "AGENTS.md"
+        let entry = REGISTRY.get(&self.id()).unwrap();
+        Path::new(entry.paths.local_path_template)
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("AGENTS.md")
     }
 
     fn description(&self) -> &str {
-        "OpenAI Codex assistant"
+        REGISTRY.get(&self.id()).unwrap().description
     }
 
     fn global_path(&self) -> Result<PathBuf> {
-        Ok(get_home_dir()?.join(".codex").join(CODEX_FILENAME))
+        let entry = REGISTRY.get(&self.id()).unwrap();
+        resolve_registry_path(entry.paths.global_path)
     }
 
     fn format_content(&self, rules: &[Rule], _enabled_rules_only: bool) -> String {
@@ -313,22 +351,24 @@ impl SyncAdapter for KiloAdapter {
     }
 
     fn name(&self) -> &str {
-        "Kilo Code"
+        REGISTRY.get(&self.id()).unwrap().name
     }
 
     fn file_name(&self) -> &str {
-        "AGENTS.md"
+        let entry = REGISTRY.get(&self.id()).unwrap();
+        Path::new(entry.paths.local_path_template)
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("AGENTS.md")
     }
 
     fn description(&self) -> &str {
-        "Kilo Code AI assistant"
+        REGISTRY.get(&self.id()).unwrap().description
     }
 
     fn global_path(&self) -> Result<PathBuf> {
-        Ok(get_home_dir()?
-            .join(NEW_KILO_DIR)
-            .join("rules")
-            .join(KILO_FILENAME))
+        let entry = REGISTRY.get(&self.id()).unwrap();
+        resolve_registry_path(entry.paths.global_path)
     }
 
     fn format_content(&self, rules: &[Rule], _enabled_rules_only: bool) -> String {
@@ -348,19 +388,24 @@ impl SyncAdapter for CursorAdapter {
     }
 
     fn name(&self) -> &str {
-        "Cursor"
+        REGISTRY.get(&self.id()).unwrap().name
     }
 
     fn file_name(&self) -> &str {
-        ".cursorrules"
+        let entry = REGISTRY.get(&self.id()).unwrap();
+        Path::new(entry.paths.local_path_template)
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or(".cursorrules")
     }
 
     fn description(&self) -> &str {
-        "Cursor AI code editor"
+        REGISTRY.get(&self.id()).unwrap().description
     }
 
     fn global_path(&self) -> Result<PathBuf> {
-        Ok(get_home_dir()?.join(NEW_CURSOR_DIR).join(CURSOR_FILENAME))
+        let entry = REGISTRY.get(&self.id()).unwrap();
+        resolve_registry_path(entry.paths.global_path)
     }
 
     fn format_content(&self, rules: &[Rule], _enabled_rules_only: bool) -> String {
@@ -380,22 +425,24 @@ impl SyncAdapter for WindsurfAdapter {
     }
 
     fn name(&self) -> &str {
-        "Windsurf"
+        REGISTRY.get(&self.id()).unwrap().name
     }
 
     fn file_name(&self) -> &str {
-        ".windsurf/rules/rules.md"
+        let entry = REGISTRY.get(&self.id()).unwrap();
+        Path::new(entry.paths.local_path_template)
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("rules.md")
     }
 
     fn description(&self) -> &str {
-        "Windsurf AI assistant"
+        REGISTRY.get(&self.id()).unwrap().description
     }
 
     fn global_path(&self) -> Result<PathBuf> {
-        Ok(get_home_dir()?
-            .join(NEW_WINDSURF_DIR)
-            .join("rules")
-            .join(WINDSURF_FILENAME))
+        let entry = REGISTRY.get(&self.id()).unwrap();
+        resolve_registry_path(entry.paths.global_path)
     }
 
     fn format_content(&self, rules: &[Rule], _enabled_rules_only: bool) -> String {
@@ -415,22 +462,24 @@ impl SyncAdapter for RooCodeAdapter {
     }
 
     fn name(&self) -> &str {
-        "Roo Code"
+        REGISTRY.get(&self.id()).unwrap().name
     }
 
     fn file_name(&self) -> &str {
-        ".roo/rules/rules.md"
+        let entry = REGISTRY.get(&self.id()).unwrap();
+        Path::new(entry.paths.local_path_template)
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("rules.md")
     }
 
     fn description(&self) -> &str {
-        "Roo Code AI assistant"
+        REGISTRY.get(&self.id()).unwrap().description
     }
 
     fn global_path(&self) -> Result<PathBuf> {
-        Ok(get_home_dir()?
-            .join(NEW_ROO_CODE_DIR)
-            .join("rules")
-            .join(ROO_CODE_FILENAME))
+        let entry = REGISTRY.get(&self.id()).unwrap();
+        resolve_registry_path(entry.paths.global_path)
     }
 
     fn format_content(&self, rules: &[Rule], _enabled_rules_only: bool) -> String {

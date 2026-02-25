@@ -1,9 +1,6 @@
 use super::SlashCommandAdapter;
-use crate::constants::{
-    ANTIGRAVITY_WORKFLOWS_DIR, CLAUDE_COMMANDS_DIR, CLINE_GLOBAL_WORKFLOWS_DIR,
-    CLINE_WORKFLOWS_DIR, CODEX_SKILLS_DIR, CURSOR_COMMANDS_DIR, GEMINI_COMMANDS_DIR,
-    OPENCODE_COMMANDS_DIR, ROO_COMMANDS_DIR,
-};
+use crate::models::registry::REGISTRY;
+use crate::models::AdapterType;
 use crate::models::Command;
 use serde::Serialize;
 use std::borrow::Cow;
@@ -52,19 +49,28 @@ pub struct OpenCodeSlashAdapter;
 
 impl SlashCommandAdapter for OpenCodeSlashAdapter {
     fn name(&self) -> &'static str {
-        "opencode"
+        AdapterType::OpenCode.as_str()
     }
 
     fn file_extension(&self) -> &'static str {
-        "md"
+        REGISTRY
+            .get(&AdapterType::OpenCode)
+            .and_then(|e| e.slash_command_extension)
+            .unwrap_or("md")
     }
 
     fn global_dir(&self) -> &'static str {
-        OPENCODE_COMMANDS_DIR
+        REGISTRY
+            .get(&AdapterType::OpenCode)
+            .and_then(|e| e.paths.global_commands_dir)
+            .unwrap_or("")
     }
 
     fn local_dir(&self) -> &'static str {
-        ".opencode/commands"
+        REGISTRY
+            .get(&AdapterType::OpenCode)
+            .and_then(|e| e.paths.local_commands_dir)
+            .unwrap_or("")
     }
 
     fn format_command(&self, command: &Command) -> String {
@@ -111,19 +117,28 @@ pub struct ClaudeCodeSlashAdapter;
 
 impl SlashCommandAdapter for ClaudeCodeSlashAdapter {
     fn name(&self) -> &'static str {
-        "claude-code"
+        AdapterType::ClaudeCode.as_str()
     }
 
     fn file_extension(&self) -> &'static str {
-        "md"
+        REGISTRY
+            .get(&AdapterType::ClaudeCode)
+            .and_then(|e| e.slash_command_extension)
+            .unwrap_or("md")
     }
 
     fn global_dir(&self) -> &'static str {
-        CLAUDE_COMMANDS_DIR
+        REGISTRY
+            .get(&AdapterType::ClaudeCode)
+            .and_then(|e| e.paths.global_commands_dir)
+            .unwrap_or("")
     }
 
     fn local_dir(&self) -> &'static str {
-        CLAUDE_COMMANDS_DIR
+        REGISTRY
+            .get(&AdapterType::ClaudeCode)
+            .and_then(|e| e.paths.local_commands_dir)
+            .unwrap_or("")
     }
 
     fn format_command(&self, command: &Command) -> String {
@@ -154,19 +169,28 @@ pub struct ClineSlashAdapter;
 
 impl SlashCommandAdapter for ClineSlashAdapter {
     fn name(&self) -> &'static str {
-        "cline"
+        AdapterType::Cline.as_str()
     }
 
     fn file_extension(&self) -> &'static str {
-        "md"
+        REGISTRY
+            .get(&AdapterType::Cline)
+            .and_then(|e| e.slash_command_extension)
+            .unwrap_or("md")
     }
 
     fn global_dir(&self) -> &'static str {
-        CLINE_GLOBAL_WORKFLOWS_DIR
+        REGISTRY
+            .get(&AdapterType::Cline)
+            .and_then(|e| e.paths.global_commands_dir)
+            .unwrap_or("")
     }
 
     fn local_dir(&self) -> &'static str {
-        CLINE_WORKFLOWS_DIR
+        REGISTRY
+            .get(&AdapterType::Cline)
+            .and_then(|e| e.paths.local_commands_dir)
+            .unwrap_or("")
     }
 
     fn format_command(&self, command: &Command) -> String {
@@ -192,19 +216,28 @@ pub struct GeminiSlashAdapter;
 
 impl SlashCommandAdapter for GeminiSlashAdapter {
     fn name(&self) -> &'static str {
-        "gemini"
+        AdapterType::Gemini.as_str()
     }
 
     fn file_extension(&self) -> &'static str {
-        "toml"
+        REGISTRY
+            .get(&AdapterType::Gemini)
+            .and_then(|e| e.slash_command_extension)
+            .unwrap_or("md")
     }
 
     fn global_dir(&self) -> &'static str {
-        GEMINI_COMMANDS_DIR
+        REGISTRY
+            .get(&AdapterType::Gemini)
+            .and_then(|e| e.paths.global_commands_dir)
+            .unwrap_or("")
     }
 
     fn local_dir(&self) -> &'static str {
-        GEMINI_COMMANDS_DIR
+        REGISTRY
+            .get(&AdapterType::Gemini)
+            .and_then(|e| e.paths.local_commands_dir)
+            .unwrap_or("")
     }
 
     fn format_command(&self, command: &Command) -> String {
@@ -224,7 +257,9 @@ impl SlashCommandAdapter for GeminiSlashAdapter {
     }
 
     fn argument_pattern(&self) -> Option<&'static str> {
-        Some("{{args}}")
+        REGISTRY
+            .get(&AdapterType::Gemini)
+            .and_then(|e| e.slash_command_argument_pattern)
     }
 }
 
@@ -235,19 +270,28 @@ pub struct CursorSlashAdapter;
 
 impl SlashCommandAdapter for CursorSlashAdapter {
     fn name(&self) -> &'static str {
-        "cursor"
+        AdapterType::Cursor.as_str()
     }
 
     fn file_extension(&self) -> &'static str {
-        "md"
+        REGISTRY
+            .get(&AdapterType::Cursor)
+            .and_then(|e| e.slash_command_extension)
+            .unwrap_or("md")
     }
 
     fn global_dir(&self) -> &'static str {
-        CURSOR_COMMANDS_DIR
+        REGISTRY
+            .get(&AdapterType::Cursor)
+            .and_then(|e| e.paths.global_commands_dir)
+            .unwrap_or("")
     }
 
     fn local_dir(&self) -> &'static str {
-        CURSOR_COMMANDS_DIR
+        REGISTRY
+            .get(&AdapterType::Cursor)
+            .and_then(|e| e.paths.local_commands_dir)
+            .unwrap_or("")
     }
 
     fn format_command(&self, command: &Command) -> String {
@@ -271,19 +315,28 @@ pub struct RooCodeSlashAdapter;
 
 impl SlashCommandAdapter for RooCodeSlashAdapter {
     fn name(&self) -> &'static str {
-        "roo"
+        AdapterType::RooCode.as_str()
     }
 
     fn file_extension(&self) -> &'static str {
-        "md"
+        REGISTRY
+            .get(&AdapterType::RooCode)
+            .and_then(|e| e.slash_command_extension)
+            .unwrap_or("md")
     }
 
     fn global_dir(&self) -> &'static str {
-        ROO_COMMANDS_DIR
+        REGISTRY
+            .get(&AdapterType::RooCode)
+            .and_then(|e| e.paths.global_commands_dir)
+            .unwrap_or("")
     }
 
     fn local_dir(&self) -> &'static str {
-        ROO_COMMANDS_DIR
+        REGISTRY
+            .get(&AdapterType::RooCode)
+            .and_then(|e| e.paths.local_commands_dir)
+            .unwrap_or("")
     }
 
     fn format_command(&self, command: &Command) -> String {
@@ -321,19 +374,28 @@ pub struct AntigravitySlashAdapter;
 
 impl SlashCommandAdapter for AntigravitySlashAdapter {
     fn name(&self) -> &'static str {
-        "antigravity"
+        AdapterType::Antigravity.as_str()
     }
 
     fn file_extension(&self) -> &'static str {
-        "md"
+        REGISTRY
+            .get(&AdapterType::Antigravity)
+            .and_then(|e| e.slash_command_extension)
+            .unwrap_or("md")
     }
 
     fn global_dir(&self) -> &'static str {
-        ANTIGRAVITY_WORKFLOWS_DIR
+        REGISTRY
+            .get(&AdapterType::Antigravity)
+            .and_then(|e| e.paths.global_commands_dir)
+            .unwrap_or("")
     }
 
     fn local_dir(&self) -> &'static str {
-        ".agents/workflows"
+        REGISTRY
+            .get(&AdapterType::Antigravity)
+            .and_then(|e| e.paths.local_commands_dir)
+            .unwrap_or("")
     }
 
     fn format_command(&self, command: &Command) -> String {
@@ -360,19 +422,28 @@ pub struct CodexSlashAdapter;
 
 impl SlashCommandAdapter for CodexSlashAdapter {
     fn name(&self) -> &'static str {
-        "codex"
+        AdapterType::Codex.as_str()
     }
 
     fn file_extension(&self) -> &'static str {
-        "md"
+        REGISTRY
+            .get(&AdapterType::Codex)
+            .and_then(|e| e.slash_command_extension)
+            .unwrap_or("md")
     }
 
     fn global_dir(&self) -> &'static str {
-        CODEX_SKILLS_DIR
+        REGISTRY
+            .get(&AdapterType::Codex)
+            .and_then(|e| e.paths.global_commands_dir)
+            .unwrap_or("")
     }
 
     fn local_dir(&self) -> &'static str {
-        CODEX_SKILLS_DIR
+        REGISTRY
+            .get(&AdapterType::Codex)
+            .and_then(|e| e.paths.local_commands_dir)
+            .unwrap_or("")
     }
 
     fn format_command(&self, command: &Command) -> String {

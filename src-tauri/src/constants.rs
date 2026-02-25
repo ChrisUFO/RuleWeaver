@@ -44,13 +44,6 @@ pub const SKILL_INSTRUCTIONS_FILE: &str = "SKILL.md";
 pub const ANTIGRAVITY_FILENAME: &str = "GEMINI.md";
 pub const GEMINI_FILENAME: &str = "GEMINI.md";
 pub const OPENCODE_FILENAME: &str = "AGENTS.md";
-pub const CLINE_FILENAME: &str = ".clinerules";
-pub const CLAUDE_CODE_FILENAME: &str = "CLAUDE.md";
-pub const CODEX_FILENAME: &str = "AGENTS.md";
-pub const KILO_FILENAME: &str = "AGENTS.md";
-pub const CURSOR_FILENAME: &str = "COMMANDS.md";
-pub const WINDSURF_FILENAME: &str = "AGENTS.md";
-pub const ROO_CODE_FILENAME: &str = "AGENTS.md";
 
 pub const LEGACY_ANTIGRAVITY_DIR: &str = ".antigravity";
 pub const LEGACY_OPENCODE_DIR: &str = ".opencode";
@@ -61,14 +54,3 @@ pub const NEW_KILO_DIR: &str = ".kilocode";
 pub const NEW_CURSOR_DIR: &str = ".cursor";
 pub const NEW_WINDSURF_DIR: &str = ".windsurf";
 pub const NEW_ROO_CODE_DIR: &str = ".roo";
-
-// Slash command directories (8 supported tools)
-pub const OPENCODE_COMMANDS_DIR: &str = ".config/opencode/commands";
-pub const CLAUDE_COMMANDS_DIR: &str = ".claude/commands";
-pub const CLINE_WORKFLOWS_DIR: &str = ".clinerules/workflows";
-pub const CLINE_GLOBAL_WORKFLOWS_DIR: &str = "Documents/Cline/Workflows";
-pub const GEMINI_COMMANDS_DIR: &str = ".gemini/commands";
-pub const CURSOR_COMMANDS_DIR: &str = ".cursor/commands";
-pub const ROO_COMMANDS_DIR: &str = ".roo/commands";
-pub const ANTIGRAVITY_WORKFLOWS_DIR: &str = ".gemini/antigravity/global_workflows";
-pub const CODEX_SKILLS_DIR: &str = ".agents/skills";
