@@ -1,7 +1,9 @@
-use crate::models::Command;
 use crate::error::{AppError, Result};
+use crate::models::Command;
+use crate::path_resolver::path_resolver;
 use std::path::PathBuf;
 
+#[allow(dead_code)]
 pub trait SlashCommandAdapter: Send + Sync {
     /// Returns the adapter name (e.g., "opencode", "claude")
     fn name(&self) -> &'static str;
@@ -24,27 +26,45 @@ pub trait SlashCommandAdapter: Send + Sync {
     }
     
     /// Returns the full path for a command
+    ///
+    /// This method now uses the PathResolver for consistent path resolution.
     fn get_command_path(&self, command_name: &str, is_global: bool) -> Result<PathBuf> {
-        let path_str = if is_global {
-            self.global_dir()
-        } else {
-            self.local_dir()
-        };
+        let resolver = path_resolver();
+        
+        // Get the adapter type from the adapter name
+        let adapter = crate::models::AdapterType::from_str(self.name())
+            .ok_or_else(|| AppError::InvalidInput {
+                message: format!("Unknown adapter: {}", self.name()),
+            })?;
 
-        let base_path = if is_global {
-            dirs::home_dir().ok_or_else(|| AppError::Path(
-                "Could not determine home directory for global commands".to_string()
-            ))?
+        if is_global {
+            // Use PathResolver for global paths
+            let resolved = resolver.slash_command_path(adapter, command_name, true)?;
+            Ok(resolved.path)
         } else {
-            PathBuf::new()
-        };
-
-        Ok(base_path.join(path_str).join(self.get_filename(command_name)))
+            // For local paths without a repo root, we need the caller to provide one
+            // This is a breaking change - callers must now provide repo_root for local commands
+            Err(AppError::InvalidInput {
+                message: "Local slash command path requires repo_root. Use get_command_path_for_root() instead".to_string(),
+            })
+        }
     }
 
     /// Returns a local command path rooted at a specific repository path.
+    ///
+    /// This method now uses the PathResolver for consistent path resolution.
     fn get_command_path_for_root(&self, command_name: &str, root: &std::path::Path) -> Result<PathBuf> {
-        Ok(root.join(self.local_dir()).join(self.get_filename(command_name)))
+        let resolver = path_resolver();
+        
+        // Get the adapter type from the adapter name
+        let adapter = crate::models::AdapterType::from_str(self.name())
+            .ok_or_else(|| AppError::InvalidInput {
+                message: format!("Unknown adapter: {}", self.name()),
+            })?;
+
+        // Use PathResolver for local paths with repo root
+        let resolved = resolver.local_slash_command_path(adapter, command_name, root)?;
+        Ok(resolved.path)
     }
 
     /// Whether this adapter supports argument substitution

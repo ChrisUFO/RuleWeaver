@@ -9,9 +9,10 @@ use crate::constants::{
     NEW_GEMINI_DIR, NEW_OPENCODE_DIR, OPENCODE_FILENAME,
 };
 use crate::database::Database;
-use crate::error::{AppError, Result};
+use crate::error::Result;
 use crate::models::registry::{ArtifactType, REGISTRY};
 use crate::models::{AdapterType, Conflict, Rule, Scope, SyncError, SyncResult};
+use crate::path_resolver::path_resolver;
 
 fn registry_entry(adapter: &AdapterType) -> &'static crate::models::registry::ToolEntry {
     REGISTRY.get(adapter).unwrap_or_else(|| {
@@ -22,46 +23,18 @@ fn registry_entry(adapter: &AdapterType) -> &'static crate::models::registry::To
     })
 }
 
-fn get_home_dir() -> Result<PathBuf> {
-    dirs::home_dir().ok_or_else(|| AppError::Path("Could not determine home directory".to_string()))
-}
-
+/// Resolve a registry path string (e.g., "~/path" or "~") to an absolute PathBuf.
+///
+/// This is a convenience wrapper for backward compatibility.
 fn resolve_registry_path(path: &str) -> Result<PathBuf> {
-    let home = get_home_dir()?;
-    if let Some(stripped) = path.strip_prefix("~/") {
-        Ok(home.join(stripped))
-    } else if path == "~" {
-        Ok(home)
-    } else {
-        Ok(PathBuf::from(path))
-    }
+    crate::path_resolver::resolve_registry_path(path)
 }
 
+/// Validate a target path string.
+///
+/// This is a convenience wrapper for backward compatibility.
 fn validate_target_path(base_path: &str) -> Result<PathBuf> {
-    let path = PathBuf::from(base_path);
-
-    if path.is_relative() {
-        return Err(AppError::InvalidInput {
-            message: "Target path must be absolute".to_string(),
-        });
-    }
-
-    // First canonicalize to resolve any path traversal sequences and normalize Unicode
-    let canonical_path = std::fs::canonicalize(&path).map_err(|e| AppError::InvalidInput {
-        message: format!("Invalid path: {}", e),
-    })?;
-
-    // Check for traversal by comparing against home directory after canonicalization
-    let home_dir = get_home_dir()?;
-    let canonical_home = std::fs::canonicalize(&home_dir).unwrap_or(home_dir);
-
-    if !canonical_path.starts_with(&canonical_home) {
-        return Err(AppError::InvalidInput {
-            message: "Target path must be within user's home directory".to_string(),
-        });
-    }
-
-    Ok(canonical_path)
+    crate::path_resolver::validate_target_path(base_path)
 }
 
 pub trait SyncAdapter: Send + Sync {
@@ -1022,7 +995,8 @@ fn compute_file_hash(path: &Path) -> Result<String> {
 }
 
 pub fn check_and_migrate_legacy_paths() -> Result<()> {
-    let home = get_home_dir()?;
+    let resolver = path_resolver();
+    let home = resolver.home_dir().to_path_buf();
 
     // 1. Antigravity -> Gemini
     let legacy_antigravity = home.join(LEGACY_ANTIGRAVITY_DIR).join(ANTIGRAVITY_FILENAME);

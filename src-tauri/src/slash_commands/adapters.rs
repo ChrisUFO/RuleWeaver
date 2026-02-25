@@ -560,7 +560,11 @@ mod tests {
             .get_command_path("my-skill", true)
             .expect("Failed to get path");
         let path_str = path.to_string_lossy();
-        assert!(path_str.contains("SKILL.md"));
+        // Codex uses .agents/skills directory for slash commands
+        // The PathResolver generates {name}.{extension} format
+        assert!(path_str.contains(".agents"));
+        assert!(path_str.contains("skills"));
+        assert!(path_str.contains("my-skill.md"));
     }
 
     #[test]

@@ -6,6 +6,8 @@ mod execution;
 mod file_storage;
 mod mcp;
 mod models;
+mod path_resolver;
+mod reconciliation;
 mod rule_import;
 mod slash_commands;
 mod sync;
