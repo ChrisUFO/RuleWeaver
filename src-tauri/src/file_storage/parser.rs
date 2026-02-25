@@ -14,6 +14,8 @@ pub struct RuleFrontmatter {
     pub id: String,
     pub name: String,
     #[serde(default)]
+    pub description: String,
+    #[serde(default)]
     pub scope: String,
     #[serde(default, rename = "targetPaths")]
     pub target_paths: Option<Vec<String>>,
@@ -65,6 +67,7 @@ impl ParsedRuleFile {
         Ok(Rule {
             id: self.frontmatter.id.clone(),
             name: self.frontmatter.name.clone(),
+            description: self.frontmatter.description.clone(),
             content: self.content.clone(),
             scope,
             target_paths: self.frontmatter.target_paths.clone(),

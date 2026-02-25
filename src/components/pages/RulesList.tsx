@@ -33,6 +33,7 @@ import {
   type ImportExecutionResult,
 } from "@/types/rule";
 import { api } from "@/lib/tauri";
+import { RuleTemplateBrowser } from "@/components/rules/RuleTemplateBrowser";
 
 type ImportSourceMode = "ai" | "file" | "directory" | "url" | "clipboard";
 
@@ -109,6 +110,7 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
     const result = (rules || []).filter((rule) => {
       const matchesSearch =
         rule.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        rule.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
         rule.content.toLowerCase().includes(searchQuery.toLowerCase());
       const matchesScope = scopeFilter === "all" || rule.scope === scopeFilter;
       const matchesAdapter =
@@ -543,8 +545,8 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
+    <div className="space-y-6 max-w-7xl mx-auto">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <h1 className="text-2xl font-bold">Rules</h1>
         <div className="flex items-center gap-2">
           <Button
@@ -587,6 +589,7 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
             <Clipboard className="mr-2 h-4 w-4" aria-hidden="true" />
             Import Clipboard
           </Button>
+          <RuleTemplateBrowser onInstalled={fetchRules} />
           <Button onClick={onCreateRule} aria-label="Create new rule">
             <Plus className="mr-2 h-4 w-4" aria-hidden="true" />
             New Rule

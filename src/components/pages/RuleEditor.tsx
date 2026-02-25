@@ -45,6 +45,7 @@ export function RuleEditor({ rule, onBack, isNew = false }: RuleEditorProps) {
   const { addToast } = useToast();
 
   const [name, setName] = useState(rule?.name || "");
+  const [description, setDescription] = useState(rule?.description || "");
   const [content, setContent] = useState(rule?.content || "");
   const [scope, setScope] = useState<Scope>(rule?.scope || "global");
   const [targetPaths, setTargetPaths] = useState<string[]>(rule?.targetPaths || []);
@@ -87,6 +88,7 @@ export function RuleEditor({ rule, onBack, isNew = false }: RuleEditorProps) {
 
     if (rule) {
       setName(rule.name);
+      setDescription(rule.description);
       setContent(rule.content);
       setScope(rule.scope);
       setTargetPaths(rule.targetPaths || []);
@@ -105,7 +107,7 @@ export function RuleEditor({ rule, onBack, isNew = false }: RuleEditorProps) {
     if (isInitialized.current) {
       setHasUnsavedChanges(true);
     }
-  }, [name, content, scope, targetPaths, enabledAdapters]);
+  }, [name, description, content, scope, targetPaths, enabledAdapters]);
 
   const handleSave = useCallback(async () => {
     if (!name.trim()) {
@@ -149,6 +151,7 @@ export function RuleEditor({ rule, onBack, isNew = false }: RuleEditorProps) {
       if (isNew) {
         await createRule({
           name: name.trim(),
+          description: description.trim(),
           content,
           scope,
           targetPaths: scope === "local" ? targetPaths : undefined,
@@ -162,6 +165,7 @@ export function RuleEditor({ rule, onBack, isNew = false }: RuleEditorProps) {
       } else if (rule) {
         await updateRule(rule.id, {
           name: name.trim(),
+          description: description.trim(),
           content,
           scope,
           targetPaths: scope === "local" ? targetPaths : undefined,
@@ -192,6 +196,7 @@ export function RuleEditor({ rule, onBack, isNew = false }: RuleEditorProps) {
     }
   }, [
     name,
+    description,
     content,
     scope,
     targetPaths,
@@ -326,13 +331,20 @@ export function RuleEditor({ rule, onBack, isNew = false }: RuleEditorProps) {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1 min-h-0">
         <div className="lg:col-span-2 flex flex-col gap-6 min-h-0">
           <Card className="flex-1 flex flex-col min-h-0 glass-card premium-shadow border-none overflow-hidden">
-            <CardHeader className="pb-2">
+            <CardHeader className="pb-2 space-y-2">
               <Input
                 placeholder="Rule name..."
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 className="text-lg font-semibold border-none p-0 focus-visible:ring-0"
                 aria-label="Rule name"
+              />
+              <Input
+                placeholder="Brief description of what this rule does..."
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                className="text-sm border-none p-0 h-auto text-muted-foreground focus-visible:ring-0"
+                aria-label="Rule description"
               />
             </CardHeader>
             <CardContent className="flex-1 flex flex-col min-h-0 p-0">

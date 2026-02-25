@@ -30,7 +30,7 @@ export function Commands() {
   }
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[320px,1fr]">
+    <div className="grid gap-6 lg:grid-cols-[320px,1fr] max-w-7xl mx-auto">
       <CommandList
         commands={filtered}
         selectedId={selectedId}

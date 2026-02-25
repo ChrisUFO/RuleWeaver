@@ -442,6 +442,10 @@ pub fn run() {
             commands::delete_skill,
             commands::get_skill_templates,
             commands::install_skill_template,
+            commands::get_rule_templates,
+            commands::install_rule_template,
+            commands::get_command_templates,
+            commands::install_command_template,
             commands::sync_skills,
             commands::get_mcp_status,
             commands::start_mcp_server,
@@ -614,7 +618,9 @@ async fn handle_external_rule_change(
         // New rule created externally - this is always an update
         log::info!("New rule detected externally: {}", rule_from_disk.name);
         db.create_rule(crate::models::CreateRuleInput {
+            id: None,
             name: rule_from_disk.name.clone(),
+            description: String::new(), // Default for externally created rules
             content: rule_from_disk.content.clone(),
             scope: rule_from_disk.scope,
             target_paths: rule_from_disk.target_paths.clone(),

@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "RuleWeaver",
-  "version": "0.0.26-2402",
-  "identifier": "com.ruleweaver.app",
+  "version": "0.0.29-2502",
+  "identifier": "com.ruleweaver.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",

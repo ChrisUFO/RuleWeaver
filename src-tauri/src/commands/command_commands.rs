@@ -18,6 +18,7 @@ use crate::mcp::McpManager;
 use crate::models::{
     Command, CreateCommandInput, SyncError, SyncResult, TestCommandResult, UpdateCommandInput,
 };
+use crate::templates::commands::{get_bundled_command_templates, TemplateCommand};
 use std::time::Instant;
 
 use super::{
@@ -209,6 +210,7 @@ async fn test_command_internal(
 
 #[tauri::command]
 pub async fn sync_commands(db: State<'_, Arc<Database>>) -> Result<SyncResult> {
+    // ... existing sync code ...
     let commands = db.get_all_commands().await?;
     let mut files_written = Vec::new();
     let mut errors = Vec::new();
@@ -292,4 +294,56 @@ pub async fn sync_commands(db: State<'_, Arc<Database>>) -> Result<SyncResult> {
         errors,
         conflicts: Vec::new(),
     })
+}
+
+#[tauri::command]
+pub fn get_command_templates() -> Result<Vec<TemplateCommand>> {
+    Ok(get_bundled_command_templates())
+}
+
+#[tauri::command]
+pub async fn install_command_template(
+    template_id: String,
+    db: State<'_, Arc<Database>>,
+    mcp: State<'_, McpManager>,
+) -> Result<Command> {
+    // 1. Check idempotency: is it already installed?
+    if let Ok(existing) = db.get_command_by_id(&template_id).await {
+        return Ok(existing);
+    }
+
+    // 2. Find template
+    let templates = get_bundled_command_templates();
+    let template = templates
+        .into_iter()
+        .find(|t| t.template_id == template_id)
+        .ok_or_else(|| AppError::Validation(format!("Template '{}' not found", template_id)))?;
+
+    // 3. Check for name collisions
+    if db.command_exists_with_name(&template.metadata.name).await? {
+        return Err(AppError::Validation(format!(
+            "A command with the name '{}' already exists. Please rename or delete it before installing this template.",
+            template.metadata.name
+        )));
+    }
+
+    let mut input = template.metadata.clone();
+    input.id = Some(template_id.clone());
+
+    // 4. Create in DB
+    let created = db.create_command(input).await?;
+
+    // 5. Registration
+    // If registration fails, we must rollback the DB entry
+    if let Err(e) = register_local_paths(&db, &created.target_paths).await {
+        let _ = db.delete_command(&created.id).await;
+        return Err(e);
+    }
+
+    if let Err(e) = mcp.refresh_commands(&db).await {
+        let _ = db.delete_command(&created.id).await;
+        return Err(e);
+    }
+
+    Ok(created)
 }

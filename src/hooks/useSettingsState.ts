@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { enable, disable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { api } from "@/lib/tauri";
@@ -257,7 +258,6 @@ export function useSettingsState(
   }, [adapterSettings, addToast]);
 
   const addRepositoryRoot = useCallback(async () => {
-    const { open } = await import("@tauri-apps/plugin-dialog");
     try {
       const selected = await open({ directory: true, multiple: false });
       if (!selected || Array.isArray(selected)) return;
@@ -529,7 +529,6 @@ export function useSettingsState(
   );
 
   const handleExport = useCallback(async () => {
-    const { save } = await import("@tauri-apps/plugin-dialog");
     try {
       const selected = await save({
         filters: [
@@ -555,7 +554,6 @@ export function useSettingsState(
   }, [addToast]);
 
   const handleImport = useCallback(async () => {
-    const { open } = await import("@tauri-apps/plugin-dialog");
     try {
       const selected = await open({
         filters: [{ name: "Configuration", extensions: ["json", "yaml", "yml"] }],

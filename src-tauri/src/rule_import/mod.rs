@@ -302,17 +302,20 @@ pub async fn execute_import(
 
         let mapped_rule_id = source_map.get(&source_key).cloned();
         if let Some(rule_id) = mapped_rule_id {
-            let update = db.update_rule(
-                &rule_id,
-                UpdateRuleInput {
-                    name: Some(candidate.proposed_name.clone()),
-                    content: Some(candidate.content.clone()),
-                    scope: Some(effective_scope),
-                    target_paths: candidate.target_paths.clone(),
-                    enabled_adapters: Some(effective_adapters.clone()),
-                    enabled: Some(true),
-                },
-            ).await?;
+            let update = db
+                .update_rule(
+                    &rule_id,
+                    UpdateRuleInput {
+                        name: Some(candidate.proposed_name.clone()),
+                        description: None, // Keep existing description
+                        content: Some(candidate.content.clone()),
+                        scope: Some(effective_scope),
+                        target_paths: candidate.target_paths.clone(),
+                        enabled_adapters: Some(effective_adapters.clone()),
+                        enabled: Some(true),
+                    },
+                )
+                .await?;
 
             persist_rule_to_file_if_needed(db, &update).await?;
             existing_rules.retain(|r| r.id != update.id);
@@ -351,17 +354,20 @@ pub async fn execute_import(
                     continue;
                 }
                 ImportConflictMode::Replace => {
-                    let update = db.update_rule(
-                        &existing_same_name.id,
-                        UpdateRuleInput {
-                            name: Some(candidate.proposed_name.clone()),
-                            content: Some(candidate.content.clone()),
-                            scope: Some(effective_scope),
-                            target_paths: candidate.target_paths.clone(),
-                            enabled_adapters: Some(effective_adapters.clone()),
-                            enabled: Some(true),
-                        },
-                    ).await?;
+                    let update = db
+                        .update_rule(
+                            &existing_same_name.id,
+                            UpdateRuleInput {
+                                name: Some(candidate.proposed_name.clone()),
+                                description: None, // Keep existing description
+                                content: Some(candidate.content.clone()),
+                                scope: Some(effective_scope),
+                                target_paths: candidate.target_paths.clone(),
+                                enabled_adapters: Some(effective_adapters.clone()),
+                                enabled: Some(true),
+                            },
+                        )
+                        .await?;
                     persist_rule_to_file_if_needed(db, &update).await?;
                     source_map.insert(source_key, update.id.clone());
                     existing_rules.retain(|r| r.id != update.id);
@@ -378,14 +384,18 @@ pub async fn execute_import(
                             .collect::<Vec<_>>(),
                     );
 
-                    let created = db.create_rule(CreateRuleInput {
-                        name: unique_name,
-                        content: candidate.content.clone(),
-                        scope: effective_scope,
-                        target_paths: candidate.target_paths.clone(),
-                        enabled_adapters: effective_adapters.clone(),
-                        enabled: true,
-                    }).await?;
+                    let created = db
+                        .create_rule(CreateRuleInput {
+                            id: None,
+                            name: unique_name,
+                            description: String::new(), // Default for imported rules
+                            content: candidate.content.clone(),
+                            scope: effective_scope,
+                            target_paths: candidate.target_paths.clone(),
+                            enabled_adapters: effective_adapters.clone(),
+                            enabled: true,
+                        })
+                        .await?;
                     persist_rule_to_file_if_needed(db, &created).await?;
                     source_map.insert(source_key, created.id.clone());
                     existing_rules.push(created.clone());
@@ -395,14 +405,18 @@ pub async fn execute_import(
             }
         }
 
-        let created = db.create_rule(CreateRuleInput {
-            name: candidate.proposed_name.clone(),
-            content: candidate.content.clone(),
-            scope: effective_scope,
-            target_paths: candidate.target_paths.clone(),
-            enabled_adapters: effective_adapters,
-            enabled: true,
-        }).await?;
+        let created = db
+            .create_rule(CreateRuleInput {
+                id: None,
+                name: candidate.proposed_name.clone(),
+                description: String::new(), // Default for imported rules
+                content: candidate.content.clone(),
+                scope: effective_scope,
+                target_paths: candidate.target_paths.clone(),
+                enabled_adapters: effective_adapters,
+                enabled: true,
+            })
+            .await?;
         persist_rule_to_file_if_needed(db, &created).await?;
         source_map.insert(source_key, created.id.clone());
         existing_rules.push(created.clone());
@@ -421,7 +435,8 @@ pub async fn execute_import(
             conflict_count: result.conflicts.len(),
             error_count: result.errors.len() + scan_errors.len(),
         },
-    ).await?;
+    )
+    .await?;
 
     let engine = SyncEngine::new(db);
     let all_rules = db.get_all_rules().await?;
@@ -544,7 +559,10 @@ fn global_tool_paths(home: &Path) -> Vec<(AdapterType, PathBuf)> {
             AdapterType::OpenCode,
             home.join(".config").join("opencode").join("AGENTS.md"),
         ),
-        (AdapterType::OpenCode, home.join(".opencode").join("AGENTS.md")),
+        (
+            AdapterType::OpenCode,
+            home.join(".opencode").join("AGENTS.md"),
+        ),
         (AdapterType::Cline, home.join(".clinerules")),
         (
             AdapterType::ClaudeCode,
@@ -556,7 +574,10 @@ fn global_tool_paths(home: &Path) -> Vec<(AdapterType, PathBuf)> {
             AdapterType::Kilo,
             home.join(".kilocode").join("rules").join("AGENTS.md"),
         ),
-        (AdapterType::Kilo, home.join(".kilo").join("rules").join("AGENTS.md")),
+        (
+            AdapterType::Kilo,
+            home.join(".kilo").join("rules").join("AGENTS.md"),
+        ),
         (
             AdapterType::Cursor,
             home.join(".cursor").join("COMMANDS.md"),
@@ -743,7 +764,7 @@ fn extract_rule_payload(
             .iter()
             .filter_map(|a| AdapterType::from_str(a))
             .collect::<Vec<_>>();
-        
+
         return (
             sanitize_rule_name(&name),
             body,
@@ -960,7 +981,9 @@ mod tests {
     async fn execute_import_skips_duplicate_content() {
         let db = Database::new_in_memory().await.expect("in-memory db");
         db.create_rule(CreateRuleInput {
+            id: None,
             name: "Existing".to_string(),
+            description: "".to_string(),
             content: "same-content".to_string(),
             scope: Scope::Global,
             target_paths: None,
@@ -1000,7 +1023,9 @@ mod tests {
     async fn execute_import_rename_mode_creates_unique_name() {
         let db = Database::new_in_memory().await.expect("in-memory db");
         db.create_rule(CreateRuleInput {
+            id: None,
             name: "quality".to_string(),
+            description: "".to_string(),
             content: "old".to_string(),
             scope: Scope::Global,
             target_paths: None,
@@ -1044,7 +1069,9 @@ mod tests {
         let db = Database::new_in_memory().await.expect("in-memory db");
         let existing = db
             .create_rule(CreateRuleInput {
+                id: None,
                 name: "policy".to_string(),
+                description: "".to_string(),
                 content: "old".to_string(),
                 scope: Scope::Global,
                 target_paths: None,
@@ -1123,7 +1150,7 @@ mod tests {
     fn extract_payload_respects_fallback_paths() {
         let json = r#"{ "name": "ok", "content": "ok" }"#;
         let fallback = Some(vec!["C:/safe/path".to_string()]);
-        
+
         let (_, _, _, target_paths, _) =
             extract_rule_payload("fallback", json, Scope::Global, fallback.clone(), None);
 
@@ -1140,8 +1167,13 @@ enabledAdapters:
   - cline
 "#;
 
-        let (name, content, scope, _target_paths, adapters) =
-            extract_rule_payload("fallback", yaml, Scope::Local, Some(vec!["x".to_string()]), None);
+        let (name, content, scope, _target_paths, adapters) = extract_rule_payload(
+            "fallback",
+            yaml,
+            Scope::Local,
+            Some(vec!["x".to_string()]),
+            None,
+        );
 
         assert_eq!(name, "yaml-rule");
         assert_eq!(content, "yaml body");
@@ -1263,7 +1295,10 @@ enabledAdapters:
     #[test]
     fn scan_directory_reports_error_for_non_directory_path() {
         let mut temp_file = std::env::temp_dir();
-        temp_file.push(format!("ruleweaver-import-test-{}.md", uuid::Uuid::new_v4()));
+        temp_file.push(format!(
+            "ruleweaver-import-test-{}.md",
+            uuid::Uuid::new_v4()
+        ));
         fs::write(&temp_file, "test").expect("write temp file");
 
         let result = scan_directory_to_candidates(&temp_file, 1024);
@@ -1280,9 +1315,15 @@ enabledAdapters:
             .map(|(_, p)| p.to_string_lossy().to_string())
             .collect::<Vec<_>>();
 
-        assert!(global.iter().any(|p| p.contains(".antigravity") && p.contains("GEMINI.md")));
+        assert!(global
+            .iter()
+            .any(|p| p.contains(".antigravity") && p.contains("GEMINI.md")));
         assert!(global.iter().any(|p| p.contains(".windsurfrules")));
-        assert!(global.iter().any(|p| p.contains(".roocode") && p.contains("rules.md")));
-        assert!(global.iter().any(|p| p.contains(".kilo") && p.contains("AGENTS.md")));
+        assert!(global
+            .iter()
+            .any(|p| p.contains(".roocode") && p.contains("rules.md")));
+        assert!(global
+            .iter()
+            .any(|p| p.contains(".kilo") && p.contains("AGENTS.md")));
     }
 }

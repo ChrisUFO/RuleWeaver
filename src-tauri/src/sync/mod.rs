@@ -849,7 +849,12 @@ impl<'a> SyncEngine<'a> {
         }
     }
 
-    async fn sync_file(&self, adapter: &dyn SyncAdapter, rules: &[Rule], path: &Path) -> Result<()> {
+    async fn sync_file(
+        &self,
+        adapter: &dyn SyncAdapter,
+        rules: &[Rule],
+        path: &Path,
+    ) -> Result<()> {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
@@ -859,7 +864,9 @@ impl<'a> SyncEngine<'a> {
 
         fs::write(path, &content)?;
 
-        self.db.set_file_hash(&path.to_string_lossy(), &hash).await?;
+        self.db
+            .set_file_hash(&path.to_string_lossy(), &hash)
+            .await?;
 
         Ok(())
     }
@@ -882,7 +889,9 @@ impl<'a> SyncEngine<'a> {
                         .collect();
 
                     if !adapter_rules.is_empty() {
-                        return self.sync_file(adapter.as_ref(), &adapter_rules, &path).await;
+                        return self
+                            .sync_file(adapter.as_ref(), &adapter_rules, &path)
+                            .await;
                     }
                 }
             }
@@ -993,6 +1002,7 @@ mod tests {
         Rule {
             id: uuid::Uuid::new_v4().to_string(),
             name: name.to_string(),
+            description: "Test description".to_string(),
             content: content.to_string(),
             scope,
             target_paths: None,

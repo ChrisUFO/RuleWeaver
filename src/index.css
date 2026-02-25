@@ -72,8 +72,13 @@
     @apply border-border transition-colors duration-200;
   }
 
+  html,
   body {
-    @apply bg-background text-foreground antialiased selection:bg-primary/20;
+    @apply overflow-x-hidden w-full;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased selection:bg-primary/20 min-h-screen;
     font-feature-settings:
       "rlig" 1,
       "calt" 1;

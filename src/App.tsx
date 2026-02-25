@@ -117,7 +117,7 @@ function App() {
     <ToastProvider>
       <ErrorBoundary>
         <MainLayout activeView={activeView} onViewChange={setActiveView}>
-          <div className="relative">
+          <div className="relative overflow-hidden">
             {/* Ambient Background Glow */}
             <div className="absolute top-[-10%] right-[-10%] w-[40%] h-[40%] bg-primary/5 blur-[120px] rounded-full animate-luminescence pointer-events-none" />
             <div className="absolute bottom-[-5%] left-[-5%] w-[30%] h-[30%] bg-primary/5 blur-[100px] rounded-full animate-luminescence pointer-events-none [animation-delay:2s]" />

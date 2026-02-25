@@ -3,26 +3,26 @@ import { motion } from "framer-motion";
 import { DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/tauri";
-import type { TemplateSkill } from "@/types/skill";
+import type { TemplateRule } from "@/types/rule";
 import { BaseTemplateBrowser } from "../Templates/BaseTemplateBrowser";
 
-interface TemplateBrowserProps {
+interface RuleTemplateBrowserProps {
   onInstalled: () => void;
 }
 
-export function TemplateBrowser({ onInstalled }: TemplateBrowserProps) {
+export function RuleTemplateBrowser({ onInstalled }: RuleTemplateBrowserProps) {
   return (
-    <BaseTemplateBrowser<TemplateSkill>
-      title="Skill Templates"
-      description="Browse built-in skill templates to quickly add new workflows to your toolkit."
+    <BaseTemplateBrowser<TemplateRule>
+      title="Rule Templates"
+      description="Browse built-in rule templates to quickly set up standards and personas."
       onInstalled={onInstalled}
-      getTemplates={() => api.skills.getTemplates()}
-      installTemplate={(id) => api.skills.installTemplate(id)}
+      getTemplates={() => api.rules.getTemplates()}
+      installTemplate={(id) => api.rules.installTemplate(id)}
       getName={(t) => t.metadata.name}
       getDescription={(t) => t.metadata.description}
       getTheme={(t) => t.theme}
       getTemplateId={(t) => t.templateId}
-      getSearchableContent={(t) => [t.metadata.instructions, t.metadata.entryPoint || ""]}
+      getSearchableContent={(t) => [t.metadata.content]}
       renderDetail={(selectedTemplate, install, isInstalling, onBack) => (
         <motion.div
           initial={{ opacity: 0, x: 20 }}
@@ -45,7 +45,7 @@ export function TemplateBrowser({ onInstalled }: TemplateBrowserProps) {
               </DialogTitle>
             </div>
             <DialogDescription className="text-muted-foreground/80">
-              Review the details of this skill before installation.
+              Review the details of this rule before installation.
             </DialogDescription>
           </DialogHeader>
 
@@ -54,42 +54,22 @@ export function TemplateBrowser({ onInstalled }: TemplateBrowserProps) {
               <h3 className="text-lg font-bold text-primary tracking-tight">
                 {selectedTemplate.metadata.name}
               </h3>
-              <div className="mt-2 flex flex-wrap gap-2">
+              <div className="mt-2 flex items-center gap-2">
                 <span className="px-2 py-0.5 rounded-full bg-primary/10 border border-primary/20 text-[10px] font-bold uppercase tracking-wider text-primary">
                   {selectedTemplate.theme}
                 </span>
-                <span className="px-2 py-0.5 rounded-full bg-white/5 border border-white/10 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                  {selectedTemplate.metadata.inputSchema.length} Parameter
-                  {selectedTemplate.metadata.inputSchema.length !== 1 ? "s" : ""}
-                </span>
               </div>
-              <p className="mt-3 text-sm text-muted-foreground/90 leading-relaxed border-l-2 border-primary/20 pl-4 py-1 italic">
-                {selectedTemplate.metadata.description}
-              </p>
             </div>
 
-            <div className="flex flex-wrap gap-2 pt-2">
-              {selectedTemplate.metadata.entryPoint && (
-                <div className="w-full">
-                  <p className="text-[10px] uppercase font-bold tracking-widest text-muted-foreground/60 mb-1.5 ml-1">
-                    Entry Point
-                  </p>
-                  <div className="rounded-lg border border-white/5 bg-black/40 px-3 py-2 text-[11px] font-medium text-muted-foreground font-mono shadow-inner border-white/5">
-                    {selectedTemplate.metadata.entryPoint}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {selectedTemplate.metadata.instructions && (
+            {selectedTemplate.metadata.content && (
               <div className="space-y-2 pt-4 border-t border-white/5">
                 <p className="text-[10px] uppercase font-bold tracking-widest text-muted-foreground/60">
-                  Instructions Template
+                  Rule Content
                 </p>
                 <div className="relative group">
-                  <p className="text-xs text-muted-foreground bg-black/20 p-3 rounded-lg border border-white/5 italic line-clamp-4">
-                    {selectedTemplate.metadata.instructions}
-                  </p>
+                  <pre className="text-xs text-muted-foreground bg-black/40 p-3 rounded-lg font-mono overflow-x-auto border border-white/5 max-h-[200px] custom-scrollbar">
+                    {selectedTemplate.metadata.content}
+                  </pre>
                 </div>
               </div>
             )}
@@ -117,7 +97,7 @@ export function TemplateBrowser({ onInstalled }: TemplateBrowserProps) {
               ) : (
                 <>
                   <Download className="mr-2 h-4 w-4" />
-                  Install Skill
+                  Install Rule
                 </>
               )}
             </Button>

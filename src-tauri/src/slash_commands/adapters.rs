@@ -436,6 +436,7 @@ mod tests {
             "test-cmd".to_string(),
             "Test command description".to_string(),
             "npm test".to_string(),
+            false,
         )
     }
 
@@ -515,6 +516,7 @@ mod tests {
             "test-cmd".to_string(),
             "Description".to_string(),
             "echo hello".to_string(),
+            false,
         );
 
         let frontmatter = StandardFrontmatter {

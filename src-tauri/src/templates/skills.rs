@@ -1,4 +1,5 @@
 use crate::models::{CreateSkillInput, Scope, SkillParameter, SkillParameterType};
+use crate::templates::{THEME_ENGINEERING, THEME_PM, THEME_WRITING};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -12,6 +13,7 @@ pub struct TemplateFile {
 #[serde(rename_all = "camelCase")]
 pub struct TemplateSkill {
     pub template_id: String,
+    pub theme: String,
     pub metadata: CreateSkillInput,
     pub files: Vec<TemplateFile>,
 }
@@ -20,6 +22,7 @@ pub fn get_bundled_skill_templates() -> Vec<TemplateSkill> {
     vec![
         TemplateSkill {
             template_id: "tmpl_code_review".to_string(),
+            theme: THEME_ENGINEERING.to_string(),
             metadata: CreateSkillInput {
                 id: None,
                 name: "Basic Code Reviewer".to_string(),
@@ -46,7 +49,49 @@ pub fn get_bundled_skill_templates() -> Vec<TemplateSkill> {
             }],
         },
         TemplateSkill {
+            template_id: "book-writing-assistant".to_string(),
+            theme: THEME_WRITING.to_string(),
+            metadata: CreateSkillInput {
+                id: None,
+                name: "Book Writing Assistant".to_string(),
+                description:
+                    "Structured workflow for authors to plan chapters and brainstorm plot beats."
+                        .to_string(),
+                instructions: include_str!("write_instructions.md").to_string(),
+                scope: Scope::Global,
+                input_schema: vec![],
+                directory_path: "".to_string(),
+                entry_point: "python write.py".to_string(),
+                enabled: true,
+            },
+            files: vec![TemplateFile {
+                filename: "write.py".to_string(),
+                content: include_str!("write.py").to_string(),
+            }],
+        },
+        TemplateSkill {
+            template_id: "project-planner".to_string(),
+            theme: THEME_PM.to_string(),
+            metadata: CreateSkillInput {
+                id: None,
+                name: "Project Planner".to_string(),
+                description: "Generates project plans and Mermaid Gantt charts from feature lists."
+                    .to_string(),
+                instructions: include_str!("plan_instructions.md").to_string(),
+                scope: Scope::Global,
+                input_schema: vec![],
+                directory_path: "".to_string(),
+                entry_point: "python plan.py".to_string(),
+                enabled: true,
+            },
+            files: vec![TemplateFile {
+                filename: "plan.py".to_string(),
+                content: include_str!("plan.py").to_string(),
+            }],
+        },
+        TemplateSkill {
             template_id: "tmpl_system_info".to_string(),
+            theme: THEME_PM.to_string(),
             metadata: CreateSkillInput {
                 id: None,
                 name: "System Information".to_string(),

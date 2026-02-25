@@ -365,7 +365,7 @@ mod tests {
 
     fn create_test_rule_content(id: &str, name: &str, body: &str) -> String {
         format!(
-            "---\nid: {}\nname: {}\nscope: global\nenabledAdapters: [gemini]\ncreatedAt: 2024-01-15T10:30:00Z\nupdatedAt: 2024-01-15T10:30:00Z\n---\n{}\n",
+            "---\nid: {}\nname: {}\ndescription: Test description\nscope: global\nenabledAdapters: [gemini]\ncreatedAt: 2024-01-15T10:30:00Z\nupdatedAt: 2024-01-15T10:30:00Z\n---\n{}\n",
             id, name, body
         )
     }
@@ -461,6 +461,7 @@ mod tests {
         let rule = Rule {
             id: "new-rule-id".to_string(),
             name: "New Test Rule".to_string(),
+            description: "New description".to_string(),
             content: "New content".to_string(),
             scope: Scope::Global,
             target_paths: None,
@@ -497,7 +498,9 @@ mod tests {
         assert!(rule_path.exists());
 
         let deleted =
-            delete_rule_file("to-delete", &StorageLocation::Local(temp_dir.clone()), None).await.unwrap();
+            delete_rule_file("to-delete", &StorageLocation::Local(temp_dir.clone()), None)
+                .await
+                .unwrap();
         assert!(deleted);
         assert!(!rule_path.exists());
 
@@ -523,6 +526,7 @@ mod tests {
         let rule = Rule {
             id: "test".to_string(),
             name: "Test @#$% Rule!!!".to_string(),
+            description: "Test description".to_string(),
             content: String::new(),
             scope: Scope::Global,
             target_paths: None,
