@@ -139,7 +139,6 @@ impl PathResolver {
         adapter: AdapterType,
         artifact: ArtifactType,
     ) -> Result<ResolvedPath> {
-        // Validate that the adapter supports this artifact type
         REGISTRY
             .validate_support(&adapter, &Scope::Global, artifact)
             .map_err(|e| AppError::InvalidInput { message: e })?;
@@ -150,9 +149,8 @@ impl PathResolver {
                 message: format!("Unknown adapter: {}", adapter.as_str()),
             })?;
 
-        // Get the appropriate path template based on artifact type
-        let path_template: String = match artifact {
-            ArtifactType::Rule => entry.paths.global_path.to_string(),
+        let path = match artifact {
+            ArtifactType::Rule => self.resolve_template(entry.paths.global_path, None)?,
             ArtifactType::CommandStub => {
                 let commands_dir =
                     entry
@@ -164,8 +162,9 @@ impl PathResolver {
                                 adapter.as_str()
                             ),
                         })?;
-                let path = PathBuf::from(commands_dir).join(entry.paths.command_stub_filename);
-                path.to_string_lossy().to_string()
+                self.home_dir
+                    .join(commands_dir)
+                    .join(entry.paths.command_stub_filename)
             }
             ArtifactType::SlashCommand => {
                 return Err(AppError::InvalidInput {
@@ -175,14 +174,12 @@ impl PathResolver {
                 });
             }
             ArtifactType::Skill => {
-                // Skills not yet implemented in Phase 3
                 return Err(AppError::InvalidInput {
                     message: "Skills path resolution not yet implemented".to_string(),
                 });
             }
         };
 
-        let path = self.resolve_template(&path_template, None)?;
         let exists = path.exists();
 
         Ok(ResolvedPath {
@@ -207,7 +204,6 @@ impl PathResolver {
         artifact: ArtifactType,
         repo_root: &Path,
     ) -> Result<ResolvedPath> {
-        // Validate that the adapter supports this artifact type
         REGISTRY
             .validate_support(&adapter, &Scope::Local, artifact)
             .map_err(|e| AppError::InvalidInput { message: e })?;
@@ -218,11 +214,10 @@ impl PathResolver {
                 message: format!("Unknown adapter: {}", adapter.as_str()),
             })?;
 
-        // Get the appropriate path template based on artifact type
-        let path_template = match artifact {
-            ArtifactType::Rule => entry.paths.local_path_template,
+        let path_template: String = match artifact {
+            ArtifactType::Rule => entry.paths.local_path_template.to_string(),
             ArtifactType::CommandStub => {
-                entry
+                let dir = entry
                     .paths
                     .local_commands_dir
                     .ok_or_else(|| AppError::InvalidInput {
@@ -230,7 +225,11 @@ impl PathResolver {
                             "Adapter {} does not support command stubs",
                             adapter.as_str()
                         ),
-                    })?
+                    })?;
+                PathBuf::from(dir)
+                    .join(entry.paths.command_stub_filename)
+                    .to_string_lossy()
+                    .to_string()
             }
             ArtifactType::SlashCommand => {
                 return Err(AppError::InvalidInput {
@@ -244,7 +243,7 @@ impl PathResolver {
             }
         };
 
-        let mut resolved = self.resolve_template(path_template, Some(repo_root))?;
+        let mut resolved = self.resolve_template(&path_template, Some(repo_root))?;
 
         if resolved.is_relative() {
             resolved = repo_root.join(resolved);

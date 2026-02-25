@@ -617,13 +617,9 @@ mod tests {
         assert!(plan.unchanged.is_empty());
     }
 
-    #[test]
-    fn test_plan_detects_creates() {
-        let db = std::sync::Arc::new(
-            tokio::runtime::Runtime::new().unwrap().block_on(async {
-                crate::database::Database::new_in_memory().await.unwrap()
-            })
-        );
+    #[tokio::test]
+    async fn test_plan_detects_creates() {
+        let db = std::sync::Arc::new(crate::database::Database::new_in_memory().await.unwrap());
         let engine = ReconciliationEngine::new(db).unwrap();
 
         let mut desired = DesiredState::default();
@@ -647,13 +643,9 @@ mod tests {
         assert!(plan.to_remove.is_empty());
     }
 
-    #[test]
-    fn test_plan_detects_updates() {
-        let db = std::sync::Arc::new(
-            tokio::runtime::Runtime::new().unwrap().block_on(async {
-                crate::database::Database::new_in_memory().await.unwrap()
-            })
-        );
+    #[tokio::test]
+    async fn test_plan_detects_updates() {
+        let db = std::sync::Arc::new(crate::database::Database::new_in_memory().await.unwrap());
         let engine = ReconciliationEngine::new(db).unwrap();
 
         let mut desired = DesiredState::default();
@@ -688,13 +680,9 @@ mod tests {
         assert!(plan.to_remove.is_empty());
     }
 
-    #[test]
-    fn test_plan_detects_removes() {
-        let db = std::sync::Arc::new(
-            tokio::runtime::Runtime::new().unwrap().block_on(async {
-                crate::database::Database::new_in_memory().await.unwrap()
-            })
-        );
+    #[tokio::test]
+    async fn test_plan_detects_removes() {
+        let db = std::sync::Arc::new(crate::database::Database::new_in_memory().await.unwrap());
         let engine = ReconciliationEngine::new(db).unwrap();
 
         let desired = DesiredState::default();
@@ -719,13 +707,9 @@ mod tests {
         assert_eq!(plan.to_remove[0].path, PathBuf::from("/stale/path.md"));
     }
 
-    #[test]
-    fn test_plan_detects_unchanged() {
-        let db = std::sync::Arc::new(
-            tokio::runtime::Runtime::new().unwrap().block_on(async {
-                crate::database::Database::new_in_memory().await.unwrap()
-            })
-        );
+    #[tokio::test]
+    async fn test_plan_detects_unchanged() {
+        let db = std::sync::Arc::new(crate::database::Database::new_in_memory().await.unwrap());
         let engine = ReconciliationEngine::new(db).unwrap();
 
         let mut desired = DesiredState::default();
@@ -761,13 +745,9 @@ mod tests {
         assert_eq!(plan.unchanged.len(), 1);
     }
 
-    #[test]
-    fn test_plan_mixed_operations() {
-        let db = std::sync::Arc::new(
-            tokio::runtime::Runtime::new().unwrap().block_on(async {
-                crate::database::Database::new_in_memory().await.unwrap()
-            })
-        );
+    #[tokio::test]
+    async fn test_plan_mixed_operations() {
+        let db = std::sync::Arc::new(crate::database::Database::new_in_memory().await.unwrap());
         let engine = ReconciliationEngine::new(db).unwrap();
 
         let mut desired = DesiredState::default();
