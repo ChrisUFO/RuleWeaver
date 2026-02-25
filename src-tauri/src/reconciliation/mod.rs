@@ -77,6 +77,8 @@ pub struct FoundArtifact {
     pub adapter: Option<AdapterType>,
     /// The type of artifact (inferred from path)
     pub artifact_type: Option<ArtifactType>,
+    /// The scope (global or local)
+    pub scope: Option<Scope>,
     /// Current content hash
     pub content_hash: String,
 }
@@ -142,7 +144,7 @@ pub struct ReconcileLogEntry {
     pub operation: ReconcileOperation,
     pub artifact_type: Option<ArtifactType>,
     pub adapter: Option<AdapterType>,
-    pub scope: Scope,
+    pub scope: Option<Scope>,
     pub path: PathBuf,
     pub result: ReconcileResultType,
 }
@@ -267,7 +269,7 @@ impl ReconciliationEngine {
         // Scan global paths for all adapters
         for adapter in AdapterType::all() {
             if let Ok(resolved) = self.path_resolver.global_path(adapter, ArtifactType::Rule) {
-                if let Some(found) = self.scan_artifact_file(&resolved.path, Some(adapter), Some(ArtifactType::Rule))? {
+                if let Some(found) = self.scan_artifact_file(&resolved.path, Some(adapter), Some(ArtifactType::Rule), Scope::Global)? {
                     actual.found_paths.insert(resolved.path.to_string_lossy().to_string(), found);
                 }
             }
@@ -278,7 +280,7 @@ impl ReconciliationEngine {
         for repo_root in repo_roots {
             for adapter in AdapterType::all() {
                 if let Ok(resolved) = self.path_resolver.local_path(adapter, ArtifactType::Rule, repo_root) {
-                    if let Some(found) = self.scan_artifact_file(&resolved.path, Some(adapter), Some(ArtifactType::Rule))? {
+                    if let Some(found) = self.scan_artifact_file(&resolved.path, Some(adapter), Some(ArtifactType::Rule), Scope::Local)? {
                         actual.found_paths.insert(resolved.path.to_string_lossy().to_string(), found);
                     }
                 }
@@ -288,7 +290,7 @@ impl ReconciliationEngine {
         Ok(actual)
     }
 
-    fn scan_artifact_file(&self, path: &Path, adapter: Option<AdapterType>, artifact_type: Option<ArtifactType>) -> Result<Option<FoundArtifact>> {
+    fn scan_artifact_file(&self, path: &Path, adapter: Option<AdapterType>, artifact_type: Option<ArtifactType>, scope: Scope) -> Result<Option<FoundArtifact>> {
         if !path.exists() {
             return Ok(None);
         }
@@ -311,6 +313,7 @@ impl ReconciliationEngine {
             path: path.to_path_buf(),
             adapter,
             artifact_type,
+            scope: Some(scope),
             content_hash: hash,
         }))
     }
@@ -382,7 +385,7 @@ impl ReconciliationEngine {
                             ReconcileOperation::Create,
                             Some(artifact.artifact_type),
                             Some(artifact.adapter),
-                            artifact.scope,
+                            Some(artifact.scope),
                             &artifact.path,
                             ReconcileResultType::Success,
                         )
@@ -395,7 +398,7 @@ impl ReconciliationEngine {
                             ReconcileOperation::Create,
                             Some(artifact.artifact_type),
                             Some(artifact.adapter),
-                            artifact.scope,
+                            Some(artifact.scope),
                             &artifact.path,
                             ReconcileResultType::Failed,
                         )
@@ -418,7 +421,7 @@ impl ReconciliationEngine {
                             ReconcileOperation::Update,
                             Some(artifact.artifact_type),
                             Some(artifact.adapter),
-                            artifact.scope,
+                            Some(artifact.scope),
                             &artifact.path,
                             ReconcileResultType::Success,
                         )
@@ -431,7 +434,7 @@ impl ReconciliationEngine {
                             ReconcileOperation::Update,
                             Some(artifact.artifact_type),
                             Some(artifact.adapter),
-                            artifact.scope,
+                            Some(artifact.scope),
                             &artifact.path,
                             ReconcileResultType::Failed,
                         )
@@ -454,7 +457,7 @@ impl ReconciliationEngine {
                             ReconcileOperation::Remove,
                             artifact.artifact_type,
                             artifact.adapter,
-                            Scope::Global,
+                            artifact.scope,
                             &artifact.path,
                             ReconcileResultType::Success,
                         )
@@ -467,7 +470,7 @@ impl ReconciliationEngine {
                             ReconcileOperation::Remove,
                             artifact.artifact_type,
                             artifact.adapter,
-                            Scope::Global,
+                            artifact.scope,
                             &artifact.path,
                             ReconcileResultType::Failed,
                         )
@@ -549,7 +552,7 @@ impl ReconciliationEngine {
         operation: ReconcileOperation,
         artifact_type: Option<ArtifactType>,
         adapter: Option<AdapterType>,
-        scope: Scope,
+        scope: Option<Scope>,
         path: &Path,
         result: ReconcileResultType,
     ) {
@@ -612,5 +615,287 @@ mod tests {
         assert!(plan.to_update.is_empty());
         assert!(plan.to_remove.is_empty());
         assert!(plan.unchanged.is_empty());
+    }
+
+    #[test]
+    fn test_plan_detects_creates() {
+        let db = std::sync::Arc::new(
+            tokio::runtime::Runtime::new().unwrap().block_on(async {
+                crate::database::Database::new_in_memory().await.unwrap()
+            })
+        );
+        let engine = ReconciliationEngine::new(db).unwrap();
+
+        let mut desired = DesiredState::default();
+        desired.expected_paths.insert(
+            "/new/path.md".to_string(),
+            ExpectedArtifact {
+                adapter: AdapterType::ClaudeCode,
+                artifact_type: ArtifactType::Rule,
+                scope: Scope::Global,
+                repo_root: None,
+                content_hash: "hash123".to_string(),
+                content: Some("content".to_string()),
+            },
+        );
+
+        let actual = ActualState::default();
+        let plan = engine.plan(&desired, &actual);
+
+        assert_eq!(plan.to_create.len(), 1);
+        assert!(plan.to_update.is_empty());
+        assert!(plan.to_remove.is_empty());
+    }
+
+    #[test]
+    fn test_plan_detects_updates() {
+        let db = std::sync::Arc::new(
+            tokio::runtime::Runtime::new().unwrap().block_on(async {
+                crate::database::Database::new_in_memory().await.unwrap()
+            })
+        );
+        let engine = ReconciliationEngine::new(db).unwrap();
+
+        let mut desired = DesiredState::default();
+        desired.expected_paths.insert(
+            "/existing/path.md".to_string(),
+            ExpectedArtifact {
+                adapter: AdapterType::ClaudeCode,
+                artifact_type: ArtifactType::Rule,
+                scope: Scope::Global,
+                repo_root: None,
+                content_hash: "new_hash".to_string(),
+                content: Some("new content".to_string()),
+            },
+        );
+
+        let mut actual = ActualState::default();
+        actual.found_paths.insert(
+            "/existing/path.md".to_string(),
+            FoundArtifact {
+                path: PathBuf::from("/existing/path.md"),
+                adapter: Some(AdapterType::ClaudeCode),
+                artifact_type: Some(ArtifactType::Rule),
+                scope: Some(Scope::Global),
+                content_hash: "old_hash".to_string(),
+            },
+        );
+
+        let plan = engine.plan(&desired, &actual);
+
+        assert!(plan.to_create.is_empty());
+        assert_eq!(plan.to_update.len(), 1);
+        assert!(plan.to_remove.is_empty());
+    }
+
+    #[test]
+    fn test_plan_detects_removes() {
+        let db = std::sync::Arc::new(
+            tokio::runtime::Runtime::new().unwrap().block_on(async {
+                crate::database::Database::new_in_memory().await.unwrap()
+            })
+        );
+        let engine = ReconciliationEngine::new(db).unwrap();
+
+        let desired = DesiredState::default();
+
+        let mut actual = ActualState::default();
+        actual.found_paths.insert(
+            "/stale/path.md".to_string(),
+            FoundArtifact {
+                path: PathBuf::from("/stale/path.md"),
+                adapter: Some(AdapterType::ClaudeCode),
+                artifact_type: Some(ArtifactType::Rule),
+                scope: Some(Scope::Global),
+                content_hash: "hash".to_string(),
+            },
+        );
+
+        let plan = engine.plan(&desired, &actual);
+
+        assert!(plan.to_create.is_empty());
+        assert!(plan.to_update.is_empty());
+        assert_eq!(plan.to_remove.len(), 1);
+        assert_eq!(plan.to_remove[0].path, PathBuf::from("/stale/path.md"));
+    }
+
+    #[test]
+    fn test_plan_detects_unchanged() {
+        let db = std::sync::Arc::new(
+            tokio::runtime::Runtime::new().unwrap().block_on(async {
+                crate::database::Database::new_in_memory().await.unwrap()
+            })
+        );
+        let engine = ReconciliationEngine::new(db).unwrap();
+
+        let mut desired = DesiredState::default();
+        desired.expected_paths.insert(
+            "/existing/path.md".to_string(),
+            ExpectedArtifact {
+                adapter: AdapterType::ClaudeCode,
+                artifact_type: ArtifactType::Rule,
+                scope: Scope::Global,
+                repo_root: None,
+                content_hash: "same_hash".to_string(),
+                content: Some("content".to_string()),
+            },
+        );
+
+        let mut actual = ActualState::default();
+        actual.found_paths.insert(
+            "/existing/path.md".to_string(),
+            FoundArtifact {
+                path: PathBuf::from("/existing/path.md"),
+                adapter: Some(AdapterType::ClaudeCode),
+                artifact_type: Some(ArtifactType::Rule),
+                scope: Some(Scope::Global),
+                content_hash: "same_hash".to_string(),
+            },
+        );
+
+        let plan = engine.plan(&desired, &actual);
+
+        assert!(plan.to_create.is_empty());
+        assert!(plan.to_update.is_empty());
+        assert!(plan.to_remove.is_empty());
+        assert_eq!(plan.unchanged.len(), 1);
+    }
+
+    #[test]
+    fn test_plan_mixed_operations() {
+        let db = std::sync::Arc::new(
+            tokio::runtime::Runtime::new().unwrap().block_on(async {
+                crate::database::Database::new_in_memory().await.unwrap()
+            })
+        );
+        let engine = ReconciliationEngine::new(db).unwrap();
+
+        let mut desired = DesiredState::default();
+        desired.expected_paths.insert(
+            "/new/path.md".to_string(),
+            ExpectedArtifact {
+                adapter: AdapterType::ClaudeCode,
+                artifact_type: ArtifactType::Rule,
+                scope: Scope::Global,
+                repo_root: None,
+                content_hash: "hash1".to_string(),
+                content: Some("new".to_string()),
+            },
+        );
+        desired.expected_paths.insert(
+            "/update/path.md".to_string(),
+            ExpectedArtifact {
+                adapter: AdapterType::ClaudeCode,
+                artifact_type: ArtifactType::Rule,
+                scope: Scope::Global,
+                repo_root: None,
+                content_hash: "hash2_new".to_string(),
+                content: Some("updated".to_string()),
+            },
+        );
+        desired.expected_paths.insert(
+            "/unchanged/path.md".to_string(),
+            ExpectedArtifact {
+                adapter: AdapterType::ClaudeCode,
+                artifact_type: ArtifactType::Rule,
+                scope: Scope::Global,
+                repo_root: None,
+                content_hash: "hash3".to_string(),
+                content: Some("same".to_string()),
+            },
+        );
+
+        let mut actual = ActualState::default();
+        actual.found_paths.insert(
+            "/update/path.md".to_string(),
+            FoundArtifact {
+                path: PathBuf::from("/update/path.md"),
+                adapter: Some(AdapterType::ClaudeCode),
+                artifact_type: Some(ArtifactType::Rule),
+                scope: Some(Scope::Global),
+                content_hash: "hash2_old".to_string(),
+            },
+        );
+        actual.found_paths.insert(
+            "/unchanged/path.md".to_string(),
+            FoundArtifact {
+                path: PathBuf::from("/unchanged/path.md"),
+                adapter: Some(AdapterType::ClaudeCode),
+                artifact_type: Some(ArtifactType::Rule),
+                scope: Some(Scope::Global),
+                content_hash: "hash3".to_string(),
+            },
+        );
+        actual.found_paths.insert(
+            "/stale/path.md".to_string(),
+            FoundArtifact {
+                path: PathBuf::from("/stale/path.md"),
+                adapter: Some(AdapterType::ClaudeCode),
+                artifact_type: Some(ArtifactType::Rule),
+                scope: Some(Scope::Global),
+                content_hash: "stale_hash".to_string(),
+            },
+        );
+
+        let plan = engine.plan(&desired, &actual);
+
+        assert_eq!(plan.to_create.len(), 1);
+        assert_eq!(plan.to_update.len(), 1);
+        assert_eq!(plan.to_remove.len(), 1);
+        assert_eq!(plan.unchanged.len(), 1);
+    }
+
+    #[test]
+    fn test_found_artifact_scope_preserved() {
+        let artifact = FoundArtifact {
+            path: PathBuf::from("/local/path.md"),
+            adapter: Some(AdapterType::ClaudeCode),
+            artifact_type: Some(ArtifactType::Rule),
+            scope: Some(Scope::Local),
+            content_hash: "hash".to_string(),
+        };
+
+        assert_eq!(artifact.scope, Some(Scope::Local));
+    }
+
+    #[tokio::test]
+    async fn test_execute_dry_run_no_changes() {
+        let db = crate::database::Database::new_in_memory().await.unwrap();
+        let engine = ReconciliationEngine::new(std::sync::Arc::new(db)).unwrap();
+
+        let mut plan = ReconcilePlan::default();
+        plan.to_create.push(ResolvedArtifact {
+            path: PathBuf::from("/nonexistent/path.md"),
+            adapter: AdapterType::ClaudeCode,
+            artifact_type: ArtifactType::Rule,
+            scope: Scope::Global,
+            repo_root: None,
+            content_hash: "hash".to_string(),
+            content: Some("content".to_string()),
+        });
+
+        let result = engine.execute(&plan, true).await.unwrap();
+
+        assert!(result.success);
+        assert_eq!(result.created, 1);
+        assert!(!PathBuf::from("/nonexistent/path.md").exists());
+    }
+
+    #[test]
+    fn test_reconcile_log_entry_serialization() {
+        let entry = ReconcileLogEntry {
+            timestamp: chrono::Utc::now(),
+            operation: ReconcileOperation::Create,
+            artifact_type: Some(ArtifactType::Rule),
+            adapter: Some(AdapterType::ClaudeCode),
+            scope: Some(Scope::Global),
+            path: PathBuf::from("/test/path.md"),
+            result: ReconcileResultType::Success,
+        };
+
+        let json = serde_json::to_string(&entry).unwrap();
+        assert!(json.contains("create"));
+        assert!(json.contains("rule"));
+        assert!(json.contains("claude") || json.contains("Claude"));
     }
 }

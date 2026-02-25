@@ -733,4 +733,212 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn test_global_path_all_adapters() {
+        let resolver = PathResolver::new().unwrap();
+
+        for adapter in AdapterType::all() {
+            let result = resolver.global_path(adapter, ArtifactType::Rule);
+            assert!(
+                result.is_ok(),
+                "Global path for {} should resolve",
+                adapter.as_str()
+            );
+            let resolved = result.unwrap();
+            assert_eq!(resolved.scope, Scope::Global);
+            assert!(resolved.path.is_absolute() || resolved.path.starts_with(resolver.home_dir()));
+        }
+    }
+
+    #[test]
+    fn test_local_path_all_adapters() {
+        let resolver = PathResolver::new().unwrap();
+        let repo_root = PathBuf::from("/test/repo");
+
+        for adapter in AdapterType::all() {
+            let result = resolver.local_path(adapter, ArtifactType::Rule, &repo_root);
+            assert!(
+                result.is_ok(),
+                "Local path for {} should resolve",
+                adapter.as_str()
+            );
+            let resolved = result.unwrap();
+            assert_eq!(resolved.scope, Scope::Local);
+            let path_str = resolved.path.to_string_lossy().to_string();
+            assert!(path_str.contains("test") || path_str.contains("repo"));
+        }
+    }
+
+    #[test]
+    fn test_slash_command_path_global() {
+        let resolver = PathResolver::new().unwrap();
+
+        let result = resolver.slash_command_path(AdapterType::ClaudeCode, "test-command", true);
+        assert!(result.is_ok());
+        let resolved = result.unwrap();
+        assert_eq!(resolved.artifact, ArtifactType::SlashCommand);
+        assert_eq!(resolved.scope, Scope::Global);
+        let path_str = resolved.path.to_string_lossy();
+        assert!(path_str.contains("test-command"));
+        assert!(path_str.ends_with(".md"));
+    }
+
+    #[test]
+    fn test_slash_command_path_local_requires_repo() {
+        let resolver = PathResolver::new().unwrap();
+
+        let result = resolver.slash_command_path(AdapterType::ClaudeCode, "test-command", false);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_local_slash_command_path() {
+        let resolver = PathResolver::new().unwrap();
+        let repo_root = PathBuf::from("/test/repo");
+
+        let result =
+            resolver.local_slash_command_path(AdapterType::ClaudeCode, "test-command", &repo_root);
+        assert!(result.is_ok());
+        let resolved = result.unwrap();
+        assert_eq!(resolved.scope, Scope::Local);
+        let path_str = resolved.path.to_string_lossy();
+        assert!(path_str.contains("test-command"));
+    }
+
+    #[test]
+    fn test_command_stub_path() {
+        let resolver = PathResolver::new().unwrap();
+
+        for adapter in AdapterType::all() {
+            let result = resolver.global_path(adapter, ArtifactType::CommandStub);
+            if result.is_ok() {
+                let resolved = result.unwrap();
+                assert_eq!(resolved.artifact, ArtifactType::CommandStub);
+                let path_str = resolved.path.to_string_lossy();
+                assert!(path_str.contains("COMMANDS.md") || path_str.contains("commands"));
+            }
+        }
+    }
+
+    #[test]
+    fn test_slash_command_requires_name() {
+        let resolver = PathResolver::new().unwrap();
+
+        let result = resolver.global_path(AdapterType::ClaudeCode, ArtifactType::SlashCommand);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("slash_command_path"));
+    }
+
+    #[test]
+    fn test_skill_not_implemented() {
+        let resolver = PathResolver::new().unwrap();
+
+        let result = resolver.global_path(AdapterType::ClaudeCode, ArtifactType::Skill);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_repository_roots_management() {
+        let mut resolver = PathResolver::with_repository_roots(vec![
+            PathBuf::from("/repo1"),
+            PathBuf::from("/repo2"),
+        ])
+        .unwrap();
+
+        assert_eq!(resolver.repository_roots().len(), 2);
+
+        resolver.add_repository_root(PathBuf::from("/repo3"));
+        assert_eq!(resolver.repository_roots().len(), 3);
+    }
+
+    #[test]
+    fn test_all_global_paths() {
+        let resolver = PathResolver::new().unwrap();
+
+        let paths = resolver.all_global_paths(ArtifactType::Rule).unwrap();
+        assert!(!paths.is_empty());
+
+        for resolved in &paths {
+            assert_eq!(resolved.scope, Scope::Global);
+        }
+    }
+
+    #[test]
+    fn test_all_local_paths() {
+        let resolver = PathResolver::new().unwrap();
+        let repo_roots = vec![PathBuf::from("/test/repo")];
+
+        let paths = resolver
+            .all_local_paths(ArtifactType::Rule, &repo_roots)
+            .unwrap();
+        assert!(!paths.is_empty());
+
+        for resolved in &paths {
+            assert_eq!(resolved.scope, Scope::Local);
+        }
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_normalize_path_removes_dotdot() {
+        let result = normalize_path(&PathBuf::from("/home/user/../other")).unwrap();
+        let path_str = result.to_string_lossy();
+        assert!(!path_str.contains(".."));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_normalize_path_removes_dot() {
+        let result = normalize_path(&PathBuf::from("/home/./user")).unwrap();
+        let path_str = result.to_string_lossy();
+        assert!(!path_str.contains("/./"));
+    }
+
+    #[test]
+    fn test_normalize_path_removes_dotdot_windows() {
+        let result = normalize_path(&PathBuf::from("C:\\Users\\test\\..\\other")).unwrap();
+        let path_str = result.to_string_lossy();
+        assert!(!path_str.contains(".."));
+    }
+
+    #[test]
+    fn test_normalize_path_removes_dot_windows() {
+        let result = normalize_path(&PathBuf::from("C:\\Users\\.\\test")).unwrap();
+        let path_str = result.to_string_lossy();
+        assert!(!path_str.contains("\\.\\"));
+    }
+
+    #[test]
+    fn test_normalize_path_relative_fails() {
+        let result = normalize_path(&PathBuf::from("relative/path"));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_canonicalize_relative_path() {
+        let resolver = PathResolver::new().unwrap();
+        let result = resolver.canonicalize(&PathBuf::from("relative/path"));
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_absolute());
+    }
+
+    #[test]
+    fn test_preview_paths() {
+        let resolver = PathResolver::new().unwrap();
+
+        let specs = vec![ArtifactSpec {
+            adapter: AdapterType::ClaudeCode,
+            artifact: ArtifactType::Rule,
+            scope: Scope::Global,
+            repo_root: None,
+            name: None,
+        }];
+
+        let paths = resolver.preview_paths(&specs).unwrap();
+        assert_eq!(paths.len(), 1);
+    }
 }
