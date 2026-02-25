@@ -178,6 +178,7 @@ export function useCommandsState(
         name: "New Command",
         description: "Describe what this command does",
         script: "echo hello",
+        isPlaceholder: false,
         arguments: [],
         exposeViaMcp: true,
         targetPaths: [],

@@ -126,6 +126,7 @@ export const useRulesStore = create<RulesState>((set, get) => ({
       // to avoid race condition between create and toggle
       const newRule = await api.rules.create({
         name: `${rule.name} (Copy)`,
+        description: rule.description,
         content: rule.content,
         scope: rule.scope,
         targetPaths: rule.targetPaths ?? undefined,
@@ -153,6 +154,7 @@ export const useRulesStore = create<RulesState>((set, get) => ({
     try {
       const restoredRule = await api.rules.create({
         name: recentlyDeleted.name,
+        description: recentlyDeleted.description,
         content: recentlyDeleted.content,
         scope: recentlyDeleted.scope,
         targetPaths: recentlyDeleted.targetPaths ?? undefined,

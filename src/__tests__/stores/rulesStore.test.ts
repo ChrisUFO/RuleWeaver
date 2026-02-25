@@ -20,6 +20,7 @@ function createMockRule(overrides?: Partial<Rule>): Rule {
   return {
     id: "1",
     name: "Test Rule",
+    description: "Test description",
     content: "Test content",
     scope: "global",
     targetPaths: null,
@@ -86,6 +87,7 @@ describe("rulesStore", () => {
     const { createRule } = useRulesStore.getState();
     const result = await createRule({
       name: "New Rule",
+      description: "New description",
       content: "New content",
       scope: "local",
       targetPaths: ["/path/to/repo"],
@@ -309,6 +311,7 @@ describe("rulesStore", () => {
     await expect(
       createRule({
         name: "Test",
+        description: "Test",
         content: "Content",
         scope: "global",
         enabledAdapters: ["gemini"],
