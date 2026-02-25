@@ -4,57 +4,79 @@ This plan prioritizes **depth-first** improvements that make current RuleWeaver 
 
 ## Prioritized Execution Order
 
-1. **Canonical Tool Capability Registry**  
-   Why first: every downstream depth initiative depends on one source of truth for capabilities and paths.
+### Phase 1 - Single Source of Truth and Validation Baseline
 
-2. **Path/Scope Resolution Invariants Across Artifacts**  
-   Why second: resolves correctness baseline for preview/sync/cleanup/reconcile across rules/commands/skills/slash.
+1. **Canonical Tool Capability Registry** (`#31`)  
+   Establish the authoritative model for capability/path support.
+2. **Frontend Metadata Replacement** (`#42`)  
+   Remove duplicated frontend adapter metadata and consume shared registry data.
+3. **Capability/Path Consistency Checks** (`#38`)  
+   Enforce runtime/test validation to catch unsupported combinations and path drift early.
 
-3. **Cross-Artifact Reconciliation Engine**  
-   Why third: enforces deterministic desired-state convergence and stale artifact cleanup.
+### Phase 2 - Path Correctness and Deterministic Lifecycle
 
-4. **Full Import Parity for Commands + Skills**  
-   Why fourth: unlocks migration value and lifecycle parity with rules.
+4. **Path/Scope Resolution Invariants Across Artifacts** (`#41`)  
+   Standardize resolver behavior for preview/sync/write/cleanup across all artifacts.
+5. **Cross-Artifact Reconciliation Engine** (`#39`)  
+   Make rename/delete/deselect operations converge cleanly without stale files.
 
-5. **Slash Command Lifecycle Completeness**  
-   Why fifth: ensures generated slash assets remain correct through save/rename/delete/re-target operations.
+### Phase 3 - Import Completeness and Post-Import Convergence
 
-6. **Deterministic Conflict Handling + Race Mitigation**  
-   Why sixth: increases operator confidence in preview and conflict outcomes.
+6. **Command/Workflow Import Pipeline** (`#37`)  
+   Add scan/preview/execute parity for commands.
+7. **Skills Import Pipeline** (`#33`)  
+   Add scan/preview/execute parity for skills.
+8. **Full Post-Import Reconciliation** (`#40`)  
+   Ensure imports trigger cleanup/sync across all generated artifacts.
+9. **Full Import Parity (Unified Delivery)** (`#59`)  
+   Consolidate command+skill import lifecycle parity into one operator-grade workflow.
 
-7. **Unified Artifact Status + One-Click Repair UX**  
-   Why seventh: exposes drift and health in one place once underlying lifecycle guarantees are in place.
+### Phase 4 - Slash and Conflict Hardening
 
-8. **Skills Native Distribution + Capability-Aware Targeting**  
-   Why eighth: deepens existing skills value by completing cross-tool lifecycle behavior.
+10. **Slash Lifecycle Completeness** (`#43`)  
+    Harden cleanup/remove/autosync/status behavior for slash files.
+11. **Deterministic Conflict Handling + Race Mitigation** (`#58`)  
+    Improve confidence in preview conflict detection and resolution outcomes.
 
-9. **Command Execution Reliability, Safety, and Diagnostics**  
-   Why ninth: improves trust and debuggability of existing command execution workflows.
+### Phase 5 - Operator Experience and Artifact Distribution Depth
 
-10. **Docs/Runtime Truthfulness Automation**  
-    Why tenth: locks in long-term consistency after core lifecycle hardening is complete.
+12. **Unified Artifact Status + One-Click Repair UX** (`#47`)  
+    Provide one health surface with actionable remediation.
+13. **Skills Native Distribution + Capability-Aware Targeting** (`#45`)  
+    Complete native skills lifecycle delivery where supported.
+14. **Command Execution Reliability, Safety, and Diagnostics** (`#57`)  
+    Improve runtime trust with stronger diagnostics and safety controls.
 
-## Issue Mapping (Depth Milestone)
+### Phase 6 - Quality Gate and Docs Truthfulness
 
-1. Canonical registry -> **#31**
-2. Path/scope invariants -> **#41**
-3. Reconciliation engine -> **#39**
-4. Import parity commands + skills -> **#59**
-5. Slash lifecycle completeness -> **#43**
-6. Conflict determinism + race mitigation -> **#58**
-7. Unified status + repair UX -> **#47**
-8. Skills distribution parity -> **#45**
-9. Command execution reliability/safety -> **#57**
-10. Docs truthfulness automation -> **#46**
+15. **Lifecycle Integration Tests and Coverage Gates** (`#44`)  
+    Lock behavior with integration coverage across the lifecycle matrix.
+16. **Docs/Runtime Truthfulness Automation** (`#46`)  
+    Keep README/guide/reference aligned with shipped behavior and registry output.
 
-## Notes on Existing Overlap
+## Depth Milestone Issues
 
-- Existing lifecycle issues under Milestone #6 overlap heavily with this depth strategy.
-- This Depth plan consolidates those overlaps into a **clear execution sequence** and fills uncovered areas with new issues where necessary.
-- Related existing issues that remain complementary:
-  - `#33` skills import pipeline
-  - `#37` command/workflow import pipeline
-  - `#38` capability/path consistency checks
-  - `#40` post-import reconciliation
-  - `#42` frontend metadata replacement
-  - `#44` lifecycle integration tests
+- `#31` canonical tool capability registry
+- `#42` replace duplicated frontend adapter metadata
+- `#38` capability/path consistency checks
+- `#41` adapter-specific local path resolver / path invariants
+- `#39` artifact reconciliation engine
+- `#37` command/workflow import pipeline
+- `#33` skills import pipeline
+- `#40` full post-import reconciliation
+- `#59` full import parity for commands and skills
+- `#43` slash lifecycle hardening
+- `#58` deterministic conflict handling and race-safe preview
+- `#47` unified artifact status and repair actions
+- `#45` skills sync adapters with capability-aware targeting
+- `#57` command execution reliability, safety, and diagnostics
+- `#44` integration test matrix and coverage gates
+- `#46` align architecture/user docs with shipped behavior
+
+## Dependency Notes
+
+- `#31` -> `#42`, `#38`, `#41`, `#39`, `#46`
+- `#41` -> `#39`, `#43`, `#58`, `#47`
+- `#37` + `#33` + `#40` -> `#59`
+- `#39` + `#43` + `#58` -> `#47`
+- `#44` is a milestone-wide quality gate and should run continuously while phases progress.
