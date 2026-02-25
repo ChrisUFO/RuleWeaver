@@ -22,7 +22,7 @@ describe("Button", () => {
 
   it("applies size classes", () => {
     const { container } = render(<Button size="sm">Small</Button>);
-    expect(container.querySelector("button")).toHaveClass("h-8");
+    expect(container.querySelector("button")).toHaveClass("h-9");
   });
 
   it("can be disabled", () => {

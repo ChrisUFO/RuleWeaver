@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { motion, AnimatePresence, type Variants } from "framer-motion";
+import { cn } from "@/lib/utils";
 import {
   Plus,
   RefreshCw,
@@ -7,9 +9,9 @@ import {
   FolderOpen,
   Clock,
   CheckCircle,
-  XCircle,
-  AlertTriangle,
   History,
+  Activity,
+  ShieldAlert,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,138 +22,34 @@ import { api } from "@/lib/tauri";
 import { SyncPreviewDialog } from "@/components/sync/SyncPreviewDialog";
 import { SyncProgress } from "@/components/sync/SyncProgress";
 import { SyncResultsDialog } from "@/components/sync/SyncResultsDialog";
-import type { SyncResult, CreateRuleInput, AdapterType, SyncHistoryEntry } from "@/types/rule";
+import { DashboardSkeleton } from "@/components/ui/skeleton";
+import type { SyncResult, SyncHistoryEntry } from "@/types/rule";
 
-interface Template {
-  name: string;
-  icon: string;
-  content: string;
-  adapters: AdapterType[];
-}
-
-const TEMPLATES: Template[] = [
-  {
-    name: "TypeScript Best Practices",
-    icon: "TS",
-    content: `# TypeScript Best Practices
-
-## Code Style
-- Use strict TypeScript configuration
-- Prefer interfaces over type aliases for object shapes
-- Use const assertions for literal types
-- Avoid any; use unknown when type is uncertain
-
-## Naming Conventions
-- Use PascalCase for types, interfaces, and classes
-- Use camelCase for variables and functions
-- Use SCREAMING_SNAKE_CASE for constants
-
-## Error Handling
-- Always handle promise rejections
-- Use typed errors with error codes
-- Log errors with context for debugging`,
-    adapters: ["antigravity", "gemini", "opencode"] as AdapterType[],
+const container: Variants = {
+  hidden: { opacity: 0 },
+  show: {
+    opacity: 1,
+    transition: {
+      staggerChildren: 0.1,
+    },
   },
-  {
-    name: "React Components",
-    icon: "Re",
-    content: `# React Components
+};
 
-## Component Structure
-- Use functional components with hooks
-- One component per file
-- Keep components small and focused
-- Extract reusable logic into custom hooks
-
-## Props
-- Define prop types with TypeScript interfaces
-- Use optional props with sensible defaults
-- Destructure props in function signature
-
-## State Management
-- Use useState for local component state
-- Lift state up when needed by siblings
-- Consider useReducer for complex state logic
-
-## Performance
-- Memoize expensive computations with useMemo
-- Use React.memo for pure components
-- Avoid inline function definitions in render`,
-    adapters: ["antigravity", "cline", "claude-code"] as AdapterType[],
+const item: Variants = {
+  hidden: { opacity: 0, y: 20 },
+  show: {
+    opacity: 1,
+    y: 0,
+    transition: {
+      type: "spring",
+      stiffness: 300,
+      damping: 24,
+    },
   },
-  {
-    name: "Python Standards",
-    icon: "Py",
-    content: `# Python Standards
+};
 
-## Code Style
-- Follow PEP 8 conventions
-- Use type hints for function signatures
-- Maximum line length of 88 characters (Black default)
-- Use f-strings for string formatting
-
-## Documentation
-- Write docstrings for all public functions
-- Use Google style docstrings
-- Include examples in docstrings
-
-## Error Handling
-- Use specific exception types
-- Never catch exceptions silently
-- Use context managers for resource handling
-
-## Testing
-- Write unit tests with pytest
-- Aim for high test coverage
-- Use fixtures for test setup`,
-    adapters: ["gemini", "opencode", "codex"] as AdapterType[],
-  },
-  {
-    name: "Git Commit Rules",
-    icon: "Gi",
-    content: `# Git Commit Rules
-
-## Commit Messages
-- Use conventional commit format
-- Keep subject line under 72 characters
-- Use imperative mood in subject line
-- Separate subject from body with blank line
-
-## Commit Types
-- feat: New feature
-- fix: Bug fix
-- docs: Documentation changes
-- style: Code style changes (formatting)
-- refactor: Code refactoring
-- test: Adding or updating tests
-- chore: Maintenance tasks
-
-## Branching
-- Use descriptive branch names
-- Keep branches short-lived
-- Delete merged branches
-
-## Pull Requests
-- Write clear PR descriptions
-- Link related issues
-- Request reviews from relevant team members`,
-    adapters: [
-      "antigravity",
-      "gemini",
-      "opencode",
-      "cline",
-      "claude-code",
-      "codex",
-    ] as AdapterType[],
-  },
-];
-
-interface DashboardProps {
-  onNavigate: (view: string) => void;
-}
-
-export function Dashboard({ onNavigate }: DashboardProps) {
-  const { rules, fetchRules, createRule, isLoading } = useRulesStore();
+export function Dashboard({ onNavigate }: { onNavigate: (view: string) => void }) {
+  const { rules, fetchRules, isLoading } = useRulesStore();
   const { addToast } = useToast();
   const [lastSync, setLastSync] = useState<string | null>(null);
 
@@ -170,11 +68,27 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   const [resultsOpen, setResultsOpen] = useState(false);
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
   const [syncHistory, setSyncHistory] = useState<SyncHistoryEntry[]>([]);
+  const [hasDrift, setHasDrift] = useState<boolean | null>(null);
+  const [isCheckingDrift, setIsCheckingDrift] = useState(false);
 
   useEffect(() => {
     fetchRules();
     fetchSyncHistory();
+    checkDrift();
   }, [fetchRules]);
+
+  const checkDrift = async () => {
+    setIsCheckingDrift(true);
+    try {
+      const preview = await api.sync.previewSync();
+      setHasDrift(preview.filesWritten.length > 0 || preview.conflicts.length > 0);
+    } catch (error) {
+      console.error("Drift check failed:", error);
+      setHasDrift(null);
+    } finally {
+      setIsCheckingDrift(false);
+    }
+  };
 
   const fetchSyncHistory = async () => {
     try {
@@ -255,207 +169,246 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     }
   };
 
-  const globalRules = (rules || []).filter((r) => r.scope === "global");
-  const localRules = (rules || []).filter((r) => r.scope === "local");
-  const enabledRules = (rules || []).filter((r) => r.enabled);
-
-  const handleTemplateClick = async (template: Template) => {
-    try {
-      const input: CreateRuleInput = {
-        name: template.name,
-        content: template.content,
-        scope: "global",
-        enabledAdapters: template.adapters,
-      };
-      await createRule(input);
-      addToast({
-        title: "Template Applied",
-        description: `"${template.name}" rule created successfully`,
-        variant: "success",
-      });
-    } catch (error) {
-      addToast({
-        title: "Failed to Create Rule",
-        description: error instanceof Error ? error.message : "Unknown error",
-        variant: "error",
-      });
-    }
-  };
-
   return (
     <>
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold">Dashboard</h1>
-            <p className="text-muted-foreground">
-              Manage your AI coding assistant rules in one place
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              onClick={handleSyncClick}
-              disabled={isPreviewing || isSyncing}
-              className="glass glow-active hover:bg-primary/5 border-white/10"
-            >
-              <RefreshCw
-                className={`mr-2 h-4 w-4 ${isPreviewing || isSyncing ? "animate-spin" : ""}`}
-              />
-              Sync All
-            </Button>
-            <Button onClick={() => onNavigate("rules")} className="glow-primary">
-              <Plus className="mr-2 h-4 w-4" />
-              New Rule
-            </Button>
-          </div>
-        </div>
-
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <Card className="glass-card premium-shadow border-none">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Rules</CardTitle>
-              <FileText className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{rules.length}</div>
-              <p className="text-xs text-muted-foreground">{enabledRules.length} enabled</p>
-            </CardContent>
-          </Card>
-
-          <Card className="glass-card premium-shadow border-none">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Global Rules</CardTitle>
-              <Globe className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{globalRules.length}</div>
-            </CardContent>
-          </Card>
-
-          <Card className="glass-card premium-shadow border-none">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Local Rules</CardTitle>
-              <FolderOpen className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{localRules.length}</div>
-            </CardContent>
-          </Card>
-
-          <Card className="glass-card premium-shadow border-none">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Last Sync</CardTitle>
-              <Clock className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{lastSync || "Never"}</div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {rules.length === 0 && !isLoading && (
-          <Card className="border-dashed">
-            <CardContent className="flex flex-col items-center justify-center py-12">
-              <FileText className="h-12 w-12 text-muted-foreground mb-4" />
-              <h3 className="text-lg font-semibold mb-2">No rules yet</h3>
-              <p className="text-muted-foreground text-center mb-4">
-                Create your first rule to start managing your AI assistant configurations
-              </p>
-              <Button onClick={() => onNavigate("rules")}>
-                <Plus className="mr-2 h-4 w-4" />
-                Create First Rule
-              </Button>
-            </CardContent>
-          </Card>
-        )}
-
-        {rules.length > 0 && (
-          <Card className="glass-card premium-shadow border-none overflow-hidden">
-            <CardHeader className="bg-white/5 pb-4">
-              <CardTitle className="text-sm font-semibold tracking-wide uppercase text-muted-foreground/80">
-                Quick Start Templates
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="pt-6">
-              <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
-                {TEMPLATES.map((template) => (
-                  <button
-                    key={template.name}
-                    onClick={() => handleTemplateClick(template)}
-                    className="flex items-center gap-3 rounded-xl border border-white/5 bg-white/5 p-3 text-left transition-all duration-300 hover:bg-white/10 hover:translate-y-[-2px] hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-primary/40 group"
-                  >
-                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/15 text-primary font-bold text-sm transition-transform duration-300 group-hover:scale-110">
-                      {template.icon}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <span className="text-sm font-semibold block truncate group-hover:text-primary transition-colors">
-                        {template.name}
-                      </span>
-                      <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60">
-                        {template.adapters.length} adapters
-                      </span>
-                    </div>
-                  </button>
-                ))}
+      <AnimatePresence mode="wait">
+        {isLoading ? (
+          <motion.div
+            key="skeleton"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.3 }}
+          >
+            <DashboardSkeleton />
+          </motion.div>
+        ) : (
+          <motion.div
+            key="content"
+            variants={container}
+            initial="hidden"
+            animate="show"
+            exit={{ opacity: 0 }}
+            className="space-y-8 max-w-7xl mx-auto"
+          >
+            {/* Header Section */}
+            <motion.div variants={item} className="flex items-end justify-between">
+              <div className="space-y-1">
+                <h1 className="text-4xl font-black tracking-tight luminescent-text">
+                  Command Center
+                </h1>
+                <p className="text-muted-foreground font-medium flex items-center gap-2">
+                  <Activity className="h-3 w-3 text-primary animate-pulse" />
+                  System operational. {rules.length} artifacts monitored.
+                </p>
               </div>
-            </CardContent>
-          </Card>
-        )}
+              <div className="flex gap-3">
+                <Button
+                  variant="outline"
+                  onClick={handleSyncClick}
+                  disabled={isPreviewing || isSyncing}
+                  className="glass border-white/10 hover:bg-primary/5 transition-all duration-300"
+                >
+                  <RefreshCw
+                    className={`mr-2 h-4 w-4 ${isPreviewing || isSyncing ? "animate-spin" : ""}`}
+                  />
+                  System Audit
+                </Button>
+                <Button
+                  onClick={() => onNavigate("rules")}
+                  className="shadow-luminescent glow-primary"
+                >
+                  <Plus className="mr-2 h-4 w-4" />
+                  New Artifact
+                </Button>
+              </div>
+            </motion.div>
 
-        {syncHistory.length > 0 && (
-          <Card className="glass-card premium-shadow border-none overflow-hidden">
-            <CardHeader className="bg-white/5 pb-4">
-              <CardTitle className="flex items-center gap-2 text-sm font-semibold tracking-wide uppercase text-muted-foreground/80">
-                <History className="h-4 w-4" />
-                Recent Sync History
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="pt-2">
-              <div className="space-y-2">
-                {syncHistory.map((entry) => (
-                  <div
-                    key={entry.id}
-                    className="flex items-center justify-between py-2 border-b last:border-0"
-                  >
-                    <div className="flex items-center gap-3">
-                      {entry.status === "success" ? (
-                        <CheckCircle className="h-4 w-4 text-success" />
-                      ) : entry.status === "partial" ? (
-                        <AlertTriangle className="h-4 w-4 text-warning" />
-                      ) : (
-                        <XCircle className="h-4 w-4 text-destructive" />
+            {/* Vital Stats Grid */}
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+              {[
+                {
+                  label: "Total Artifacts",
+                  value: rules.length,
+                  sub: `${rules.filter((r) => r.enabled).length} Active`,
+                  icon: FileText,
+                  color: "text-blue-500",
+                },
+                {
+                  label: "Global Scope",
+                  value: rules.filter((r) => r.scope === "global").length,
+                  sub: "Cross-repo sync",
+                  icon: Globe,
+                  color: "text-purple-500",
+                },
+                {
+                  label: "Local Scope",
+                  value: rules.filter((r) => r.scope === "local").length,
+                  sub: "Project-specific",
+                  icon: FolderOpen,
+                  color: "text-emerald-500",
+                },
+                {
+                  label: "Last Sync",
+                  value: lastSync || "N/A",
+                  sub: "Last successful audit",
+                  icon: Clock,
+                  color: "text-amber-500",
+                },
+              ].map((stat) => (
+                <motion.div key={stat.label} variants={item}>
+                  <Card className="glass-card border-none overflow-hidden group hover:shadow-glow-primary transition-all duration-500">
+                    <div className="absolute top-0 left-0 w-1 h-full bg-primary/20 group-hover:bg-primary transition-colors" />
+                    <CardHeader className="flex flex-row items-center justify-between pb-2">
+                      <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground/60">
+                        {stat.label}
+                      </span>
+                      <stat.icon
+                        className={`h-4 w-4 ${stat.color} opacity-80 group-hover:scale-110 transition-transform`}
+                      />
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-3xl font-black group-hover:luminescent-text transition-all">
+                        {stat.value}
+                      </div>
+                      <div className="text-[10px] font-bold uppercase tracking-tighter text-muted-foreground/40 mt-1">
+                        {stat.sub}
+                      </div>
+                    </CardContent>
+                  </Card>
+                </motion.div>
+              ))}
+            </div>
+
+            {/* Main Content Area */}
+            <div className="grid gap-6 lg:grid-cols-3">
+              {/* Health Monitor / Drift Status */}
+              <motion.div variants={item} className="lg:col-span-2">
+                <Card className="glass-card border-none h-full bg-card/20 group">
+                  <CardHeader className="flex flex-row items-center justify-between">
+                    <CardTitle className="text-lg font-bold flex items-center gap-2">
+                      <ShieldAlert
+                        className={cn("h-5 w-5", hasDrift ? "text-amber-500" : "text-primary")}
+                      />
+                      Health Monitor
+                    </CardTitle>
+                    <div className="flex items-center gap-2">
+                      {isCheckingDrift && (
+                        <Activity className="h-3 w-3 text-primary animate-pulse" />
                       )}
-                      <div>
-                        <p className="text-sm font-medium">
-                          {entry.filesWritten} file{entry.filesWritten !== 1 ? "s" : ""} synced
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {new Date(entry.timestamp * 1000).toLocaleString()}
-                        </p>
+                      <Badge
+                        variant="outline"
+                        className="text-[10px] border-white/5 py-0 px-2 uppercase font-black text-muted-foreground/60"
+                      >
+                        Live View
+                      </Badge>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="h-[240px] flex flex-col items-center justify-center text-center space-y-4">
+                    <div className="relative">
+                      <div
+                        className={cn(
+                          "h-32 w-32 rounded-full border-4 flex items-center justify-center relative transition-colors duration-500",
+                          hasDrift ? "border-amber-500/20" : "border-primary/20"
+                        )}
+                      >
+                        <div
+                          className={cn(
+                            "h-24 w-24 rounded-full border-4 flex items-center justify-center animate-pulse transition-colors duration-500",
+                            hasDrift ? "border-amber-500/10" : "border-primary/10"
+                          )}
+                        >
+                          {hasDrift ? (
+                            <ShieldAlert className="h-12 w-12 text-amber-500/80" />
+                          ) : (
+                            <CheckCircle className="h-12 w-12 text-primary/80" />
+                          )}
+                        </div>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Badge
-                        variant={
-                          entry.status === "success"
-                            ? "success"
-                            : entry.status === "partial"
-                              ? "warning"
-                              : "destructive"
-                        }
-                      >
-                        {entry.status}
-                      </Badge>
-                      <Badge variant="outline">{entry.triggeredBy}</Badge>
+                    <div>
+                      <h3 className="font-bold text-lg">
+                        {hasDrift === null
+                          ? "Initializing Audit..."
+                          : hasDrift
+                            ? "Drift Detected"
+                            : "System Synchronized"}
+                      </h3>
+                      <p className="text-sm text-muted-foreground max-w-sm mx-auto">
+                        {hasDrift === null
+                          ? "Analyzing local artifacts and tool configurations..."
+                          : hasDrift
+                            ? "Some local files have drifted from the master rules. Audit suggested."
+                            : "All tool configurations are in alignment with the master rules metadata."}
+                      </p>
                     </div>
+                  </CardContent>
+                </Card>
+              </motion.div>
+
+              {/* Sync History Container */}
+              <motion.div variants={item}>
+                <Card className="glass-card border-none h-full bg-card/20 flex flex-col">
+                  <CardHeader>
+                    <CardTitle className="text-sm font-bold uppercase tracking-widest text-muted-foreground/60 flex items-center gap-2">
+                      <History className="h-4 w-4" />
+                      Audit Trail
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="flex-1 overflow-auto">
+                    <div className="space-y-4">
+                      {syncHistory.length > 0 ? (
+                        syncHistory.map((entry) => (
+                          <div key={entry.id} className="group relative pl-4">
+                            <div className="absolute left-0 top-1 bottom-1 w-1 bg-white/5 rounded-full" />
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="text-xs font-bold text-foreground/80">
+                                {entry.filesWritten} Artifacts Updated
+                              </span>
+                              <span className="text-[10px] text-muted-foreground font-mono">
+                                {new Date(entry.timestamp * 1000).toLocaleTimeString([], {
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                })}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Badge
+                                className="h-4 text-[9px] uppercase font-black px-1.5"
+                                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                                variant={entry.status as any}
+                              >
+                                {entry.status}
+                              </Badge>
+                              <span className="text-[10px] text-muted-foreground/60 uppercase font-black">
+                                Via {entry.triggeredBy}
+                              </span>
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="h-full flex items-center justify-center text-center p-8">
+                          <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">
+                            No audit history available
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                  <div className="p-4 bg-white/5 mt-auto">
+                    <Button
+                      variant="ghost"
+                      className="w-full h-8 text-xs font-bold text-primary/60 hover:text-primary hover:bg-transparent"
+                    >
+                      View Full Logs
+                    </Button>
                   </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+                </Card>
+              </motion.div>
+            </div>
+          </motion.div>
         )}
-      </div>
+      </AnimatePresence>
 
       <SyncPreviewDialog
         open={previewOpen}

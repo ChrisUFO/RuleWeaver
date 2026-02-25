@@ -12,6 +12,7 @@ import { KeyboardShortcutsDialog } from "./components/ui/keyboard-shortcuts-dial
 import { ConflictResolutionDialog } from "./components/sync/ConflictResolutionDialog";
 import { useKeyboardShortcuts, SHORTCUTS } from "./hooks/useKeyboardShortcuts";
 import { useRulesStore } from "./stores/rulesStore";
+import { motion, AnimatePresence } from "framer-motion";
 import type { Conflict } from "./types/rule";
 import "./index.css";
 
@@ -28,12 +29,10 @@ function App() {
 
     const unlisten = listen<string>("rule-conflict", async (event) => {
       const filePath = event.payload;
-      // We need to construct a partial conflict object or fetch it from a sync preview
-      // For now, let's assume the conflict dialog can handle a simple path
       setActiveConflict({
         id: crypto.randomUUID(),
         filePath,
-        adapterName: "Detected Adapter", // Will be refined in dialog
+        adapterName: "Detected Adapter",
         localHash: "",
         currentHash: "",
       });
@@ -83,27 +82,48 @@ function App() {
   });
 
   const renderContent = () => {
-    switch (activeView) {
-      case "dashboard":
-        return <Dashboard onNavigate={setActiveView} />;
-      case "rules":
-        return <RulesPage />;
-      case "commands":
-        return <Commands />;
-      case "skills":
-        return <Skills />;
-      case "settings":
-        return <Settings />;
-      default:
-        return <Dashboard onNavigate={setActiveView} />;
-    }
+    return (
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={activeView}
+          initial={{ opacity: 0, y: 10, filter: "blur(10px)" }}
+          animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+          exit={{ opacity: 0, y: -10, filter: "blur(10px)" }}
+          transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
+          className="h-full"
+        >
+          {(() => {
+            switch (activeView) {
+              case "dashboard":
+                return <Dashboard onNavigate={setActiveView} />;
+              case "rules":
+                return <RulesPage />;
+              case "commands":
+                return <Commands />;
+              case "skills":
+                return <Skills />;
+              case "settings":
+                return <Settings />;
+              default:
+                return <Dashboard onNavigate={setActiveView} />;
+            }
+          })()}
+        </motion.div>
+      </AnimatePresence>
+    );
   };
 
   return (
     <ToastProvider>
       <ErrorBoundary>
         <MainLayout activeView={activeView} onViewChange={setActiveView}>
-          {renderContent()}
+          <div className="h-full relative overflow-hidden">
+            {/* Ambient Background Glow */}
+            <div className="absolute top-[-10%] right-[-10%] w-[40%] h-[40%] bg-primary/5 blur-[120px] rounded-full animate-luminescence pointer-events-none" />
+            <div className="absolute bottom-[-5%] left-[-5%] w-[30%] h-[30%] bg-primary/5 blur-[100px] rounded-full animate-luminescence pointer-events-none [animation-delay:2s]" />
+
+            {renderContent()}
+          </div>
         </MainLayout>
         <KeyboardShortcutsDialog open={shortcutsDialogOpen} onOpenChange={setShortcutsDialogOpen} />
         <ConflictResolutionDialog

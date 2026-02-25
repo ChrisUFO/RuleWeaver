@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard,
   FileText,
@@ -29,86 +30,143 @@ export function Sidebar({ collapsed, onCollapsedChange, activeView, onViewChange
   const [appVersion, setAppVersion] = useState<string>("0.0.0");
 
   useEffect(() => {
-    // Fetch version from version.json
     fetch("/version.json")
       .then((res) => res.json())
       .then((data) => {
         setAppVersion(data.version || "0.0.0");
       })
       .catch(() => {
-        setAppVersion("0.0.0");
+        setAppVersion("0.1.0-refresh"); // Fallback for refresh dev
       });
   }, []);
+
   return (
-    <aside
+    <motion.aside
+      initial={false}
+      animate={{ width: collapsed ? 64 : 256 }}
+      transition={{ type: "spring", stiffness: 300, damping: 30 }}
       className={cn(
-        "flex h-full flex-col border-r transition-all duration-500 ease-[cubic-bezier(0.4,0,0.2,1)]",
-        "glass border-white/5 premium-shadow",
-        collapsed ? "w-16" : "w-64"
+        "flex h-full flex-col border-r relative z-10",
+        "glass border-white/5 shadow-2xl overflow-hidden"
       )}
       aria-label="Main navigation"
-      aria-expanded={!collapsed}
     >
+      {/* Header */}
       <div className="flex h-14 items-center justify-between border-b border-white/10 px-4">
         <div className="flex items-center gap-2 overflow-hidden">
-          <img
-            src="/logo.svg"
-            alt="RuleWeaver Logo"
-            className="h-8 w-8 shrink-0 rounded-lg shadow-lg glow-primary"
-          />
-          {!collapsed && (
-            <span className="font-bold text-lg tracking-tight truncate bg-clip-text text-transparent bg-gradient-to-br from-foreground to-foreground/60">
-              RuleWeaver
-            </span>
-          )}
+          <div className="relative shrink-0">
+            <img
+              src="/logo.svg"
+              alt="RuleWeaver"
+              className="h-8 w-8 rounded-lg shadow-lg glow-primary relative z-10"
+            />
+            <div className="absolute inset-0 bg-primary/20 blur-md rounded-full animate-pulse" />
+          </div>
+          <AnimatePresence>
+            {!collapsed && (
+              <motion.span
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -10 }}
+                className="font-bold text-lg tracking-tight truncate luminescent-text"
+              >
+                RuleWeaver
+              </motion.span>
+            )}
+          </AnimatePresence>
         </div>
         <button
           onClick={() => onCollapsedChange(!collapsed)}
-          className="p-1.5 rounded-md hover:bg-white/5 focus:outline-none focus:ring-2 focus:ring-primary/40 transition-all duration-200"
-          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          aria-expanded={!collapsed}
+          className="p-1.5 rounded-md hover:bg-white/5 text-muted-foreground hover:text-foreground transition-colors"
         >
-          {collapsed ? (
-            <ChevronRight className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
-          ) : (
-            <ChevronLeft className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
-          )}
+          {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
         </button>
       </div>
 
-      <nav className="flex-1 space-y-1 p-3" role="navigation" aria-label="Primary">
-        {navItems.map((item) => (
-          <button
-            key={item.id}
-            onClick={() => onViewChange(item.id)}
-            className={cn(
-              "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 group",
-              activeView === item.id
-                ? "bg-primary/10 text-primary glow-active border border-primary/20"
-                : "text-muted-foreground hover:bg-white/5 hover:text-foreground border border-transparent"
-            )}
-            aria-current={activeView === item.id ? "page" : undefined}
-            aria-label={collapsed ? item.label : undefined}
-          >
-            <item.icon
+      {/* Navigation */}
+      <nav className="flex-1 space-y-1 p-3">
+        {navItems.map((item) => {
+          const isActive = activeView === item.id;
+          return (
+            <button
+              key={item.id}
+              onClick={() => onViewChange(item.id)}
               className={cn(
-                "h-4 w-4 shrink-0 transition-transform duration-200 group-hover:scale-110",
-                activeView === item.id ? "text-primary" : "text-muted-foreground/80"
+                "flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-300 relative group",
+                isActive
+                  ? "text-primary"
+                  : "text-muted-foreground hover:bg-white/5 hover:text-foreground"
               )}
-              aria-hidden="true"
-            />
-            {!collapsed && <span>{item.label}</span>}
-          </button>
-        ))}
+            >
+              {isActive && (
+                <motion.div
+                  layoutId="active-nav"
+                  className="absolute inset-0 bg-primary/10 rounded-xl border border-primary/20 shadow-glow-active"
+                  transition={{ type: "spring", stiffness: 400, damping: 35 }}
+                />
+              )}
+
+              <item.icon
+                className={cn(
+                  "h-4 w-4 shrink-0 relative z-10 transition-transform duration-300 group-hover:scale-110",
+                  isActive ? "text-primary" : "text-muted-foreground/80"
+                )}
+              />
+
+              <AnimatePresence>
+                {!collapsed && (
+                  <motion.span
+                    initial={{ opacity: 0, x: -5 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -5 }}
+                    className="relative z-10 truncate"
+                  >
+                    {item.label}
+                  </motion.span>
+                )}
+              </AnimatePresence>
+
+              {collapsed && (
+                <div className="absolute left-14 px-2 py-1 bg-popover text-popover-foreground text-xs rounded opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity shadow-lg border border-white/5 whitespace-nowrap z-50">
+                  {item.label}
+                </div>
+              )}
+            </button>
+          );
+        })}
       </nav>
 
-      <div className="border-t border-white/5 p-4">
-        {!collapsed && (
-          <div className="px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/50">
-            Version {appVersion}
-          </div>
+      {/* Footer Version & Help */}
+      <motion.div
+        layout
+        className={cn(
+          "mt-auto border-t border-white/5 p-4 space-y-2",
+          collapsed ? "items-center" : ""
         )}
-      </div>
-    </aside>
+      >
+        <div className="flex flex-col gap-1">
+          <AnimatePresence mode="wait">
+            {!collapsed && (
+              <motion.span
+                initial={{ opacity: 0, y: 5 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 5 }}
+                className="text-[10px] font-bold text-muted-foreground/40 uppercase tracking-widest block"
+              >
+                Press ? for help
+              </motion.span>
+            )}
+          </AnimatePresence>
+          <motion.div
+            initial={false}
+            animate={{ opacity: 1 }}
+            className="flex items-center gap-2 text-xs text-muted-foreground/60"
+          >
+            <div className="h-2 w-2 rounded-full bg-emerald-500/50 animate-pulse" />
+            {!collapsed && <span>v{appVersion}</span>}
+          </motion.div>
+        </div>
+      </motion.div>
+    </motion.aside>
   );
 }
