@@ -1,14 +1,7 @@
 use crate::error::{AppError, Result};
 use crate::models::Command;
-use crate::path_resolver::PathResolver;
+use crate::path_resolver::path_resolver;
 use std::path::PathBuf;
-
-/// Get a PathResolver instance.
-///
-/// Uses lazy initialization for efficiency.
-fn get_path_resolver() -> std::sync::LazyLock<PathResolver> {
-    std::sync::LazyLock::new(|| PathResolver::new().expect("Failed to create PathResolver"))
-}
 
 #[allow(dead_code)]
 pub trait SlashCommandAdapter: Send + Sync {
@@ -36,7 +29,7 @@ pub trait SlashCommandAdapter: Send + Sync {
     ///
     /// This method now uses the PathResolver for consistent path resolution.
     fn get_command_path(&self, command_name: &str, is_global: bool) -> Result<PathBuf> {
-        let resolver = get_path_resolver();
+        let resolver = path_resolver();
         
         // Get the adapter type from the adapter name
         let adapter = crate::models::AdapterType::from_str(self.name())
@@ -61,7 +54,7 @@ pub trait SlashCommandAdapter: Send + Sync {
     ///
     /// This method now uses the PathResolver for consistent path resolution.
     fn get_command_path_for_root(&self, command_name: &str, root: &std::path::Path) -> Result<PathBuf> {
-        let resolver = get_path_resolver();
+        let resolver = path_resolver();
         
         // Get the adapter type from the adapter name
         let adapter = crate::models::AdapterType::from_str(self.name())

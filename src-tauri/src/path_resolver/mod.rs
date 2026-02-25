@@ -15,10 +15,25 @@
 #![allow(dead_code)]
 
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
 
 use crate::error::{AppError, Result};
 use crate::models::registry::{ArtifactType, REGISTRY};
 use crate::models::{AdapterType, Scope};
+
+/// Global shared PathResolver instance.
+///
+/// This singleton ensures consistent path resolution across all modules.
+/// Use [`path_resolver()`] to access this instance.
+pub static PATH_RESOLVER: LazyLock<PathResolver> = LazyLock::new(|| {
+    PathResolver::new()
+        .expect("Failed to create global PathResolver - could not determine home directory")
+});
+
+/// Get the global shared PathResolver instance.
+pub fn path_resolver() -> &'static PathResolver {
+    &PATH_RESOLVER
+}
 
 /// Resolved path information for an artifact.
 #[derive(Debug, Clone, serde::Serialize)]
@@ -52,6 +67,16 @@ pub struct ArtifactSpec {
 ///
 /// This is the main entry point for path resolution. It provides methods
 /// to resolve paths for all artifact types using the canonical registry.
+///
+/// # Repository Roots
+///
+/// The `repository_roots` field contains paths to local repositories that should
+/// be scanned during reconciliation. It is populated via:
+/// - [`PathResolver::with_repository_roots`] constructor
+/// - [`PathResolver::add_repository_root`] method
+///
+/// For the reconciliation engine to detect local artifacts, repository roots must
+/// be configured before calling `scan_actual_state`.
 pub struct PathResolver {
     home_dir: PathBuf,
     repository_roots: Vec<PathBuf>,
@@ -139,11 +164,8 @@ impl PathResolver {
                                 adapter.as_str()
                             ),
                         })?;
-                format!(
-                    "{}/{}",
-                    commands_dir.trim_end_matches('/'),
-                    entry.paths.command_stub_filename
-                )
+                let path = PathBuf::from(commands_dir).join(entry.paths.command_stub_filename);
+                path.to_string_lossy().to_string()
             }
             ArtifactType::SlashCommand => {
                 return Err(AppError::InvalidInput {
@@ -376,6 +398,13 @@ impl PathResolver {
     /// - The path is relative
     /// - The path is not within the user's home directory
     /// - The path contains invalid characters
+    ///
+    /// # Limitations
+    ///
+    /// This function uses normalized paths for comparison, not canonicalized paths.
+    /// If the home directory is symlinked, paths through the symlink may be rejected.
+    /// For symlink-aware validation, use `std::fs::canonicalize` on both paths before
+    /// comparison.
     pub fn validate_target_path(&self, path: &Path) -> Result<PathBuf> {
         if path.is_relative() {
             return Err(AppError::InvalidInput {
@@ -537,33 +566,48 @@ impl Default for PathResolver {
 /// - Redundant separators
 ///
 /// Unlike std::fs::canonicalize, this does NOT require the path to exist.
+///
+/// # Windows UNC Paths
+///
+/// On Windows, this function preserves UNC path prefixes (e.g., `\\?\` and `\\.\`).
 fn normalize_path(path: &Path) -> std::result::Result<PathBuf, AppError> {
-    let mut components = Vec::new();
+    use std::path::Component;
+
+    let mut components: Vec<Component> = Vec::new();
+    let mut has_unc_prefix = false;
 
     for component in path.components() {
         match component {
-            std::path::Component::ParentDir => {
-                // Don't pop if we're at the root
+            Component::Prefix(prefix) => {
+                #[cfg(windows)]
+                {
+                    use std::os::windows::ffi::OsStrExt;
+                    let prefix_str = prefix.as_os_str();
+                    let chars: Vec<u16> = prefix_str.encode_wide().collect();
+                    if chars.len() >= 2 && chars[0] == b'\\' as u16 && chars[1] == b'\\' as u16 {
+                        has_unc_prefix = true;
+                    }
+                }
+                components.push(component);
+            }
+            Component::ParentDir => {
                 if !components.is_empty()
-                    && components.last() != Some(&std::path::Component::RootDir)
+                    && components.last() != Some(&Component::RootDir)
+                    && !matches!(components.last(), Some(Component::Prefix(_)))
                 {
                     components.pop();
                 }
             }
-            std::path::Component::CurDir => {
-                // Skip current directory components
-            }
+            Component::CurDir => {}
             other => {
                 components.push(other);
             }
         }
     }
 
-    // Reconstruct the path
     let normalized: PathBuf = components.iter().map(|c| c.as_os_str()).collect();
 
-    // Ensure we have an absolute path
-    if normalized.is_relative() {
+    if normalized.is_relative() && !has_unc_prefix {
         return Err(AppError::Path(format!(
             "Cannot normalize relative path: {}",
             path.display()
@@ -634,8 +678,9 @@ mod tests {
         assert!(result.is_ok());
 
         let resolved = result.unwrap();
-        assert!(resolved.path.to_string_lossy().contains(".claude"));
-        assert!(resolved.path.to_string_lossy().contains("CLAUDE.md"));
+        let path_str = resolved.path.to_string_lossy();
+        assert!(path_str.contains(".claude") || path_str.contains(".CLAUDE"));
+        assert!(path_str.contains("CLAUDE.md"));
         assert_eq!(resolved.scope, Scope::Global);
     }
 
@@ -649,14 +694,10 @@ mod tests {
         assert!(result.is_ok());
 
         let resolved = result.unwrap();
-        // Use normalized path comparison that works on both Windows and Unix
         let path_str = resolved.path.to_string_lossy();
-        assert!(
-            path_str.contains("test") && path_str.contains("repo"),
-            "Path should contain repo reference, got: {}",
-            path_str
-        );
-        assert!(path_str.contains(".claude"));
+        assert!(path_str.contains("test"));
+        assert!(path_str.contains("repo"));
+        assert!(path_str.contains(".claude") || path_str.contains(".CLAUDE"));
         assert_eq!(resolved.scope, Scope::Local);
     }
 

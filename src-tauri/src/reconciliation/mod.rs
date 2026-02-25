@@ -27,6 +27,8 @@ use crate::models::registry::{ArtifactType, REGISTRY};
 use crate::models::{AdapterType, Scope};
 use crate::path_resolver::PathResolver;
 
+const MAX_FILE_SIZE_BYTES: u64 = 10 * 1024 * 1024;
+
 /// Represents the desired state of generated artifacts.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -138,8 +140,8 @@ pub struct ReconcileResult {
 pub struct ReconcileLogEntry {
     pub timestamp: DateTime<Utc>,
     pub operation: ReconcileOperation,
-    pub artifact_type: ArtifactType,
-    pub adapter: AdapterType,
+    pub artifact_type: Option<ArtifactType>,
+    pub adapter: Option<AdapterType>,
     pub scope: Scope,
     pub path: PathBuf,
     pub result: ReconcileResultType,
@@ -265,19 +267,8 @@ impl ReconciliationEngine {
         // Scan global paths for all adapters
         for adapter in AdapterType::all() {
             if let Ok(resolved) = self.path_resolver.global_path(adapter, ArtifactType::Rule) {
-                if resolved.path.exists() {
-                    let content = fs::read_to_string(&resolved.path)?;
-                    let hash = compute_content_hash(&content);
-
-                    actual.found_paths.insert(
-                        resolved.path.to_string_lossy().to_string(),
-                        FoundArtifact {
-                            path: resolved.path,
-                            adapter: Some(adapter),
-                            artifact_type: Some(ArtifactType::Rule),
-                            content_hash: hash,
-                        },
-                    );
+                if let Some(found) = self.scan_artifact_file(&resolved.path, Some(adapter), Some(ArtifactType::Rule))? {
+                    actual.found_paths.insert(resolved.path.to_string_lossy().to_string(), found);
                 }
             }
         }
@@ -287,25 +278,41 @@ impl ReconciliationEngine {
         for repo_root in repo_roots {
             for adapter in AdapterType::all() {
                 if let Ok(resolved) = self.path_resolver.local_path(adapter, ArtifactType::Rule, repo_root) {
-                    if resolved.path.exists() {
-                        let content = fs::read_to_string(&resolved.path)?;
-                        let hash = compute_content_hash(&content);
-
-                        actual.found_paths.insert(
-                            resolved.path.to_string_lossy().to_string(),
-                            FoundArtifact {
-                                path: resolved.path,
-                                adapter: Some(adapter),
-                                artifact_type: Some(ArtifactType::Rule),
-                                content_hash: hash,
-                            },
-                        );
+                    if let Some(found) = self.scan_artifact_file(&resolved.path, Some(adapter), Some(ArtifactType::Rule))? {
+                        actual.found_paths.insert(resolved.path.to_string_lossy().to_string(), found);
                     }
                 }
             }
         }
 
         Ok(actual)
+    }
+
+    fn scan_artifact_file(&self, path: &Path, adapter: Option<AdapterType>, artifact_type: Option<ArtifactType>) -> Result<Option<FoundArtifact>> {
+        if !path.exists() {
+            return Ok(None);
+        }
+
+        let metadata = fs::metadata(path)?;
+        if metadata.len() > MAX_FILE_SIZE_BYTES {
+            log::warn!(
+                "Skipping artifact {}: file size {} exceeds limit of {} bytes",
+                path.display(),
+                metadata.len(),
+                MAX_FILE_SIZE_BYTES
+            );
+            return Ok(None);
+        }
+
+        let content = fs::read_to_string(path)?;
+        let hash = compute_content_hash(&content);
+
+        Ok(Some(FoundArtifact {
+            path: path.to_path_buf(),
+            adapter,
+            artifact_type,
+            content_hash: hash,
+        }))
     }
 
     /// Compare desired vs actual to produce a reconciliation plan.
@@ -373,8 +380,8 @@ impl ReconciliationEngine {
                         result.created += 1;
                         self.log_operation(
                             ReconcileOperation::Create,
-                            artifact.artifact_type,
-                            artifact.adapter,
+                            Some(artifact.artifact_type),
+                            Some(artifact.adapter),
                             artifact.scope,
                             &artifact.path,
                             ReconcileResultType::Success,
@@ -386,8 +393,8 @@ impl ReconciliationEngine {
                         result.errors.push(format!("Failed to create {}: {}", artifact.path.display(), e));
                         self.log_operation(
                             ReconcileOperation::Create,
-                            artifact.artifact_type,
-                            artifact.adapter,
+                            Some(artifact.artifact_type),
+                            Some(artifact.adapter),
                             artifact.scope,
                             &artifact.path,
                             ReconcileResultType::Failed,
@@ -409,8 +416,8 @@ impl ReconciliationEngine {
                         result.updated += 1;
                         self.log_operation(
                             ReconcileOperation::Update,
-                            artifact.artifact_type,
-                            artifact.adapter,
+                            Some(artifact.artifact_type),
+                            Some(artifact.adapter),
                             artifact.scope,
                             &artifact.path,
                             ReconcileResultType::Success,
@@ -422,8 +429,8 @@ impl ReconciliationEngine {
                         result.errors.push(format!("Failed to update {}: {}", artifact.path.display(), e));
                         self.log_operation(
                             ReconcileOperation::Update,
-                            artifact.artifact_type,
-                            artifact.adapter,
+                            Some(artifact.artifact_type),
+                            Some(artifact.adapter),
                             artifact.scope,
                             &artifact.path,
                             ReconcileResultType::Failed,
@@ -445,8 +452,8 @@ impl ReconciliationEngine {
                         result.removed += 1;
                         self.log_operation(
                             ReconcileOperation::Remove,
-                            artifact.artifact_type.unwrap_or(ArtifactType::Rule),
-                            artifact.adapter.unwrap_or(AdapterType::Antigravity),
+                            artifact.artifact_type,
+                            artifact.adapter,
                             Scope::Global,
                             &artifact.path,
                             ReconcileResultType::Success,
@@ -458,8 +465,8 @@ impl ReconciliationEngine {
                         result.errors.push(format!("Failed to remove {}: {}", artifact.path.display(), e));
                         self.log_operation(
                             ReconcileOperation::Remove,
-                            artifact.artifact_type.unwrap_or(ArtifactType::Rule),
-                            artifact.adapter.unwrap_or(AdapterType::Antigravity),
+                            artifact.artifact_type,
+                            artifact.adapter,
                             Scope::Global,
                             &artifact.path,
                             ReconcileResultType::Failed,
@@ -516,14 +523,8 @@ impl ReconciliationEngine {
             fs::create_dir_all(parent)?;
         }
 
-        // Use the actual content from the artifact, or fall back to placeholder
         let content = artifact.content.clone().unwrap_or_else(|| {
-            format!(
-                "# Generated by RuleWeaver\n# Adapter: {}\n# Artifact: {:?}\n# Scope: {:?}\n",
-                artifact.adapter.as_str(),
-                artifact.artifact_type,
-                artifact.scope
-            )
+            generate_placeholder_content(&artifact.adapter, artifact.artifact_type, artifact.scope)
         });
 
         fs::write(&artifact.path, content)?;
@@ -533,14 +534,8 @@ impl ReconciliationEngine {
 
     /// Update a single artifact.
     async fn update_artifact(&self, artifact: &ResolvedArtifact) -> Result<()> {
-        // Use the actual content from the artifact, or fall back to placeholder
         let content = artifact.content.clone().unwrap_or_else(|| {
-            format!(
-                "# Generated by RuleWeaver\n# Adapter: {}\n# Artifact: {:?}\n# Scope: {:?}\n",
-                artifact.adapter.as_str(),
-                artifact.artifact_type,
-                artifact.scope
-            )
+            generate_placeholder_content(&artifact.adapter, artifact.artifact_type, artifact.scope)
         });
 
         fs::write(&artifact.path, content)?;
@@ -552,8 +547,8 @@ impl ReconciliationEngine {
     async fn log_operation(
         &self,
         operation: ReconcileOperation,
-        artifact_type: ArtifactType,
-        adapter: AdapterType,
+        artifact_type: Option<ArtifactType>,
+        adapter: Option<AdapterType>,
         scope: Scope,
         path: &Path,
         result: ReconcileResultType,
@@ -568,7 +563,6 @@ impl ReconciliationEngine {
             result,
         };
 
-        // TODO: Store in database
         log::debug!("Reconciliation log: {:?}", entry);
     }
 }
@@ -579,6 +573,16 @@ fn compute_content_hash(content: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(content.as_bytes());
     format!("{:x}", hasher.finalize())
+}
+
+/// Generate placeholder content for an artifact.
+fn generate_placeholder_content(adapter: &AdapterType, artifact_type: ArtifactType, scope: Scope) -> String {
+    format!(
+        "# Generated by RuleWeaver\n# Adapter: {}\n# Artifact: {:?}\n# Scope: {:?}\n",
+        adapter.as_str(),
+        artifact_type,
+        scope
+    )
 }
 
 #[cfg(test)]

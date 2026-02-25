@@ -12,7 +12,7 @@ use crate::database::Database;
 use crate::error::Result;
 use crate::models::registry::{ArtifactType, REGISTRY};
 use crate::models::{AdapterType, Conflict, Rule, Scope, SyncError, SyncResult};
-use crate::path_resolver::PathResolver;
+use crate::path_resolver::path_resolver;
 
 fn registry_entry(adapter: &AdapterType) -> &'static crate::models::registry::ToolEntry {
     REGISTRY.get(adapter).unwrap_or_else(|| {
@@ -21,13 +21,6 @@ fn registry_entry(adapter: &AdapterType) -> &'static crate::models::registry::To
             adapter.as_str()
         )
     })
-}
-
-/// Get a PathResolver instance.
-///
-/// Uses lazy initialization for efficiency.
-fn get_path_resolver() -> std::sync::LazyLock<PathResolver> {
-    std::sync::LazyLock::new(|| PathResolver::new().expect("Failed to create PathResolver"))
 }
 
 /// Resolve a registry path string (e.g., "~/path" or "~") to an absolute PathBuf.
@@ -1002,7 +995,7 @@ fn compute_file_hash(path: &Path) -> Result<String> {
 }
 
 pub fn check_and_migrate_legacy_paths() -> Result<()> {
-    let resolver = get_path_resolver();
+    let resolver = path_resolver();
     let home = resolver.home_dir().to_path_buf();
 
     // 1. Antigravity -> Gemini
