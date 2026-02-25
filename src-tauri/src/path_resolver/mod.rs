@@ -128,22 +128,24 @@ impl PathResolver {
         })?;
 
         // Get the appropriate path template based on artifact type
-        let path_template = match artifact {
-            ArtifactType::Rule => entry.paths.global_path,
+        let path_template: String = match artifact {
+            ArtifactType::Rule => entry.paths.global_path.to_string(),
             ArtifactType::CommandStub => {
                 // Command stubs use global_commands_dir + COMMANDS.md
-                entry.paths.global_commands_dir.ok_or_else(|| {
+                let commands_dir = entry.paths.global_commands_dir.ok_or_else(|| {
                     AppError::InvalidInput {
                         message: format!(
                             "Adapter {} does not support command stubs",
                             adapter.as_str()
                         ),
                     }
-                })?
+                })?;
+                // Append COMMANDS.md to get the full file path
+                format!("{}/COMMANDS.md", commands_dir.trim_end_matches('/'))
             }
             ArtifactType::SlashCommand => {
                 // Slash commands are handled differently - they need a command name
-                // This method is for the directory, not individual commands
+                // This method returns the directory containing slash commands
                 entry.paths.global_commands_dir.ok_or_else(|| {
                     AppError::InvalidInput {
                         message: format!(
@@ -151,7 +153,7 @@ impl PathResolver {
                             adapter.as_str()
                         ),
                     }
-                })?
+                })?.to_string()
             }
             ArtifactType::Skill => {
                 // Skills not yet implemented in Phase 3
@@ -161,7 +163,7 @@ impl PathResolver {
             }
         };
 
-        let path = self.resolve_template(path_template, None)?;
+        let path = self.resolve_template(&path_template, None)?;
         let exists = path.exists();
 
         Ok(ResolvedPath {
@@ -660,10 +662,11 @@ mod tests {
     fn test_validate_target_path() {
         let resolver = PathResolver::new().unwrap();
 
-        // Test absolute path within home
-        let result = resolver.validate_target_path(&PathBuf::from("/home/test/path"));
-        // This might fail on Windows if not in home directory
-        // On Unix, it should work if /home/test exists and is accessible
+        // Test absolute path within home (platform-agnostic)
+        let home_dir = resolver.home_dir();
+        let valid_path = home_dir.join("test/path");
+        let result = resolver.validate_target_path(&valid_path);
+        assert!(result.is_ok(), "Should succeed for a path within the home directory");
 
         // Test relative path should fail
         let result = resolver.validate_target_path(&PathBuf::from("relative/path"));

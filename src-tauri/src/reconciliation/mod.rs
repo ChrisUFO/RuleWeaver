@@ -180,6 +180,9 @@ impl ReconciliationEngine {
     /// Compute desired state from database rules.
     ///
     /// This scans all rules in the database and computes what paths should exist.
+    ///
+    /// TODO: Currently only handles `ArtifactType::Rule`. Support for other artifact types
+    /// (`CommandStub`, `SlashCommand`, `Skill`) is pending and will be added in future phases.
     pub async fn compute_desired_state(&self) -> Result<DesiredState> {
         let mut desired = DesiredState::default();
 
@@ -256,6 +259,9 @@ impl ReconciliationEngine {
     /// Scan filesystem for actual state.
     ///
     /// This scans known paths for all adapters to find what artifacts currently exist.
+    ///
+    /// TODO: Currently only handles `ArtifactType::Rule`. Support for other artifact types
+    /// (`CommandStub`, `SlashCommand`, `Skill`) is pending and will be added in future phases.
     pub async fn scan_actual_state(&self) -> Result<ActualState> {
         let mut actual = ActualState::default();
 
@@ -572,19 +578,18 @@ mod tests {
         assert_ne!(hash1, hash3);
     }
 
-    #[test]
-    fn test_reconcile_plan_empty() {
+    #[tokio::test]
+    async fn test_reconcile_plan_empty() {
+        let db = crate::database::Database::new_in_memory().await.unwrap();
+        let engine = ReconciliationEngine::new(std::sync::Arc::new(db)).unwrap();
         let desired = DesiredState::default();
         let actual = ActualState::default();
         
-        let resolver = PathResolver::new().unwrap();
-        // Note: Full engine test requires async context
-        // This test verifies the plan logic works with empty states
-        let mut plan = ReconcilePlan::default();
+        let plan = engine.plan(&desired, &actual);
         
-        // Manually verify empty states produce empty plan
         assert!(plan.to_create.is_empty());
         assert!(plan.to_update.is_empty());
         assert!(plan.to_remove.is_empty());
+        assert!(plan.unchanged.is_empty());
     }
 }
