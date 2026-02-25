@@ -59,12 +59,10 @@ pub trait SyncAdapter: Send + Sync {
     fn id(&self) -> AdapterType;
     fn name(&self) -> &str;
     fn file_name(&self) -> &str;
-    #[allow(dead_code)]
     fn description(&self) -> &str;
     fn global_path(&self) -> Result<PathBuf>;
 
     fn format_content(&self, rules: &[Rule], enabled_rules_only: bool) -> String;
-    #[allow(dead_code)]
     fn format_rule(&self, rule: &Rule) -> String;
 }
 
@@ -506,7 +504,6 @@ pub fn get_all_adapters() -> Vec<Box<dyn SyncAdapter>> {
     ]
 }
 
-#[allow(dead_code)]
 pub fn get_adapter(adapter_type: AdapterType) -> Option<Box<dyn SyncAdapter>> {
     match adapter_type {
         AdapterType::Antigravity => Some(Box::new(AntigravityAdapter)),
@@ -572,7 +569,12 @@ impl<'a> SyncEngine<'a> {
 
             let adapter_rules: Vec<Rule> = rules
                 .iter()
-                .filter(|r| r.enabled_adapters.contains(&adapter.id()))
+                .filter(|r| {
+                    r.enabled_adapters.contains(&adapter.id())
+                        && REGISTRY
+                            .validate_support(&adapter.id(), &r.scope, "rule")
+                            .is_ok()
+                })
                 .cloned()
                 .collect();
 
@@ -667,7 +669,6 @@ impl<'a> SyncEngine<'a> {
         }
     }
 
-    #[allow(dead_code)]
     pub async fn sync_rule(&self, rule: Rule) -> SyncResult {
         let mut files_written = Vec::new();
         let mut errors = Vec::new();
@@ -695,6 +696,9 @@ impl<'a> SyncEngine<'a> {
         for adapter in &adapters {
             if disabled_adapters.contains(&adapter.id())
                 || !rule.enabled_adapters.contains(&adapter.id())
+                || REGISTRY
+                    .validate_support(&adapter.id(), &rule.scope, "rule")
+                    .is_err()
             {
                 continue;
             }
@@ -799,7 +803,12 @@ impl<'a> SyncEngine<'a> {
 
             let adapter_rules: Vec<Rule> = rules
                 .iter()
-                .filter(|r| r.enabled_adapters.contains(&adapter.id()))
+                .filter(|r| {
+                    r.enabled_adapters.contains(&adapter.id())
+                        && REGISTRY
+                            .validate_support(&adapter.id(), &r.scope, "rule")
+                            .is_ok()
+                })
                 .cloned()
                 .collect();
 
@@ -904,6 +913,18 @@ impl<'a> SyncEngine<'a> {
         rules: &[Rule],
         path: &Path,
     ) -> Result<()> {
+        log::debug!(
+            "Syncing {} rules to {} ({}) at {}",
+            rules.len(),
+            adapter.name(),
+            adapter.description(),
+            path.display()
+        );
+
+        for rule in rules {
+            log::trace!("Rule content: {}", adapter.format_rule(rule));
+        }
+
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
