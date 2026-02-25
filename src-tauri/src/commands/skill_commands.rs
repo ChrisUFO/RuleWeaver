@@ -5,7 +5,32 @@ use crate::database::Database;
 use crate::error::{AppError, Result};
 use crate::file_storage::skills::{delete_skill_from_disk, save_skill_to_disk};
 use crate::models::{CreateSkillInput, Skill, UpdateSkillInput};
+use crate::reconciliation::ReconciliationEngine;
 use crate::templates::skills::{get_bundled_skill_templates, TemplateSkill};
+
+/// Helper function to run reconciliation after mutations.
+async fn reconcile_after_mutation(db: Arc<Database>) {
+    match ReconciliationEngine::new(db) {
+        Ok(engine) => {
+            match engine.reconcile(false).await {
+                Ok(result) => {
+                    if result.removed > 0 {
+                        log::info!("Reconciliation cleaned up {} stale artifacts", result.removed);
+                    }
+                    if !result.errors.is_empty() {
+                        log::warn!("Reconciliation completed with errors: {:?}", result.errors);
+                    }
+                }
+                Err(e) => {
+                    log::error!("Reconciliation failed: {}", e);
+                }
+            }
+        }
+        Err(e) => {
+            log::error!("Failed to create reconciliation engine: {}", e);
+        }
+    }
+}
 
 #[tauri::command]
 pub async fn get_all_skills(db: State<'_, Arc<Database>>) -> Result<Vec<Skill>> {
@@ -89,7 +114,12 @@ pub async fn delete_skill(id: String, db: State<'_, Arc<Database>>) -> Result<()
     if let Ok(existing) = db.get_skill_by_id(&id).await {
         let _ = delete_skill_from_disk(&existing);
     }
-    db.delete_skill(&id).await
+    db.delete_skill(&id).await?;
+    
+    // Run reconciliation to clean up any orphaned artifacts
+    reconcile_after_mutation(db.inner().clone()).await;
+    
+    Ok(())
 }
 
 #[tauri::command]

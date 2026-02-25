@@ -5,6 +5,7 @@ use crate::database::Database;
 use crate::error::{AppError, Result};
 use crate::file_storage;
 use crate::models::{CreateRuleInput, Rule, SyncResult, UpdateRuleInput};
+use crate::reconciliation::ReconciliationEngine;
 use crate::sync::SyncEngine;
 use crate::templates::rules::{get_bundled_rule_templates, TemplateRule};
 
@@ -26,6 +27,31 @@ async fn sync_to_ai_tools(db: &Database) {
         }
         Err(e) => {
             log::error!("Failed to get rules for AI tool sync: {}", e);
+        }
+    }
+}
+
+/// Helper function to run reconciliation after mutations.
+/// This cleans up stale artifacts that may have been orphaned.
+async fn reconcile_after_mutation(db: Arc<Database>) {
+    match ReconciliationEngine::new(db) {
+        Ok(engine) => {
+            match engine.reconcile(false).await {
+                Ok(result) => {
+                    if result.removed > 0 {
+                        log::info!("Reconciliation cleaned up {} stale artifacts", result.removed);
+                    }
+                    if !result.errors.is_empty() {
+                        log::warn!("Reconciliation completed with errors: {:?}", result.errors);
+                    }
+                }
+                Err(e) => {
+                    log::error!("Reconciliation failed: {}", e);
+                }
+            }
+        }
+        Err(e) => {
+            log::error!("Failed to create reconciliation engine: {}", e);
         }
     }
 }
@@ -150,6 +176,9 @@ pub async fn delete_rule(id: String, db: State<'_, Arc<Database>>) -> Result<()>
     // Sync to AI tool locations to remove deleted rule from adapters
     sync_to_ai_tools(&db).await;
 
+    // Run reconciliation to clean up any orphaned artifacts
+    reconcile_after_mutation(db.inner().clone()).await;
+
     Ok(())
 }
 
@@ -174,6 +203,9 @@ pub async fn bulk_delete_rules(ids: Vec<String>, db: State<'_, Arc<Database>>) -
 
     // Sync to AI tool locations to remove deleted rules from adapters
     sync_to_ai_tools(&db).await;
+
+    // Run reconciliation to clean up any orphaned artifacts
+    reconcile_after_mutation(db.inner().clone()).await;
 
     Ok(())
 }

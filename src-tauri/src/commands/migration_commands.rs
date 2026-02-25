@@ -4,6 +4,7 @@ use tauri::{Manager, State};
 use crate::database::Database;
 use crate::error::Result;
 use crate::file_storage;
+use crate::reconciliation::ReconciliationEngine;
 use crate::sync::SyncEngine;
 
 use super::validate_path;
@@ -261,6 +262,20 @@ pub async fn import_configuration(
     let engine = SyncEngine::new(&db);
     let rules = db.get_all_rules().await?;
     let _ = engine.sync_all(rules).await;
+
+    // Run reconciliation to clean up any orphaned artifacts from the import
+    if let Ok(reconcile_engine) = ReconciliationEngine::new(db.inner().clone()) {
+        match reconcile_engine.reconcile(false).await {
+            Ok(result) => {
+                if result.removed > 0 {
+                    log::info!("Post-import reconciliation cleaned up {} stale artifacts", result.removed);
+                }
+            }
+            Err(e) => {
+                log::warn!("Post-import reconciliation failed: {}", e);
+            }
+        }
+    }
 
     {
         if let Some(s) = app.try_state::<crate::GlobalStatus>() {

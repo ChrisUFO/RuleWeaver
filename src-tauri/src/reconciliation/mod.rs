@@ -140,6 +140,23 @@ pub struct ReconcileResult {
     /// Errors encountered during reconciliation
     #[serde(default)]
     pub errors: Vec<String>,
+    /// Non-fatal warnings
+    #[serde(default)]
+    pub warnings: Vec<String>,
+}
+
+/// A structured error from reconciliation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReconcileError {
+    /// The operation that failed
+    pub operation: ReconcileOperation,
+    /// The path affected
+    pub path: PathBuf,
+    /// Error message
+    pub message: String,
+    /// Whether this is recoverable
+    pub recoverable: bool,
 }
 
 /// Log entry for reconciliation operations.
@@ -989,9 +1006,8 @@ impl ReconciliationEngine {
         Ok(result)
     }
 
-    /// Create a single artifact.
+    /// Create a single artifact with atomic write safety.
     async fn create_artifact(&self, artifact: &ResolvedArtifact) -> Result<()> {
-        // Ensure parent directory exists
         if let Some(parent) = artifact.path.parent() {
             fs::create_dir_all(parent)?;
         }
@@ -1000,20 +1016,83 @@ impl ReconciliationEngine {
             generate_placeholder_content(&artifact.adapter, artifact.artifact_type, artifact.scope)
         });
 
-        fs::write(&artifact.path, content)?;
-
-        Ok(())
+        write_atomic(&artifact.path, &content)
     }
 
-    /// Update a single artifact.
+    /// Update a single artifact with atomic write safety.
     async fn update_artifact(&self, artifact: &ResolvedArtifact) -> Result<()> {
         let content = artifact.content.clone().unwrap_or_else(|| {
             generate_placeholder_content(&artifact.adapter, artifact.artifact_type, artifact.scope)
         });
 
-        fs::write(&artifact.path, content)?;
+        write_atomic(&artifact.path, &content)
+    }
 
-        Ok(())
+    /// Repair orphaned artifacts by removing them.
+    ///
+    /// This scans for files that exist but shouldn't and removes them.
+    pub async fn repair(&self, dry_run: bool) -> Result<ReconcileResult> {
+        log::info!("Starting repair (dry_run: {})", dry_run);
+
+        let desired = self.compute_desired_state().await?;
+        let actual = self.scan_actual_state().await?;
+        let plan = self.plan(&desired, &actual);
+
+        let mut result = ReconcileResult {
+            success: true,
+            ..Default::default()
+        };
+
+        for artifact in &plan.to_remove {
+            if dry_run {
+                log::info!("[DRY RUN] Would remove orphan: {}", artifact.path.display());
+                result.removed += 1;
+            } else {
+                match fs::remove_file(&artifact.path) {
+                    Ok(()) => {
+                        result.removed += 1;
+                        self.log_operation(
+                            ReconcileOperation::Remove,
+                            artifact.artifact_type,
+                            artifact.adapter,
+                            artifact.scope,
+                            &artifact.path,
+                            ReconcileResultType::Success,
+                        )
+                        .await;
+                    }
+                    Err(e) => {
+                        result.success = false;
+                        result.errors.push(format!(
+                            "Failed to remove orphan {}: {}",
+                            artifact.path.display(),
+                            e
+                        ));
+                    }
+                }
+            }
+        }
+
+        result.unchanged = plan.unchanged.len();
+        log::info!("Repair complete: {} orphans removed", result.removed);
+
+        Ok(result)
+    }
+
+    /// Check if reconciliation is needed.
+    pub async fn needs_reconciliation(&self) -> Result<bool> {
+        let desired = self.compute_desired_state().await?;
+        let actual = self.scan_actual_state().await?;
+        let plan = self.plan(&desired, &actual);
+        Ok(!plan.to_create.is_empty() || !plan.to_update.is_empty() || !plan.to_remove.is_empty())
+    }
+
+    /// Get stale artifact paths for display.
+    pub async fn get_stale_paths(&self) -> Result<Vec<FoundArtifact>> {
+        let desired = self.compute_desired_state().await?;
+        let actual = self.scan_actual_state().await?;
+        let plan = self.plan(&desired, &actual);
+        Ok(plan.to_remove)
     }
 
     /// Log a reconciliation operation to both console and database.
@@ -1069,6 +1148,25 @@ fn compute_content_hash(content: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(content.as_bytes());
     format!("{:x}", hasher.finalize())
+}
+
+/// Write content to a file atomically using temp file + rename.
+///
+/// This ensures that:
+/// 1. Partial writes don't corrupt existing files
+/// 2. Readers never see incomplete content
+/// 3. Crashes during write leave either old or new content, never corrupted
+fn write_atomic(path: &Path, content: &str) -> Result<()> {
+    let temp_path = path.with_extension("tmp");
+
+    fs::write(&temp_path, content).map_err(crate::error::AppError::Io)?;
+
+    fs::rename(&temp_path, path).map_err(|e| {
+        let _ = fs::remove_file(&temp_path);
+        crate::error::AppError::Io(e)
+    })?;
+
+    Ok(())
 }
 
 /// Generate placeholder content for an artifact.
@@ -1481,5 +1579,61 @@ mod tests {
         let result = engine.reconcile(true).await.unwrap();
         
         assert!(result.success, "Dry-run reconciliation should succeed");
+    }
+
+    #[tokio::test]
+    async fn test_reconcile_is_idempotent() {
+        let db = std::sync::Arc::new(crate::database::Database::new_in_memory().await.unwrap());
+        let engine = ReconciliationEngine::new(db.clone()).unwrap();
+
+        // First run on empty database
+        let r1 = engine.reconcile(false).await.unwrap();
+        assert!(r1.success);
+
+        // Second run should be a no-op (no changes)
+        let engine2 = ReconciliationEngine::new(db).unwrap();
+        let r2 = engine2.reconcile(false).await.unwrap();
+        assert!(r2.success);
+        assert_eq!(r2.created, 0, "Second run should not create anything");
+        assert_eq!(r2.updated, 0, "Second run should not update anything");
+        assert_eq!(r2.removed, 0, "Second run should not remove anything");
+    }
+
+    #[tokio::test]
+    async fn test_needs_reconciliation_empty_db() {
+        let db = std::sync::Arc::new(crate::database::Database::new_in_memory().await.unwrap());
+        let engine = ReconciliationEngine::new(db).unwrap();
+
+        // An empty database may still need reconciliation if there are stale files on disk
+        // This is expected behavior - we check that the method works without error
+        let _needs = engine.needs_reconciliation().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_get_stale_paths_returns_vec() {
+        let db = std::sync::Arc::new(crate::database::Database::new_in_memory().await.unwrap());
+        let engine = ReconciliationEngine::new(db).unwrap();
+
+        // Verify the method returns successfully (no panic/error)
+        let stale = engine.get_stale_paths().await.unwrap();
+        // The result depends on what files exist on disk, we just verify the method works
+        println!("Found {} stale paths", stale.len());
+    }
+
+    #[tokio::test]
+    async fn test_repair_dry_run_safe() {
+        let db = std::sync::Arc::new(crate::database::Database::new_in_memory().await.unwrap());
+        let engine = ReconciliationEngine::new(db).unwrap();
+
+        // Dry-run should succeed regardless of filesystem state
+        let result = engine.repair(true).await.unwrap();
+        assert!(result.success, "Dry-run repair should succeed");
+    }
+
+    #[test]
+    fn test_reconcile_result_has_warnings() {
+        let mut result = ReconcileResult::default();
+        result.warnings.push("Test warning".to_string());
+        assert_eq!(result.warnings.len(), 1);
     }
 }

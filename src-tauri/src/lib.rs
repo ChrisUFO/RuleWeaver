@@ -467,6 +467,9 @@ pub fn run() {
             commands::get_tool_registry,
             commands::reconcile_all,
             commands::reconcile_preview,
+            commands::reconcile_repair,
+            commands::needs_reconciliation,
+            commands::get_stale_paths,
             commands::get_reconciliation_logs,
             commands::clear_reconciliation_logs,
         ])
