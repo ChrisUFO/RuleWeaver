@@ -99,6 +99,17 @@ pub fn get_skill_templates() -> Result<Vec<TemplateSkill>> {
 
 #[tauri::command]
 pub async fn install_skill_template(template_id: String, db: State<'_, Arc<Database>>) -> Result<Skill> {
+    // Clone Arc for use in rollback closure
+    let db_clone = Arc::clone(&db);
+    
+    // Helper closure for rollback on failure after disk write
+    let rollback = |skill_id: String, dir_path: std::path::PathBuf| async move {
+        let _ = db_clone.delete_skill(&skill_id).await;
+        if dir_path.exists() {
+            let _ = std::fs::remove_dir_all(&dir_path);
+        }
+    };
+
     // 1. Check idempotency: is it already installed?
     if let Ok(existing) = db.get_skill_by_id(&template_id).await {
         return Ok(existing);
@@ -135,11 +146,7 @@ pub async fn install_skill_template(template_id: String, db: State<'_, Arc<Datab
             || file.filename.contains('/')
             || file.filename.contains('\\')
         {
-            // Rollback
-            let _ = db.delete_skill(&created.id).await;
-            if path.exists() {
-                let _ = std::fs::remove_dir_all(&path);
-            }
+            rollback(created.id.clone(), path.clone()).await;
             return Err(AppError::Validation(format!(
                 "Invalid template filename: {}",
                 file.filename
@@ -147,12 +154,8 @@ pub async fn install_skill_template(template_id: String, db: State<'_, Arc<Datab
         }
         let file_path = path.join(&file.filename);
         if let Err(e) = std::fs::write(&file_path, &file.content).map_err(AppError::Io) {
-             // Rollback
-             let _ = db.delete_skill(&created.id).await;
-             if path.exists() {
-                 let _ = std::fs::remove_dir_all(&path);
-             }
-             return Err(e);
+            rollback(created.id.clone(), path.clone()).await;
+            return Err(e);
         }
     }
 
@@ -161,13 +164,9 @@ pub async fn install_skill_template(template_id: String, db: State<'_, Arc<Datab
         directory_path: Some(path.to_string_lossy().to_string()),
         ..Default::default()
     };
-    
+
     if let Err(e) = db.update_skill(&created.id, update).await {
-        // Rollback
-        let _ = db.delete_skill(&created.id).await;
-        if path.exists() {
-            let _ = std::fs::remove_dir_all(&path);
-        }
+        rollback(created.id.clone(), path.clone()).await;
         return Err(e);
     }
 
