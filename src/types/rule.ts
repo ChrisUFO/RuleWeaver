@@ -12,6 +12,43 @@ export type AdapterType =
   | "windsurf"
   | "roocode";
 
+export const ADAPTERS: {
+  id: AdapterType;
+  name: string;
+  icon: string;
+  enabled: boolean;
+  fileName: string;
+}[] = [
+  {
+    id: "antigravity",
+    name: "Antigravity",
+    icon: "antigravity",
+    enabled: true,
+    fileName: "GEMINI.md",
+  },
+  { id: "gemini", name: "Gemini", icon: "gemini", enabled: true, fileName: "GEMINI.md" },
+  {
+    id: "opencode",
+    name: "OpenCode",
+    icon: "opencode",
+    enabled: true,
+    fileName: "AGENTS.md",
+  },
+  { id: "cline", name: "Cline", icon: "cline", enabled: true, fileName: ".clinerules" },
+  {
+    id: "claude-code",
+    name: "Claude Code",
+    icon: "claude",
+    enabled: true,
+    fileName: "CLAUDE.md",
+  },
+  { id: "codex", name: "Codex", icon: "codex", enabled: true, fileName: "AGENTS.md" },
+  { id: "kilo", name: "Kilo", icon: "kilo", enabled: true, fileName: "AGENTS.md" },
+  { id: "cursor", name: "Cursor", icon: "cursor", enabled: true, fileName: "COMMANDS.md" },
+  { id: "windsurf", name: "Windsurf", icon: "windsurf", enabled: true, fileName: "AGENTS.md" },
+  { id: "roocode", name: "Roo Code", icon: "roo", enabled: true, fileName: "AGENTS.md" },
+];
+
 export interface Rule {
   id: string;
   name: string;
