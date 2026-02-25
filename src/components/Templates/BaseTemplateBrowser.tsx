@@ -14,6 +14,18 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
 
+const variantContainer = {
+  hidden: { opacity: 0 },
+  visible: { opacity: 1, transition: { staggerChildren: 0.05 } },
+  exit: { opacity: 0 },
+};
+
+const variantItem = {
+  hidden: { opacity: 0, y: 10, scale: 0.98 },
+  visible: { opacity: 1, y: 0, scale: 1 },
+  exit: { opacity: 0, scale: 0.98 },
+};
+
 interface BaseTemplateBrowserProps<T> {
   title: string;
   description: string;
@@ -193,9 +205,10 @@ export function BaseTemplateBrowser<T>({
                       return (
                         <motion.div
                           key="results"
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          exit={{ opacity: 0 }}
+                          variants={variantContainer}
+                          initial="hidden"
+                          animate="visible"
+                          exit="exit"
                           className="space-y-6"
                         >
                           {sortedThemes.map((theme) => (
@@ -209,8 +222,7 @@ export function BaseTemplateBrowser<T>({
                                   <motion.div
                                     layout
                                     key={getTemplateId(t)}
-                                    initial={{ opacity: 0, scale: 0.98 }}
-                                    animate={{ opacity: 1, scale: 1 }}
+                                    variants={variantItem}
                                     whileHover={{
                                       scale: 1.01,
                                       backgroundColor: "rgba(255,255,255,0.08)",

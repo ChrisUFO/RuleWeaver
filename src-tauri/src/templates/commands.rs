@@ -1,4 +1,7 @@
 use crate::models::CreateCommandInput;
+use crate::templates::{
+    THEME_ADMIN, THEME_DATA, THEME_ENGINEERING, THEME_MARKETING, THEME_PM, THEME_WRITING,
+};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -9,11 +12,14 @@ pub struct TemplateCommand {
     pub metadata: CreateCommandInput,
 }
 
+/// Command templates are currently logic-only stubs (placeholders).
+/// They serve as discovery points for the AI to understand available actions,
+/// but require user-provided scripts or local configuration to be fully functional.
 pub fn get_bundled_command_templates() -> Vec<TemplateCommand> {
     vec![
         TemplateCommand {
             template_id: "tmpl_refactor_clean_code".to_string(),
-            theme: "Engineering".to_string(),
+            theme: THEME_ENGINEERING.to_string(),
             metadata: CreateCommandInput {
                 id: None,
                 name: "Refactor Clean Code".to_string(),
@@ -29,7 +35,7 @@ pub fn get_bundled_command_templates() -> Vec<TemplateCommand> {
         },
         TemplateCommand {
             template_id: "tmpl_generate_prd".to_string(),
-            theme: "Project Management".to_string(),
+            theme: THEME_PM.to_string(),
             metadata: CreateCommandInput {
                 id: None,
                 name: "Generate PRD Outline".to_string(),
@@ -45,7 +51,7 @@ pub fn get_bundled_command_templates() -> Vec<TemplateCommand> {
         },
         TemplateCommand {
             template_id: "tmpl_user_story_map".to_string(),
-            theme: "Project Management".to_string(),
+            theme: THEME_PM.to_string(),
             metadata: CreateCommandInput {
                 id: None,
                 name: "User Story Map".to_string(),
@@ -61,7 +67,7 @@ pub fn get_bundled_command_templates() -> Vec<TemplateCommand> {
         },
         TemplateCommand {
             template_id: "tmpl_brainstorm_chapter".to_string(),
-            theme: "Writing".to_string(),
+            theme: THEME_WRITING.to_string(),
             metadata: CreateCommandInput {
                 id: None,
                 name: "Brainstorm Chapter Beats".to_string(),
@@ -77,7 +83,7 @@ pub fn get_bundled_command_templates() -> Vec<TemplateCommand> {
         },
         TemplateCommand {
             template_id: "tmpl_repurpose_content".to_string(),
-            theme: "Marketing".to_string(),
+            theme: THEME_MARKETING.to_string(),
             metadata: CreateCommandInput {
                 id: None,
                 name: "Repurpose Content".to_string(),
@@ -93,7 +99,7 @@ pub fn get_bundled_command_templates() -> Vec<TemplateCommand> {
         },
         TemplateCommand {
             template_id: "tmpl_summarize_dataset".to_string(),
-            theme: "Data Analysis".to_string(),
+            theme: THEME_DATA.to_string(),
             metadata: CreateCommandInput {
                 id: None,
                 name: "Summarize Dataset".to_string(),
@@ -109,7 +115,7 @@ pub fn get_bundled_command_templates() -> Vec<TemplateCommand> {
         },
         TemplateCommand {
             template_id: "tmpl_extract_actions".to_string(),
-            theme: "Admin".to_string(),
+            theme: THEME_ADMIN.to_string(),
             metadata: CreateCommandInput {
                 id: None,
                 name: "Extract Action Items".to_string(),

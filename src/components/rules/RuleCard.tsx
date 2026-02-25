@@ -79,8 +79,8 @@ export function RuleCard({
             </Badge>
           </div>
           <p className="text-sm text-muted-foreground truncate">
-            {rule.content.substring(0, 100)}
-            {rule.content.length > 100 && "..."}
+            {(rule.description || rule.content).substring(0, 100)}
+            {(rule.description || rule.content).length > 100 && "..."}
           </p>
           <div className="flex items-center gap-1 mt-2" aria-label="Adapters">
             {rule.enabledAdapters.map((adapter) => (

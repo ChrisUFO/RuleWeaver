@@ -1,4 +1,7 @@
 use crate::models::{AdapterType, CreateRuleInput, Scope};
+use crate::templates::{
+    THEME_ADMIN, THEME_DATA, THEME_ENGINEERING, THEME_MARKETING, THEME_PM, THEME_WRITING,
+};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -13,7 +16,7 @@ pub fn get_bundled_rule_templates() -> Vec<TemplateRule> {
     vec![
         TemplateRule {
             template_id: "tmpl_react_ts_standards".to_string(),
-            theme: "Engineering".to_string(),
+            theme: THEME_ENGINEERING.to_string(),
             metadata: CreateRuleInput {
                 id: None,
                 name: "React & TypeScript Standards".to_string(),
@@ -27,7 +30,7 @@ pub fn get_bundled_rule_templates() -> Vec<TemplateRule> {
         },
         TemplateRule {
             template_id: "tmpl_author_persona".to_string(),
-            theme: "Writing".to_string(),
+            theme: THEME_WRITING.to_string(),
             metadata: CreateRuleInput {
                 id: None,
                 name: "Author Persona".to_string(),
@@ -41,7 +44,7 @@ pub fn get_bundled_rule_templates() -> Vec<TemplateRule> {
         },
         TemplateRule {
             template_id: "tmpl_pm_copilot".to_string(),
-            theme: "Project Management".to_string(),
+            theme: THEME_PM.to_string(),
             metadata: CreateRuleInput {
                 id: None,
                 name: "PM Copilot".to_string(),
@@ -55,7 +58,7 @@ pub fn get_bundled_rule_templates() -> Vec<TemplateRule> {
         },
         TemplateRule {
             template_id: "tmpl_marketing_strategist".to_string(),
-            theme: "Marketing".to_string(),
+            theme: THEME_MARKETING.to_string(),
             metadata: CreateRuleInput {
                 id: None,
                 name: "Marketing Strategist".to_string(),
@@ -69,7 +72,7 @@ pub fn get_bundled_rule_templates() -> Vec<TemplateRule> {
         },
         TemplateRule {
             template_id: "tmpl_data_analyst".to_string(),
-            theme: "Data Analysis".to_string(),
+            theme: THEME_DATA.to_string(),
             metadata: CreateRuleInput {
                 id: None,
                 name: "Data Analyst Assistant".to_string(),
@@ -83,7 +86,7 @@ pub fn get_bundled_rule_templates() -> Vec<TemplateRule> {
         },
         TemplateRule {
             template_id: "tmpl_exec_assistant".to_string(),
-            theme: "Admin".to_string(),
+            theme: THEME_ADMIN.to_string(),
             metadata: CreateRuleInput {
                 id: None,
                 name: "Executive Assistant".to_string(),

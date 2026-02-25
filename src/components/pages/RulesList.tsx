@@ -110,6 +110,7 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
     const result = (rules || []).filter((rule) => {
       const matchesSearch =
         rule.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        rule.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
         rule.content.toLowerCase().includes(searchQuery.toLowerCase());
       const matchesScope = scopeFilter === "all" || rule.scope === scopeFilter;
       const matchesAdapter =
