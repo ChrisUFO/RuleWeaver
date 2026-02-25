@@ -190,7 +190,7 @@ export function Dashboard({ onNavigate }: { onNavigate: (view: string) => void }
             initial="hidden"
             animate="show"
             exit={{ opacity: 0 }}
-            className="space-y-8 max-w-7xl mx-auto"
+            className="space-y-8 max-w-7xl mx-auto pb-12"
           >
             {/* Header Section */}
             <motion.div variants={item} className="flex items-end justify-between">
@@ -285,7 +285,7 @@ export function Dashboard({ onNavigate }: { onNavigate: (view: string) => void }
             <div className="grid gap-6 lg:grid-cols-3">
               {/* Health Monitor / Drift Status */}
               <motion.div variants={item} className="lg:col-span-2">
-                <Card className="glass-card border-none h-full bg-card/20 group">
+                <Card className="glass-card h-full bg-card/20 group overflow-hidden flex flex-col">
                   <CardHeader className="flex flex-row items-center justify-between">
                     <CardTitle className="text-lg font-bold flex items-center gap-2">
                       <ShieldAlert
@@ -312,7 +312,7 @@ export function Dashboard({ onNavigate }: { onNavigate: (view: string) => void }
                       </Badge>
                     </div>
                   </CardHeader>
-                  <CardContent className="h-[240px] flex flex-col items-center justify-center text-center space-y-4">
+                  <CardContent className="h-[240px] flex-1 flex flex-col items-center justify-center text-center space-y-4">
                     <div className="relative">
                       <div
                         className={cn(
@@ -362,7 +362,7 @@ export function Dashboard({ onNavigate }: { onNavigate: (view: string) => void }
 
               {/* Sync History Container */}
               <motion.div variants={item}>
-                <Card className="glass-card border-none h-full bg-card/20 flex flex-col">
+                <Card className="glass-card h-full bg-card/20 flex flex-col overflow-hidden">
                   <CardHeader>
                     <CardTitle className="text-sm font-bold uppercase tracking-widest text-muted-foreground/60 flex items-center gap-2">
                       <History className="h-4 w-4" />
