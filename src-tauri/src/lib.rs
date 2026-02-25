@@ -254,9 +254,9 @@ pub fn run() {
 
                                 // Perform sync asynchronously
                                 let result = async {
-                                    let engine = crate::sync::SyncEngine::new(db);
+                                    let engine = crate::sync::SyncEngine::new(&*db);
                                     let rules = db.get_all_rules().await?;
-                                    Ok::<_, crate::error::AppError>(engine.sync_all(rules))
+                                    Ok::<_, crate::error::AppError>(engine.sync_all(rules).await)
                                 }.await;
 
                                 {
@@ -571,7 +571,7 @@ async fn handle_external_rule_change(
 
         // Check for conflicts using hashes
         let rules = db.get_all_rules().await?;
-        let preview = engine.preview(rules);
+        let preview = engine.preview(rules).await;
 
         let conflict = preview.conflicts.iter().find(|c| {
             if let Ok(c_path) = std::fs::canonicalize(std::path::Path::new(&c.file_path)) {

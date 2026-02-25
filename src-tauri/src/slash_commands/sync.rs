@@ -1,9 +1,10 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use sha2::{Digest, Sha256};
+use tokio::sync::Mutex;
 
 use crate::database::Database;
 use crate::error::{AppError, Result};
@@ -288,7 +289,7 @@ impl SlashCommandSyncEngine {
         let _lock = self
             .sync_lock
             .lock()
-            .map_err(|_| AppError::DatabasePoisoned)?;
+            .await;
 
         let mut result = SlashCommandSyncResult::new();
 
