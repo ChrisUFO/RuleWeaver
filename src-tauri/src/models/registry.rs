@@ -3,7 +3,7 @@ use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-pub static REGISTRY: Lazy<ToolRegistry> = Lazy::new(|| ToolRegistry::new());
+pub static REGISTRY: Lazy<ToolRegistry> = Lazy::new(ToolRegistry::new);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

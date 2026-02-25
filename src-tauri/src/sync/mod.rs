@@ -19,8 +19,8 @@ fn get_home_dir() -> Result<PathBuf> {
 
 fn resolve_registry_path(path: &str) -> Result<PathBuf> {
     let home = get_home_dir()?;
-    if path.starts_with("~/") {
-        Ok(home.join(&path[2..]))
+    if let Some(stripped) = path.strip_prefix("~/") {
+        Ok(home.join(stripped))
     } else if path == "~" {
         Ok(home)
     } else {
@@ -504,6 +504,7 @@ pub fn get_all_adapters() -> Vec<Box<dyn SyncAdapter>> {
     ]
 }
 
+#[allow(dead_code)]
 pub fn get_adapter(adapter_type: AdapterType) -> Option<Box<dyn SyncAdapter>> {
     match adapter_type {
         AdapterType::Antigravity => Some(Box::new(AntigravityAdapter)),

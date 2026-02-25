@@ -1,0 +1,39 @@
+   Compiling ruleweaver v0.0.29-2502 (C:\Users\chris\RuleWeaver\src-tauri)
+warning: function `get_adapter` is never used
+   --> src\sync\mod.rs:507:8
+    |
+507 | pub fn get_adapter(adapter_type: AdapterType) -> Option<Box<dyn SyncAdapter>> {
+    |        ^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: redundant closure
+ --> src\models\registry.rs:6:53
+  |
+6 | pub static REGISTRY: Lazy<ToolRegistry> = Lazy::new(|| ToolRegistry::new());
+  |                                                     ^^^^^^^^^^^^^^^^^^^^^^ help: replace the closure with the associated function itself: `ToolRegistry::new`
+  |
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.92.0/index.html#redundant_closure
+  = note: `#[warn(clippy::redundant_closure)]` on by default
+
+warning: stripping a prefix manually
+  --> src\sync\mod.rs:23:22
+   |
+23 |         Ok(home.join(&path[2..]))
+   |                      ^^^^^^^^^^
+   |
+note: the prefix was tested here
+  --> src\sync\mod.rs:22:5
+   |
+22 |     if path.starts_with("~/") {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.92.0/index.html#manual_strip
+   = note: `#[warn(clippy::manual_strip)]` on by default
+help: try using the `strip_prefix` method
+   |
+22 ~     if let Some(<stripped>) = path.strip_prefix("~/") {
+23 ~         Ok(home.join(<stripped>))
+   |
+
+warning: `ruleweaver` (lib) generated 3 warnings (run `cargo clippy --fix --lib -p ruleweaver` to apply 1 suggestion)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 4.03s
