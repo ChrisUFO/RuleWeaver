@@ -389,21 +389,19 @@ impl PathResolver {
             });
         }
 
-        // First canonicalize to resolve any path traversal sequences and normalize Unicode
-        let canonical_path = std::fs::canonicalize(path).map_err(|e| AppError::InvalidInput {
-            message: format!("Invalid path: {}", e),
-        })?;
+        // Normalize the path without requiring it to exist (no filesystem I/O)
+        let normalized = normalize_path(path)?;
 
-        // Check for traversal by comparing against home directory after canonicalization
-        let canonical_home = std::fs::canonicalize(&self.home_dir).unwrap_or_else(|_| self.home_dir.clone());
+        // Check for traversal by comparing against home directory after normalization
+        let canonical_home = normalize_path(&self.home_dir).unwrap_or_else(|_| self.home_dir.clone());
 
-        if !canonical_path.starts_with(&canonical_home) {
+        if !normalized.starts_with(&canonical_home) {
             return Err(AppError::InvalidInput {
                 message: "Target path must be within user's home directory".to_string(),
             });
         }
 
-        Ok(canonical_path)
+        Ok(normalized)
     }
 
     /// Canonicalize a path with platform-specific normalization.
@@ -413,6 +411,8 @@ impl PathResolver {
     /// - Unicode normalization
     /// - Traversal sequences (.. and .)
     /// - Symlinks (optional)
+    ///
+    /// Note: This function does NOT require the path to exist.
     pub fn canonicalize(&self, path: &Path) -> Result<PathBuf> {
         // First resolve any relative components
         let absolute = if path.is_relative() {
@@ -423,8 +423,8 @@ impl PathResolver {
             path.to_path_buf()
         };
 
-        // Canonicalize to resolve symlinks and normalize
-        std::fs::canonicalize(&absolute).map_err(|e| AppError::Path(format!("Failed to canonicalize path: {}", e)))
+        // Normalize without requiring filesystem I/O
+        normalize_path(&absolute)
     }
 
     /// List all paths that would be written for given artifacts.
@@ -532,6 +532,45 @@ impl Default for PathResolver {
     fn default() -> Self {
         Self::new().expect("Failed to create PathResolver - could not determine home directory")
     }
+}
+
+/// Normalize a path without requiring filesystem I/O.
+///
+/// This resolves:
+/// - Path separators (Windows backslash vs Unix forward slash)
+/// - Traversal sequences (.. and .)
+/// - Redundant separators
+///
+/// Unlike std::fs::canonicalize, this does NOT require the path to exist.
+fn normalize_path(path: &Path) -> std::result::Result<PathBuf, AppError> {
+    let mut components = Vec::new();
+    
+    for component in path.components() {
+        match component {
+            std::path::Component::ParentDir => {
+                // Don't pop if we're at the root
+                if !components.is_empty() && components.last() != Some(&std::path::Component::RootDir) {
+                    components.pop();
+                }
+            }
+            std::path::Component::CurDir => {
+                // Skip current directory components
+            }
+            other => {
+                components.push(other);
+            }
+        }
+    }
+    
+    // Reconstruct the path
+    let normalized: PathBuf = components.iter().map(|c| c.as_os_str()).collect();
+    
+    // Ensure we have an absolute path
+    if normalized.is_relative() {
+        return Err(AppError::Path(format!("Cannot normalize relative path: {}", path.display())));
+    }
+    
+    Ok(normalized)
 }
 
 /// Resolve a registry path string (e.g., "~/path" or "~") to an absolute PathBuf.
