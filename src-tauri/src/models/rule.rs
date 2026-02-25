@@ -205,7 +205,7 @@ mod tests {
         assert!(matches!(Scope::from_str("global"), Some(Scope::Global)));
         assert!(matches!(Scope::from_str("local"), Some(Scope::Local)));
         assert!(matches!(Scope::from_str("GLOBAL"), Some(Scope::Global)));
-        assert!(matches!(Scope::from_str("invalid"), None));
+        assert!(Scope::from_str("invalid").is_none());
     }
 
     #[test]
@@ -240,7 +240,7 @@ mod tests {
             AdapterType::from_str("codex"),
             Some(AdapterType::Codex)
         ));
-        assert!(matches!(AdapterType::from_str("invalid"), None));
+        assert!(AdapterType::from_str("invalid").is_none());
     }
 
     #[test]
@@ -297,7 +297,7 @@ mod tests {
         assert_eq!(parsed.content, input.content);
         assert!(matches!(parsed.scope, Scope::Global));
         assert_eq!(parsed.enabled_adapters.len(), 2);
-        assert_eq!(parsed.enabled, true);
+        assert!(parsed.enabled);
     }
 
     #[test]

@@ -10,7 +10,7 @@ use crate::constants::{
 };
 use crate::database::Database;
 use crate::error::{AppError, Result};
-use crate::models::registry::REGISTRY;
+use crate::models::registry::{ArtifactType, REGISTRY};
 use crate::models::{AdapterType, Conflict, Rule, Scope, SyncError, SyncResult};
 
 fn get_home_dir() -> Result<PathBuf> {
@@ -135,7 +135,7 @@ impl SyncAdapter for AntigravityAdapter {
         Path::new(entry.paths.local_path_template)
             .file_name()
             .and_then(|s| s.to_str())
-            .unwrap_or("GEMINI.md")
+            .expect("local_path_template in registry must have a valid file name")
     }
 
     fn description(&self) -> &str {
@@ -172,7 +172,7 @@ impl SyncAdapter for GeminiAdapter {
         Path::new(entry.paths.local_path_template)
             .file_name()
             .and_then(|s| s.to_str())
-            .unwrap_or("GEMINI.md")
+            .expect("local_path_template in registry must have a valid file name")
     }
 
     fn description(&self) -> &str {
@@ -209,7 +209,7 @@ impl SyncAdapter for OpenCodeAdapter {
         Path::new(entry.paths.local_path_template)
             .file_name()
             .and_then(|s| s.to_str())
-            .unwrap_or("AGENTS.md")
+            .expect("local_path_template in registry must have a valid file name")
     }
 
     fn description(&self) -> &str {
@@ -246,7 +246,7 @@ impl SyncAdapter for ClineAdapter {
         Path::new(entry.paths.local_path_template)
             .file_name()
             .and_then(|s| s.to_str())
-            .unwrap_or(".clinerules")
+            .expect("local_path_template in registry must have a valid file name")
     }
 
     fn description(&self) -> &str {
@@ -283,7 +283,7 @@ impl SyncAdapter for ClaudeCodeAdapter {
         Path::new(entry.paths.local_path_template)
             .file_name()
             .and_then(|s| s.to_str())
-            .unwrap_or("CLAUDE.md")
+            .expect("local_path_template in registry must have a valid file name")
     }
 
     fn description(&self) -> &str {
@@ -320,7 +320,7 @@ impl SyncAdapter for CodexAdapter {
         Path::new(entry.paths.local_path_template)
             .file_name()
             .and_then(|s| s.to_str())
-            .unwrap_or("AGENTS.md")
+            .expect("local_path_template in registry must have a valid file name")
     }
 
     fn description(&self) -> &str {
@@ -357,7 +357,7 @@ impl SyncAdapter for KiloAdapter {
         Path::new(entry.paths.local_path_template)
             .file_name()
             .and_then(|s| s.to_str())
-            .unwrap_or("AGENTS.md")
+            .expect("local_path_template in registry must have a valid file name")
     }
 
     fn description(&self) -> &str {
@@ -394,7 +394,7 @@ impl SyncAdapter for CursorAdapter {
         Path::new(entry.paths.local_path_template)
             .file_name()
             .and_then(|s| s.to_str())
-            .unwrap_or(".cursorrules")
+            .expect("local_path_template in registry must have a valid file name")
     }
 
     fn description(&self) -> &str {
@@ -468,7 +468,7 @@ impl SyncAdapter for RooCodeAdapter {
         Path::new(entry.paths.local_path_template)
             .file_name()
             .and_then(|s| s.to_str())
-            .unwrap_or("rules.md")
+            .expect("local_path_template in registry must have a valid file name")
     }
 
     fn description(&self) -> &str {
@@ -573,7 +573,7 @@ impl<'a> SyncEngine<'a> {
                 .filter(|r| {
                     r.enabled_adapters.contains(&adapter.id())
                         && REGISTRY
-                            .validate_support(&adapter.id(), &r.scope, "rule")
+                            .validate_support(&adapter.id(), &r.scope, ArtifactType::Rule)
                             .is_ok()
                 })
                 .cloned()
@@ -698,7 +698,7 @@ impl<'a> SyncEngine<'a> {
             if disabled_adapters.contains(&adapter.id())
                 || !rule.enabled_adapters.contains(&adapter.id())
                 || REGISTRY
-                    .validate_support(&adapter.id(), &rule.scope, "rule")
+                    .validate_support(&adapter.id(), &rule.scope, ArtifactType::Rule)
                     .is_err()
             {
                 continue;
@@ -807,7 +807,7 @@ impl<'a> SyncEngine<'a> {
                 .filter(|r| {
                     r.enabled_adapters.contains(&adapter.id())
                         && REGISTRY
-                            .validate_support(&adapter.id(), &r.scope, "rule")
+                            .validate_support(&adapter.id(), &r.scope, ArtifactType::Rule)
                             .is_ok()
                 })
                 .cloned()

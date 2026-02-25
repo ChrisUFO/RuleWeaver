@@ -11,6 +11,7 @@ import type {
   ImportHistoryEntry,
   ImportScanResult,
   TemplateRule,
+  ToolEntry,
 } from "@/types/rule";
 import type {
   CommandModel,
@@ -213,5 +214,9 @@ export const api = {
     getAppDataPath: () => invoke<string>("get_app_data_path_cmd"),
     openInExplorer: (path: string) => invoke<void>("open_in_explorer", { path }),
     getVersion: () => invoke<string>("get_app_version"),
+  },
+
+  registry: {
+    getTools: () => invoke<ToolEntry[]>("get_tool_registry"),
   },
 };

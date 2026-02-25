@@ -5,6 +5,26 @@ use std::collections::HashMap;
 
 pub static REGISTRY: Lazy<ToolRegistry> = Lazy::new(ToolRegistry::new);
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ArtifactType {
+    Rule,
+    CommandStub,
+    SlashCommand,
+    Skill,
+}
+
+impl ArtifactType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ArtifactType::Rule => "rule",
+            ArtifactType::CommandStub => "command_stub",
+            ArtifactType::SlashCommand => "slash_command",
+            ArtifactType::Skill => "skill",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ToolCapabilities {
@@ -289,7 +309,7 @@ impl ToolRegistry {
         &self,
         adapter: &AdapterType,
         scope: &Scope,
-        artifact: &str,
+        artifact: ArtifactType,
     ) -> Result<(), String> {
         let entry = self
             .get(adapter)
@@ -314,17 +334,17 @@ impl ToolRegistry {
 
         // Artifact check
         let supported = match artifact {
-            "rule" => entry.capabilities.supports_rules,
-            "command_stub" => entry.capabilities.supports_command_stubs,
-            "slash_command" => entry.capabilities.supports_slash_commands,
-            "skill" => entry.capabilities.supports_skills,
-            _ => return Err(format!("Unknown artifact type: {}", artifact)),
+            ArtifactType::Rule => entry.capabilities.supports_rules,
+            ArtifactType::CommandStub => entry.capabilities.supports_command_stubs,
+            ArtifactType::SlashCommand => entry.capabilities.supports_slash_commands,
+            ArtifactType::Skill => entry.capabilities.supports_skills,
         };
 
         if !supported {
             return Err(format!(
                 "Adapter {} does not support artifact type: {}",
-                entry.name, artifact
+                entry.name,
+                artifact.as_str()
             ));
         }
 

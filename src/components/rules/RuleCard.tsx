@@ -5,7 +5,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
-import { ADAPTERS, type Rule, type AdapterType } from "@/types/rule";
+import { type Rule } from "@/types/rule";
+import { useRegistryStore } from "@/stores/registryStore";
 import type { RefObject } from "react";
 
 interface RuleCardProps {
@@ -21,11 +22,6 @@ interface RuleCardProps {
   onToggleMenu: () => void;
 }
 
-function getAdapterBadge(adapterId: AdapterType): string {
-  const adapter = ADAPTERS.find((a) => a.id === adapterId);
-  return adapter?.name || adapterId;
-}
-
 export function RuleCard({
   rule,
   isSelected,
@@ -38,6 +34,8 @@ export function RuleCard({
   onDelete,
   onToggleMenu,
 }: RuleCardProps) {
+  const { tools } = useRegistryStore();
+
   return (
     <Card
       className={cn(
@@ -83,11 +81,14 @@ export function RuleCard({
             {(rule.description || rule.content).length > 100 && "..."}
           </p>
           <div className="flex items-center gap-1 mt-2" aria-label="Adapters">
-            {rule.enabledAdapters.map((adapter) => (
-              <Badge key={adapter} variant="outline" className="text-xs">
-                {getAdapterBadge(adapter)}
-              </Badge>
-            ))}
+            {rule.enabledAdapters.map((adapter) => {
+              const adapterInfo = tools.find((a) => a.id === adapter);
+              return (
+                <Badge key={adapter} variant="outline" className="text-xs">
+                  {adapterInfo?.name || adapter}
+                </Badge>
+              );
+            })}
           </div>
         </button>
 

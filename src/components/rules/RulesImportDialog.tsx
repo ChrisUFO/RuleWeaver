@@ -15,9 +15,9 @@ import { Badge } from "@/components/ui/badge";
 import { Select } from "@/components/ui/select";
 import { useToast } from "@/components/ui/toast";
 import { api } from "@/lib/tauri";
+import { useRegistryStore } from "@/stores/registryStore";
 import { toast } from "@/lib/toast-helpers";
 import {
-  ADAPTERS,
   type Scope,
   type AdapterType,
   type ImportCandidate,
@@ -40,6 +40,7 @@ export function RulesImportDialog({
   onOpenChange,
   onImportComplete,
 }: RulesImportDialogProps) {
+  const { tools } = useRegistryStore();
   const { addToast } = useToast();
   const [isImporting, setIsImporting] = useState(false);
   const [isScanningImport, setIsScanningImport] = useState(false);
@@ -413,7 +414,7 @@ export function RulesImportDialog({
 
               {useAdapterOverride && (
                 <div className="grid grid-cols-2 gap-2">
-                  {ADAPTERS.map((adapter) => (
+                  {tools.map((adapter) => (
                     <label key={adapter.id} className="flex items-center gap-2 text-sm">
                       <Checkbox
                         checked={adapterOverrideSet.has(adapter.id)}

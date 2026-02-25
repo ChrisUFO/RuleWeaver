@@ -623,7 +623,7 @@ tools:
 
     #[test]
     fn test_adapter_name_uniqueness() {
-        let names = vec![
+        let names = [
             OpenCodeSlashAdapter.name(),
             ClaudeCodeSlashAdapter.name(),
             ClineSlashAdapter.name(),

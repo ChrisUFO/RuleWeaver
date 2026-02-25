@@ -1,0 +1,8 @@
+src\file_storage\mod.rs:558:48: warning: this call to `clone` can be replaced with `std::slice::from_ref`: help: try: `std::slice::from_ref(&local_root)`
+src\models\rule.rs:208:17: warning: redundant pattern matching, consider using `is_none()`: help: try: `Scope::from_str("invalid").is_none()`
+src\models\rule.rs:243:17: warning: redundant pattern matching, consider using `is_none()`: help: try: `AdapterType::from_str("invalid").is_none()`
+src\models\rule.rs:300:9: warning: used `assert_eq!` with a literal bool
+src\slash_commands\adapters.rs:626:21: warning: useless use of `vec!`
+warning: `ruleweaver` (lib test) generated 5 warnings (run `cargo clippy --fix --lib -p ruleweaver --tests` to apply 4 suggestions)
+    Checking ruleweaver v0.0.29-2502 (C:\Users\chris\RuleWeaver\src-tauri)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.97s

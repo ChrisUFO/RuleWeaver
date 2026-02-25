@@ -555,7 +555,7 @@ mod tests {
         fs::write(local_rules_dir.join("local-rule.md"), &local_rule_content)
             .expect("Failed to write local rule");
 
-        let result = load_rules_from_locations(&[local_root.clone()]).unwrap();
+        let result = load_rules_from_locations(std::slice::from_ref(&local_root)).unwrap();
 
         assert!(result.rules.iter().any(|r| r.id == "local-rule-1"));
         assert!(result.files_scanned >= 1);

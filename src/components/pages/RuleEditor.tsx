@@ -19,7 +19,8 @@ import { useRulesStore } from "@/stores/rulesStore";
 import { useToast } from "@/components/ui/toast";
 import { useKeyboardShortcuts, SHORTCUTS } from "@/hooks/useKeyboardShortcuts";
 import { useRepositoryRoots } from "@/hooks/useRepositoryRoots";
-import { ADAPTERS, type Rule, type Scope, type AdapterType } from "@/types/rule";
+import { type Rule, type Scope, type AdapterType } from "@/types/rule";
+import { useRegistryStore } from "@/stores/registryStore";
 import { api } from "@/lib/tauri";
 
 interface RuleEditorProps {
@@ -42,6 +43,7 @@ function getCharacterCount(text: string): number {
 
 export function RuleEditor({ rule, onBack, isNew = false }: RuleEditorProps) {
   const { createRule, updateRule } = useRulesStore();
+  const { tools } = useRegistryStore();
   const { addToast } = useToast();
 
   const [name, setName] = useState(rule?.name || "");
@@ -263,11 +265,12 @@ export function RuleEditor({ rule, onBack, isNew = false }: RuleEditorProps) {
   };
 
   const getAdapterPath = (adapter: AdapterType): string => {
-    const adapterInfo = ADAPTERS.find((a) => a.id === adapter);
+    const adapterInfo = tools.find((a) => a.id === adapter);
     if (scope === "global") {
-      return adapterInfo?.globalPath || "";
+      return adapterInfo?.paths.globalPath || "";
     }
-    return targetPaths[0] ? `${targetPaths[0]}/${adapterInfo?.fileName}` : "";
+    const fileName = adapterInfo?.paths.localPathTemplate.split(/[/\\]/).pop();
+    return targetPaths[0] && fileName ? `${targetPaths[0]}/${fileName}` : "";
   };
 
   const handleOpenFolder = async (adapter: AdapterType) => {
@@ -395,7 +398,7 @@ export function RuleEditor({ rule, onBack, isNew = false }: RuleEditorProps) {
                           : "text-muted-foreground"
                       )}
                     >
-                      {ADAPTERS.find((a) => a.id === adapter)?.name}
+                      {tools.find((a) => a.id === adapter)?.name}
                     </Button>
                   ))}
                 </div>
@@ -492,25 +495,28 @@ export function RuleEditor({ rule, onBack, isNew = false }: RuleEditorProps) {
                 Select which AI tools should receive this rule
               </p>
               <div className="space-y-2">
-                {ADAPTERS.map((adapter) => (
-                  <div
-                    key={adapter.id}
-                    className="flex items-center justify-between p-2 rounded-md hover:bg-accent cursor-pointer transition-colors"
-                    onClick={() => toggleAdapter(adapter.id)}
-                  >
-                    <div className="flex items-center gap-2">
-                      <Switch
-                        checked={enabledAdapters.includes(adapter.id)}
-                        onCheckedChange={() => toggleAdapter(adapter.id)}
-                        aria-label={`Toggle ${adapter.name} adapter`}
-                      />
-                      <div>
-                        <div className="text-sm font-medium">{adapter.name}</div>
-                        <div className="text-xs text-muted-foreground">{adapter.fileName}</div>
+                {tools.map((adapter) => {
+                  const fileName = adapter.paths.localPathTemplate.split(/[/\\]/).pop();
+                  return (
+                    <div
+                      key={adapter.id}
+                      className="flex items-center justify-between p-2 rounded-md hover:bg-accent cursor-pointer transition-colors"
+                      onClick={() => toggleAdapter(adapter.id)}
+                    >
+                      <div className="flex items-center gap-2">
+                        <Switch
+                          checked={enabledAdapters.includes(adapter.id)}
+                          onCheckedChange={() => toggleAdapter(adapter.id)}
+                          aria-label={`Toggle ${adapter.name} adapter`}
+                        />
+                        <div>
+                          <div className="text-sm font-medium">{adapter.name}</div>
+                          <div className="text-xs text-muted-foreground">{fileName}</div>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           </CardContent>

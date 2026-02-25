@@ -14,24 +14,29 @@ import { useKeyboardShortcuts, SHORTCUTS } from "./hooks/useKeyboardShortcuts";
 import { useRulesStore } from "./stores/rulesStore";
 import { motion, AnimatePresence } from "framer-motion";
 import type { Conflict } from "./types/rule";
-import { ADAPTERS } from "./types/rule";
+import { useRegistryStore } from "./stores/registryStore";
 import "./index.css";
 
 function App() {
   const [activeView, setActiveView] = useState("dashboard");
   const [shortcutsDialogOpen, setShortcutsDialogOpen] = useState(false);
 
+  const { fetchTools } = useRegistryStore();
   const { rules, fetchRules } = useRulesStore();
   const [activeConflict, setActiveConflict] = useState<Conflict | null>(null);
   const [isConflictDialogOpen, setIsConflictDialogOpen] = useState(false);
 
   useEffect(() => {
+    fetchTools();
     fetchRules();
 
     const unlisten = listen<string>("rule-conflict", async (event) => {
       const filePath = event.payload;
       const fileName = filePath.split(/[/\\]/).pop() || "";
-      const adapter = ADAPTERS.find((a) => a.fileName === fileName);
+      const currentTools = useRegistryStore.getState().tools;
+      const adapter = currentTools.find(
+        (a) => a.paths.localPathTemplate.split(/[/\\]/).pop() === fileName
+      );
 
       setActiveConflict({
         id: crypto.randomUUID(),
@@ -47,7 +52,7 @@ function App() {
     return () => {
       unlisten.then((f) => f());
     };
-  }, [fetchRules]);
+  }, [fetchRules, fetchTools]);
 
   useKeyboardShortcuts({
     shortcuts: [

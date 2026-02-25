@@ -18,13 +18,13 @@ import {
 } from "@/components/ui/dialog";
 import { useRulesStore } from "@/stores/rulesStore";
 import { useToast } from "@/components/ui/toast";
+import { useRegistryStore } from "@/stores/registryStore";
 import { RulesListSkeleton } from "@/components/ui/skeleton";
 import { RulesFilterBar } from "@/components/rules/RulesFilterBar";
 import { parseSortValue } from "@/components/rules/filter-utils";
 import { RuleCard } from "@/components/rules/RuleCard";
 import { toast } from "@/lib/toast-helpers";
 import {
-  ADAPTERS,
   type Rule,
   type AdapterType,
   type ImportCandidate,
@@ -53,6 +53,7 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
     restoreRecentlyDeleted,
     isLoading,
   } = useRulesStore();
+  const { tools } = useRegistryStore();
   const { addToast } = useToast();
   const [searchQuery, setSearchQuery] = useState("");
   const [scopeFilter, setScopeFilter] = useState<"all" | "global" | "local">("all");
@@ -814,7 +815,7 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
 
               {useAdapterOverride && (
                 <div className="grid grid-cols-2 gap-2">
-                  {ADAPTERS.map((adapter) => (
+                  {tools.map((adapter) => (
                     <label key={adapter.id} className="flex items-center gap-2 text-sm">
                       <Checkbox
                         checked={adapterOverrideSet.has(adapter.id)}

@@ -1,5 +1,3 @@
-import { ADAPTERS } from "@/types/rule";
-
 export type SortField = "name" | "createdAt" | "updatedAt" | "enabled";
 export type SortDirection = "asc" | "desc";
 
@@ -12,11 +10,6 @@ export const SORT_OPTIONS = [
   { value: "updatedAt-asc", label: "Least Recently Updated" },
   { value: "enabled-desc", label: "Enabled First" },
   { value: "enabled-asc", label: "Disabled First" },
-];
-
-export const ADAPTER_FILTER_OPTIONS = [
-  { value: "all", label: "All Adapters" },
-  ...ADAPTERS.map((a) => ({ value: a.id, label: a.name })),
 ];
 
 export function parseSortValue(sortValue: string): {
