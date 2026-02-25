@@ -306,6 +306,7 @@ mod tests {
         // Adapter types use lowercase (OpenCode -> opencode)
         let json = r#"{
             "name": "Test Rule",
+            "description": "Test description",
             "content": "Test content",
             "scope": "global",
             "targetPaths": ["/path/to/repo"],
@@ -316,9 +317,9 @@ mod tests {
         let parsed: CreateRuleInput = serde_json::from_str(json).unwrap();
 
         assert_eq!(parsed.name, "Test Rule");
-        assert_eq!(parsed.description, ""); // Description not in JSON, but we haven't set default yet.
-                                            // Actually I should add a default or make the JSON contain it.
-                                            // Let's update the test JSON.
+        assert_eq!(parsed.description, "Test description");
+        // Actually I should add a default or make the JSON contain it.
+        // Let's update the test JSON.
         assert!(matches!(parsed.scope, Scope::Global));
         assert_eq!(parsed.target_paths, Some(vec!["/path/to/repo".to_string()]));
         assert_eq!(parsed.enabled_adapters.len(), 2);

@@ -1,0 +1,109 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.57s
+     Running unittests src\lib.rs (target\debug\deps\ruleweaver_lib-daef51faff586c61.exe)
+
+running 89 tests
+test execution::tests::test_sanitize_argument_value ... ok
+test commands::import_commands::tests::scan_rule_clipboard_import_enforces_max_size ... ok
+test execution::tests::test_escape_cmd_argument ... ok
+test file_storage::migration::tests::test_migration_status_default ... ok
+test file_storage::serializer::tests::test_sanitize_filename_multiple_spaces ... ok
+test file_storage::parser::tests::test_parse_rule_file_missing_frontmatter ... ok
+test commands::import_commands::tests::scan_rule_file_import_returns_errors_for_missing_file ... ok
+test file_storage::serializer::tests::test_generate_filename_global ... ok
+test file_storage::serializer::tests::test_format_datetime ... ok
+test file_storage::serializer::tests::test_generate_filename_local ... ok
+test file_storage::serializer::tests::test_sanitize_filename_empty ... ok
+test file_storage::parser::tests::test_parse_datetime_formats ... ok
+test file_storage::serializer::tests::test_sanitize_filename_leading_trailing_dashes ... ok
+test file_storage::serializer::tests::test_sanitize_filename_simple ... ok
+test file_storage::serializer::tests::test_sanitize_filename_special_chars ... ok
+test file_storage::serializer::tests::test_sanitize_filename_unicode ... ok
+test file_storage::serializer::tests::test_serialize_rule_basic ... ok
+test file_storage::serializer::tests::test_serialize_rule_with_target_paths ... ok
+test file_storage::serializer::tests::test_serialize_rule_empty_content ... ok
+test file_storage::tests::test_generate_filename_sanitization ... ok
+test file_storage::tests::test_delete_rule_file_not_found ... ok
+test file_storage::watcher::tests::test_watcher_creation ... ok
+test file_storage::parser::tests::test_parse_rule_file_missing_closing_delimiter ... ok
+test file_storage::parser::tests::test_parse_rule_file_invalid_yaml ... ok
+test file_storage::parser::tests::test_parse_rule_file_missing_required_field ... ok
+test file_storage::parser::tests::test_parse_rule_file_empty_body ... ok
+test file_storage::parser::tests::test_to_rule_no_valid_adapters ... ok
+test mcp::tests::test_disallowed_patterns ... ok
+test models::command::tests::test_new_command_defaults ... ok
+test file_storage::parser::tests::test_parse_rule_file_default_values ... ok
+test file_storage::parser::tests::test_parse_rule_file_whitespace_handling ... ok
+test file_storage::parser::tests::test_to_rule_conversion ... ok
+test models::command::tests::test_command_roundtrip ... ok
+test file_storage::parser::tests::test_parse_rule_file_success ... ok
+test models::rule::tests::test_adapter_type_all ... ok
+test file_storage::serializer::tests::test_roundtrip_parse_serialize ... ok
+test models::rule::tests::test_adapter_type_from_str ... ok
+test models::rule::tests::test_create_rule_input_serialization ... ok
+test models::rule::tests::test_rule_new ... ok
+test models::rule::tests::test_rule_output_camel_case_to_frontend ... ok
+test models::rule::tests::test_create_rule_input_camel_case_from_frontend ... FAILED
+test models::rule::tests::test_scope_as_str ... ok
+test models::rule::tests::test_scope_from_str ... ok
+test mcp::tests::test_slugify ... ok
+test models::rule::tests::test_update_rule_input_camel_case_from_frontend ... ok
+test rule_import::tests::extract_payload_ignores_malicious_paths ... ok
+test rule_import::tests::extract_payload_respects_fallback_paths ... ok
+test rule_import::tests::extract_payload_reads_json_rule_fields ... ok
+test rule_import::tests::extract_payload_reads_yaml_rule_fields ... ok
+test rule_import::tests::scan_clipboard_respects_max_size_limit ... ok
+test rule_import::tests::tool_path_matrix_includes_legacy_and_alternate_locations ... ok
+test rule_import::tests::unique_name_generation_is_stable ... ok
+test rule_import::tests::suffix_policy_applies_for_multi_tool_name_collision ... ok
+test rule_import::tests::validate_url_allows_public_http_https ... ok
+test rule_import::tests::validate_url_blocks_localhost_and_private_ips ... ok
+test slash_commands::adapters::tests::test_adapter_name_uniqueness ... ok
+test slash_commands::adapters::tests::test_all_adapters_produce_content ... ok
+test slash_commands::adapters::tests::test_claude_adapter ... ok
+test rule_import::tests::scan_directory_reports_error_for_non_directory_path ... ok
+test file_storage::tests::test_load_rules_from_empty_directory ... ok
+test slash_commands::sync::tests::test_slash_command_conflict_creation ... ok
+test file_storage::tests::test_delete_rule_file ... ok
+test slash_commands::adapters::tests::test_standard_frontmatter_serialization ... ok
+test slash_commands::sync::tests::test_calculate_hash ... ok
+test slash_commands::sync::tests::test_sync_result_default ... ok
+test slash_commands::sync::tests::test_sync_status_enum ... ok
+test slash_commands::adapters::tests::test_opencode_adapter ... ok
+test sync::tests::test_all_adapters_have_consistent_interface ... ok
+test sync::tests::test_cline_adapter_format ... ok
+test slash_commands::adapters::tests::test_codex_skill_structure ... ok
+test sync::tests::test_gemini_adapter_format ... ok
+test slash_commands::adapters::tests::test_gemini_adapter_toml_format ... ok
+test sync::tests::test_compute_content_hash ... ok
+test sync::tests::test_disabled_rules_not_included ... ok
+test database::tests::test_command_target_paths_roundtrip ... ok
+test sync::tests::test_adapter_global_path ... ok
+test sync::tests::test_opencode_adapter_format ... ok
+test file_storage::tests::test_load_rules_from_directory_with_valid_files ... ok
+test file_storage::tests::test_load_rules_ignores_non_markdown_files ... ok
+test database::tests::test_skill_crud ... ok
+test file_storage::tests::test_load_rules_from_directory_with_invalid_file ... ok
+test file_storage::tests::test_load_rules_from_locations_includes_local_roots ... ok
+test rule_import::tests::execute_import_skips_duplicate_content ... ok
+test rule_import::tests::execute_import_rename_mode_creates_unique_name ... ok
+test rule_import::tests::history_source_type_matches_candidate_source ... ok
+test rule_import::tests::execute_import_replace_mode_updates_existing_rule ... ok
+test file_storage::tests::test_save_rule_creates_new_file ... ok
+test rule_import::tests::execute_import_reimport_updates_mapped_rule_idempotently ... ok
+test file_storage::watcher::tests::test_watcher_start_and_stop ... ok
+
+failures:
+
+---- models::rule::tests::test_create_rule_input_camel_case_from_frontend stdout ----
+
+thread 'models::rule::tests::test_create_rule_input_camel_case_from_frontend' (40556) panicked at src\models\rule.rs:316:66:
+called `Result::unwrap()` on an `Err` value: Error("missing field `description`", line: 8, column: 9)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    models::rule::tests::test_create_rule_input_camel_case_from_frontend
+
+test result: FAILED. 88 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+
+error: test failed, to rerun pass `--lib`
