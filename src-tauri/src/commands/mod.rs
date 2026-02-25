@@ -3,6 +3,7 @@ pub mod command_commands;
 pub mod import_commands;
 pub mod mcp_commands;
 pub mod migration_commands;
+pub mod registry_commands;
 pub mod rule_commands;
 pub mod skill_commands;
 pub mod system_commands;
@@ -15,6 +16,7 @@ pub use command_commands::*;
 pub use import_commands::*;
 pub use mcp_commands::*;
 pub use migration_commands::*;
+pub use registry_commands::*;
 pub use rule_commands::*;
 pub use skill_commands::*;
 pub use system_commands::*;
@@ -22,8 +24,8 @@ pub use system_commands::*;
 use parking_lot::Mutex;
 use std::collections::{HashSet, VecDeque};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, OnceLock};
 use std::sync::LazyLock;
+use std::sync::{Arc, OnceLock};
 use std::time::Instant;
 
 use crate::constants::limits::{
@@ -31,8 +33,7 @@ use crate::constants::limits::{
     MAX_RULE_NAME_LENGTH,
 };
 use crate::constants::{
-    NEW_CURSOR_DIR, NEW_GEMINI_DIR, NEW_KILO_DIR, NEW_ROO_CODE_DIR,
-    NEW_WINDSURF_DIR,
+    NEW_CURSOR_DIR, NEW_GEMINI_DIR, NEW_KILO_DIR, NEW_ROO_CODE_DIR, NEW_WINDSURF_DIR,
 };
 use crate::database::Database;
 use crate::error::{AppError, Result};
@@ -191,7 +192,10 @@ fn command_target_path_for_adapter(root: &Path, adapter_name: &str) -> Option<St
         "claude" => root.join(".claude").join("COMMANDS.md"),
         "kilo" => root.join(NEW_KILO_DIR).join("rules").join("COMMANDS.md"),
         "cursor" => root.join(NEW_CURSOR_DIR).join("COMMANDS.md"),
-        "windsurf" => root.join(NEW_WINDSURF_DIR).join("rules").join("COMMANDS.md"),
+        "windsurf" => root
+            .join(NEW_WINDSURF_DIR)
+            .join("rules")
+            .join("COMMANDS.md"),
         "roo" => root.join(NEW_ROO_CODE_DIR).join("COMMANDS.md"),
         _ => return None,
     };
@@ -221,7 +225,8 @@ pub const LOCAL_RULE_PATHS_KEY: &str = "local_rule_paths";
 
 pub async fn get_local_rule_roots(db: &Database) -> Result<Vec<PathBuf>> {
     let roots_json = db
-        .get_setting(LOCAL_RULE_PATHS_KEY).await?
+        .get_setting(LOCAL_RULE_PATHS_KEY)
+        .await?
         .unwrap_or_else(|| "[]".to_string());
     let roots: Vec<String> = serde_json::from_str(&roots_json)?;
     Ok(roots.into_iter().map(PathBuf::from).collect())
@@ -247,7 +252,8 @@ pub fn command_file_targets_for_root(root: &Path) -> Vec<(String, Arc<dyn Comman
 }
 
 pub async fn register_local_paths(db: &Database, paths: &[String]) -> Result<()> {
-    db.merge_setting_string_array_unique(LOCAL_RULE_PATHS_KEY, paths).await
+    db.merge_setting_string_array_unique(LOCAL_RULE_PATHS_KEY, paths)
+        .await
 }
 
 pub async fn validate_paths_within_registered_roots(db: &Database, paths: &[String]) -> Result<()> {
@@ -269,7 +275,9 @@ pub async fn validate_paths_within_registered_roots(db: &Database, paths: &[Stri
 
     for path in paths {
         let canonical = validate_path(path)?;
-        let in_roots = canonical_roots.iter().any(|root| canonical.starts_with(root));
+        let in_roots = canonical_roots
+            .iter()
+            .any(|root| canonical.starts_with(root));
         if !in_roots {
             return Err(AppError::InvalidInput {
                 message: format!(

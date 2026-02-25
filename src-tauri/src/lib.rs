@@ -462,6 +462,7 @@ pub fn run() {
             slash_commands::commands::get_slash_command_adapters,
             slash_commands::commands::test_slash_command_generation,
             slash_commands::commands::get_slash_command_path,
+            commands::get_tool_registry,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

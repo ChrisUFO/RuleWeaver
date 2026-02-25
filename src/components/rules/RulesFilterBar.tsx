@@ -1,9 +1,11 @@
+import { useMemo } from "react";
 import { Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { SORT_OPTIONS, ADAPTER_FILTER_OPTIONS } from "./filter-utils";
+import { SORT_OPTIONS } from "./filter-utils";
+import { useRegistryStore } from "@/stores/registryStore";
 
 export interface RulesFilterBarProps {
   searchQuery: string;
@@ -29,6 +31,14 @@ export function RulesFilterBar({
   onClear,
 }: RulesFilterBarProps) {
   const hasActiveFilters = searchQuery || scopeFilter !== "all" || adapterFilter !== "all";
+  const { tools } = useRegistryStore();
+  const adapterOptions = useMemo(
+    () => [
+      { value: "all", label: "All Adapters" },
+      ...tools.map((a) => ({ value: a.id, label: a.name })),
+    ],
+    [tools]
+  );
 
   return (
     <div className="flex flex-wrap items-center gap-3 p-4 glass rounded-xl border border-white/5 premium-shadow">
@@ -57,7 +67,7 @@ export function RulesFilterBar({
       <Select
         value={adapterFilter}
         onChange={onAdapterChange}
-        options={ADAPTER_FILTER_OPTIONS}
+        options={adapterOptions}
         className="w-40 bg-white/5 border-white/5 rounded-lg"
         aria-label="Filter by adapter"
       />

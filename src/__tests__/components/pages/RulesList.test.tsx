@@ -43,6 +43,36 @@ vi.mock("../../../stores/rulesStore", () => ({
   useRulesStore: () => mockStore,
 }));
 
+const mockRegistryStore = {
+  tools: [
+    {
+      id: "gemini",
+      name: "Gemini",
+      description: "Gemini Adapter",
+      icon: "gemini",
+      fileFormat: "md",
+      capabilities: { hasChat: true, hasFileWriting: true, hasCommandExecution: true },
+      paths: { globalPath: "~/.gemini/GEMINI.md", localPathTemplate: ".gemini/GEMINI.md" },
+    },
+    {
+      id: "cline",
+      name: "Cline",
+      description: "Cline Adapter",
+      icon: "cline",
+      fileFormat: "md",
+      capabilities: { hasChat: true, hasFileWriting: true, hasCommandExecution: true },
+      paths: { globalPath: "~/.clinerules", localPathTemplate: ".clinerules" },
+    },
+  ],
+  isLoading: false,
+  error: null,
+  fetchTools: vi.fn(),
+};
+
+vi.mock("../../../stores/registryStore", () => ({
+  useRegistryStore: () => mockRegistryStore,
+}));
+
 const renderWithProviders = (ui: React.ReactElement) => render(<ToastProvider>{ui}</ToastProvider>);
 
 describe("RulesList import workflow", () => {

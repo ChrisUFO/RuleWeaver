@@ -6,7 +6,7 @@ import { api } from "@/lib/tauri";
 import { toast } from "@/lib/toast-helpers";
 import type { useToast } from "@/components/ui/toast";
 import { useRepositoryRoots } from "@/hooks/useRepositoryRoots";
-import { ADAPTERS, type AdapterType, type Rule } from "@/types/rule";
+import type { AdapterType, Rule } from "@/types/rule";
 import type { CommandModel } from "@/types/command";
 import type { Skill } from "@/types/skill";
 
@@ -108,13 +108,7 @@ export function useSettingsState(
 ): UseSettingsStateReturn {
   const [appDataPath, setAppDataPath] = useState<string>("");
   const [appVersion, setAppVersion] = useState<string>("");
-  const [adapterSettings, setAdapterSettings] = useState<AdapterSettings>(() => {
-    const initial: AdapterSettings = {};
-    ADAPTERS.forEach((a) => {
-      initial[a.id] = a.enabled;
-    });
-    return initial;
-  });
+  const [adapterSettings, setAdapterSettings] = useState<AdapterSettings>({});
   const [hasChanges, setHasChanges] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -168,6 +162,7 @@ export function useSettingsState(
           minimizeToTraySetting,
           mcpLogsInitial,
           autoStartEnabled,
+          tools,
         ] = await Promise.all([
           api.app.getAppDataPath(),
           api.app.getVersion(),
@@ -181,6 +176,7 @@ export function useSettingsState(
           api.settings.get("minimize_to_tray"),
           api.mcp.getLogs(20),
           isEnabled(),
+          api.registry.getTools(),
         ]);
         setAppDataPath(path);
         try {
@@ -205,14 +201,20 @@ export function useSettingsState(
         setLaunchOnStartup(autoStartEnabled);
         await refreshRepositoryRoots();
 
+        let parsedSettings: AdapterSettings = {};
         if (settingsJson) {
           try {
-            const savedSettings = JSON.parse(settingsJson) as AdapterSettings;
-            setAdapterSettings((prev) => ({ ...prev, ...savedSettings }));
+            parsedSettings = JSON.parse(settingsJson) as AdapterSettings;
           } catch {
             console.error("Failed to parse adapter settings");
           }
         }
+
+        const initialSettings: AdapterSettings = {};
+        tools.forEach((t) => {
+          initialSettings[t.id] = parsedSettings[t.id] ?? true;
+        });
+        setAdapterSettings(initialSettings);
       } catch (error) {
         console.error("Failed to load settings:", error);
       } finally {

@@ -190,21 +190,34 @@ pub async fn scan_ai_tool_candidates(db: &Database, max_size: u64) -> Result<Imp
         .ok_or_else(|| AppError::Path("Could not determine home directory".to_string()))?;
 
     for (adapter, path) in global_tool_paths(&home) {
-        if !path.exists() || !path.is_file() {
+        if !path.exists() {
             continue;
         }
 
-        match candidate_from_path(
-            &path,
-            crate::models::ImportSourceType::AiTool,
-            adapter_label(adapter),
-            Some(adapter),
-            Scope::Global,
-            None,
-            max_size,
-        ) {
-            Ok(candidate) => scan.candidates.push(candidate),
-            Err(e) => scan.errors.push(e.to_string()),
+        if path.is_file() {
+            match candidate_from_path(
+                &path,
+                crate::models::ImportSourceType::AiTool,
+                adapter_label(adapter),
+                Some(adapter),
+                Scope::Global,
+                None,
+                max_size,
+            ) {
+                Ok(candidate) => scan.candidates.push(candidate),
+                Err(e) => scan.errors.push(e.to_string()),
+            }
+        } else if path.is_dir() {
+            let inner_scan = scan_directory_to_candidates(&path, max_size);
+            for mut candidate in inner_scan.candidates {
+                candidate.source_type = crate::models::ImportSourceType::AiTool;
+                candidate.source_tool = Some(adapter);
+                candidate.source_label = adapter_label(adapter).to_string();
+                scan.candidates.push(candidate);
+            }
+            for err in inner_scan.errors {
+                scan.errors.push(err);
+            }
         }
     }
 
@@ -564,6 +577,14 @@ fn global_tool_paths(home: &Path) -> Vec<(AdapterType, PathBuf)> {
             home.join(".opencode").join("AGENTS.md"),
         ),
         (AdapterType::Cline, home.join(".clinerules")),
+        (
+            AdapterType::Cline,
+            home.join("Documents").join("Cline").join("Rules"),
+        ),
+        (
+            AdapterType::Cline,
+            home.join("Documents").join("Cline").join("Workflows"),
+        ),
         (
             AdapterType::ClaudeCode,
             home.join(".claude").join("CLAUDE.md"),

@@ -5,17 +5,36 @@ use std::path::{Path, PathBuf};
 use sha2::{Digest, Sha256};
 
 use crate::constants::{
-    ANTIGRAVITY_FILENAME, CLAUDE_CODE_FILENAME, CLINE_FILENAME, CODEX_FILENAME, CURSOR_FILENAME,
-    GEMINI_FILENAME, KILO_FILENAME, LEGACY_ANTIGRAVITY_DIR, LEGACY_OPENCODE_DIR, NEW_CURSOR_DIR,
-    NEW_GEMINI_DIR, NEW_KILO_DIR, NEW_OPENCODE_DIR, NEW_ROO_CODE_DIR, NEW_WINDSURF_DIR,
-    OPENCODE_FILENAME, ROO_CODE_FILENAME, WINDSURF_FILENAME,
+    ANTIGRAVITY_FILENAME, GEMINI_FILENAME, LEGACY_ANTIGRAVITY_DIR, LEGACY_OPENCODE_DIR,
+    NEW_GEMINI_DIR, NEW_OPENCODE_DIR, OPENCODE_FILENAME,
 };
 use crate::database::Database;
 use crate::error::{AppError, Result};
+use crate::models::registry::{ArtifactType, REGISTRY};
 use crate::models::{AdapterType, Conflict, Rule, Scope, SyncError, SyncResult};
+
+fn registry_entry(adapter: &AdapterType) -> &'static crate::models::registry::ToolEntry {
+    REGISTRY.get(adapter).unwrap_or_else(|| {
+        panic!(
+            "ToolRegistry missing entry for adapter '{}'. All AdapterType variants must be registered.",
+            adapter.as_str()
+        )
+    })
+}
 
 fn get_home_dir() -> Result<PathBuf> {
     dirs::home_dir().ok_or_else(|| AppError::Path("Could not determine home directory".to_string()))
+}
+
+fn resolve_registry_path(path: &str) -> Result<PathBuf> {
+    let home = get_home_dir()?;
+    if let Some(stripped) = path.strip_prefix("~/") {
+        Ok(home.join(stripped))
+    } else if path == "~" {
+        Ok(home)
+    } else {
+        Ok(PathBuf::from(path))
+    }
 }
 
 fn validate_target_path(base_path: &str) -> Result<PathBuf> {
@@ -49,12 +68,10 @@ pub trait SyncAdapter: Send + Sync {
     fn id(&self) -> AdapterType;
     fn name(&self) -> &str;
     fn file_name(&self) -> &str;
-    #[allow(dead_code)]
     fn description(&self) -> &str;
     fn global_path(&self) -> Result<PathBuf>;
 
     fn format_content(&self, rules: &[Rule], enabled_rules_only: bool) -> String;
-    #[allow(dead_code)]
     fn format_rule(&self, rule: &Rule) -> String;
 }
 
@@ -119,19 +136,24 @@ impl SyncAdapter for AntigravityAdapter {
     }
 
     fn name(&self) -> &str {
-        "Antigravity"
+        registry_entry(&self.id()).name
     }
 
     fn file_name(&self) -> &str {
-        "GEMINI.md"
+        let entry = registry_entry(&self.id());
+        Path::new(entry.paths.local_path_template)
+            .file_name()
+            .and_then(|s| s.to_str())
+            .expect("local_path_template in registry must have a valid file name")
     }
 
     fn description(&self) -> &str {
-        "Antigravity AI coding assistant"
+        registry_entry(&self.id()).description
     }
 
     fn global_path(&self) -> Result<PathBuf> {
-        Ok(get_home_dir()?.join(NEW_GEMINI_DIR).join(GEMINI_FILENAME))
+        let entry = registry_entry(&self.id());
+        resolve_registry_path(entry.paths.global_path)
     }
 
     fn format_content(&self, rules: &[Rule], _enabled_rules_only: bool) -> String {
@@ -151,19 +173,24 @@ impl SyncAdapter for GeminiAdapter {
     }
 
     fn name(&self) -> &str {
-        "Gemini CLI"
+        registry_entry(&self.id()).name
     }
 
     fn file_name(&self) -> &str {
-        "GEMINI.md"
+        let entry = registry_entry(&self.id());
+        Path::new(entry.paths.local_path_template)
+            .file_name()
+            .and_then(|s| s.to_str())
+            .expect("local_path_template in registry must have a valid file name")
     }
 
     fn description(&self) -> &str {
-        "Google's Gemini AI coding assistant"
+        registry_entry(&self.id()).description
     }
 
     fn global_path(&self) -> Result<PathBuf> {
-        Ok(get_home_dir()?.join(NEW_GEMINI_DIR).join(GEMINI_FILENAME))
+        let entry = registry_entry(&self.id());
+        resolve_registry_path(entry.paths.global_path)
     }
 
     fn format_content(&self, rules: &[Rule], _enabled_rules_only: bool) -> String {
@@ -183,21 +210,24 @@ impl SyncAdapter for OpenCodeAdapter {
     }
 
     fn name(&self) -> &str {
-        "OpenCode"
+        registry_entry(&self.id()).name
     }
 
     fn file_name(&self) -> &str {
-        "AGENTS.md"
+        let entry = registry_entry(&self.id());
+        Path::new(entry.paths.local_path_template)
+            .file_name()
+            .and_then(|s| s.to_str())
+            .expect("local_path_template in registry must have a valid file name")
     }
 
     fn description(&self) -> &str {
-        "OpenCode AI coding assistant"
+        registry_entry(&self.id()).description
     }
 
     fn global_path(&self) -> Result<PathBuf> {
-        Ok(get_home_dir()?
-            .join(NEW_OPENCODE_DIR)
-            .join(OPENCODE_FILENAME))
+        let entry = registry_entry(&self.id());
+        resolve_registry_path(entry.paths.global_path)
     }
 
     fn format_content(&self, rules: &[Rule], _enabled_rules_only: bool) -> String {
@@ -217,19 +247,24 @@ impl SyncAdapter for ClineAdapter {
     }
 
     fn name(&self) -> &str {
-        "Cline"
+        registry_entry(&self.id()).name
     }
 
     fn file_name(&self) -> &str {
-        ".clinerules"
+        let entry = registry_entry(&self.id());
+        Path::new(entry.paths.local_path_template)
+            .file_name()
+            .and_then(|s| s.to_str())
+            .expect("local_path_template in registry must have a valid file name")
     }
 
     fn description(&self) -> &str {
-        "Cline VS Code extension"
+        registry_entry(&self.id()).description
     }
 
     fn global_path(&self) -> Result<PathBuf> {
-        Ok(get_home_dir()?.join(CLINE_FILENAME))
+        let entry = registry_entry(&self.id());
+        resolve_registry_path(entry.paths.global_path)
     }
 
     fn format_content(&self, rules: &[Rule], _enabled_rules_only: bool) -> String {
@@ -249,19 +284,24 @@ impl SyncAdapter for ClaudeCodeAdapter {
     }
 
     fn name(&self) -> &str {
-        "Claude Code"
+        registry_entry(&self.id()).name
     }
 
     fn file_name(&self) -> &str {
-        "CLAUDE.md"
+        let entry = registry_entry(&self.id());
+        Path::new(entry.paths.local_path_template)
+            .file_name()
+            .and_then(|s| s.to_str())
+            .expect("local_path_template in registry must have a valid file name")
     }
 
     fn description(&self) -> &str {
-        "Anthropic's Claude Code assistant"
+        registry_entry(&self.id()).description
     }
 
     fn global_path(&self) -> Result<PathBuf> {
-        Ok(get_home_dir()?.join(".claude").join(CLAUDE_CODE_FILENAME))
+        let entry = registry_entry(&self.id());
+        resolve_registry_path(entry.paths.global_path)
     }
 
     fn format_content(&self, rules: &[Rule], _enabled_rules_only: bool) -> String {
@@ -281,19 +321,24 @@ impl SyncAdapter for CodexAdapter {
     }
 
     fn name(&self) -> &str {
-        "Codex"
+        registry_entry(&self.id()).name
     }
 
     fn file_name(&self) -> &str {
-        "AGENTS.md"
+        let entry = registry_entry(&self.id());
+        Path::new(entry.paths.local_path_template)
+            .file_name()
+            .and_then(|s| s.to_str())
+            .expect("local_path_template in registry must have a valid file name")
     }
 
     fn description(&self) -> &str {
-        "OpenAI Codex assistant"
+        registry_entry(&self.id()).description
     }
 
     fn global_path(&self) -> Result<PathBuf> {
-        Ok(get_home_dir()?.join(".codex").join(CODEX_FILENAME))
+        let entry = registry_entry(&self.id());
+        resolve_registry_path(entry.paths.global_path)
     }
 
     fn format_content(&self, rules: &[Rule], _enabled_rules_only: bool) -> String {
@@ -313,22 +358,24 @@ impl SyncAdapter for KiloAdapter {
     }
 
     fn name(&self) -> &str {
-        "Kilo Code"
+        registry_entry(&self.id()).name
     }
 
     fn file_name(&self) -> &str {
-        "AGENTS.md"
+        let entry = registry_entry(&self.id());
+        Path::new(entry.paths.local_path_template)
+            .file_name()
+            .and_then(|s| s.to_str())
+            .expect("local_path_template in registry must have a valid file name")
     }
 
     fn description(&self) -> &str {
-        "Kilo Code AI assistant"
+        registry_entry(&self.id()).description
     }
 
     fn global_path(&self) -> Result<PathBuf> {
-        Ok(get_home_dir()?
-            .join(NEW_KILO_DIR)
-            .join("rules")
-            .join(KILO_FILENAME))
+        let entry = registry_entry(&self.id());
+        resolve_registry_path(entry.paths.global_path)
     }
 
     fn format_content(&self, rules: &[Rule], _enabled_rules_only: bool) -> String {
@@ -348,19 +395,24 @@ impl SyncAdapter for CursorAdapter {
     }
 
     fn name(&self) -> &str {
-        "Cursor"
+        registry_entry(&self.id()).name
     }
 
     fn file_name(&self) -> &str {
-        ".cursorrules"
+        let entry = registry_entry(&self.id());
+        Path::new(entry.paths.local_path_template)
+            .file_name()
+            .and_then(|s| s.to_str())
+            .expect("local_path_template in registry must have a valid file name")
     }
 
     fn description(&self) -> &str {
-        "Cursor AI code editor"
+        registry_entry(&self.id()).description
     }
 
     fn global_path(&self) -> Result<PathBuf> {
-        Ok(get_home_dir()?.join(NEW_CURSOR_DIR).join(CURSOR_FILENAME))
+        let entry = registry_entry(&self.id());
+        resolve_registry_path(entry.paths.global_path)
     }
 
     fn format_content(&self, rules: &[Rule], _enabled_rules_only: bool) -> String {
@@ -380,22 +432,24 @@ impl SyncAdapter for WindsurfAdapter {
     }
 
     fn name(&self) -> &str {
-        "Windsurf"
+        registry_entry(&self.id()).name
     }
 
     fn file_name(&self) -> &str {
-        ".windsurf/rules/rules.md"
+        let entry = registry_entry(&self.id());
+        Path::new(entry.paths.local_path_template)
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("rules.md")
     }
 
     fn description(&self) -> &str {
-        "Windsurf AI assistant"
+        registry_entry(&self.id()).description
     }
 
     fn global_path(&self) -> Result<PathBuf> {
-        Ok(get_home_dir()?
-            .join(NEW_WINDSURF_DIR)
-            .join("rules")
-            .join(WINDSURF_FILENAME))
+        let entry = registry_entry(&self.id());
+        resolve_registry_path(entry.paths.global_path)
     }
 
     fn format_content(&self, rules: &[Rule], _enabled_rules_only: bool) -> String {
@@ -415,22 +469,24 @@ impl SyncAdapter for RooCodeAdapter {
     }
 
     fn name(&self) -> &str {
-        "Roo Code"
+        registry_entry(&self.id()).name
     }
 
     fn file_name(&self) -> &str {
-        ".roo/rules/rules.md"
+        let entry = registry_entry(&self.id());
+        Path::new(entry.paths.local_path_template)
+            .file_name()
+            .and_then(|s| s.to_str())
+            .expect("local_path_template in registry must have a valid file name")
     }
 
     fn description(&self) -> &str {
-        "Roo Code AI assistant"
+        registry_entry(&self.id()).description
     }
 
     fn global_path(&self) -> Result<PathBuf> {
-        Ok(get_home_dir()?
-            .join(NEW_ROO_CODE_DIR)
-            .join("rules")
-            .join(ROO_CODE_FILENAME))
+        let entry = registry_entry(&self.id());
+        resolve_registry_path(entry.paths.global_path)
     }
 
     fn format_content(&self, rules: &[Rule], _enabled_rules_only: bool) -> String {
@@ -523,7 +579,12 @@ impl<'a> SyncEngine<'a> {
 
             let adapter_rules: Vec<Rule> = rules
                 .iter()
-                .filter(|r| r.enabled_adapters.contains(&adapter.id()))
+                .filter(|r| {
+                    r.enabled_adapters.contains(&adapter.id())
+                        && REGISTRY
+                            .validate_support(&adapter.id(), &r.scope, ArtifactType::Rule)
+                            .is_ok()
+                })
                 .cloned()
                 .collect();
 
@@ -618,7 +679,6 @@ impl<'a> SyncEngine<'a> {
         }
     }
 
-    #[allow(dead_code)]
     pub async fn sync_rule(&self, rule: Rule) -> SyncResult {
         let mut files_written = Vec::new();
         let mut errors = Vec::new();
@@ -646,6 +706,9 @@ impl<'a> SyncEngine<'a> {
         for adapter in &adapters {
             if disabled_adapters.contains(&adapter.id())
                 || !rule.enabled_adapters.contains(&adapter.id())
+                || REGISTRY
+                    .validate_support(&adapter.id(), &rule.scope, ArtifactType::Rule)
+                    .is_err()
             {
                 continue;
             }
@@ -750,7 +813,12 @@ impl<'a> SyncEngine<'a> {
 
             let adapter_rules: Vec<Rule> = rules
                 .iter()
-                .filter(|r| r.enabled_adapters.contains(&adapter.id()))
+                .filter(|r| {
+                    r.enabled_adapters.contains(&adapter.id())
+                        && REGISTRY
+                            .validate_support(&adapter.id(), &r.scope, ArtifactType::Rule)
+                            .is_ok()
+                })
                 .cloned()
                 .collect();
 
@@ -855,6 +923,18 @@ impl<'a> SyncEngine<'a> {
         rules: &[Rule],
         path: &Path,
     ) -> Result<()> {
+        log::debug!(
+            "Syncing {} rules to {} ({}) at {}",
+            rules.len(),
+            adapter.name(),
+            adapter.description(),
+            path.display()
+        );
+
+        for rule in rules {
+            log::trace!("Rule content: {}", adapter.format_rule(rule));
+        }
+
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
