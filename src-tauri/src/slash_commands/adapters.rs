@@ -1,9 +1,18 @@
 use super::SlashCommandAdapter;
-use crate::models::registry::REGISTRY;
+use crate::models::registry::{ToolEntry, REGISTRY};
 use crate::models::AdapterType;
 use crate::models::Command;
 use serde::Serialize;
 use std::borrow::Cow;
+
+fn registry_entry(adapter: &AdapterType) -> &'static ToolEntry {
+    REGISTRY.get(adapter).unwrap_or_else(|| {
+        panic!(
+            "ToolRegistry missing entry for adapter '{}'. All AdapterType variants must be registered.",
+            adapter.as_str()
+        )
+    })
+}
 
 #[derive(Serialize)]
 struct StandardFrontmatter<'a> {
@@ -53,23 +62,22 @@ impl SlashCommandAdapter for OpenCodeSlashAdapter {
     }
 
     fn file_extension(&self) -> &'static str {
-        REGISTRY
-            .get(&AdapterType::OpenCode)
-            .and_then(|e| e.slash_command_extension)
+        registry_entry(&AdapterType::OpenCode)
+            .slash_command_extension
             .unwrap_or("md")
     }
 
     fn global_dir(&self) -> &'static str {
-        REGISTRY
-            .get(&AdapterType::OpenCode)
-            .and_then(|e| e.paths.global_commands_dir)
+        registry_entry(&AdapterType::OpenCode)
+            .paths
+            .global_commands_dir
             .unwrap_or("")
     }
 
     fn local_dir(&self) -> &'static str {
-        REGISTRY
-            .get(&AdapterType::OpenCode)
-            .and_then(|e| e.paths.local_commands_dir)
+        registry_entry(&AdapterType::OpenCode)
+            .paths
+            .local_commands_dir
             .unwrap_or("")
     }
 
@@ -121,23 +129,22 @@ impl SlashCommandAdapter for ClaudeCodeSlashAdapter {
     }
 
     fn file_extension(&self) -> &'static str {
-        REGISTRY
-            .get(&AdapterType::ClaudeCode)
-            .and_then(|e| e.slash_command_extension)
+        registry_entry(&AdapterType::ClaudeCode)
+            .slash_command_extension
             .unwrap_or("md")
     }
 
     fn global_dir(&self) -> &'static str {
-        REGISTRY
-            .get(&AdapterType::ClaudeCode)
-            .and_then(|e| e.paths.global_commands_dir)
+        registry_entry(&AdapterType::ClaudeCode)
+            .paths
+            .global_commands_dir
             .unwrap_or("")
     }
 
     fn local_dir(&self) -> &'static str {
-        REGISTRY
-            .get(&AdapterType::ClaudeCode)
-            .and_then(|e| e.paths.local_commands_dir)
+        registry_entry(&AdapterType::ClaudeCode)
+            .paths
+            .local_commands_dir
             .unwrap_or("")
     }
 

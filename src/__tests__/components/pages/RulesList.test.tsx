@@ -52,7 +52,7 @@ const mockRegistryStore = {
       icon: "gemini",
       fileFormat: "md",
       capabilities: { hasChat: true, hasFileWriting: true, hasCommandExecution: true },
-      paths: { globalPath: "", localPath: "", fileName: "" },
+      paths: { globalPath: "~/.gemini/GEMINI.md", localPathTemplate: ".gemini/GEMINI.md" },
     },
     {
       id: "cline",
@@ -61,7 +61,7 @@ const mockRegistryStore = {
       icon: "cline",
       fileFormat: "md",
       capabilities: { hasChat: true, hasFileWriting: true, hasCommandExecution: true },
-      paths: { globalPath: "", localPath: "", fileName: "" },
+      paths: { globalPath: "~/.clinerules", localPathTemplate: ".clinerules" },
     },
   ],
   isLoading: false,

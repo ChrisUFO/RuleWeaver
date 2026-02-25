@@ -15,6 +15,7 @@ import { useRulesStore } from "./stores/rulesStore";
 import { motion, AnimatePresence } from "framer-motion";
 import type { Conflict } from "./types/rule";
 import { useRegistryStore } from "./stores/registryStore";
+import { getToolFileName } from "./lib/utils";
 import "./index.css";
 
 function App() {
@@ -34,9 +35,7 @@ function App() {
       const filePath = event.payload;
       const fileName = filePath.split(/[/\\]/).pop() || "";
       const currentTools = useRegistryStore.getState().tools;
-      const adapter = currentTools.find(
-        (a) => a.paths.localPathTemplate.split(/[/\\]/).pop() === fileName
-      );
+      const adapter = currentTools.find((a) => getToolFileName(a) === fileName);
 
       setActiveConflict({
         id: crypto.randomUUID(),
