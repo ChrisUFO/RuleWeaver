@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use tauri::State;
 
+use super::reconcile_after_mutation;
 use crate::database::Database;
 use crate::error::{AppError, Result};
 use crate::file_storage::skills::{delete_skill_from_disk, save_skill_to_disk};
@@ -89,7 +90,12 @@ pub async fn delete_skill(id: String, db: State<'_, Arc<Database>>) -> Result<()
     if let Ok(existing) = db.get_skill_by_id(&id).await {
         let _ = delete_skill_from_disk(&existing);
     }
-    db.delete_skill(&id).await
+    db.delete_skill(&id).await?;
+
+    // Run reconciliation to clean up any orphaned artifacts
+    reconcile_after_mutation(db.inner().clone()).await;
+
+    Ok(())
 }
 
 #[tauri::command]

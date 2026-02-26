@@ -88,6 +88,14 @@ This layer handles all OS-level operations.
 - **Skills Engine (Phase 3 Foundation):**
   - Stores and manages Skills metadata/instructions in database.
   - Exposes CRUD in UI with MCP execution expansion planned for full Phase 3.
+- **Reconciliation Engine:**
+  - Computes desired state from all database artifacts (rules, commands, skills).
+  - Scans actual filesystem state across all adapter paths.
+  - Detects and removes orphaned/stale artifacts when items are deleted, disabled, or retargeted.
+  - Runs automatically after mutations (create/update/delete) and imports.
+  - Supports dry-run preview mode for safe inspection before changes.
+  - Logs all operations to `reconciliation_logs` table for audit trail.
+  - Uses atomic writes (temp file + rename) to prevent partial state corruption.
 
 ### 3. The Target Layer (The AI Tools)
 

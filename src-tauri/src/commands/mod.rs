@@ -3,6 +3,7 @@ pub mod command_commands;
 pub mod import_commands;
 pub mod mcp_commands;
 pub mod migration_commands;
+pub mod reconciliation_commands;
 pub mod registry_commands;
 pub mod rule_commands;
 pub mod skill_commands;
@@ -16,6 +17,7 @@ pub use command_commands::*;
 pub use import_commands::*;
 pub use mcp_commands::*;
 pub use migration_commands::*;
+pub use reconciliation_commands::*;
 pub use registry_commands::*;
 pub use rule_commands::*;
 pub use skill_commands::*;
@@ -353,4 +355,31 @@ pub async fn validate_local_rule_paths(
         }
     }
     Ok(())
+}
+
+/// Helper function to run reconciliation after mutations.
+/// This cleans up stale artifacts that may have been orphaned.
+pub async fn reconcile_after_mutation(db: Arc<Database>) {
+    use crate::reconciliation::ReconciliationEngine;
+    match ReconciliationEngine::new(db) {
+        Ok(engine) => match engine.reconcile(false).await {
+            Ok(result) => {
+                if result.removed > 0 {
+                    log::info!(
+                        "Reconciliation cleaned up {} stale artifacts",
+                        result.removed
+                    );
+                }
+                if !result.errors.is_empty() {
+                    log::warn!("Reconciliation completed with errors: {:?}", result.errors);
+                }
+            }
+            Err(e) => {
+                log::error!("Reconciliation failed: {}", e);
+            }
+        },
+        Err(e) => {
+            log::error!("Failed to create reconciliation engine: {}", e);
+        }
+    }
 }

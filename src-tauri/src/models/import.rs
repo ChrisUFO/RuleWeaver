@@ -13,6 +13,15 @@ pub enum ImportSourceType {
     Clipboard,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ImportArtifactType {
+    #[default]
+    Rule,
+    SlashCommand,
+    Skill,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum ImportConflictMode {
@@ -38,6 +47,8 @@ pub struct ImportCandidate {
     pub enabled_adapters: Vec<AdapterType>,
     pub content_hash: String,
     pub file_size: u64,
+    #[serde(default)]
+    pub artifact_type: ImportArtifactType,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

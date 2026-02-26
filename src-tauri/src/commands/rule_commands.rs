@@ -5,12 +5,13 @@ use crate::database::Database;
 use crate::error::{AppError, Result};
 use crate::file_storage;
 use crate::models::{CreateRuleInput, Rule, SyncResult, UpdateRuleInput};
+
 use crate::sync::SyncEngine;
 use crate::templates::rules::{get_bundled_rule_templates, TemplateRule};
 
 use super::{
-    get_local_rule_roots, register_local_rule_paths, storage_location_for_rule, use_file_storage,
-    validate_local_rule_paths, validate_rule_input,
+    get_local_rule_roots, reconcile_after_mutation, register_local_rule_paths,
+    storage_location_for_rule, use_file_storage, validate_local_rule_paths, validate_rule_input,
 };
 
 /// Helper function to sync all rules to AI tool locations.
@@ -150,6 +151,9 @@ pub async fn delete_rule(id: String, db: State<'_, Arc<Database>>) -> Result<()>
     // Sync to AI tool locations to remove deleted rule from adapters
     sync_to_ai_tools(&db).await;
 
+    // Run reconciliation to clean up any orphaned artifacts
+    reconcile_after_mutation(db.inner().clone()).await;
+
     Ok(())
 }
 
@@ -174,6 +178,9 @@ pub async fn bulk_delete_rules(ids: Vec<String>, db: State<'_, Arc<Database>>) -
 
     // Sync to AI tool locations to remove deleted rules from adapters
     sync_to_ai_tools(&db).await;
+
+    // Run reconciliation to clean up any orphaned artifacts
+    reconcile_after_mutation(db.inner().clone()).await;
 
     Ok(())
 }

@@ -52,6 +52,9 @@ pub struct PathTemplates {
     pub global_commands_dir: Option<&'static str>,
     pub local_commands_dir: Option<&'static str>,
     pub command_stub_filename: &'static str,
+    pub global_skills_dir: Option<&'static str>,
+    pub local_skills_dir: Option<&'static str>,
+    pub skill_filename: &'static str,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -101,6 +104,9 @@ impl ToolRegistry {
                     global_commands_dir: Some(".gemini/antigravity/global_workflows"),
                     local_commands_dir: Some(".agents/workflows"),
                     command_stub_filename: "COMMANDS.md",
+                    global_skills_dir: Some(".gemini/antigravity/skills"),
+                    local_skills_dir: Some(".agents/skills"),
+                    skill_filename: "SKILL.md",
                 },
                 file_format: "markdown",
                 slash_command_extension: Some("md"),
@@ -123,6 +129,9 @@ impl ToolRegistry {
                     global_commands_dir: Some(".gemini/commands"),
                     local_commands_dir: Some(".gemini/commands"),
                     command_stub_filename: "COMMANDS.md",
+                    global_skills_dir: Some(".gemini/skills"),
+                    local_skills_dir: Some(".gemini/skills"),
+                    skill_filename: "SKILL.md",
                 },
                 file_format: "markdown",
                 slash_command_extension: Some("toml"),
@@ -145,6 +154,9 @@ impl ToolRegistry {
                     global_commands_dir: Some(".config/opencode/commands"),
                     local_commands_dir: Some(".opencode/commands"),
                     command_stub_filename: "COMMANDS.md",
+                    global_skills_dir: Some(".config/opencode/skills"),
+                    local_skills_dir: Some(".opencode/skills"),
+                    skill_filename: "SKILL.md",
                 },
                 file_format: "markdown",
                 slash_command_extension: Some("md"),
@@ -167,6 +179,9 @@ impl ToolRegistry {
                     global_commands_dir: Some("Documents/Cline/Workflows"),
                     local_commands_dir: Some(".clinerules/workflows"),
                     command_stub_filename: "COMMANDS.md",
+                    global_skills_dir: Some("Documents/Cline/Skills"),
+                    local_skills_dir: Some(".clinerules/skills"),
+                    skill_filename: "SKILL.md",
                 },
                 file_format: "markdown",
                 slash_command_extension: Some("md"),
@@ -189,6 +204,9 @@ impl ToolRegistry {
                     global_commands_dir: Some(".claude/commands"),
                     local_commands_dir: Some(".claude/commands"),
                     command_stub_filename: "COMMANDS.md",
+                    global_skills_dir: Some(".claude/skills"),
+                    local_skills_dir: Some(".claude/skills"),
+                    skill_filename: "SKILL.md",
                 },
                 file_format: "markdown",
                 slash_command_extension: Some("md"),
@@ -211,6 +229,9 @@ impl ToolRegistry {
                     global_commands_dir: Some(".agents/skills"),
                     local_commands_dir: Some(".agents/skills"),
                     command_stub_filename: "COMMANDS.md",
+                    global_skills_dir: Some(".codex/skills"),
+                    local_skills_dir: Some(".codex/skills"),
+                    skill_filename: "SKILL.md",
                 },
                 file_format: "markdown",
                 slash_command_extension: Some("md"),
@@ -233,6 +254,9 @@ impl ToolRegistry {
                     global_commands_dir: None,
                     local_commands_dir: None,
                     command_stub_filename: "COMMANDS.md",
+                    global_skills_dir: None,
+                    local_skills_dir: None,
+                    skill_filename: "SKILL.md",
                 },
                 file_format: "markdown",
                 slash_command_extension: None,
@@ -262,6 +286,9 @@ impl ToolRegistry {
                     global_commands_dir: Some(".cursor/commands"),
                     local_commands_dir: Some(".cursor/commands"),
                     command_stub_filename: "COMMANDS.md",
+                    global_skills_dir: None,
+                    local_skills_dir: None,
+                    skill_filename: "SKILL.md",
                 },
                 file_format: "markdown",
                 slash_command_extension: Some("md"),
@@ -284,6 +311,9 @@ impl ToolRegistry {
                     global_commands_dir: None,
                     local_commands_dir: None,
                     command_stub_filename: "COMMANDS.md",
+                    global_skills_dir: Some(".windsurf/skills"),
+                    local_skills_dir: Some(".windsurf/skills"),
+                    skill_filename: "SKILL.md",
                 },
                 file_format: "markdown",
                 slash_command_extension: None,
@@ -306,6 +336,9 @@ impl ToolRegistry {
                     global_commands_dir: Some(".roo/commands"),
                     local_commands_dir: Some(".roo/commands"),
                     command_stub_filename: "COMMANDS.md",
+                    global_skills_dir: Some(".roo/skills"),
+                    local_skills_dir: Some(".roo/skills"),
+                    skill_filename: "SKILL.md",
                 },
                 file_format: "markdown",
                 slash_command_extension: Some("md"),
@@ -499,5 +532,42 @@ mod tests {
         assert_eq!(ArtifactType::CommandStub.as_str(), "command_stub");
         assert_eq!(ArtifactType::SlashCommand.as_str(), "slash_command");
         assert_eq!(ArtifactType::Skill.as_str(), "skill");
+    }
+
+    #[test]
+    fn test_skill_paths_defined_for_supporting_adapters() {
+        let registry = get_registry();
+
+        let claude = registry.get(&AdapterType::ClaudeCode).unwrap();
+        assert!(claude.capabilities.supports_skills);
+        assert!(claude.paths.global_skills_dir.is_some());
+        assert!(claude.paths.local_skills_dir.is_some());
+
+        let opencode = registry.get(&AdapterType::OpenCode).unwrap();
+        assert!(opencode.capabilities.supports_skills);
+        assert!(opencode.paths.global_skills_dir.is_some());
+    }
+
+    #[test]
+    fn test_skill_paths_not_defined_for_non_supporting_adapters() {
+        let registry = get_registry();
+
+        let cursor = registry.get(&AdapterType::Cursor).unwrap();
+        assert!(!cursor.capabilities.supports_skills);
+        assert!(cursor.paths.global_skills_dir.is_none());
+        assert!(cursor.paths.local_skills_dir.is_none());
+
+        let kilo = registry.get(&AdapterType::Kilo).unwrap();
+        assert!(kilo.paths.global_skills_dir.is_none());
+        assert!(kilo.paths.local_skills_dir.is_none());
+    }
+
+    #[test]
+    fn test_all_adapters_have_skill_filename() {
+        let registry = get_registry();
+
+        for entry in registry.all() {
+            assert!(!entry.paths.skill_filename.is_empty());
+        }
     }
 }

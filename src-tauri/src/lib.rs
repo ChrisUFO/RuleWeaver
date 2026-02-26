@@ -465,6 +465,13 @@ pub fn run() {
             slash_commands::commands::test_slash_command_generation,
             slash_commands::commands::get_slash_command_path,
             commands::get_tool_registry,
+            commands::reconcile_all,
+            commands::reconcile_preview,
+            commands::reconcile_repair,
+            commands::needs_reconciliation,
+            commands::get_stale_paths,
+            commands::get_reconciliation_logs,
+            commands::clear_reconciliation_logs,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

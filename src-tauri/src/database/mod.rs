@@ -9,8 +9,8 @@ use crate::error::{AppError, Result};
 use crate::file_storage::StorageLocation;
 use crate::models::{
     AdapterType, Command, CommandArgument, CreateCommandInput, CreateRuleInput, CreateSkillInput,
-    ExecutionLog, Rule, Scope, Skill, SyncHistoryEntry, UpdateCommandInput, UpdateRuleInput,
-    UpdateSkillInput,
+    ExecutionLog, ReconcileOperation, ReconcileResultType, Rule, Scope, Skill, SyncHistoryEntry,
+    UpdateCommandInput, UpdateRuleInput, UpdateSkillInput,
 };
 
 fn parse_timestamp_or_now(timestamp: i64) -> DateTime<Utc> {
@@ -37,6 +37,21 @@ pub struct ExecutionLogInput<'a> {
     pub exit_code: i32,
     pub duration_ms: u64,
     pub triggered_by: &'a str,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReconciliationLogEntry {
+    pub id: String,
+    #[serde(with = "crate::models::timestamp")]
+    pub timestamp: DateTime<Utc>,
+    pub operation: ReconcileOperation,
+    pub artifact_type: Option<String>,
+    pub adapter: Option<AdapterType>,
+    pub scope: Option<Scope>,
+    pub path: String,
+    pub result: ReconcileResultType,
+    pub error_message: Option<String>,
 }
 
 impl Database {
@@ -1169,6 +1184,88 @@ impl Database {
     pub async fn set_storage_mode(&self, mode: &str) -> Result<()> {
         self.set_setting("storage_mode", mode).await
     }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn log_reconciliation(
+        &self,
+        operation: ReconcileOperation,
+        artifact_type: Option<&str>,
+        adapter: Option<AdapterType>,
+        scope: Option<Scope>,
+        path: &str,
+        result: ReconcileResultType,
+        error_message: Option<&str>,
+    ) -> Result<()> {
+        let conn = self.0.lock().await;
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = chrono::Utc::now().timestamp();
+
+        conn.execute(
+            "INSERT INTO reconciliation_logs (id, timestamp, operation, artifact_type, adapter, scope, path, result, error_message)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            rusqlite::params![
+                id,
+                now,
+                operation.as_str(),
+                artifact_type,
+                adapter.map(|a| a.as_str()),
+                scope.map(|s| s.as_str()),
+                path,
+                result.as_str(),
+                error_message
+            ],
+        )?;
+
+        Ok(())
+    }
+
+    pub async fn get_reconciliation_logs(&self, limit: i64) -> Result<Vec<ReconciliationLogEntry>> {
+        let conn = self.0.lock().await;
+        let mut stmt = conn.prepare(
+            "SELECT id, timestamp, operation, artifact_type, adapter, scope, path, result, error_message
+             FROM reconciliation_logs
+             ORDER BY timestamp DESC
+             LIMIT ?",
+        )?;
+
+        let logs = stmt
+            .query_map(rusqlite::params![limit], |row| {
+                let op_str: String = row.get(2)?;
+                let operation =
+                    ReconcileOperation::from_str(&op_str).unwrap_or(ReconcileOperation::Check);
+
+                let adapter_str: Option<String> = row.get(4)?;
+                let adapter = adapter_str.and_then(|s| AdapterType::from_str(&s));
+
+                let scope_str: Option<String> = row.get(5)?;
+                let scope = scope_str.and_then(|s| Scope::from_str(&s));
+
+                let res_str: String = row.get(7)?;
+                let result =
+                    ReconcileResultType::from_str(&res_str).unwrap_or(ReconcileResultType::Failed);
+
+                Ok(ReconciliationLogEntry {
+                    id: row.get(0)?,
+                    timestamp: parse_timestamp_or_now(row.get(1)?),
+                    operation,
+                    artifact_type: row.get(3)?,
+                    adapter,
+                    scope,
+                    path: row.get(6)?,
+                    result,
+                    error_message: row.get(8)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+
+        Ok(logs)
+    }
+
+    pub async fn clear_reconciliation_logs(&self) -> Result<()> {
+        let conn = self.0.lock().await;
+        conn.execute("DELETE FROM reconciliation_logs", [])?;
+        Ok(())
+    }
 }
 
 fn run_migrations(conn: &mut Connection) -> Result<()> {
@@ -1424,7 +1521,29 @@ fn run_migrations(conn: &mut Connection) -> Result<()> {
         }
     }
 
-    transaction.execute("PRAGMA user_version = 11", [])?;
+    if current_version < 12 {
+        transaction.execute(
+            "CREATE TABLE IF NOT EXISTS reconciliation_logs (
+                id TEXT PRIMARY KEY NOT NULL,
+                timestamp INTEGER NOT NULL,
+                operation TEXT NOT NULL,
+                artifact_type TEXT,
+                adapter TEXT,
+                scope TEXT,
+                path TEXT NOT NULL,
+                result TEXT NOT NULL,
+                error_message TEXT
+            )",
+            [],
+        )?;
+
+        transaction.execute(
+            "CREATE INDEX IF NOT EXISTS idx_reconciliation_logs_timestamp ON reconciliation_logs(timestamp)",
+            [],
+        )?;
+    }
+
+    transaction.execute("PRAGMA user_version = 12", [])?;
     transaction.commit()?;
 
     Ok(())

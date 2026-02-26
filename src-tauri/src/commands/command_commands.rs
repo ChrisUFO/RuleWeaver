@@ -18,12 +18,13 @@ use crate::mcp::McpManager;
 use crate::models::{
     Command, CreateCommandInput, SyncError, SyncResult, TestCommandResult, UpdateCommandInput,
 };
+
 use crate::templates::commands::{get_bundled_command_templates, TemplateCommand};
 use std::time::Instant;
 
 use super::{
-    command_file_targets, command_file_targets_for_root, register_local_paths,
-    validate_command_arguments, validate_command_input, validate_path,
+    command_file_targets, command_file_targets_for_root, reconcile_after_mutation,
+    register_local_paths, validate_command_arguments, validate_command_input, validate_path,
     validate_paths_within_registered_roots,
 };
 
@@ -98,7 +99,12 @@ pub async fn delete_command(
     mcp: State<'_, McpManager>,
 ) -> Result<()> {
     db.delete_command(&id).await?;
-    mcp.refresh_commands(&db).await
+    mcp.refresh_commands(&db).await?;
+
+    // Run reconciliation to clean up any orphaned artifacts
+    reconcile_after_mutation(db.inner().clone()).await;
+
+    Ok(())
 }
 
 #[tauri::command]
