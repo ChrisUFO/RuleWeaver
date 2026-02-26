@@ -9,7 +9,6 @@ import {
   Clock,
   XCircle,
   Filter,
-  ExternalLink,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -305,6 +304,7 @@ export function Status({ onNavigate }: { onNavigate?: (view: string, id?: string
               <CardTitle className="text-lg font-bold flex items-center gap-2">
                 <Filter className="h-4 w-4" />
                 Filters
+                {isLoading && <RefreshCw className="h-3 w-3 animate-spin text-muted-foreground" />}
               </CardTitle>
             </div>
           </CardHeader>
@@ -319,6 +319,7 @@ export function Status({ onNavigate }: { onNavigate?: (view: string, id?: string
                   value={artifactTypeFilter}
                   onChange={setArtifactTypeFilter}
                   className="w-40"
+                  disabled={isLoading}
                 />
               </div>
 
@@ -331,6 +332,7 @@ export function Status({ onNavigate }: { onNavigate?: (view: string, id?: string
                   value={adapterFilter}
                   onChange={setAdapterFilter}
                   className="w-40"
+                  disabled={isLoading}
                 />
               </div>
 
@@ -343,6 +345,7 @@ export function Status({ onNavigate }: { onNavigate?: (view: string, id?: string
                   value={statusFilter}
                   onChange={setStatusFilter}
                   className="w-40"
+                  disabled={isLoading}
                 />
               </div>
             </div>
@@ -402,87 +405,83 @@ export function Status({ onNavigate }: { onNavigate?: (view: string, id?: string
                     </tr>
                   </thead>
                   <tbody>
-                    {entries.map((entry) => (
-                      <tr
-                        key={entry.id}
-                        className="border-b border-white/5 hover:bg-white/5 transition-colors"
-                      >
-                        <td className="py-3 px-4 font-medium">{entry.artifactName}</td>
-                        <td className="py-3 px-4">
-                          <Badge variant="outline" className="text-xs">
-                            {ARTIFACT_TYPE_LABELS[entry.artifactType]}
-                          </Badge>
-                        </td>
-                        <td className="py-3 px-4 text-sm text-muted-foreground">
-                          {tools.find((t) => t.id === entry.adapter)?.name || entry.adapter}
-                        </td>
-                        <td className="py-3 px-4">
-                          <Badge
-                            variant="outline"
-                            className={cn(
-                              "text-xs",
-                              entry.scope === "global"
-                                ? "border-purple-500/20 text-purple-500"
-                                : "border-emerald-500/20 text-emerald-500"
-                            )}
-                          >
-                            {entry.scope}
-                          </Badge>
-                        </td>
-                        <td className="py-3 px-4">
-                          <div className="flex items-center gap-2">
-                            {getStatusIcon(entry.status)}
+                    {entries.map((entry) => {
+                      const viewMap: Record<string, string> = {
+                        rule: "rules",
+                        command_stub: "commands",
+                        slash_command: "commands",
+                        skill: "skills",
+                      };
+                      const targetView = viewMap[entry.artifactType] || "dashboard";
+                      return (
+                        <tr
+                          key={entry.id}
+                          className="border-b border-white/5 hover:bg-white/5 hover:bg-primary/5 transition-colors cursor-pointer"
+                          onClick={() => onNavigate?.(targetView, entry.artifactId)}
+                        >
+                          <td className="py-3 px-4 font-medium">{entry.artifactName}</td>
+                          <td className="py-3 px-4">
+                            <Badge variant="outline" className="text-xs">
+                              {ARTIFACT_TYPE_LABELS[entry.artifactType]}
+                            </Badge>
+                          </td>
+                          <td className="py-3 px-4 text-sm text-muted-foreground">
+                            {tools.find((t) => t.id === entry.adapter)?.name || entry.adapter}
+                          </td>
+                          <td className="py-3 px-4">
                             <Badge
                               variant="outline"
-                              className={cn("text-xs", SYNC_STATUS_CONFIG[entry.status]?.bgColor)}
-                            >
-                              {SYNC_STATUS_CONFIG[entry.status]?.label || entry.status}
-                            </Badge>
-                          </div>
-                        </td>
-                        <td className="py-3 px-4 text-xs font-mono text-muted-foreground max-w-xs truncate">
-                          {entry.expectedPath}
-                        </td>
-                        <td className="py-3 px-4 flex gap-1">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => {
-                              const viewMap: Record<string, string> = {
-                                rule: "rules",
-                                command_stub: "commands",
-                                slash_command: "commands",
-                                skill: "skills",
-                              };
-                              onNavigate?.(
-                                viewMap[entry.artifactType] || "dashboard",
-                                entry.artifactId
-                              );
-                            }}
-                            className="h-7 w-7 p-0"
-                            title="Go to item"
-                          >
-                            <ExternalLink className="h-3.5 w-3.5" />
-                          </Button>
-                          {entry.status !== "synced" && entry.status !== "unsupported" && (
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => handleRepair(entry.id)}
-                              disabled={isRepairing === entry.id}
-                              className="h-7 text-xs"
-                            >
-                              {isRepairing === entry.id ? (
-                                <RefreshCw className="h-3 w-3 animate-spin" />
-                              ) : (
-                                <Wrench className="h-3 w-3 mr-1" />
+                              className={cn(
+                                "text-xs",
+                                entry.scope === "global"
+                                  ? "border-purple-500/20 text-purple-500"
+                                  : "border-emerald-500/20 text-emerald-500"
                               )}
-                              Repair
-                            </Button>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
+                            >
+                              {entry.scope}
+                            </Badge>
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="flex items-center gap-2">
+                              {getStatusIcon(entry.status)}
+                              <Badge
+                                variant="outline"
+                                className={cn("text-xs", SYNC_STATUS_CONFIG[entry.status]?.bgColor)}
+                              >
+                                {SYNC_STATUS_CONFIG[entry.status]?.label || entry.status}
+                              </Badge>
+                            </div>
+                          </td>
+                          <td
+                            className="py-3 px-4 text-xs font-mono text-muted-foreground max-w-xs truncate cursor-help"
+                            title={entry.expectedPath}
+                          >
+                            {entry.expectedPath}
+                          </td>
+                          <td className="py-3 px-4 flex gap-1">
+                            {entry.status !== "synced" && entry.status !== "unsupported" && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleRepair(entry.id);
+                                }}
+                                disabled={isRepairing === entry.id}
+                                className="h-7 text-xs"
+                              >
+                                {isRepairing === entry.id ? (
+                                  <RefreshCw className="h-3 w-3 animate-spin" />
+                                ) : (
+                                  <Wrench className="h-3 w-3 mr-1" />
+                                )}
+                                Repair
+                              </Button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

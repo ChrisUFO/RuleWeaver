@@ -1,5 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Trash2, FolderOpen, FolderUp } from "lucide-react";
+import {
+  Plus,
+  Trash2,
+  FolderOpen,
+  FolderUp,
+  CheckCircle,
+  XCircle,
+  AlertCircle,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,6 +24,7 @@ import { TemplateBrowser } from "@/components/skills/TemplateBrowser";
 import { Select } from "@/components/ui/select";
 import { useRepositoryRoots } from "@/hooks/useRepositoryRoots";
 import { ImportDialog } from "@/components/import/ImportDialog";
+import type { ArtifactStatusEntry } from "@/types/status";
 
 interface SkillsProps {
   initialSelectedId?: string | null;
@@ -39,6 +48,7 @@ export function Skills({ initialSelectedId, onClearInitialId }: SkillsProps) {
   const { roots: availableRepos } = useRepositoryRoots();
   const [isSaving, setIsSaving] = useState(false);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [adapterStatuses, setAdapterStatuses] = useState<Map<string, string>>(new Map());
   const { addToast } = useToast();
 
   const selected = useMemo(
@@ -97,6 +107,23 @@ export function Skills({ initialSelectedId, onClearInitialId }: SkillsProps) {
     setEnabled(selected.enabled);
     setTargetAdapters(selected.targetAdapters ?? []);
     setTargetPaths(selected.targetPaths ?? []);
+  }, [selected]);
+
+  useEffect(() => {
+    if (!selected) {
+      setAdapterStatuses(new Map());
+      return;
+    }
+    api.status
+      .getArtifactStatus({ artifactType: "skill" })
+      .then((entries: ArtifactStatusEntry[]) => {
+        const statusMap = new Map<string, string>();
+        entries
+          .filter((e) => e.artifactId === selected.id)
+          .forEach((e) => statusMap.set(e.adapter, e.status));
+        setAdapterStatuses(statusMap);
+      })
+      .catch(() => {});
   }, [selected]);
 
   const createSkill = async () => {
@@ -405,6 +432,7 @@ export function Skills({ initialSelectedId, onClearInitialId }: SkillsProps) {
                   <div className="grid gap-2 sm:grid-cols-2">
                     {supportedAdapters.map((adapterId) => {
                       const isChecked = targetAdapters.includes(adapterId);
+                      const status = adapterStatuses.get(adapterId);
                       const label = adapterId
                         .replace(/_/g, " ")
                         .replace(/\b\w/g, (c) => c.toUpperCase());
@@ -426,7 +454,22 @@ export function Skills({ initialSelectedId, onClearInitialId }: SkillsProps) {
                               );
                             }}
                           />
-                          <span className="text-sm">{label}</span>
+                          <span className="text-sm flex-1">{label}</span>
+                          {status === "synced" && (
+                            <span title="Synced">
+                              <CheckCircle className="h-3.5 w-3.5 text-green-500" />
+                            </span>
+                          )}
+                          {status === "missing" && (
+                            <span title="Missing">
+                              <XCircle className="h-3.5 w-3.5 text-red-500" />
+                            </span>
+                          )}
+                          {(status === "out_of_date" || status === "conflicted") && (
+                            <span title={status === "out_of_date" ? "Out of Date" : "Conflicted"}>
+                              <AlertCircle className="h-3.5 w-3.5 text-yellow-500" />
+                            </span>
+                          )}
                         </label>
                       );
                     })}

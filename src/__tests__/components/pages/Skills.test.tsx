@@ -22,6 +22,9 @@ vi.mock("../../../lib/tauri", () => ({
     app: {
       openInExplorer: vi.fn(),
     },
+    status: {
+      getArtifactStatus: vi.fn().mockResolvedValue([]),
+    },
   },
 }));
 

@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import { SlashCommandsSection } from "./SlashCommandsSection";
+import { cn } from "@/lib/utils";
 import type { CommandModel, ExecutionLog } from "@/types/command";
 import type {
   CommandFormData,
@@ -218,7 +219,7 @@ export function CommandEditor({
                 className="text-xs text-muted-foreground flex items-center gap-1"
               >
                 Timeout (ms)
-                <span title="Maximum execution time before identifying as a failure.">
+                <span title="Maximum execution time before identifying as a failure. Default is 30 seconds.">
                   <HelpCircle className="h-3 w-3 opacity-50 cursor-help" />
                 </span>
               </label>
@@ -226,13 +227,18 @@ export function CommandEditor({
                 id="timeout-ms"
                 type="number"
                 min={1000}
+                max={600000}
                 step={1000}
                 value={form.timeoutMs ?? ""}
-                onChange={(e) =>
-                  onUpdateForm({
-                    timeoutMs: e.target.value ? parseInt(e.target.value, 10) : null,
-                  })
-                }
+                onChange={(e) => {
+                  const val = e.target.value ? parseInt(e.target.value, 10) : null;
+                  if (val !== null) {
+                    const clamped = Math.max(1000, Math.min(600000, val));
+                    onUpdateForm({ timeoutMs: clamped });
+                  } else {
+                    onUpdateForm({ timeoutMs: null });
+                  }
+                }}
                 placeholder="30000 (default)"
               />
             </div>
@@ -252,11 +258,15 @@ export function CommandEditor({
                 min={0}
                 max={3}
                 value={form.maxRetries ?? ""}
-                onChange={(e) =>
-                  onUpdateForm({
-                    maxRetries: e.target.value ? parseInt(e.target.value, 10) : null,
-                  })
-                }
+                onChange={(e) => {
+                  const val = e.target.value ? parseInt(e.target.value, 10) : null;
+                  if (val !== null) {
+                    const clamped = Math.max(0, Math.min(3, val));
+                    onUpdateForm({ maxRetries: clamped });
+                  } else {
+                    onUpdateForm({ maxRetries: null });
+                  }
+                }}
                 placeholder="0 (default)"
               />
             </div>
@@ -345,31 +355,56 @@ export function CommandEditor({
           <div className="mb-2 font-medium">Recent Execution History</div>
           <div className="space-y-2 max-h-56 overflow-auto">
             {commandHistory.slice(0, 10).map((h) => (
-              <div key={h.id} className="rounded border p-2">
+              <div key={h.id} className="rounded border p-2 hover:bg-white/5 transition-colors">
                 <div className="flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-2">
-                    <span className={`font-medium ${h.exitCode !== 0 ? "text-red-400" : ""}`}>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span
+                      className={cn(
+                        "font-medium px-1.5 py-0.5 rounded",
+                        h.exitCode === 0
+                          ? "text-green-400 bg-green-500/10"
+                          : "text-red-400 bg-red-500/10"
+                      )}
+                    >
                       exit {h.exitCode}
                     </span>
                     {h.failureClass && h.failureClass !== "Success" && (
-                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                      <span
+                        className={cn(
+                          "inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] border",
+                          h.failureClass === "Timeout" ||
+                            h.failureClass === "PermissionDenied" ||
+                            h.failureClass === "MissingBinary"
+                            ? "bg-red-500/20 text-red-400 border-red-500/30"
+                            : "bg-amber-500/20 text-amber-400 border-amber-500/30"
+                        )}
+                        title={`Failure: ${h.failureClass}`}
+                      >
                         <AlertTriangle className="h-3 w-3" />
                         {h.failureClass}
                       </span>
                     )}
                     {h.isRedacted && (
-                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] bg-slate-500/20 text-slate-400 border border-slate-500/30">
+                      <span
+                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] bg-slate-500/20 text-slate-400 border border-slate-500/30"
+                        title="Output contained sensitive data that was redacted"
+                      >
                         <EyeOff className="h-3 w-3" />
                         redacted
                       </span>
                     )}
                     {(h.attemptNumber ?? 1) > 1 && (
-                      <span className="text-[10px] text-muted-foreground">
+                      <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
                         attempt {h.attemptNumber}
                       </span>
                     )}
+                    {h.adapterContext && (
+                      <span className="text-[10px] text-muted-foreground/60">
+                        via {h.adapterContext}
+                      </span>
+                    )}
                   </div>
-                  <span className="text-muted-foreground">{h.durationMs}ms</span>
+                  <span className="text-muted-foreground font-mono">{h.durationMs}ms</span>
                 </div>
                 <div className="mt-1 truncate text-xs text-muted-foreground">
                   {h.stdout || h.stderr || "(no output)"}
@@ -377,7 +412,13 @@ export function CommandEditor({
               </div>
             ))}
             {commandHistory.length === 0 && (
-              <p className="text-xs text-muted-foreground">No executions yet.</p>
+              <div className="flex flex-col items-center justify-center py-6 text-center">
+                <Play className="h-8 w-8 text-muted-foreground/40 mb-2" />
+                <p className="text-xs text-muted-foreground">No executions yet.</p>
+                <p className="text-[10px] text-muted-foreground/60 mt-1">
+                  Click "Test Run" to execute this command.
+                </p>
+              </div>
             )}
           </div>
         </div>
