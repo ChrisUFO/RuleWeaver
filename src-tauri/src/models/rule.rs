@@ -186,6 +186,18 @@ pub struct SyncError {
     pub message: String,
 }
 
+/// Summary of line-level differences between two versions of a file.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct DiffSummary {
+    /// Lines present in the current file but not in the stored version
+    pub added: usize,
+    /// Lines present in the stored version but not in the current file
+    pub removed: usize,
+    /// Lines that exist in both versions but with different content
+    pub changed: usize,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Conflict {
@@ -195,6 +207,10 @@ pub struct Conflict {
     pub adapter_id: Option<AdapterType>,
     pub local_hash: String,
     pub current_hash: String,
+    /// Scope of the artifact (global or local)
+    pub scope: Option<String>,
+    /// Line-level diff summary for UI diagnostics
+    pub diff_summary: Option<DiffSummary>,
 }
 
 #[cfg(test)]

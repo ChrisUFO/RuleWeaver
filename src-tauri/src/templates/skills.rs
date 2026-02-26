@@ -29,7 +29,7 @@ pub fn get_bundled_skill_templates() -> Vec<TemplateSkill> {
                 description: "A Python skill that reviews code files for simple anti-patterns."
                     .to_string(),
                 // Display instructions with placeholders for input
-                instructions: include_str!("review_instructions.md").to_string(),
+                instructions: include_str!("code_review_instructions.md").to_string(),
                 input_schema: vec![SkillParameter {
                     name: "target_file".to_string(),
                     description: "The target file to review".to_string(),

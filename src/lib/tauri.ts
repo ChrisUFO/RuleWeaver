@@ -178,13 +178,13 @@ export const api = {
   },
 
   slashCommands: {
-    remove: (commandName: string, adapters: string[]) =>
+    remove: (commandName: string, adapters: string[], targetPaths: string[] = []) =>
       invoke<{
         filesWritten: number;
         filesRemoved: number;
         errors: string[];
         conflicts: Array<{ commandName: string; adapterName: string; message: string }>;
-      }>("remove_slash_command_files", { commandName, adapters }),
+      }>("remove_slash_command_files", { commandName, adapters, targetPaths }),
     sync: (commandId: string, isGlobal: boolean) =>
       invoke<{
         filesWritten: number;
