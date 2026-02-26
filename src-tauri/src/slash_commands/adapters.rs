@@ -483,9 +483,12 @@ pub fn get_adapter(name: &str) -> Option<Box<dyn SlashCommandAdapter>> {
         "cline" => Some(Box::new(ClineSlashAdapter)),
         "gemini" => Some(Box::new(GeminiSlashAdapter)),
         "cursor" => Some(Box::new(CursorSlashAdapter)),
-        "roo" => Some(Box::new(RooCodeSlashAdapter)),
+        "roocode" => Some(Box::new(RooCodeSlashAdapter)),
         "antigravity" => Some(Box::new(AntigravitySlashAdapter)),
         "codex" => Some(Box::new(CodexSlashAdapter)),
+        // Kilo Code and Windsurf have no slash command directory in the registry
+        // (slash_command_extension: None) so they are intentionally unsupported here.
+        "kilo" | "windsurf" => None,
         _ => None,
     }
 }

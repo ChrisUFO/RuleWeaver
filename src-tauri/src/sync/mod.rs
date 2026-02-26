@@ -1003,6 +1003,13 @@ impl<'a> SyncEngine<'a> {
 /// `expected` but not in `actual` are "removed" (externally deleted).
 /// `changed` is approximated as the minimum of both — representing lines that
 /// were likely modified in-place rather than purely added or removed.
+///
+/// **Limitation**: because a `HashSet` is used, line order and duplicates are
+/// ignored.  Two files that differ only in line order will report
+/// `added: 0, removed: 0, changed: 0` even though the file hash differs.
+/// The summary is advisory only — the authoritative conflict signal is the hash
+/// mismatch, not this count.  A full ordered-diff algorithm (e.g. Myers) would
+/// be more accurate but is not worth the added dependency for this use case.
 fn compute_diff_summary(expected: &str, actual: &str) -> DiffSummary {
     use std::collections::HashSet;
 

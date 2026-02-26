@@ -106,6 +106,18 @@ pub async fn update_command(
 
     let engine = SlashCommandSyncEngine::new(Arc::clone(&db));
 
+    // Orphan prevention: if slash command generation was disabled, remove all existing files.
+    if existing.generate_slash_commands
+        && !updated.generate_slash_commands
+        && !existing.slash_command_adapters.is_empty()
+    {
+        let _ = engine.remove_command(
+            &existing.name,
+            &existing.slash_command_adapters,
+            &existing.target_paths,
+        );
+    }
+
     // Orphan prevention: if the command was renamed, remove stale slash files for
     // the old name across all adapters and all target paths.
     let name_changed = existing.name != updated.name;
