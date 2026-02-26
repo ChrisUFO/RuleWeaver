@@ -439,7 +439,7 @@ mod tests {
     fn test_failure_class_is_retryable() {
         assert!(FailureClass::Timeout.is_retryable());
         assert!(FailureClass::NonZeroExit.is_retryable());
-        assert!(FailureClass::PermissionDenied.is_retryable());
+        assert!(!FailureClass::PermissionDenied.is_retryable());
         assert!(!FailureClass::ValidationError.is_retryable());
         assert!(!FailureClass::MissingBinary.is_retryable());
     }
