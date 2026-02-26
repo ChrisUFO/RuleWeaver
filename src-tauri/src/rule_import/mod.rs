@@ -95,21 +95,18 @@ pub fn scan_clipboard_to_candidates(
     let trimmed_content = content.trim();
     if trimmed_content.is_empty() {
         return Err(AppError::InvalidInput {
-            message: "Clipboard content is empty".to_string(),
+            message: "clipboard content is empty".to_string(),
         });
     }
 
-    // Check for common malicious script patterns
-    let lower_content = trimmed_content.to_lowercase();
-    if lower_content.contains("rm -rf /") || lower_content.contains("format c:") {
-        return Err(AppError::InvalidInput {
-            message: "Potentially malicious patterns detected in clipboard content".to_string(),
-        });
-    }
+    // NOTE: Clipboard imports should only come from trusted sources.
+    // We do not attempt to detect malicious patterns as they are trivially bypassable
+    // (e.g., encoding, obfuscation, alternative commands). Users are responsible for
+    // verifying clipboard content before importing.
 
     if content.len() as u64 > max_size {
         return Err(AppError::InvalidInput {
-            message: format!("Clipboard content exceeds max size ({} bytes)", max_size),
+            message: format!("clipboard content exceeds max size ({} bytes)", max_size),
         });
     }
 
@@ -271,21 +268,47 @@ pub async fn scan_ai_tool_candidates(db: Arc<Database>, max_size: u64) -> Result
     for local_root in get_local_rule_roots(db.clone()).await {
         for local_path in local_tool_paths() {
             let path = local_root.join(local_path.relative_path);
-            if !path.exists() || !path.is_file() {
+            if !path.exists() {
                 continue;
             }
 
-            match candidate_from_path(
-                &path,
-                crate::models::ImportSourceType::AiTool,
-                adapter_label(local_path.adapter),
-                Some(local_path.adapter),
-                Scope::Local,
-                Some(vec![local_root.to_string_lossy().to_string()]),
-                local_path.artifact_type,
-                max_size,
-            ) {
-                Ok(candidate) => {
+            if path.is_file() {
+                match candidate_from_path(
+                    &path,
+                    crate::models::ImportSourceType::AiTool,
+                    adapter_label(local_path.adapter),
+                    Some(local_path.adapter),
+                    Scope::Local,
+                    Some(vec![local_root.to_string_lossy().to_string()]),
+                    local_path.artifact_type,
+                    max_size,
+                ) {
+                    Ok(candidate) => {
+                        if scan.candidates.len() >= MAX_IMPORT_CANDIDATES {
+                            scan.errors.push(format!(
+                                "Import candidate limit reached ({}). Narrow configured repository roots or import in batches.",
+                                MAX_IMPORT_CANDIDATES
+                            ));
+                            return Ok(scan);
+                        }
+                        scan.candidates.push(candidate)
+                    }
+                    Err(e) => scan.errors.push(e.to_string()),
+                }
+            } else if path.is_dir() {
+                let inner_scan = scan_directory_for_artifact_type(
+                    &path,
+                    local_path.adapter,
+                    max_size,
+                    local_path.artifact_type,
+                );
+                for mut candidate in inner_scan.candidates {
+                    candidate.source_type = crate::models::ImportSourceType::AiTool;
+                    candidate.source_tool = Some(local_path.adapter);
+                    candidate.source_label = adapter_label(local_path.adapter).to_string();
+                    candidate.scope = Scope::Local;
+                    candidate.target_paths = Some(vec![local_root.to_string_lossy().to_string()]);
+
                     if scan.candidates.len() >= MAX_IMPORT_CANDIDATES {
                         scan.errors.push(format!(
                             "Import candidate limit reached ({}). Narrow configured repository roots or import in batches.",
@@ -293,9 +316,11 @@ pub async fn scan_ai_tool_candidates(db: Arc<Database>, max_size: u64) -> Result
                         ));
                         return Ok(scan);
                     }
-                    scan.candidates.push(candidate)
+                    scan.candidates.push(candidate);
                 }
-                Err(e) => scan.errors.push(e.to_string()),
+                for err in inner_scan.errors {
+                    scan.errors.push(err);
+                }
             }
         }
     }
@@ -1993,14 +2018,20 @@ enabledAdapters:
         let skill_file = skills_dir.join("my-skill.md");
         fs::write(&skill_file, "# My Skill\n\nSkill content").unwrap();
 
+        // Create workflow file (also detected as SlashCommand)
+        let workflows_dir = temp_dir.path().join("workflows");
+        fs::create_dir_all(&workflows_dir).unwrap();
+        let workflow_file = workflows_dir.join("my-workflow.md");
+        fs::write(&workflow_file, "# My Workflow\n\nWorkflow content").unwrap();
+
         // Scan the directory
         let result = scan_directory_to_candidates(temp_dir.path(), 1024 * 1024, None);
 
-        // Should find 3 candidates (rule, command, skill)
+        // Should find 4 candidates (rule, command, skill, workflow)
         assert_eq!(
             result.candidates.len(),
-            3,
-            "Should find rule files, commands, and skills"
+            4,
+            "Should find rule files, commands, skills, and workflows"
         );
         assert!(result
             .candidates

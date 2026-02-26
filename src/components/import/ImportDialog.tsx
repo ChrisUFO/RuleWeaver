@@ -317,7 +317,13 @@ export function ImportDialog({
         // Backend generalized execute_import handles all types if candidates are passed correctly.
         // However, scanFromFile/scanFromUrl currently defaults to Rule in legacy paths.
         if (importSourceMode === "ai") {
-          result = await api.ruleImport.importAiToolRules(options);
+          if (artifactType === "command") {
+            result = await api.ruleImport.importAiToolCommands(options);
+          } else if (artifactType === "skill") {
+            result = await api.ruleImport.importAiToolSkills(options);
+          } else {
+            result = await api.ruleImport.importAiToolRules(options);
+          }
         } else if (importSourceMode === "file") {
           result = await api.ruleImport.importFromFile(importSourceValue, options);
         } else if (importSourceMode === "url") {

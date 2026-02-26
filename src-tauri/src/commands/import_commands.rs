@@ -89,7 +89,11 @@ pub async fn import_rules_from_directory(
 ) -> Result<ImportExecutionResult> {
     let opts = options.unwrap_or_default();
     let max_size = rule_import::resolve_max_size(&opts);
-    let scan = rule_import::scan_directory_to_candidates(&PathBuf::from(path), max_size, None);
+    let scan = rule_import::scan_directory_to_candidates(
+        &PathBuf::from(path),
+        max_size,
+        Some(crate::models::ImportArtifactType::Rule),
+    );
     rule_import::execute_import(db.inner().clone(), scan, opts).await
 }
 
@@ -100,7 +104,11 @@ pub fn scan_rule_directory_import(
 ) -> ImportScanResult {
     let opts = options.unwrap_or_default();
     let max_size = rule_import::resolve_max_size(&opts);
-    rule_import::scan_directory_to_candidates(&PathBuf::from(path), max_size, None)
+    rule_import::scan_directory_to_candidates(
+        &PathBuf::from(path),
+        max_size,
+        Some(crate::models::ImportArtifactType::Rule),
+    )
 }
 
 #[tauri::command]
