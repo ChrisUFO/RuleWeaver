@@ -95,7 +95,10 @@ pub fn sanitize_argument_value(value: &str) -> Result<String> {
 
 #[cfg(target_os = "windows")]
 fn escape_cmd_argument(value: &str) -> String {
-    if !value.chars().any(|c| matches!(c, '^' | '&' | '<' | '>' | '|' | '(' | ')' | '%' | '!' | '"')) {
+    if !value
+        .chars()
+        .any(|c| matches!(c, '^' | '&' | '<' | '>' | '|' | '(' | ')' | '%' | '!' | '"'))
+    {
         return value.to_string();
     }
 
@@ -257,9 +260,13 @@ pub struct ExecuteAndLogInput<'a> {
     pub adapter_context: Option<&'a str>,
 }
 
+/// Executes a command and logs the result.
+///
+/// Respects the provided `max_retries`. The total number of attempts will be
+/// 1 (the initial attempt) + the number of retries.
 pub async fn execute_and_log(input: ExecuteAndLogInput<'_>) -> Result<(i32, String, String, u64)> {
-    let max_attempts = input.max_retries.map(|r| (r as u32) + 1).unwrap_or(1).min(4);
-    
+    let max_attempts = input.max_retries.map(|r| (r as u32) + 1).unwrap_or(1);
+
     let mut last_exit_code: i32 = 0;
     let mut last_stdout = String::new();
     let mut last_stderr = String::new();
@@ -267,7 +274,7 @@ pub async fn execute_and_log(input: ExecuteAndLogInput<'_>) -> Result<(i32, Stri
 
     for attempt in 1..=max_attempts {
         let attempt_start = std::time::Instant::now();
-        
+
         match execute_shell_with_timeout_env(input.script, input.timeout_dur, input.envs).await {
             Ok((exit_code, stdout, stderr)) => {
                 let (stdout_redacted, stdout_was_redacted) = redact(&stdout);
@@ -380,7 +387,10 @@ mod tests {
     #[cfg(not(target_os = "windows"))]
     fn test_sanitize_argument_value_unix_injection() {
         let input = "foo'; rm -rf /; echo 'bar";
-        assert_eq!(sanitize_argument_value(input).unwrap(), "'foo'\\'; rm -rf /; echo 'bar'");
+        assert_eq!(
+            sanitize_argument_value(input).unwrap(),
+            "'foo'\\'; rm -rf /; echo 'bar'"
+        );
     }
 
     #[test]
@@ -395,22 +405,34 @@ mod tests {
 
     #[test]
     fn test_classify_failure_permission_denied() {
-        assert_eq!(classify_failure(1, "permission denied", false), FailureClass::PermissionDenied);
+        assert_eq!(
+            classify_failure(1, "permission denied", false),
+            FailureClass::PermissionDenied
+        );
     }
 
     #[test]
     fn test_classify_failure_missing_binary() {
-        assert_eq!(classify_failure(1, "command not found", false), FailureClass::MissingBinary);
+        assert_eq!(
+            classify_failure(1, "command not found", false),
+            FailureClass::MissingBinary
+        );
     }
 
     #[test]
     fn test_classify_failure_validation_error() {
-        assert_eq!(classify_failure(1, "invalid argument", false), FailureClass::ValidationError);
+        assert_eq!(
+            classify_failure(1, "invalid argument", false),
+            FailureClass::ValidationError
+        );
     }
 
     #[test]
     fn test_classify_failure_non_zero_exit() {
-        assert_eq!(classify_failure(1, "some other error", false), FailureClass::NonZeroExit);
+        assert_eq!(
+            classify_failure(1, "some other error", false),
+            FailureClass::NonZeroExit
+        );
     }
 
     #[test]

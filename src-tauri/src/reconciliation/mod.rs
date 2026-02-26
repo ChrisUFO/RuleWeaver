@@ -957,7 +957,11 @@ impl ReconciliationEngine {
     /// Full reconciliation in one call.
     ///
     /// This computes desired state, scans actual state, generates a plan, and executes it.
-    pub async fn reconcile(&self, dry_run: bool) -> Result<ReconcileResult> {
+    pub async fn reconcile(
+        &self,
+        dry_run: bool,
+        target_path: Option<String>,
+    ) -> Result<ReconcileResult> {
         log::info!("Starting reconciliation (dry_run: {})", dry_run);
 
         let desired = self.compute_desired_state().await?;
@@ -966,14 +970,17 @@ impl ReconciliationEngine {
         let actual = self.scan_actual_state().await?;
         log::info!("Actual state: {} paths", actual.found_paths.len());
 
-        let plan = self.plan(&desired, &actual);
-        log::info!(
-            "Plan: {} to create, {} to update, {} to remove, {} unchanged",
-            plan.to_create.len(),
-            plan.to_update.len(),
-            plan.to_remove.len(),
-            plan.unchanged.len()
-        );
+        let mut plan = self.plan(&desired, &actual);
+
+        if let Some(target) = target_path {
+            plan.to_create
+                .retain(|a| a.path.to_string_lossy() == target);
+            plan.to_update
+                .retain(|a| a.path.to_string_lossy() == target);
+            plan.to_remove
+                .retain(|a| a.path.to_string_lossy() == target);
+            plan.unchanged.retain(|p| p.to_string_lossy() == target);
+        }
 
         let result = self.execute(&plan, dry_run).await?;
 
@@ -1549,7 +1556,7 @@ mod tests {
         let db = std::sync::Arc::new(crate::database::Database::new_in_memory().await.unwrap());
         let engine = ReconciliationEngine::new(db).unwrap();
 
-        let result = engine.reconcile(true).await.unwrap();
+        let result = engine.reconcile(true, None).await.unwrap();
 
         assert!(result.success, "Dry-run reconciliation should succeed");
     }
@@ -1560,12 +1567,12 @@ mod tests {
         let engine = ReconciliationEngine::new(db.clone()).unwrap();
 
         // First run on empty database
-        let r1 = engine.reconcile(false).await.unwrap();
+        let r1 = engine.reconcile(false, None).await.unwrap();
         assert!(r1.success);
 
         // Second run should be a no-op (no changes)
         let engine2 = ReconciliationEngine::new(db).unwrap();
-        let r2 = engine2.reconcile(false).await.unwrap();
+        let r2 = engine2.reconcile(false, None).await.unwrap();
         assert!(r2.success);
         assert_eq!(r2.created, 0, "Second run should not create anything");
         assert_eq!(r2.updated, 0, "Second run should not update anything");
@@ -2521,8 +2528,7 @@ mod tests {
     #[test]
     fn test_validate_skill_target_adapters_rejects_unsupported() {
         // Cursor does not support skills
-        let result =
-            crate::models::validate_skill_target_adapters(&["cursor".to_string()]);
+        let result = crate::models::validate_skill_target_adapters(&["cursor".to_string()]);
         assert!(
             result.is_err(),
             "Adapter that doesn't support skills should fail validation"
@@ -2531,9 +2537,14 @@ mod tests {
 
     #[test]
     fn test_validate_skill_target_adapters_accepts_valid() {
-        let result =
-            crate::models::validate_skill_target_adapters(&["claude-code".to_string(), "cline".to_string()]);
-        assert!(result.is_ok(), "Valid skill-supporting adapters should pass");
+        let result = crate::models::validate_skill_target_adapters(&[
+            "claude-code".to_string(),
+            "cline".to_string(),
+        ]);
+        assert!(
+            result.is_ok(),
+            "Valid skill-supporting adapters should pass"
+        );
     }
 
     #[test]

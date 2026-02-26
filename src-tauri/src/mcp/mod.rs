@@ -1001,19 +1001,20 @@ async fn handle_skill_call(
             }
         };
         let skill_name = format!("skill:{}", skill.name);
+        let (stdout_redacted, was_redacted) = crate::redaction::redact(&output);
         let _ = db
             .add_execution_log(&ExecutionLogInput {
                 command_id: &skill.id,
                 command_name: &skill_name,
                 arguments_json: &args_json,
-                stdout: &output,
+                stdout: &stdout_redacted,
                 stderr: "",
                 exit_code: if is_error { 1 } else { 0 },
                 duration_ms,
                 triggered_by: "mcp-skill",
                 failure_class: None,
                 adapter_context: Some("mcp-skill"),
-                is_redacted: false,
+                is_redacted: was_redacted,
                 attempt_number: 1,
             })
             .await;

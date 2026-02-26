@@ -362,7 +362,7 @@ pub async fn validate_local_rule_paths(
 pub async fn reconcile_after_mutation(db: Arc<Database>) {
     use crate::reconciliation::ReconciliationEngine;
     match ReconciliationEngine::new(db) {
-        Ok(engine) => match engine.reconcile(false).await {
+        Ok(engine) => match engine.reconcile(false, None).await {
             Ok(result) => {
                 if result.removed > 0 {
                     log::info!(

@@ -6,8 +6,8 @@
 
 use std::sync::Arc;
 
-use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 
 use crate::database::Database;
 use crate::error::Result;
@@ -162,28 +162,48 @@ impl StatusEngine {
         let mut entries = Vec::new();
 
         for (path_str, expected) in &desired.expected_paths {
-            if !self.matches_filter(expected.adapter, expected.artifact_type, expected.scope, expected.repo_root.as_ref().map(|p| p.to_string_lossy().to_string()).as_ref(), filter) {
+            if !self.matches_filter(
+                expected.adapter,
+                expected.artifact_type,
+                expected.scope,
+                expected
+                    .repo_root
+                    .as_ref()
+                    .map(|p| p.to_string_lossy().to_string())
+                    .as_ref(),
+                filter,
+            ) {
                 continue;
             }
 
-            let artifact_info = self.get_artifact_info(&expected.artifact_type, &expected.content).await;
-            
+            let artifact_info = self
+                .get_artifact_info(&expected.artifact_type, &expected.content)
+                .await;
+
             let (status, detail) = if let Some(found) = actual.found_paths.get(path_str) {
                 if found.content_hash == expected.content_hash {
                     (ArtifactSyncStatus::Synced, None)
                 } else {
-                    (ArtifactSyncStatus::OutOfDate, Some("Content differs from expected".to_string()))
+                    (
+                        ArtifactSyncStatus::OutOfDate,
+                        Some("Content differs from expected".to_string()),
+                    )
                 }
             } else {
-                (ArtifactSyncStatus::Missing, Some("File not found on disk".to_string()))
+                (
+                    ArtifactSyncStatus::Missing,
+                    Some("File not found on disk".to_string()),
+                )
             };
 
             let last_op_key = path_str.clone();
-            let (last_operation, last_operation_at) = last_ops.get(&last_op_key)
+            let (last_operation, last_operation_at) = last_ops
+                .get(&last_op_key)
                 .map(|(op, ts)| (Some(op.clone()), Some(*ts)))
                 .unwrap_or((None, None));
 
-            let entry_id = format!("{}-{}-{}", 
+            let entry_id = format!(
+                "{}-{}-{}",
                 expected.artifact_type.as_str(),
                 expected.adapter.as_str(),
                 path_str.replace(['/', '\\', '.'], "-")
@@ -196,7 +216,10 @@ impl StatusEngine {
                 artifact_type: expected.artifact_type,
                 adapter: expected.adapter,
                 scope: expected.scope,
-                repo_root: expected.repo_root.as_ref().map(|p| p.to_string_lossy().to_string()),
+                repo_root: expected
+                    .repo_root
+                    .as_ref()
+                    .map(|p| p.to_string_lossy().to_string()),
                 status,
                 expected_path: path_str.clone(),
                 last_operation,
@@ -220,7 +243,13 @@ impl StatusEngine {
             };
             let scope = found.scope.unwrap_or(Scope::Global);
 
-            if !self.matches_filter(adapter, artifact_type, scope, found.scope.map(|_| String::new()).as_ref(), filter) {
+            if !self.matches_filter(
+                adapter,
+                artifact_type,
+                scope,
+                found.scope.map(|_| String::new()).as_ref(),
+                filter,
+            ) {
                 continue;
             }
 
@@ -231,13 +260,15 @@ impl StatusEngine {
             }
 
             let artifact_info = self.get_artifact_info_from_found(found).await;
-            
+
             let last_op_key = path_str.clone();
-            let (last_operation, last_operation_at) = last_ops.get(&last_op_key)
+            let (last_operation, last_operation_at) = last_ops
+                .get(&last_op_key)
                 .map(|(op, ts)| (Some(op.clone()), Some(*ts)))
                 .unwrap_or((None, None));
 
-            let entry_id = format!("{}-{}-{}", 
+            let entry_id = format!(
+                "{}-{}-{}",
                 artifact_type.as_str(),
                 adapter.as_str(),
                 path_str.replace(['/', '\\', '.'], "-")
@@ -259,7 +290,18 @@ impl StatusEngine {
             });
         }
 
-        Ok(entries)
+        let mut filtered_entries = Vec::new();
+        if let Some(ref filter_status) = filter.status {
+            for entry in entries {
+                if entry.status == *filter_status {
+                    filtered_entries.push(entry);
+                }
+            }
+        } else {
+            filtered_entries = entries;
+        }
+
+        Ok(filtered_entries)
     }
 
     fn matches_filter(
@@ -290,13 +332,14 @@ impl StatusEngine {
                 return false;
             }
         }
-        if let Some(ref _fs) = filter.status {
-            return true;
-        }
         true
     }
 
-    async fn get_artifact_info(&self, artifact_type: &ArtifactType, content: &Option<String>) -> (String, String) {
+    async fn get_artifact_info(
+        &self,
+        artifact_type: &ArtifactType,
+        content: &Option<String>,
+    ) -> (String, String) {
         match artifact_type {
             ArtifactType::Rule => {
                 if let Some(content) = content {
@@ -306,9 +349,7 @@ impl StatusEngine {
                 }
                 ("unknown-rule".to_string(), "Unknown Rule".to_string())
             }
-            ArtifactType::CommandStub => {
-                ("command-stub".to_string(), "COMMANDS.md".to_string())
-            }
+            ArtifactType::CommandStub => ("command-stub".to_string(), "COMMANDS.md".to_string()),
             ArtifactType::SlashCommand => {
                 if let Some(content) = content {
                     if let Some(name) = self.extract_name_from_content(content, "name:") {
@@ -329,16 +370,18 @@ impl StatusEngine {
     }
 
     async fn get_artifact_info_from_found(&self, found: &FoundArtifact) -> (String, String) {
-        let file_name = found.path
+        let file_name = found
+            .path
             .file_stem()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_else(|| "Unknown".to_string());
-        
-        let artifact_id = format!("{}-{}", 
+
+        let artifact_id = format!(
+            "{}-{}",
             found.artifact_type.map(|t| t.as_str()).unwrap_or("unknown"),
             &file_name
         );
-        
+
         (artifact_id, file_name)
     }
 
@@ -357,33 +400,31 @@ impl StatusEngine {
         None
     }
 
-    async fn get_last_operations_by_path(&self) -> Result<std::collections::HashMap<String, (String, DateTime<Utc>)>> {
-        let logs = self.db.get_reconciliation_logs(1000).await?;
-        let mut ops: std::collections::HashMap<String, (String, DateTime<Utc>)> = std::collections::HashMap::new();
-        
-        for log in logs {
-            ops.entry(log.path.clone())
-                .or_insert((log.operation.as_str().to_string(), log.timestamp));
-        }
-        
-        Ok(ops)
+    async fn get_last_operations_by_path(
+        &self,
+    ) -> Result<std::collections::HashMap<String, (String, DateTime<Utc>)>> {
+        self.db.get_last_reconciliation_op_per_path().await
     }
 
     pub async fn repair_artifact(&self, entry_id: &str) -> Result<RepairResult> {
         let filter = StatusFilter::default();
         let entries = self.compute_status(&filter).await?;
-        
+
         let entry = entries.iter().find(|e| e.id == entry_id);
-        
+
         match entry {
-            Some(_e) => {
-                let result = self.reconciliation_engine.reconcile(false).await;
-                
+            Some(e) => {
+                let result = self
+                    .reconciliation_engine
+                    .reconcile(false, Some(e.expected_path.clone()))
+                    .await;
+
                 match result {
                     Ok(_) => {
                         let updated_entries = self.compute_status(&filter).await?;
-                        let updated_entry = updated_entries.iter().find(|ue| ue.id == entry_id).cloned();
-                        
+                        let updated_entry =
+                            updated_entries.iter().find(|ue| ue.id == entry_id).cloned();
+
                         Ok(RepairResult {
                             entry_id: entry_id.to_string(),
                             success: true,
@@ -410,28 +451,35 @@ impl StatusEngine {
 
     pub async fn repair_all_artifacts(&self, filter: &StatusFilter) -> Result<Vec<RepairResult>> {
         let entries = self.compute_status(filter).await?;
-        let needs_repair: Vec<&ArtifactStatusEntry> = entries.iter()
-            .filter(|e| e.status != ArtifactSyncStatus::Synced && e.status != ArtifactSyncStatus::Unsupported)
+        let needs_repair: Vec<&ArtifactStatusEntry> = entries
+            .iter()
+            .filter(|e| {
+                e.status != ArtifactSyncStatus::Synced
+                    && e.status != ArtifactSyncStatus::Unsupported
+            })
             .collect();
 
         if needs_repair.is_empty() {
             return Ok(vec![]);
         }
 
-        let result = self.reconciliation_engine.reconcile(false).await;
-        
+        let result = self.reconciliation_engine.reconcile(false, None).await;
+
         let updated_entries = self.compute_status(filter).await?;
-        
-        let results: Vec<RepairResult> = needs_repair.iter().map(|entry| {
-            let updated_entry = updated_entries.iter().find(|ue| ue.id == entry.id).cloned();
-            
-            RepairResult {
-                entry_id: entry.id.clone(),
-                success: result.is_ok(),
-                error: result.as_ref().err().map(|e| e.to_string()),
-                updated_entry,
-            }
-        }).collect();
+
+        let results: Vec<RepairResult> = needs_repair
+            .iter()
+            .map(|entry| {
+                let updated_entry = updated_entries.iter().find(|ue| ue.id == entry.id).cloned();
+
+                RepairResult {
+                    entry_id: entry.id.clone(),
+                    success: result.is_ok(),
+                    error: result.as_ref().err().map(|e| e.to_string()),
+                    updated_entry,
+                }
+            })
+            .collect();
 
         Ok(results)
     }
@@ -458,12 +506,30 @@ mod tests {
 
     #[test]
     fn test_artifact_sync_status_from_str() {
-        assert_eq!(ArtifactSyncStatus::from_str("synced"), Some(ArtifactSyncStatus::Synced));
-        assert_eq!(ArtifactSyncStatus::from_str("out_of_date"), Some(ArtifactSyncStatus::OutOfDate));
-        assert_eq!(ArtifactSyncStatus::from_str("missing"), Some(ArtifactSyncStatus::Missing));
-        assert_eq!(ArtifactSyncStatus::from_str("conflicted"), Some(ArtifactSyncStatus::Conflicted));
-        assert_eq!(ArtifactSyncStatus::from_str("unsupported"), Some(ArtifactSyncStatus::Unsupported));
-        assert_eq!(ArtifactSyncStatus::from_str("error"), Some(ArtifactSyncStatus::Error));
+        assert_eq!(
+            ArtifactSyncStatus::from_str("synced"),
+            Some(ArtifactSyncStatus::Synced)
+        );
+        assert_eq!(
+            ArtifactSyncStatus::from_str("out_of_date"),
+            Some(ArtifactSyncStatus::OutOfDate)
+        );
+        assert_eq!(
+            ArtifactSyncStatus::from_str("missing"),
+            Some(ArtifactSyncStatus::Missing)
+        );
+        assert_eq!(
+            ArtifactSyncStatus::from_str("conflicted"),
+            Some(ArtifactSyncStatus::Conflicted)
+        );
+        assert_eq!(
+            ArtifactSyncStatus::from_str("unsupported"),
+            Some(ArtifactSyncStatus::Unsupported)
+        );
+        assert_eq!(
+            ArtifactSyncStatus::from_str("error"),
+            Some(ArtifactSyncStatus::Error)
+        );
         assert_eq!(ArtifactSyncStatus::from_str("invalid"), None);
     }
 

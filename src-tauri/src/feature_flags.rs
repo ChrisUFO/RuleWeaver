@@ -32,6 +32,10 @@ pub const ALL_FLAGS: &[&FeatureFlag] = &[
 
 impl FeatureFlag {
     pub fn is_enabled(&self) -> bool {
+        let env_key = format!("RULEWEAVER_FEATURE_{}", self.key.to_uppercase());
+        if let Ok(val) = std::env::var(&env_key) {
+            return val == "true" || val == "1";
+        }
         self.default
     }
 }

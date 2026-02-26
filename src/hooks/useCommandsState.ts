@@ -135,11 +135,6 @@ export function useCommandsState(
     setCommands(result);
   }, []);
 
-  const loadHistory = useCallback(async () => {
-    const logs = await api.execution.getHistory(50);
-    setHistory(logs);
-  }, []);
-
   const loadFilteredHistory = useCallback(
     async (commandId: string, filter: string, page: number) => {
       if (!commandId) return;
@@ -152,7 +147,7 @@ export function useCommandsState(
           HISTORY_PAGE_SIZE,
           page * HISTORY_PAGE_SIZE
         );
-        setCommandHistory(logs);
+        setHistory(logs);
         setHistoryHasMore(logs.length === HISTORY_PAGE_SIZE);
       } catch (error) {
         console.error("Failed to load filtered history", { error });
@@ -193,7 +188,7 @@ export function useCommandsState(
     } finally {
       setIsLoading(false);
     }
-  }, [loadCommands, loadHistory, loadAvailableAdapters, addToast]);
+  }, [loadCommands, loadAvailableAdapters, addToast]);
 
   useEffect(() => {
     refresh();
@@ -330,7 +325,6 @@ export function useCommandsState(
         stderr: result.stderr,
         exitCode: result.exitCode,
       });
-      await loadHistory();
       await loadFilteredHistory(selected.id, historyFilter, historyPage);
       toast[`${result.success ? "success" : "error"}`](addToast, {
         title: "Test Completed",
@@ -341,15 +335,7 @@ export function useCommandsState(
     } finally {
       setIsTesting(false);
     }
-  }, [
-    selected,
-    form.testArgs,
-    loadHistory,
-    loadFilteredHistory,
-    historyFilter,
-    historyPage,
-    addToast,
-  ]);
+  }, [selected, form.testArgs, loadFilteredHistory, historyFilter, historyPage, addToast]);
 
   const handleSyncCommands = useCallback(async () => {
     setIsSyncing(true);

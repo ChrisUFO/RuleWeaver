@@ -96,7 +96,9 @@ impl FailureClass {
     pub fn is_retryable(&self) -> bool {
         !matches!(
             self,
-            FailureClass::ValidationError | FailureClass::MissingBinary
+            FailureClass::ValidationError
+                | FailureClass::MissingBinary
+                | FailureClass::PermissionDenied
         )
     }
 }

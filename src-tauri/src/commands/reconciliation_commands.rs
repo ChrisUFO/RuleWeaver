@@ -8,7 +8,7 @@ use crate::reconciliation::{FoundArtifact, ReconcilePlan, ReconcileResult, Recon
 #[tauri::command]
 pub async fn reconcile_all(db: State<'_, Arc<Database>>, dry_run: bool) -> Result<ReconcileResult> {
     let engine = ReconciliationEngine::new(db.inner().clone())?;
-    engine.reconcile(dry_run).await
+    engine.reconcile(dry_run, None).await
 }
 
 #[tauri::command]
@@ -20,9 +20,12 @@ pub async fn reconcile_preview(db: State<'_, Arc<Database>>) -> Result<Reconcile
 }
 
 #[tauri::command]
-pub async fn reconcile_repair(db: State<'_, Arc<Database>>, dry_run: bool) -> Result<ReconcileResult> {
+pub async fn reconcile_repair(
+    db: State<'_, Arc<Database>>,
+    dry_run: bool,
+) -> Result<ReconcileResult> {
     let engine = ReconciliationEngine::new(db.inner().clone())?;
-    engine.repair(dry_run).await
+    engine.reconcile(dry_run, None).await
 }
 
 #[tauri::command]

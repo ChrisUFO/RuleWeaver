@@ -644,11 +644,17 @@ impl Database {
                     })?,
                     target_adapters: {
                         let raw: String = row.get(11)?;
-                        serde_json::from_str(&raw).unwrap_or_default()
+                        serde_json::from_str(&raw).unwrap_or_else(|e| {
+                            log::warn!("Failed to parse skill JSON: {}. Falling back to empty.", e);
+                            Vec::new()
+                        })
                     },
                     target_paths: {
                         let raw: String = row.get(12)?;
-                        serde_json::from_str(&raw).unwrap_or_default()
+                        serde_json::from_str(&raw).unwrap_or_else(|e| {
+                            log::warn!("Failed to parse skill JSON: {}. Falling back to empty.", e);
+                            Vec::new()
+                        })
                     },
                 })
             })?
@@ -698,11 +704,17 @@ impl Database {
                     })?,
                     target_adapters: {
                         let raw: String = row.get(11)?;
-                        serde_json::from_str(&raw).unwrap_or_default()
+                        serde_json::from_str(&raw).unwrap_or_else(|e| {
+                            log::warn!("Failed to parse skill JSON: {}. Falling back to empty.", e);
+                            Vec::new()
+                        })
                     },
                     target_paths: {
                         let raw: String = row.get(12)?;
-                        serde_json::from_str(&raw).unwrap_or_default()
+                        serde_json::from_str(&raw).unwrap_or_else(|e| {
+                            log::warn!("Failed to parse skill JSON: {}. Falling back to empty.", e);
+                            Vec::new()
+                        })
                     },
                 })
             })
@@ -903,42 +915,30 @@ impl Database {
     ) -> Result<Vec<ExecutionLog>> {
         let conn = self.0.lock().await;
 
-        let (sql, params): (String, Vec<Box<dyn rusqlite::ToSql>>) = match (&command_id, &failure_class) {
-            (Some(cid), Some(fc)) => (
-                "SELECT id, command_id, command_name, arguments, stdout, stderr, exit_code, duration_ms, executed_at, triggered_by, failure_class, adapter_context, is_redacted, attempt_number
-                 FROM execution_logs
-                 WHERE command_id = ? AND failure_class = ?
-                 ORDER BY executed_at DESC
-                 LIMIT ? OFFSET ?"
-                    .to_string(),
-                vec![Box::new(cid.to_string()), Box::new(fc.to_string()), Box::new(limit as i64), Box::new(offset as i64)],
-            ),
-            (Some(cid), None) => (
-                "SELECT id, command_id, command_name, arguments, stdout, stderr, exit_code, duration_ms, executed_at, triggered_by, failure_class, adapter_context, is_redacted, attempt_number
-                 FROM execution_logs
-                 WHERE command_id = ?
-                 ORDER BY executed_at DESC
-                 LIMIT ? OFFSET ?"
-                    .to_string(),
-                vec![Box::new(cid.to_string()), Box::new(limit as i64), Box::new(offset as i64)],
-            ),
-            (None, Some(fc)) => (
-                "SELECT id, command_id, command_name, arguments, stdout, stderr, exit_code, duration_ms, executed_at, triggered_by, failure_class, adapter_context, is_redacted, attempt_number
-                 FROM execution_logs
-                 WHERE failure_class = ?
-                 ORDER BY executed_at DESC
-                 LIMIT ? OFFSET ?"
-                    .to_string(),
-                vec![Box::new(fc.to_string()), Box::new(limit as i64), Box::new(offset as i64)],
-            ),
-            (None, None) => (
-                "SELECT id, command_id, command_name, arguments, stdout, stderr, exit_code, duration_ms, executed_at, triggered_by, failure_class, adapter_context, is_redacted, attempt_number
-                 FROM execution_logs
-                 ORDER BY executed_at DESC
-                 LIMIT ? OFFSET ?"
-                    .to_string(),
-                vec![Box::new(limit as i64), Box::new(offset as i64)],
-            ),
+        let (sql, params) = {
+            let mut where_clauses = Vec::new();
+            let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+
+            if let Some(cid) = command_id {
+                where_clauses.push("command_id = ?");
+                params.push(Box::new(cid.to_string()));
+            }
+
+            if let Some(fc) = failure_class {
+                where_clauses.push("failure_class = ?");
+                params.push(Box::new(fc.to_string()));
+            }
+
+            let mut sql = "SELECT id, command_id, command_name, arguments, stdout, stderr, exit_code, duration_ms, executed_at, triggered_by, failure_class, adapter_context, is_redacted, attempt_number FROM execution_logs".to_string();
+
+            if !where_clauses.is_empty() {
+                sql.push_str(&format!(" WHERE {}", where_clauses.join(" AND ")));
+            }
+
+            sql.push_str(" ORDER BY executed_at DESC LIMIT ? OFFSET ?");
+            params.push(Box::new(limit as i64));
+            params.push(Box::new(offset as i64));
+            (sql, params)
         };
 
         let params_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
@@ -1392,6 +1392,31 @@ impl Database {
         Ok(logs)
     }
 
+    pub async fn get_last_reconciliation_op_per_path(
+        &self,
+    ) -> Result<std::collections::HashMap<String, (String, DateTime<Utc>)>> {
+        let conn = self.0.lock().await;
+        let mut stmt = conn.prepare(
+            "SELECT path, operation, timestamp 
+             FROM reconciliation_logs 
+             WHERE id IN (SELECT MAX(id) FROM reconciliation_logs GROUP BY path)",
+        )?;
+
+        let rows = stmt.query_map([], |row| {
+            let path: String = row.get(0)?;
+            let operation: String = row.get(1)?;
+            let timestamp: DateTime<Utc> = parse_timestamp_or_now(row.get(2)?);
+            Ok((path, operation, timestamp))
+        })?;
+
+        let mut ops = std::collections::HashMap::new();
+        for (path, operation, timestamp) in rows.flatten() {
+            ops.insert(path, (operation, timestamp));
+        }
+
+        Ok(ops)
+    }
+
     pub async fn clear_reconciliation_logs(&self) -> Result<()> {
         let conn = self.0.lock().await;
         conn.execute("DELETE FROM reconciliation_logs", [])?;
@@ -1675,75 +1700,40 @@ fn run_migrations(conn: &mut Connection) -> Result<()> {
     }
 
     if current_version < 13 {
-        let mut stmt = transaction.prepare("PRAGMA table_info(skills)")?;
-        let cols: Vec<String> = stmt
-            .query_map([], |row| row.get(1))?
-            .collect::<std::result::Result<Vec<_>, _>>()?;
-
-        if !cols.iter().any(|c| c == "target_adapters") {
-            transaction.execute(
-                "ALTER TABLE skills ADD COLUMN target_adapters TEXT NOT NULL DEFAULT '[]'",
-                [],
-            )?;
-        }
-        if !cols.iter().any(|c| c == "target_paths") {
-            transaction.execute(
-                "ALTER TABLE skills ADD COLUMN target_paths TEXT NOT NULL DEFAULT '[]'",
-                [],
-            )?;
-        }
+        add_column_if_missing(
+            &transaction,
+            "skills",
+            "target_adapters",
+            "TEXT NOT NULL DEFAULT '[]'",
+        )?;
+        add_column_if_missing(
+            &transaction,
+            "skills",
+            "target_paths",
+            "TEXT NOT NULL DEFAULT '[]'",
+        )?;
     }
 
     if current_version < 14 {
-        let mut stmt = transaction.prepare("PRAGMA table_info(commands)")?;
-        let cols: Vec<String> = stmt
-            .query_map([], |row| row.get(1))?
-            .collect::<std::result::Result<Vec<_>, _>>()?;
-
-        if !cols.iter().any(|c| c == "timeout_ms") {
-            transaction.execute(
-                "ALTER TABLE commands ADD COLUMN timeout_ms INTEGER",
-                [],
-            )?;
-        }
-        if !cols.iter().any(|c| c == "max_retries") {
-            transaction.execute(
-                "ALTER TABLE commands ADD COLUMN max_retries INTEGER",
-                [],
-            )?;
-        }
+        add_column_if_missing(&transaction, "commands", "timeout_ms", "INTEGER")?;
+        add_column_if_missing(&transaction, "commands", "max_retries", "INTEGER")?;
     }
 
     if current_version < 15 {
-        let mut stmt = transaction.prepare("PRAGMA table_info(execution_logs)")?;
-        let cols: Vec<String> = stmt
-            .query_map([], |row| row.get(1))?
-            .collect::<std::result::Result<Vec<_>, _>>()?;
-
-        if !cols.iter().any(|c| c == "failure_class") {
-            transaction.execute(
-                "ALTER TABLE execution_logs ADD COLUMN failure_class TEXT",
-                [],
-            )?;
-        }
-        if !cols.iter().any(|c| c == "adapter_context") {
-            transaction.execute(
-                "ALTER TABLE execution_logs ADD COLUMN adapter_context TEXT",
-                [],
-            )?;
-        }
-        if !cols.iter().any(|c| c == "is_redacted") {
-            transaction.execute(
-                "ALTER TABLE execution_logs ADD COLUMN is_redacted INTEGER NOT NULL DEFAULT 0",
-                [],
-            )?;
-        }
-        if !cols.iter().any(|c| c == "attempt_number") {
-            transaction.execute(
-                "ALTER TABLE execution_logs ADD COLUMN attempt_number INTEGER NOT NULL DEFAULT 1",
-                [],
-            )?;
-        }
+        add_column_if_missing(&transaction, "execution_logs", "failure_class", "TEXT")?;
+        add_column_if_missing(&transaction, "execution_logs", "adapter_context", "TEXT")?;
+        add_column_if_missing(
+            &transaction,
+            "execution_logs",
+            "is_redacted",
+            "INTEGER NOT NULL DEFAULT 0",
+        )?;
+        add_column_if_missing(
+            &transaction,
+            "execution_logs",
+            "attempt_number",
+            "INTEGER NOT NULL DEFAULT 1",
+        )?;
 
         transaction.execute(
             "CREATE INDEX IF NOT EXISTS idx_execution_logs_command_id ON execution_logs(command_id)",
@@ -1754,6 +1744,26 @@ fn run_migrations(conn: &mut Connection) -> Result<()> {
     transaction.execute("PRAGMA user_version = 15", [])?;
     transaction.commit()?;
 
+    Ok(())
+}
+
+fn add_column_if_missing(
+    transaction: &rusqlite::Transaction,
+    table: &str,
+    column: &str,
+    definition: &str,
+) -> Result<()> {
+    let mut stmt = transaction.prepare(&format!("PRAGMA table_info({})", table))?;
+    let exists = stmt
+        .query_map([], |row| row.get::<_, String>(1))?
+        .any(|c| c.as_ref().map(|s| s == column).unwrap_or(false));
+
+    if !exists {
+        transaction.execute(
+            &format!("ALTER TABLE {} ADD COLUMN {} {}", table, column, definition),
+            [],
+        )?;
+    }
     Ok(())
 }
 
