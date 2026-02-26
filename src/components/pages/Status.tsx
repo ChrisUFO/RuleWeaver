@@ -9,6 +9,7 @@ import {
   Clock,
   XCircle,
   Filter,
+  ExternalLink,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -60,7 +61,7 @@ const STATUS_OPTIONS: SelectOption[] = [
   { value: "error", label: "Error" },
 ];
 
-export function Status() {
+export function Status({ onNavigate }: { onNavigate?: (view: string, id?: string) => void }) {
   const { addToast } = useToast();
   const { tools } = useRegistryStore();
 
@@ -442,7 +443,27 @@ export function Status() {
                         <td className="py-3 px-4 text-xs font-mono text-muted-foreground max-w-xs truncate">
                           {entry.expectedPath}
                         </td>
-                        <td className="py-3 px-4">
+                        <td className="py-3 px-4 flex gap-1">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => {
+                              const viewMap: Record<string, string> = {
+                                rule: "rules",
+                                command_stub: "commands",
+                                slash_command: "commands",
+                                skill: "skills",
+                              };
+                              onNavigate?.(
+                                viewMap[entry.artifactType] || "dashboard",
+                                entry.artifactId
+                              );
+                            }}
+                            className="h-7 w-7 p-0"
+                            title="Go to item"
+                          >
+                            <ExternalLink className="h-3.5 w-3.5" />
+                          </Button>
                           {entry.status !== "synced" && entry.status !== "unsupported" && (
                             <Button
                               size="sm"

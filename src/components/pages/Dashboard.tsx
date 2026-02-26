@@ -49,7 +49,7 @@ const item: Variants = {
   },
 };
 
-export function Dashboard({ onNavigate }: { onNavigate: (view: string) => void }) {
+export function Dashboard({ onNavigate }: { onNavigate: (view: string, id?: string) => void }) {
   const { rules, fetchRules, isLoading } = useRulesStore();
   const { addToast } = useToast();
   const [lastSync, setLastSync] = useState<string | null>(null);

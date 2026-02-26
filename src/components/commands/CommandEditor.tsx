@@ -1,4 +1,13 @@
-import { Play, Trash2, CheckCircle, Loader2, Shield, AlertTriangle, EyeOff } from "lucide-react";
+import {
+  Play,
+  Trash2,
+  CheckCircle,
+  Loader2,
+  Shield,
+  AlertTriangle,
+  EyeOff,
+  HelpCircle,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -204,8 +213,14 @@ export function CommandEditor({
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="grid gap-2">
-              <label htmlFor="timeout-ms" className="text-xs text-muted-foreground">
+              <label
+                htmlFor="timeout-ms"
+                className="text-xs text-muted-foreground flex items-center gap-1"
+              >
                 Timeout (ms)
+                <span title="Maximum execution time before identifying as a failure.">
+                  <HelpCircle className="h-3 w-3 opacity-50 cursor-help" />
+                </span>
               </label>
               <Input
                 id="timeout-ms"
@@ -222,8 +237,14 @@ export function CommandEditor({
               />
             </div>
             <div className="grid gap-2">
-              <label htmlFor="max-retries" className="text-xs text-muted-foreground">
+              <label
+                htmlFor="max-retries"
+                className="text-xs text-muted-foreground flex items-center gap-1"
+              >
                 Max Retries
+                <span title="Automatic retries for transient failures (timeouts, network errors). Maximum 3 retries.">
+                  <HelpCircle className="h-3 w-3 opacity-50 cursor-help" />
+                </span>
               </label>
               <Input
                 id="max-retries"

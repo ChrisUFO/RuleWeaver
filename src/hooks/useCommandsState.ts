@@ -78,7 +78,9 @@ const initialFormData: CommandFormData = {
 };
 
 export function useCommandsState(
-  addToast: ReturnType<typeof useToast>["addToast"]
+  addToast: ReturnType<typeof useToast>["addToast"],
+  initialSelectedId?: string | null,
+  onClearInitialId?: () => void
 ): UseCommandsStateReturn {
   const [commands, setCommands] = useState<CommandModel[]>([]);
   const [selectedId, setSelectedId] = useState<string>("");
@@ -98,6 +100,16 @@ export function useCommandsState(
     () => commands.find((cmd) => cmd.id === selectedId) ?? null,
     [commands, selectedId]
   );
+
+  useEffect(() => {
+    if (initialSelectedId && commands.length > 0) {
+      const exists = commands.some((c) => c.id === initialSelectedId);
+      if (exists) {
+        setSelectedId(initialSelectedId);
+        onClearInitialId?.();
+      }
+    }
+  }, [initialSelectedId, commands, onClearInitialId]);
 
   const filtered = useMemo(
     () => filterByQuery(commands, query, ["name", "description"] as const),

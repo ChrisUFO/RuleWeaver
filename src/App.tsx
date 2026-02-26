@@ -21,7 +21,15 @@ import "./index.css";
 
 function App() {
   const [activeView, setActiveView] = useState("dashboard");
+  const [pendingId, setPendingId] = useState<string | null>(null);
   const [shortcutsDialogOpen, setShortcutsDialogOpen] = useState(false);
+
+  const handleNavigate = (view: string, id?: string) => {
+    setActiveView(view);
+    if (id) {
+      setPendingId(id);
+    }
+  };
 
   const { fetchTools } = useRegistryStore();
   const { rules, fetchRules } = useRulesStore();
@@ -97,15 +105,19 @@ function App() {
 
   const renderContent = () => {
     const views: Record<string, React.ReactNode> = {
-      dashboard: <Dashboard onNavigate={setActiveView} />,
-      rules: <RulesPage />,
-      commands: <Commands />,
-      skills: <Skills />,
-      status: <Status />,
+      dashboard: <Dashboard onNavigate={handleNavigate} />,
+      rules: (
+        <RulesPage initialSelectedId={pendingId} onClearInitialId={() => setPendingId(null)} />
+      ),
+      commands: (
+        <Commands initialSelectedId={pendingId} onClearInitialId={() => setPendingId(null)} />
+      ),
+      skills: <Skills initialSelectedId={pendingId} onClearInitialId={() => setPendingId(null)} />,
+      status: <Status onNavigate={handleNavigate} />,
       settings: <Settings />,
     };
 
-    const currentViewComponent = views[activeView] || <Dashboard onNavigate={setActiveView} />;
+    const currentViewComponent = views[activeView] || <Dashboard onNavigate={handleNavigate} />;
 
     return (
       <AnimatePresence mode="wait">

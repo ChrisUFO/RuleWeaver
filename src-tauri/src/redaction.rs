@@ -42,26 +42,62 @@ static GENERIC_SECRET_PATTERN: Lazy<Regex> = Lazy::new(|| {
         .expect("generic secret pattern")
 });
 
+struct RedactionPattern {
+    _name: &'static str,
+    regex: &'static Lazy<Regex>,
+}
+
+static DEFAULT_PATTERNS: Lazy<Vec<RedactionPattern>> = Lazy::new(|| {
+    vec![
+        RedactionPattern {
+            _name: "Bearer Token",
+            regex: &BEARER_PATTERN,
+        },
+        RedactionPattern {
+            _name: "API Key",
+            regex: &API_KEY_PATTERN,
+        },
+        RedactionPattern {
+            _name: "AWS Access Key",
+            regex: &AWS_ACCESS_KEY_PATTERN,
+        },
+        RedactionPattern {
+            _name: "AWS Secret Key",
+            regex: &AWS_SECRET_KEY_PATTERN,
+        },
+        RedactionPattern {
+            _name: "Private Key",
+            regex: &PRIVATE_KEY_PATTERN,
+        },
+        RedactionPattern {
+            _name: "Connection String Password",
+            regex: &CONNECTION_STRING_PATTERN,
+        },
+        RedactionPattern {
+            _name: "GitHub Token",
+            regex: &GITHUB_TOKEN_PATTERN,
+        },
+        RedactionPattern {
+            _name: "Slack Token",
+            regex: &SLACK_TOKEN_PATTERN,
+        },
+        RedactionPattern {
+            _name: "Generic Secret",
+            regex: &GENERIC_SECRET_PATTERN,
+        },
+    ]
+});
+
 const REDACTED: &str = "[REDACTED]";
 
+/// Redacts sensitive information from the input string.
+/// Returns a tuple containing the redacted string and a boolean indicating if any redaction occurred.
 pub fn redact(input: &str) -> (String, bool) {
     let mut result = input.to_string();
     let mut was_redacted = false;
 
-    let patterns: &[&Lazy<Regex>] = &[
-        &BEARER_PATTERN,
-        &API_KEY_PATTERN,
-        &AWS_ACCESS_KEY_PATTERN,
-        &AWS_SECRET_KEY_PATTERN,
-        &PRIVATE_KEY_PATTERN,
-        &CONNECTION_STRING_PATTERN,
-        &GITHUB_TOKEN_PATTERN,
-        &SLACK_TOKEN_PATTERN,
-        &GENERIC_SECRET_PATTERN,
-    ];
-
-    for pattern in patterns {
-        let new_result = pattern.replace_all(&result, REDACTED);
+    for pattern in DEFAULT_PATTERNS.iter() {
+        let new_result = pattern.regex.replace_all(&result, REDACTED);
         if new_result != result {
             was_redacted = true;
         }

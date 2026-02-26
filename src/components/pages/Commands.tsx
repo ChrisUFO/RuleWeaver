@@ -7,7 +7,12 @@ import { useCommandsState } from "@/hooks/useCommandsState";
 import { CommandList } from "@/components/commands/CommandList";
 import { CommandEditor } from "@/components/commands/CommandEditor";
 
-export function Commands() {
+interface CommandsProps {
+  initialSelectedId?: string | null;
+  onClearInitialId?: () => void;
+}
+
+export function Commands({ initialSelectedId, onClearInitialId }: CommandsProps) {
   const { addToast } = useToast();
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const { roots: availableRepos } = useRepositoryRoots();
@@ -27,7 +32,7 @@ export function Commands() {
     isSyncing,
     isSlashCommandSyncing,
     handlers,
-  } = useCommandsState(addToast);
+  } = useCommandsState(addToast, initialSelectedId, onClearInitialId);
 
   if (isLoading) {
     return <CommandsListSkeleton />;

@@ -17,7 +17,12 @@ import { Select } from "@/components/ui/select";
 import { useRepositoryRoots } from "@/hooks/useRepositoryRoots";
 import { ImportDialog } from "@/components/import/ImportDialog";
 
-export function Skills() {
+interface SkillsProps {
+  initialSelectedId?: string | null;
+  onClearInitialId?: () => void;
+}
+
+export function Skills({ initialSelectedId, onClearInitialId }: SkillsProps) {
   const [skills, setSkills] = useState<Skill[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [name, setName] = useState("");
@@ -40,6 +45,16 @@ export function Skills() {
     () => skills.find((s) => s.id === selectedId) ?? null,
     [skills, selectedId]
   );
+
+  useEffect(() => {
+    if (initialSelectedId && skills.length > 0) {
+      const exists = skills.some((s) => s.id === initialSelectedId);
+      if (exists) {
+        setSelectedId(initialSelectedId);
+        onClearInitialId?.();
+      }
+    }
+  }, [initialSelectedId, skills, onClearInitialId]);
 
   const loadSkills = async () => {
     const data = await api.skills.getAll();
