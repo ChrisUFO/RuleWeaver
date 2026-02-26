@@ -21,6 +21,7 @@ desktop.ini
 # Editor Configs
 .vscode/
 .idea/
+.claude/
 *.suo
 *.ntvs*
 *.njsproj
