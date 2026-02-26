@@ -9,8 +9,8 @@ use crate::error::{AppError, Result};
 use crate::file_storage::StorageLocation;
 use crate::models::{
     AdapterType, Command, CommandArgument, CreateCommandInput, CreateRuleInput, CreateSkillInput,
-    ExecutionLog, Rule, Scope, Skill, SyncHistoryEntry, UpdateCommandInput, UpdateRuleInput,
-    UpdateSkillInput,
+    ExecutionLog, ReconcileOperation, ReconcileResultType, Rule, Scope, Skill, SyncHistoryEntry,
+    UpdateCommandInput, UpdateRuleInput, UpdateSkillInput,
 };
 
 fn parse_timestamp_or_now(timestamp: i64) -> DateTime<Utc> {
@@ -45,12 +45,12 @@ pub struct ReconciliationLogEntry {
     pub id: String,
     #[serde(with = "crate::models::timestamp")]
     pub timestamp: DateTime<Utc>,
-    pub operation: String,
+    pub operation: ReconcileOperation,
     pub artifact_type: Option<String>,
-    pub adapter: Option<String>,
-    pub scope: Option<String>,
+    pub adapter: Option<AdapterType>,
+    pub scope: Option<Scope>,
     pub path: String,
-    pub result: String,
+    pub result: ReconcileResultType,
     pub error_message: Option<String>,
 }
 
@@ -1188,12 +1188,12 @@ impl Database {
     #[allow(clippy::too_many_arguments)]
     pub async fn log_reconciliation(
         &self,
-        operation: &str,
+        operation: ReconcileOperation,
         artifact_type: Option<&str>,
-        adapter: Option<&str>,
-        scope: Option<&str>,
+        adapter: Option<AdapterType>,
+        scope: Option<Scope>,
         path: &str,
-        result: &str,
+        result: ReconcileResultType,
         error_message: Option<&str>,
     ) -> Result<()> {
         let conn = self.0.lock().await;
@@ -1206,12 +1206,12 @@ impl Database {
             rusqlite::params![
                 id,
                 now,
-                operation,
+                operation.as_str(),
                 artifact_type,
-                adapter,
-                scope,
+                adapter.map(|a| a.as_str()),
+                scope.map(|s| s.as_str()),
                 path,
-                result,
+                result.as_str(),
                 error_message
             ],
         )?;
@@ -1230,15 +1230,29 @@ impl Database {
 
         let logs = stmt
             .query_map(rusqlite::params![limit], |row| {
+                let op_str: String = row.get(2)?;
+                let operation =
+                    ReconcileOperation::from_str(&op_str).unwrap_or(ReconcileOperation::Check);
+
+                let adapter_str: Option<String> = row.get(4)?;
+                let adapter = adapter_str.and_then(|s| AdapterType::from_str(&s));
+
+                let scope_str: Option<String> = row.get(5)?;
+                let scope = scope_str.and_then(|s| Scope::from_str(&s));
+
+                let res_str: String = row.get(7)?;
+                let result =
+                    ReconcileResultType::from_str(&res_str).unwrap_or(ReconcileResultType::Failed);
+
                 Ok(ReconciliationLogEntry {
                     id: row.get(0)?,
                     timestamp: parse_timestamp_or_now(row.get(1)?),
-                    operation: row.get(2)?,
+                    operation,
                     artifact_type: row.get(3)?,
-                    adapter: row.get(4)?,
-                    scope: row.get(5)?,
+                    adapter,
+                    scope,
                     path: row.get(6)?,
-                    result: row.get(7)?,
+                    result,
                     error_message: row.get(8)?,
                 })
             })?
