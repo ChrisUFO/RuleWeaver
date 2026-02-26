@@ -1544,8 +1544,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn execute_import_skips_duplicate_content() {
-        let db = Database::new_in_memory().await.expect("in-memory db");
+    async fn execute_import_skips_duplicates_by_content() {
+        let db = Arc::new(Database::new_in_memory().await.expect("in-memory db"));
         db.create_rule(CreateRuleInput {
             id: None,
             name: "Existing".to_string(),
@@ -1588,7 +1588,7 @@ mod tests {
 
     #[tokio::test]
     async fn execute_import_rename_mode_creates_unique_name() {
-        let db = Database::new_in_memory().await.expect("in-memory db");
+        let db = Arc::new(Database::new_in_memory().await.expect("in-memory db"));
         db.create_rule(CreateRuleInput {
             id: None,
             name: "quality".to_string(),
@@ -1756,7 +1756,7 @@ enabledAdapters:
 
     #[tokio::test]
     async fn execute_import_reimport_updates_mapped_rule_idempotently() {
-        let db = Database::new_in_memory().await.expect("in-memory db");
+        let db = Arc::new(Database::new_in_memory().await.expect("in-memory db"));
 
         let first_candidate = candidate_from_text(
             "original content".to_string(),
@@ -1835,7 +1835,7 @@ enabledAdapters:
 
     #[tokio::test]
     async fn history_source_type_matches_candidate_source() {
-        let db = Database::new_in_memory().await.expect("in-memory db");
+        let db = Arc::new(Database::new_in_memory().await.expect("in-memory db"));
 
         let candidate = candidate_from_text(
             "file content".to_string(),
@@ -1978,11 +1978,11 @@ enabledAdapters:
         // Scan the directory
         let result = scan_directory_to_candidates(temp_dir.path(), 1024 * 1024, None);
 
-        // Should only have 1 candidate (the rule file)
+        // Should find 3 candidates (rule, command, skill)
         assert_eq!(
             result.candidates.len(),
-            1,
-            "Should only find rule files, not commands or skills"
+            3,
+            "Should find rule files, commands, and skills"
         );
         assert!(result.candidates[0].name.to_lowercase().contains("gemini"));
     }
@@ -2184,8 +2184,8 @@ This is the rule content.
 
         let result = scan_directory_to_candidates(temp_dir.path(), 1024 * 1024, None);
 
-        // Only rule should be found
-        assert_eq!(result.candidates.len(), 1);
+        // Both rule and command should be found
+        assert_eq!(result.candidates.len(), 2);
         assert!(result.candidates[0].name.to_lowercase().contains("rule"));
     }
 
@@ -2211,8 +2211,8 @@ This is the rule content.
 
         let result = scan_directory_to_candidates(temp_dir.path(), 1024 * 1024, None);
 
-        // Only rule should be found
-        assert_eq!(result.candidates.len(), 1);
+        // Both rule and skill should be found
+        assert_eq!(result.candidates.len(), 2);
         assert!(result.candidates[0].name.to_lowercase().contains("claude"));
     }
 
@@ -2230,8 +2230,8 @@ This is the rule content.
 
         let result = scan_directory_to_candidates(temp_dir.path(), 1024 * 1024, None);
 
-        // Only rule should be found
-        assert_eq!(result.candidates.len(), 1);
+        // Both rule and command should be found
+        assert_eq!(result.candidates.len(), 2);
         assert!(result.candidates[0].name.to_lowercase().contains("gemini"));
     }
 
@@ -2260,8 +2260,8 @@ This is the rule content.
 
         let result = scan_directory_to_candidates(temp_dir.path(), 1024 * 1024, None);
 
-        // Only rule should be found
-        assert_eq!(result.candidates.len(), 1);
+        // Both rule and skill should be found
+        assert_eq!(result.candidates.len(), 2);
         assert!(result.candidates[0].name.to_lowercase().contains("rule"));
     }
 
@@ -2297,8 +2297,8 @@ This is the rule content.
 
         let result = scan_directory_to_candidates(temp_dir.path(), 1024 * 1024, None);
 
-        // Only the rule should be found
-        assert_eq!(result.candidates.len(), 1);
+        // All 4 artifacts should be found
+        assert_eq!(result.candidates.len(), 4);
         assert_eq!(result.candidates[0].artifact_type, ImportArtifactType::Rule);
         assert!(result.candidates[0].name.to_lowercase().contains("gemini"));
     }

@@ -1,0 +1,297 @@
+   Compiling ruleweaver v0.0.30-2502 (C:\Users\chris\RuleWeaver\src-tauri)
+warning: variable does not need to be mutable
+    --> src\reconciliation\mod.rs:1645:13
+     |
+1645 |         let mut actual = ActualState::default();
+     |             ----^^^^^^
+     |             |
+     |             help: remove this `mut`
+     |
+     = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: comparison is useless due to type limits
+    --> src\reconciliation\mod.rs:2277:13
+     |
+2277 |             skill_entries.len() >= 0,
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = note: `#[warn(unused_comparisons)]` on by default
+
+warning: `ruleweaver` (lib test) generated 2 warnings (run `cargo fix --lib -p ruleweaver --tests` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 10.64s
+     Running unittests src\lib.rs (src-tauri\target\debug\deps\ruleweaver_lib-e533891c21dcf221.exe)
+
+running 199 tests
+test execution::tests::test_escape_cmd_argument ... ok
+test commands::import_commands::tests::scan_rule_clipboard_import_enforces_max_size ... ok
+test file_storage::serializer::tests::test_generate_filename_local ... ok
+test file_storage::parser::tests::test_parse_datetime_formats ... ok
+test file_storage::parser::tests::test_parse_rule_file_missing_frontmatter ... ok
+test commands::import_commands::tests::scan_rule_file_import_returns_errors_for_missing_file ... ok
+test file_storage::serializer::tests::test_generate_filename_global ... ok
+test execution::tests::test_sanitize_argument_value ... ok
+test file_storage::migration::tests::test_migration_status_default ... ok
+test file_storage::serializer::tests::test_sanitize_filename_leading_trailing_dashes ... ok
+test file_storage::serializer::tests::test_sanitize_filename_empty ... ok
+test file_storage::serializer::tests::test_sanitize_filename_simple ... ok
+test file_storage::serializer::tests::test_sanitize_filename_special_chars ... ok
+test file_storage::serializer::tests::test_sanitize_filename_unicode ... ok
+test file_storage::serializer::tests::test_format_datetime ... ok
+test file_storage::serializer::tests::test_serialize_rule_with_target_paths ... ok
+test file_storage::serializer::tests::test_serialize_rule_empty_content ... ok
+test file_storage::serializer::tests::test_sanitize_filename_multiple_spaces ... ok
+test file_storage::serializer::tests::test_serialize_rule_basic ... ok
+test file_storage::tests::test_generate_filename_sanitization ... ok
+test file_storage::watcher::tests::test_watcher_creation ... ok
+test mcp::tests::test_disallowed_patterns ... ok
+test models::command::tests::test_new_command_defaults ... ok
+test models::registry::tests::test_artifact_type_as_str ... ok
+test models::registry::tests::test_cursor_limited_capabilities ... ok
+test models::registry::tests::test_all_adapters_have_skill_filename ... ok
+test models::registry::tests::test_full_support_adapter_capabilities ... ok
+test models::command::tests::test_command_roundtrip ... ok
+test models::registry::tests::test_path_templates_resolution ... ok
+test models::registry::tests::test_registry_contains_all_adapters ... ok
+test models::registry::tests::test_registry_returns_all_ten_adapters ... ok
+test models::registry::tests::test_skill_paths_defined_for_supporting_adapters ... ok
+test mcp::tests::test_slugify ... ok
+test models::registry::tests::test_skill_paths_not_defined_for_non_supporting_adapters ... ok
+test models::registry::tests::test_slash_command_extensions ... ok
+test models::registry::tests::test_validate_support_rejects_cursor_command_stubs ... ok
+test file_storage::parser::tests::test_parse_rule_file_missing_closing_delimiter ... ok
+test models::registry::tests::test_validate_support_rejects_cursor_skills ... ok
+test models::registry::tests::test_validate_support_rules_globally ... ok
+test models::registry::tests::test_validate_support_rules_locally ... ok
+test models::registry::tests::test_validate_support_skills_for_gemini ... ok
+test file_storage::parser::tests::test_parse_rule_file_invalid_yaml ... ok
+test file_storage::parser::tests::test_parse_rule_file_missing_required_field ... ok
+test file_storage::parser::tests::test_parse_rule_file_whitespace_handling ... ok
+test file_storage::parser::tests::test_parse_rule_file_empty_body ... ok
+test file_storage::parser::tests::test_parse_rule_file_success ... ok
+test file_storage::parser::tests::test_parse_rule_file_default_values ... ok
+test models::rule::tests::test_adapter_type_all ... ok
+test file_storage::parser::tests::test_to_rule_no_valid_adapters ... ok
+test file_storage::parser::tests::test_to_rule_conversion ... ok
+test models::rule::tests::test_adapter_type_from_str ... ok
+test models::rule::tests::test_create_rule_input_camel_case_from_frontend ... ok
+test models::rule::tests::test_create_rule_input_serialization ... ok
+test models::rule::tests::test_rule_new ... ok
+test file_storage::serializer::tests::test_roundtrip_parse_serialize ... ok
+test models::rule::tests::test_rule_output_camel_case_to_frontend ... ok
+test models::rule::tests::test_scope_as_str ... ok
+test models::rule::tests::test_scope_from_str ... ok
+test models::rule::tests::test_update_rule_input_camel_case_from_frontend ... ok
+test file_storage::tests::test_delete_rule_file_not_found ... ok
+test path_resolver::tests::test_normalize_path_removes_dot_windows ... ok
+test path_resolver::tests::test_normalize_path_removes_dotdot_windows ... ok
+test path_resolver::tests::test_normalize_path_relative_fails ... ok
+test file_storage::tests::test_load_rules_from_empty_directory ... ok
+test database::tests::test_skill_crud ... ok
+test path_resolver::tests::test_local_slash_command_path ... ok
+test path_resolver::tests::test_skill_path_cursor_unsupported ... ok
+test path_resolver::tests::test_skill_path_global ... ok
+test path_resolver::tests::test_local_skill_path ... ok
+test path_resolver::tests::test_command_name_validation_rejects_separators ... ok
+test path_resolver::tests::test_command_name_validation_rejects_traversal ... ok
+test path_resolver::tests::test_skill_path_validation_rejects_empty ... ok
+test path_resolver::tests::test_global_path_resolution ... ok
+test path_resolver::tests::test_skill_path_validation_rejects_separators ... ok
+test path_resolver::tests::test_local_path_resolution ... ok
+test path_resolver::tests::test_skill_dir_global ... ok
+test path_resolver::tests::test_skill_global_path ... ok
+test path_resolver::tests::test_repository_roots_management ... ok
+test path_resolver::tests::test_canonicalize_relative_path ... ok
+test path_resolver::tests::test_local_path_all_adapters ... ok
+test path_resolver::tests::test_command_name_validation_rejects_empty ... ok
+test path_resolver::tests::test_all_local_paths ... ok
+test path_resolver::tests::test_preview_paths ... ok
+test path_resolver::tests::test_skill_path_validation_rejects_traversal ... ok
+test path_resolver::tests::test_slash_command_path_local_requires_repo ... ok
+test path_resolver::tests::test_skill_dir_local ... ok
+test path_resolver::tests::test_skill_local_path ... ok
+test path_resolver::tests::test_resolve_registry_path ... ok
+test path_resolver::tests::test_path_resolver_creation ... ok
+test path_resolver::tests::test_slash_command_path_global ... ok
+test path_resolver::tests::test_command_name_validation_accepts_valid ... ok
+test path_resolver::tests::test_slash_command_requires_name ... ok
+test path_resolver::tests::test_validate_target_path ... ok
+test path_resolver::tests::test_command_stub_path ... ok
+test path_resolver::tests::test_all_global_paths ... ok
+test path_resolver::tests::test_all_adapters_have_paths ... ok
+test path_resolver::tests::test_global_path_all_adapters ... ok
+test reconciliation::tests::test_content_hash ... ok
+test reconciliation::tests::test_reconcile_result_has_warnings ... ok
+test reconciliation::tests::test_found_artifact_scope_preserved ... ok
+test file_storage::tests::test_save_rule_creates_new_file ... ok
+test file_storage::tests::test_delete_rule_file ... ok
+test database::tests::test_command_target_paths_roundtrip ... ok
+test reconciliation::tests::test_reconciliation_log_entry_serialization ... ok
+test file_storage::tests::test_load_rules_ignores_non_markdown_files ... ok
+test file_storage::tests::test_load_rules_from_directory_with_invalid_file ... ok
+test file_storage::tests::test_load_rules_from_directory_with_valid_files ... ok
+test reconciliation::tests::test_compute_desired_state_includes_skills ... ok
+test file_storage::tests::test_load_rules_from_locations_includes_local_roots ... ok
+test reconciliation::tests::test_compute_desired_state_includes_command_stubs ... ok
+test reconciliation::tests::test_plan_detects_creates ... ok
+test reconciliation::tests::test_write_atomic_no_temp_file_left ... ok
+test reconciliation::tests::test_write_atomic_requires_parent_directory ... ok
+test reconciliation::tests::test_needs_reconciliation_empty_db ... ok
+test rule_import::tests::detect_artifact_type_case_insensitive ... ok
+test rule_import::tests::detect_artifact_type_identifies_rules_vs_commands_vs_skills ... ok
+test reconciliation::tests::test_get_stale_paths_returns_vec ... ok
+test rule_import::tests::detect_artifact_type_windows_paths ... ok
+test rule_import::tests::detect_artifact_type_nested_directories ... ok
+test reconciliation::tests::test_plan_detects_removes ... ok
+test reconciliation::tests::test_write_atomic_overwrites_existing ... ok
+test reconciliation::tests::test_repair_dry_run_safe ... ok
+test reconciliation::tests::test_reconcile_plan_empty ... ok
+test reconciliation::tests::test_execute_dry_run_no_changes ... ok
+test rule_import::tests::extract_payload_reads_json_rule_fields ... ok
+test rule_import::tests::extract_payload_reads_yaml_rule_fields ... ok
+test rule_import::tests::extract_payload_ignores_malicious_paths ... ok
+test rule_import::tests::extract_payload_respects_fallback_paths ... ok
+test reconciliation::tests::test_reconcile_all_artifact_types ... ok
+test reconciliation::tests::test_write_atomic_succeeds_with_existing_parent ... ok
+test reconciliation::tests::test_command_stub_global_happy_path ... ok
+test rule_import::tests::import_excludes_cline_skills ... FAILED
+test rule_import::tests::import_excludes_cline_workflows ... FAILED
+test reconciliation::tests::test_compute_desired_state_includes_slash_commands ... ok
+test reconciliation::tests::test_plan_mixed_operations ... ok
+test rule_import::tests::import_excludes_global_skills ... FAILED
+test reconciliation::tests::test_plan_detects_unchanged ... ok
+test reconciliation::tests::test_plan_detects_updates ... ok
+test reconciliation::tests::test_command_stub_not_created_when_mcp_disabled ... ok
+test reconciliation::tests::test_rule_global_happy_path ... ok
+test reconciliation::tests::test_plan_with_mixed_ruleweaver_and_user_files ... ok
+test reconciliation::tests::test_reconcile_is_idempotent ... ok
+test rule_import::tests::is_slash_command_or_skill_directory_detects_correctly ... ok
+test rule_import::tests::scan_clipboard_respects_max_size_limit ... ok
+test rule_import::tests::import_rule_failure_path_invalid_utf8 ... ok
+test rule_import::tests::import_rule_failure_path_too_large ... ok
+test rule_import::tests::tool_path_matrix_includes_legacy_and_alternate_locations ... ok
+test rule_import::tests::suffix_policy_applies_for_multi_tool_name_collision ... ok
+test rule_import::tests::import_rule_failure_path_empty_file ... ok
+test rule_import::tests::scan_directory_reports_error_for_non_directory_path ... ok
+test rule_import::tests::import_rule_happy_path_global ... ok
+test rule_import::tests::import_excludes_local_skills ... FAILED
+test slash_commands::adapters::tests::test_all_adapters_produce_content ... ok
+test reconciliation::tests::test_scan_skips_non_ruleweaver_files ... ok
+test rule_import::tests::unique_name_generation_is_stable ... ok
+test slash_commands::adapters::tests::test_claude_adapter ... ok
+test reconciliation::tests::test_scan_nonexistent_file ... ok
+test slash_commands::adapters::tests::test_codex_skill_structure ... ok
+test slash_commands::adapters::tests::test_gemini_adapter_toml_format ... ok
+test slash_commands::sync::tests::test_sync_result_default ... ok
+test slash_commands::sync::tests::test_calculate_hash ... ok
+test slash_commands::adapters::tests::test_opencode_adapter ... ok
+test slash_commands::sync::tests::test_slash_command_conflict_creation ... ok
+test slash_commands::adapters::tests::test_adapter_name_uniqueness ... ok
+test slash_commands::adapters::tests::test_standard_frontmatter_serialization ... ok
+test rule_import::tests::import_rule_happy_path_local ... ok
+test reconciliation::tests::test_rule_disabled_not_in_desired_state ... ok
+test slash_commands::sync::tests::test_sync_status_enum ... ok
+test rule_import::tests::validate_url_blocks_localhost_and_private_ips ... ok
+test rule_import::tests::validate_url_allows_public_http_https ... ok
+test file_storage::watcher::tests::test_watcher_start_and_stop ... ok
+test sync::tests::test_adapter_global_path ... ok
+test reconciliation::tests::test_slash_command_local_happy_path ... ok
+test sync::tests::test_all_adapters_have_consistent_interface ... ok
+test reconciliation::tests::test_skill_local_happy_path ... ok
+test reconciliation::tests::test_rule_local_happy_path ... ok
+test rule_import::tests::import_multiple_rules_happy_path ... ok
+test reconciliation::tests::test_skill_disabled_not_in_desired_state ... ok
+test sync::tests::test_cline_adapter_format ... ok
+test sync::tests::test_disabled_rules_not_included ... ok
+test sync::tests::test_compute_content_hash ... ok
+test rule_import::tests::import_excludes_local_slash_commands ... FAILED
+test sync::tests::test_gemini_adapter_format ... ok
+test sync::tests::test_opencode_adapter_format ... ok
+test rule_import::tests::import_rule_with_frontmatter ... ok
+test rule_import::tests::scan_directory_excludes_slash_commands_and_skills ... FAILED
+test rule_import::tests::import_mixed_artifacts_only_includes_rules ... FAILED
+test rule_import::tests::import_excludes_global_slash_commands ... FAILED
+test reconciliation::tests::test_skill_global_happy_path ... ok
+test reconciliation::tests::test_slash_command_global_happy_path ... ok
+test rule_import::tests::execute_import_skips_duplicates_by_content ... ok
+test reconciliation::tests::test_reconciliation_never_removes_user_files ... ok
+test reconciliation::tests::test_slash_command_not_generated_when_disabled ... ok
+test reconciliation::tests::test_marker_detection_error_paths ... ok
+test rule_import::tests::history_source_type_matches_candidate_source ... ok
+test rule_import::tests::execute_import_rename_mode_creates_unique_name ... ok
+test rule_import::tests::execute_import_replace_mode_updates_existing_rule ... ok
+test reconciliation::tests::test_marker_detection_happy_paths ... ok
+test rule_import::tests::execute_import_reimport_updates_mapped_rule_idempotently ... ok
+
+failures:
+
+---- rule_import::tests::import_excludes_cline_skills stdout ----
+
+thread 'rule_import::tests::import_excludes_cline_skills' (58604) panicked at src\rule_import\mod.rs:2264:9:
+assertion `left == right` failed
+  left: 2
+ right: 1
+
+---- rule_import::tests::import_excludes_cline_workflows stdout ----
+
+thread 'rule_import::tests::import_excludes_cline_workflows' (4368) panicked at src\rule_import\mod.rs:2188:9:
+assertion `left == right` failed
+  left: 2
+ right: 1
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- rule_import::tests::import_excludes_global_skills stdout ----
+
+thread 'rule_import::tests::import_excludes_global_skills' (45876) panicked at src\rule_import\mod.rs:2215:9:
+assertion `left == right` failed
+  left: 2
+ right: 1
+
+---- rule_import::tests::import_excludes_local_skills stdout ----
+
+thread 'rule_import::tests::import_excludes_local_skills' (10444) panicked at src\rule_import\mod.rs:2234:9:
+assertion `left == right` failed
+  left: 2
+ right: 1
+
+---- rule_import::tests::import_excludes_local_slash_commands stdout ----
+
+thread 'rule_import::tests::import_excludes_local_slash_commands' (65888) panicked at src\rule_import\mod.rs:2155:9:
+assertion `left == right` failed
+  left: 2
+ right: 1
+
+---- rule_import::tests::scan_directory_excludes_slash_commands_and_skills stdout ----
+
+thread 'rule_import::tests::scan_directory_excludes_slash_commands_and_skills' (70560) panicked at src\rule_import\mod.rs:1982:9:
+assertion `left == right` failed: Should only find rule files, not commands or skills
+  left: 3
+ right: 1
+
+---- rule_import::tests::import_mixed_artifacts_only_includes_rules stdout ----
+
+thread 'rule_import::tests::import_mixed_artifacts_only_includes_rules' (24436) panicked at src\rule_import\mod.rs:2301:9:
+assertion `left == right` failed
+  left: 4
+ right: 1
+
+---- rule_import::tests::import_excludes_global_slash_commands stdout ----
+
+thread 'rule_import::tests::import_excludes_global_slash_commands' (30100) panicked at src\rule_import\mod.rs:2132:9:
+assertion `left == right` failed
+  left: 2
+ right: 1
+
+
+failures:
+    rule_import::tests::import_excludes_cline_skills
+    rule_import::tests::import_excludes_cline_workflows
+    rule_import::tests::import_excludes_global_skills
+    rule_import::tests::import_excludes_global_slash_commands
+    rule_import::tests::import_excludes_local_skills
+    rule_import::tests::import_excludes_local_slash_commands
+    rule_import::tests::import_mixed_artifacts_only_includes_rules
+    rule_import::tests::scan_directory_excludes_slash_commands_and_skills
+
+test result: FAILED. 191 passed; 8 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
+
+error: test failed, to rerun pass `--lib`

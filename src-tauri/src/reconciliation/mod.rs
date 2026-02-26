@@ -1642,7 +1642,7 @@ mod tests {
         let desired = DesiredState::default();
 
         // Create actual state by scanning - user file should be SKIPPED
-        let mut actual = ActualState::default();
+        let actual = ActualState::default();
 
         // Directly scan the user file
         let scanned = engine
@@ -2274,7 +2274,7 @@ mod tests {
         // Local skills require registered repository roots
         // Since we don't have any registered, the count depends on the engine's behavior
         assert!(
-            skill_entries.len() >= 0,
+            !skill_entries.is_empty(),
             "Should handle local skills gracefully"
         );
 
