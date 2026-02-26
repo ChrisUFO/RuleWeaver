@@ -117,7 +117,9 @@ describe("RulesList import workflow", () => {
     });
 
     expect(screen.getByText("Import Existing AI Tool Rules")).toBeInTheDocument();
-    expect(screen.getByText("quality-cline")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText("quality-cline")).toBeInTheDocument();
+    });
   });
 
   it("imports selected AI candidates from preview dialog", async () => {
