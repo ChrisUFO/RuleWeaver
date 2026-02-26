@@ -223,7 +223,7 @@ pub async fn scan_ai_tool_candidates(db: Arc<Database>, max_size: u64) -> Result
             match candidate_from_path(
                 &tp.path,
                 crate::models::ImportSourceType::AiTool,
-                &label,
+                label,
                 Some(tp.adapter),
                 Scope::Global,
                 None,
