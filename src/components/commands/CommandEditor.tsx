@@ -15,6 +15,7 @@ import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import { SlashCommandsSection } from "./SlashCommandsSection";
 import { cn } from "@/lib/utils";
+import { featureManager, FEATURE_FLAGS } from "@/lib/featureManager";
 import type { CommandModel, ExecutionLog } from "@/types/command";
 import type {
   CommandFormData,
@@ -27,7 +28,11 @@ interface CommandEditorProps {
   selected: CommandModel | null;
   form: CommandFormData;
   testOutput: TestOutput | null;
-  history: readonly ExecutionLog[];
+  commandHistory: readonly ExecutionLog[];
+  historyFilter: string;
+  historyPage: number;
+  historyHasMore: boolean;
+  isHistoryLoading: boolean;
   availableRepos: readonly string[];
   availableAdapters: readonly AdapterInfo[];
   slashStatus: Record<string, SlashSyncStatus>;
@@ -42,6 +47,8 @@ interface CommandEditorProps {
   onTest: () => void;
   onSyncSlashCommands: () => void;
   onRepairSlashCommand: (adapter: string) => void;
+  onHistoryFilterChange: (filter: string) => void;
+  onHistoryPageChange: (page: number) => void;
 }
 
 const TIER_CONFIG: Record<string, { tier: number; label: string; color: string }> = {
@@ -71,7 +78,11 @@ export function CommandEditor({
   selected,
   form,
   testOutput,
-  history,
+  commandHistory,
+  historyFilter,
+  historyPage,
+  historyHasMore,
+  isHistoryLoading,
   availableRepos,
   availableAdapters,
   slashStatus,
@@ -86,6 +97,8 @@ export function CommandEditor({
   onTest,
   onSyncSlashCommands,
   onRepairSlashCommand,
+  onHistoryFilterChange,
+  onHistoryPageChange,
 }: CommandEditorProps) {
   if (!selected) {
     return (
@@ -106,8 +119,6 @@ export function CommandEditor({
       </Card>
     );
   }
-
-  const commandHistory = history.filter((h) => h.commandId === selected.id);
 
   return (
     <Card className="glass-card premium-shadow border-none overflow-hidden">
@@ -207,74 +218,76 @@ export function CommandEditor({
           onRepairAdapter={onRepairSlashCommand}
         />
 
-        <div className="rounded-xl border border-white/5 bg-white/5 p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <Shield className="h-4 w-4 text-primary/60" />
-            <span className="text-sm font-semibold">Execution Policy</span>
-          </div>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="grid gap-2">
-              <label
-                htmlFor="timeout-ms"
-                className="text-xs text-muted-foreground flex items-center gap-1"
-              >
-                Timeout (ms)
-                <span title="Maximum execution time before identifying as a failure. Default is 30 seconds.">
-                  <HelpCircle className="h-3 w-3 opacity-50 cursor-help" />
-                </span>
-              </label>
-              <Input
-                id="timeout-ms"
-                type="number"
-                min={1000}
-                max={600000}
-                step={1000}
-                value={form.timeoutMs ?? ""}
-                onChange={(e) => {
-                  const val = e.target.value ? parseInt(e.target.value, 10) : null;
-                  if (val !== null) {
-                    const clamped = Math.max(1000, Math.min(600000, val));
-                    onUpdateForm({ timeoutMs: clamped });
-                  } else {
-                    onUpdateForm({ timeoutMs: null });
-                  }
-                }}
-                placeholder="30000 (default)"
-              />
+        {featureManager.isEnabled(FEATURE_FLAGS.EXECUTION_REDACTION) && (
+          <div className="rounded-xl border border-white/5 bg-white/5 p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <Shield className="h-4 w-4 text-primary/60" />
+              <span className="text-sm font-semibold">Execution Policy</span>
             </div>
-            <div className="grid gap-2">
-              <label
-                htmlFor="max-retries"
-                className="text-xs text-muted-foreground flex items-center gap-1"
-              >
-                Max Retries
-                <span title="Automatic retries for transient failures (timeouts, network errors). Maximum 3 retries.">
-                  <HelpCircle className="h-3 w-3 opacity-50 cursor-help" />
-                </span>
-              </label>
-              <Input
-                id="max-retries"
-                type="number"
-                min={0}
-                max={3}
-                value={form.maxRetries ?? ""}
-                onChange={(e) => {
-                  const val = e.target.value ? parseInt(e.target.value, 10) : null;
-                  if (val !== null) {
-                    const clamped = Math.max(0, Math.min(3, val));
-                    onUpdateForm({ maxRetries: clamped });
-                  } else {
-                    onUpdateForm({ maxRetries: null });
-                  }
-                }}
-                placeholder="0 (default)"
-              />
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid gap-2">
+                <label
+                  htmlFor="timeout-ms"
+                  className="text-xs text-muted-foreground flex items-center gap-1"
+                >
+                  Timeout (ms)
+                  <span title="Maximum execution time before identifying as a failure. Default is 30 seconds.">
+                    <HelpCircle className="h-3 w-3 opacity-50 cursor-help" />
+                  </span>
+                </label>
+                <Input
+                  id="timeout-ms"
+                  type="number"
+                  min={1000}
+                  max={600000}
+                  step={1000}
+                  value={form.timeoutMs ?? ""}
+                  onChange={(e) => {
+                    const val = e.target.value ? parseInt(e.target.value, 10) : null;
+                    if (val !== null) {
+                      const clamped = Math.max(1000, Math.min(600000, val));
+                      onUpdateForm({ timeoutMs: clamped });
+                    } else {
+                      onUpdateForm({ timeoutMs: null });
+                    }
+                  }}
+                  placeholder="30000 (default)"
+                />
+              </div>
+              <div className="grid gap-2">
+                <label
+                  htmlFor="max-retries"
+                  className="text-xs text-muted-foreground flex items-center gap-1"
+                >
+                  Max Retries
+                  <span title="Automatic retries for transient failures (timeouts, network errors). Maximum 3 retries.">
+                    <HelpCircle className="h-3 w-3 opacity-50 cursor-help" />
+                  </span>
+                </label>
+                <Input
+                  id="max-retries"
+                  type="number"
+                  min={0}
+                  max={3}
+                  value={form.maxRetries ?? ""}
+                  onChange={(e) => {
+                    const val = e.target.value ? parseInt(e.target.value, 10) : null;
+                    if (val !== null) {
+                      const clamped = Math.max(0, Math.min(3, val));
+                      onUpdateForm({ maxRetries: clamped });
+                    } else {
+                      onUpdateForm({ maxRetries: null });
+                    }
+                  }}
+                  placeholder="0 (default)"
+                />
+              </div>
             </div>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Retries apply to transient failures (timeouts, network errors). Maximum 3 retries.
+            </p>
           </div>
-          <p className="mt-2 text-xs text-muted-foreground">
-            Retries apply to transient failures (timeouts, network errors). Maximum 3 retries.
-          </p>
-        </div>
+        )}
 
         {selected.arguments.length > 0 && (
           <div className="rounded-md border p-3 space-y-2">
@@ -352,66 +365,92 @@ export function CommandEditor({
         )}
 
         <div className="rounded-md border p-3 text-sm">
-          <div className="mb-2 font-medium">Recent Execution History</div>
+          <div className="flex items-center justify-between mb-2">
+            <span className="font-medium">Recent Execution History</span>
+            <select
+              value={historyFilter}
+              onChange={(e) => onHistoryFilterChange(e.target.value)}
+              className="text-xs bg-transparent border border-white/10 rounded px-2 py-1 text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/40"
+              aria-label="Filter execution history by result"
+            >
+              <option value="all">All</option>
+              <option value="Success">Success</option>
+              <option value="Timeout">Timeout</option>
+              <option value="PermissionDenied">Permission Denied</option>
+              <option value="MissingBinary">Missing Binary</option>
+              <option value="NonZeroExit">Non-Zero Exit</option>
+              <option value="ValidationError">Validation Error</option>
+            </select>
+          </div>
           <div className="space-y-2 max-h-56 overflow-auto">
-            {commandHistory.slice(0, 10).map((h) => (
-              <div key={h.id} className="rounded border p-2 hover:bg-white/5 transition-colors">
-                <div className="flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span
-                      className={cn(
-                        "font-medium px-1.5 py-0.5 rounded",
-                        h.exitCode === 0
-                          ? "text-green-400 bg-green-500/10"
-                          : "text-red-400 bg-red-500/10"
-                      )}
-                    >
-                      exit {h.exitCode}
-                    </span>
-                    {h.failureClass && h.failureClass !== "Success" && (
+            {isHistoryLoading && (
+              <div className="flex items-center justify-center py-6">
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              </div>
+            )}
+            {!isHistoryLoading &&
+              commandHistory.map((h) => (
+                <div key={h.id} className="rounded border p-2 hover:bg-white/5 transition-colors">
+                  <div className="flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span
                         className={cn(
-                          "inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] border",
-                          h.failureClass === "Timeout" ||
-                            h.failureClass === "PermissionDenied" ||
-                            h.failureClass === "MissingBinary"
-                            ? "bg-red-500/20 text-red-400 border-red-500/30"
-                            : "bg-amber-500/20 text-amber-400 border-amber-500/30"
+                          "font-medium px-1.5 py-0.5 rounded",
+                          h.exitCode === 0
+                            ? "text-green-400 bg-green-500/10"
+                            : "text-red-400 bg-red-500/10"
                         )}
-                        title={`Failure: ${h.failureClass}`}
                       >
-                        <AlertTriangle className="h-3 w-3" />
-                        {h.failureClass}
+                        exit {h.exitCode}
                       </span>
-                    )}
-                    {h.isRedacted && (
-                      <span
-                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] bg-slate-500/20 text-slate-400 border border-slate-500/30"
-                        title="Output contained sensitive data that was redacted"
-                      >
-                        <EyeOff className="h-3 w-3" />
-                        redacted
-                      </span>
-                    )}
-                    {(h.attemptNumber ?? 1) > 1 && (
-                      <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
-                        attempt {h.attemptNumber}
-                      </span>
-                    )}
-                    {h.adapterContext && (
-                      <span className="text-[10px] text-muted-foreground/60">
-                        via {h.adapterContext}
-                      </span>
-                    )}
+                      {featureManager.isEnabled(FEATURE_FLAGS.EXECUTION_REDACTION) &&
+                        h.failureClass &&
+                        h.failureClass !== "Success" && (
+                          <span
+                            className={cn(
+                              "inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] border",
+                              h.failureClass === "Timeout" ||
+                                h.failureClass === "PermissionDenied" ||
+                                h.failureClass === "MissingBinary"
+                                ? "bg-red-500/20 text-red-400 border-red-500/30"
+                                : "bg-amber-500/20 text-amber-400 border-amber-500/30"
+                            )}
+                            title={`Failure: ${h.failureClass}`}
+                          >
+                            <AlertTriangle className="h-3 w-3" />
+                            {h.failureClass}
+                          </span>
+                        )}
+                      {featureManager.isEnabled(FEATURE_FLAGS.EXECUTION_REDACTION) &&
+                        h.isRedacted && (
+                          <span
+                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] bg-slate-500/20 text-slate-400 border border-slate-500/30"
+                            title="Output contained sensitive data that was redacted"
+                          >
+                            <EyeOff className="h-3 w-3" />
+                            redacted
+                          </span>
+                        )}
+                      {featureManager.isEnabled(FEATURE_FLAGS.EXECUTION_REDACTION) &&
+                        (h.attemptNumber ?? 1) > 1 && (
+                          <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                            attempt {h.attemptNumber}
+                          </span>
+                        )}
+                      {h.adapterContext && (
+                        <span className="text-[10px] text-muted-foreground/60">
+                          via {h.adapterContext}
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-muted-foreground font-mono">{h.durationMs}ms</span>
                   </div>
-                  <span className="text-muted-foreground font-mono">{h.durationMs}ms</span>
+                  <div className="mt-1 truncate text-xs text-muted-foreground">
+                    {h.stdout || h.stderr || "(no output)"}
+                  </div>
                 </div>
-                <div className="mt-1 truncate text-xs text-muted-foreground">
-                  {h.stdout || h.stderr || "(no output)"}
-                </div>
-              </div>
-            ))}
-            {commandHistory.length === 0 && (
+              ))}
+            {!isHistoryLoading && commandHistory.length === 0 && (
               <div className="flex flex-col items-center justify-center py-6 text-center">
                 <Play className="h-8 w-8 text-muted-foreground/40 mb-2" />
                 <p className="text-xs text-muted-foreground">No executions yet.</p>
@@ -420,6 +459,25 @@ export function CommandEditor({
                 </p>
               </div>
             )}
+          </div>
+          <div className="flex items-center justify-between mt-2 pt-2 border-t border-white/5">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={historyPage === 0 || isHistoryLoading}
+              onClick={() => onHistoryPageChange(historyPage - 1)}
+            >
+              Previous
+            </Button>
+            <span className="text-xs text-muted-foreground">Page {historyPage + 1}</span>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!historyHasMore || isHistoryLoading}
+              onClick={() => onHistoryPageChange(historyPage + 1)}
+            >
+              Next
+            </Button>
           </div>
         </div>
       </CardContent>

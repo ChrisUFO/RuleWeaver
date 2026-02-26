@@ -31,6 +31,8 @@ export interface TestOutput {
 
 export type SlashSyncStatus = "Synced" | "OutOfDate" | "NotSynced" | { Error: string };
 
+const HISTORY_PAGE_SIZE = 10;
+
 export interface UseCommandsStateReturn {
   commands: CommandModel[];
   selectedId: string;
@@ -38,6 +40,11 @@ export interface UseCommandsStateReturn {
   form: CommandFormData;
   testOutput: TestOutput | null;
   history: ExecutionLog[];
+  commandHistory: ExecutionLog[];
+  historyFilter: string;
+  historyPage: number;
+  historyHasMore: boolean;
+  isHistoryLoading: boolean;
   query: string;
   filtered: CommandModel[];
   availableAdapters: AdapterInfo[];
@@ -60,6 +67,8 @@ export interface UseCommandsStateReturn {
     handleSyncCommands: () => Promise<void>;
     handleSyncSlashCommands: () => Promise<void>;
     handleRepairSlashCommand: (adapter: string) => Promise<void>;
+    handleHistoryFilterChange: (filter: string) => void;
+    handleHistoryPageChange: (page: number) => void;
     refresh: () => Promise<void>;
   };
 }
@@ -87,6 +96,11 @@ export function useCommandsState(
   const [form, setForm] = useState<CommandFormData>(initialFormData);
   const [testOutput, setTestOutput] = useState<TestOutput | null>(null);
   const [history, setHistory] = useState<ExecutionLog[]>([]);
+  const [commandHistory, setCommandHistory] = useState<ExecutionLog[]>([]);
+  const [historyFilter, setHistoryFilter] = useState<string>("all");
+  const [historyPage, setHistoryPage] = useState<number>(0);
+  const [historyHasMore, setHistoryHasMore] = useState<boolean>(false);
+  const [isHistoryLoading, setIsHistoryLoading] = useState<boolean>(false);
   const [query, setQuery] = useState("");
   const [availableAdapters, setAvailableAdapters] = useState<AdapterInfo[]>([]);
   const [slashStatus, setSlashStatus] = useState<Record<string, SlashSyncStatus>>({});
@@ -126,6 +140,31 @@ export function useCommandsState(
     setHistory(logs);
   }, []);
 
+  const loadFilteredHistory = useCallback(
+    async (commandId: string, filter: string, page: number) => {
+      if (!commandId) return;
+      setIsHistoryLoading(true);
+      try {
+        const failureClass = filter !== "all" ? filter : undefined;
+        const logs = await api.execution.getHistoryFiltered(
+          commandId,
+          failureClass,
+          HISTORY_PAGE_SIZE,
+          page * HISTORY_PAGE_SIZE
+        );
+        setCommandHistory(logs);
+        setHistoryHasMore(logs.length === HISTORY_PAGE_SIZE);
+      } catch (error) {
+        console.error("Failed to load filtered history", { error });
+        setCommandHistory([]);
+        setHistoryHasMore(false);
+      } finally {
+        setIsHistoryLoading(false);
+      }
+    },
+    []
+  );
+
   const loadAvailableAdapters = useCallback(async () => {
     try {
       const adapters = await api.slashCommands.getAdapters();
@@ -164,6 +203,10 @@ export function useCommandsState(
     if (!selected) {
       setForm(initialFormData);
       setSlashStatus({});
+      setCommandHistory([]);
+      setHistoryFilter("all");
+      setHistoryPage(0);
+      setHistoryHasMore(false);
       return;
     }
     const nextArgs: Record<string, string> = {};
@@ -187,7 +230,10 @@ export function useCommandsState(
     } else {
       setSlashStatus({});
     }
-  }, [selected, loadSlashStatus]);
+    setHistoryFilter("all");
+    setHistoryPage(0);
+    loadFilteredHistory(selected.id, "all", 0);
+  }, [selected, loadSlashStatus, loadFilteredHistory]);
 
   const updateForm = useCallback((updates: Partial<CommandFormData>) => {
     setForm((prev) => ({ ...prev, ...updates }));
@@ -285,6 +331,7 @@ export function useCommandsState(
         exitCode: result.exitCode,
       });
       await loadHistory();
+      await loadFilteredHistory(selected.id, historyFilter, historyPage);
       toast[`${result.success ? "success" : "error"}`](addToast, {
         title: "Test Completed",
         description: result.success ? "Command succeeded" : "Command failed",
@@ -294,7 +341,15 @@ export function useCommandsState(
     } finally {
       setIsTesting(false);
     }
-  }, [selected, form.testArgs, loadHistory, addToast]);
+  }, [
+    selected,
+    form.testArgs,
+    loadHistory,
+    loadFilteredHistory,
+    historyFilter,
+    historyPage,
+    addToast,
+  ]);
 
   const handleSyncCommands = useCallback(async () => {
     setIsSyncing(true);
@@ -374,6 +429,25 @@ export function useCommandsState(
     [selected, addToast, loadSlashStatus]
   );
 
+  const handleHistoryFilterChange = useCallback(
+    (filter: string) => {
+      if (!selected) return;
+      setHistoryFilter(filter);
+      setHistoryPage(0);
+      loadFilteredHistory(selected.id, filter, 0);
+    },
+    [selected, loadFilteredHistory]
+  );
+
+  const handleHistoryPageChange = useCallback(
+    (page: number) => {
+      if (!selected) return;
+      setHistoryPage(page);
+      loadFilteredHistory(selected.id, historyFilter, page);
+    },
+    [selected, historyFilter, loadFilteredHistory]
+  );
+
   return {
     commands,
     selectedId,
@@ -381,6 +455,11 @@ export function useCommandsState(
     form,
     testOutput,
     history,
+    commandHistory,
+    historyFilter,
+    historyPage,
+    historyHasMore,
+    isHistoryLoading,
     query,
     filtered,
     availableAdapters,
@@ -403,6 +482,8 @@ export function useCommandsState(
       handleSyncCommands,
       handleSyncSlashCommands,
       handleRepairSlashCommand,
+      handleHistoryFilterChange,
+      handleHistoryPageChange,
       refresh,
     },
   };

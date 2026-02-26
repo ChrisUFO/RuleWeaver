@@ -21,7 +21,11 @@ export function Commands({ initialSelectedId, onClearInitialId }: CommandsProps)
     selected,
     form,
     testOutput,
-    history,
+    commandHistory,
+    historyFilter,
+    historyPage,
+    historyHasMore,
+    isHistoryLoading,
     query,
     filtered,
     availableAdapters,
@@ -57,7 +61,11 @@ export function Commands({ initialSelectedId, onClearInitialId }: CommandsProps)
         selected={selected}
         form={form}
         testOutput={testOutput}
-        history={history}
+        commandHistory={commandHistory}
+        historyFilter={historyFilter}
+        historyPage={historyPage}
+        historyHasMore={historyHasMore}
+        isHistoryLoading={isHistoryLoading}
         availableRepos={availableRepos}
         availableAdapters={availableAdapters}
         slashStatus={slashStatus}
@@ -72,6 +80,8 @@ export function Commands({ initialSelectedId, onClearInitialId }: CommandsProps)
         onTest={handlers.handleTest}
         onSyncSlashCommands={handlers.handleSyncSlashCommands}
         onRepairSlashCommand={handlers.handleRepairSlashCommand}
+        onHistoryFilterChange={handlers.handleHistoryFilterChange}
+        onHistoryPageChange={handlers.handleHistoryPageChange}
       />
 
       <ImportDialog
