@@ -6,7 +6,7 @@ import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import { SlashCommandsSection } from "./SlashCommandsSection";
 import type { CommandModel, ExecutionLog } from "@/types/command";
-import type { CommandFormData, TestOutput, AdapterInfo } from "@/hooks/useCommandsState";
+import type { CommandFormData, TestOutput, AdapterInfo, SlashSyncStatus } from "@/hooks/useCommandsState";
 
 interface CommandEditorProps {
   selected: CommandModel | null;
@@ -15,6 +15,7 @@ interface CommandEditorProps {
   history: readonly ExecutionLog[];
   availableRepos: readonly string[];
   availableAdapters: readonly AdapterInfo[];
+  slashStatus: Record<string, SlashSyncStatus>;
   isSaving: boolean;
   isTesting: boolean;
   isSlashCommandSyncing: boolean;
@@ -25,6 +26,7 @@ interface CommandEditorProps {
   onDelete: () => void;
   onTest: () => void;
   onSyncSlashCommands: () => void;
+  onRepairSlashCommand: (adapter: string) => void;
 }
 
 const TIER_CONFIG: Record<string, { tier: number; label: string; color: string }> = {
@@ -57,6 +59,7 @@ export function CommandEditor({
   history,
   availableRepos,
   availableAdapters,
+  slashStatus,
   isSaving,
   isTesting,
   isSlashCommandSyncing,
@@ -67,6 +70,7 @@ export function CommandEditor({
   onDelete,
   onTest,
   onSyncSlashCommands,
+  onRepairSlashCommand,
 }: CommandEditorProps) {
   if (!selected) {
     return (
@@ -181,9 +185,11 @@ export function CommandEditor({
           generateSlashCommands={form.generateSlashCommands}
           slashCommandAdapters={form.slashCommandAdapters}
           availableAdapters={availableAdapters}
+          slashStatus={slashStatus}
           tierConfig={TIER_CONFIG}
           onToggleGenerate={(checked) => onUpdateForm({ generateSlashCommands: checked })}
           onToggleAdapter={onToggleAdapter}
+          onRepairAdapter={onRepairSlashCommand}
         />
 
         {selected.arguments.length > 0 && (

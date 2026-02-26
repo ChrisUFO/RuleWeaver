@@ -27,6 +27,8 @@ export interface TestOutput {
   exitCode: number;
 }
 
+export type SlashSyncStatus = "Synced" | "OutOfDate" | "NotSynced" | { Error: string };
+
 export interface UseCommandsStateReturn {
   commands: CommandModel[];
   selectedId: string;
@@ -37,6 +39,7 @@ export interface UseCommandsStateReturn {
   query: string;
   filtered: CommandModel[];
   availableAdapters: AdapterInfo[];
+  slashStatus: Record<string, SlashSyncStatus>;
   isLoading: boolean;
   isSaving: boolean;
   isTesting: boolean;
@@ -54,6 +57,7 @@ export interface UseCommandsStateReturn {
     handleTest: () => Promise<void>;
     handleSyncCommands: () => Promise<void>;
     handleSyncSlashCommands: () => Promise<void>;
+    handleRepairSlashCommand: (adapter: string) => Promise<void>;
     refresh: () => Promise<void>;
   };
 }
@@ -79,6 +83,7 @@ export function useCommandsState(
   const [history, setHistory] = useState<ExecutionLog[]>([]);
   const [query, setQuery] = useState("");
   const [availableAdapters, setAvailableAdapters] = useState<AdapterInfo[]>([]);
+  const [slashStatus, setSlashStatus] = useState<Record<string, SlashSyncStatus>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
@@ -115,6 +120,15 @@ export function useCommandsState(
     }
   }, []);
 
+  const loadSlashStatus = useCallback(async (commandId: string) => {
+    try {
+      const status = await api.slashCommands.getStatus(commandId);
+      setSlashStatus(status);
+    } catch {
+      setSlashStatus({});
+    }
+  }, []);
+
   const refresh = useCallback(async () => {
     setIsLoading(true);
     try {
@@ -133,6 +147,7 @@ export function useCommandsState(
   useEffect(() => {
     if (!selected) {
       setForm(initialFormData);
+      setSlashStatus({});
       return;
     }
     const nextArgs: Record<string, string> = {};
@@ -149,7 +164,12 @@ export function useCommandsState(
       targetPaths: selected.targetPaths ?? [],
       testArgs: nextArgs,
     });
-  }, [selected]);
+    if (selected.generateSlashCommands && (selected.slashCommandAdapters ?? []).length > 0) {
+      loadSlashStatus(selected.id);
+    } else {
+      setSlashStatus({});
+    }
+  }, [selected, loadSlashStatus]);
 
   const updateForm = useCallback((updates: Partial<CommandFormData>) => {
     setForm((prev) => ({ ...prev, ...updates }));
@@ -299,12 +319,40 @@ export function useCommandsState(
             ? `Successfully wrote ${result.filesWritten} file${result.filesWritten > 1 ? "s" : ""} `
             : "All files were already up to date",
       });
+      await loadSlashStatus(selected.id);
     } catch (error) {
       toast.error(addToast, { title: "Slash Command Sync Failed", error });
     } finally {
       setIsSlashCommandSyncing(false);
     }
-  }, [selected, addToast]);
+  }, [selected, addToast, loadSlashStatus]);
+
+  const handleRepairSlashCommand = useCallback(
+    async (adapter: string) => {
+      if (!selected) return;
+      setIsSlashCommandSyncing(true);
+      try {
+        const result = await api.slashCommands.sync(selected.id, true);
+        if (result.errors.length > 0) {
+          toast.error(addToast, {
+            title: "Repair Failed",
+            description: result.errors[0],
+          });
+        } else {
+          toast.success(addToast, {
+            title: "Repaired",
+            description: `${adapter} slash command file updated`,
+          });
+          await loadSlashStatus(selected.id);
+        }
+      } catch (error) {
+        toast.error(addToast, { title: "Repair Failed", error });
+      } finally {
+        setIsSlashCommandSyncing(false);
+      }
+    },
+    [selected, addToast, loadSlashStatus]
+  );
 
   return {
     commands,
@@ -316,6 +364,7 @@ export function useCommandsState(
     query,
     filtered,
     availableAdapters,
+    slashStatus,
     isLoading,
     isSaving,
     isTesting,
@@ -333,6 +382,7 @@ export function useCommandsState(
       handleTest,
       handleSyncCommands,
       handleSyncSlashCommands,
+      handleRepairSlashCommand,
       refresh,
     },
   };

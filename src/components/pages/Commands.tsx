@@ -20,6 +20,7 @@ export function Commands() {
     query,
     filtered,
     availableAdapters,
+    slashStatus,
     isLoading,
     isSaving,
     isTesting,
@@ -54,6 +55,7 @@ export function Commands() {
         history={history}
         availableRepos={availableRepos}
         availableAdapters={availableAdapters}
+        slashStatus={slashStatus}
         isSaving={isSaving}
         isTesting={isTesting}
         isSlashCommandSyncing={isSlashCommandSyncing}
@@ -64,6 +66,7 @@ export function Commands() {
         onDelete={handlers.handleDelete}
         onTest={handlers.handleTest}
         onSyncSlashCommands={handlers.handleSyncSlashCommands}
+        onRepairSlashCommand={handlers.handleRepairSlashCommand}
       />
 
       <ImportDialog

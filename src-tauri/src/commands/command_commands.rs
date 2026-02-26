@@ -18,6 +18,7 @@ use crate::mcp::McpManager;
 use crate::models::{
     Command, CreateCommandInput, SyncError, SyncResult, TestCommandResult, UpdateCommandInput,
 };
+use crate::slash_commands::SlashCommandSyncEngine;
 
 use crate::templates::commands::{get_bundled_command_templates, TemplateCommand};
 use std::time::Instant;
@@ -53,6 +54,17 @@ pub async fn create_command(
     let created = db.create_command(input).await?;
     register_local_paths(&db, &created.target_paths).await?;
     mcp.refresh_commands(&db).await?;
+
+    // Autosync slash commands on save when the command opts in to slash generation.
+    if created.generate_slash_commands && !created.slash_command_adapters.is_empty() {
+        let engine = SlashCommandSyncEngine::new(Arc::clone(&db));
+        // Sync global and local (per target_paths) slash files; errors are non-fatal.
+        let _ = engine.sync_command(&created, true);
+        if !created.target_paths.is_empty() {
+            let _ = engine.sync_command(&created, false);
+        }
+    }
+
     Ok(created)
 }
 
@@ -63,15 +75,17 @@ pub async fn update_command(
     db: State<'_, Arc<Database>>,
     mcp: State<'_, McpManager>,
 ) -> Result<Command> {
+    // Capture the pre-update state before making any changes so we can detect
+    // renames and adapter deselections that would leave orphan slash files.
+    let existing = db.get_command_by_id(&id).await?;
+
     if let Some(name) = &input.name {
         if let Some(script) = &input.script {
             validate_command_input(name, script)?;
         } else {
-            let existing = db.get_command_by_id(&id).await?;
             validate_command_input(name, &existing.script)?;
         }
     } else if let Some(script) = &input.script {
-        let existing = db.get_command_by_id(&id).await?;
         validate_command_input(&existing.name, script)?;
     }
 
@@ -89,6 +103,53 @@ pub async fn update_command(
     let updated = db.update_command(&id, input).await?;
     register_local_paths(&db, &updated.target_paths).await?;
     mcp.refresh_commands(&db).await?;
+
+    let engine = SlashCommandSyncEngine::new(Arc::clone(&db));
+
+    // Orphan prevention: if slash command generation was disabled, remove all existing files.
+    if existing.generate_slash_commands
+        && !updated.generate_slash_commands
+        && !existing.slash_command_adapters.is_empty()
+    {
+        let _ = engine.remove_command(
+            &existing.name,
+            &existing.slash_command_adapters,
+            &existing.target_paths,
+        );
+    }
+
+    // Orphan prevention: if the command was renamed, remove stale slash files for
+    // the old name across all adapters and all target paths.
+    let name_changed = existing.name != updated.name;
+    if name_changed && !existing.slash_command_adapters.is_empty() {
+        let _ = engine.remove_command(
+            &existing.name,
+            &existing.slash_command_adapters,
+            &existing.target_paths,
+        );
+    } else {
+        // Orphan prevention: if adapters were deselected, remove files only for
+        // the adapters that are no longer in the updated list.
+        // (Skipped on rename because the rename block already removed all old files.)
+        let deselected: Vec<String> = existing
+            .slash_command_adapters
+            .iter()
+            .filter(|a| !updated.slash_command_adapters.contains(a))
+            .cloned()
+            .collect();
+        if !deselected.is_empty() {
+            let _ = engine.remove_command(&existing.name, &deselected, &existing.target_paths);
+        }
+    }
+
+    // Autosync slash commands on save when the command opts in to slash generation.
+    if updated.generate_slash_commands && !updated.slash_command_adapters.is_empty() {
+        let _ = engine.sync_command(&updated, true);
+        if !updated.target_paths.is_empty() {
+            let _ = engine.sync_command(&updated, false);
+        }
+    }
+
     Ok(updated)
 }
 
@@ -98,10 +159,23 @@ pub async fn delete_command(
     db: State<'_, Arc<Database>>,
     mcp: State<'_, McpManager>,
 ) -> Result<()> {
+    // Read before deleting so we have adapter and target_path info for cleanup.
+    let command = db.get_command_by_id(&id).await?;
+
     db.delete_command(&id).await?;
     mcp.refresh_commands(&db).await?;
 
-    // Run reconciliation to clean up any orphaned artifacts
+    // Remove slash command files for this command across all adapters and repo roots.
+    if !command.slash_command_adapters.is_empty() {
+        let engine = SlashCommandSyncEngine::new(Arc::clone(&db));
+        let _ = engine.remove_command(
+            &command.name,
+            &command.slash_command_adapters,
+            &command.target_paths,
+        );
+    }
+
+    // Run reconciliation to clean up any remaining orphaned artifacts.
     reconcile_after_mutation(db.inner().clone()).await;
 
     Ok(())

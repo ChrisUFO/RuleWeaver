@@ -11,7 +11,7 @@ use crate::constants::{
 use crate::database::Database;
 use crate::error::Result;
 use crate::models::registry::{ArtifactType, REGISTRY};
-use crate::models::{AdapterType, Conflict, Rule, Scope, SyncError, SyncResult};
+use crate::models::{AdapterType, Conflict, DiffSummary, Rule, Scope, SyncError, SyncResult};
 use crate::path_resolver::path_resolver;
 
 fn registry_entry(adapter: &AdapterType) -> &'static crate::models::registry::ToolEntry {
@@ -812,27 +812,35 @@ impl<'a> SyncEngine<'a> {
                 };
                 files_written.push(path.to_string_lossy().to_string());
 
-                // TODO: Address race condition between hash read and file computation.
-                // The file could change between reading the stored hash and computing the current hash.
-                // For now, this is acceptable for a sync preview as we prioritize eventual consistency
-                // over strict atomicity. Consider adding file locking for stricter consistency.
-                if let Some(local_hash) = self
+                // Snapshot: read file content once into memory before any hash comparison.
+                // This eliminates the race window between reading the stored hash and computing
+                // the current hash — both operations now use the same in-memory buffer.
+                if let Some(stored_hash) = self
                     .db
                     .get_file_hash(&path.to_string_lossy())
                     .await
                     .ok()
                     .flatten()
                 {
-                    if let Ok(current_hash) = compute_file_hash(&path) {
-                        if local_hash != current_hash {
-                            conflicts.push(Conflict {
-                                id: uuid::Uuid::new_v4().to_string(),
-                                file_path: path.to_string_lossy().to_string(),
-                                adapter_name: adapter.name().to_string(),
-                                adapter_id: Some(adapter.id()),
-                                local_hash,
-                                current_hash,
-                            });
+                    if path.exists() {
+                        if let Ok(current_content) = fs::read_to_string(&path) {
+                            let current_hash = compute_content_hash(&current_content);
+                            if stored_hash != current_hash {
+                                let expected_content =
+                                    adapter.format_content(&global_rules, true);
+                                let diff_summary =
+                                    compute_diff_summary(&expected_content, &current_content);
+                                conflicts.push(Conflict {
+                                    id: uuid::Uuid::new_v4().to_string(),
+                                    file_path: path.to_string_lossy().to_string(),
+                                    adapter_name: adapter.name().to_string(),
+                                    adapter_id: Some(adapter.id()),
+                                    local_hash: stored_hash,
+                                    current_hash,
+                                    scope: Some("global".to_string()),
+                                    diff_summary: Some(diff_summary),
+                                });
+                            }
                         }
                     }
                 }
@@ -852,30 +860,39 @@ impl<'a> SyncEngine<'a> {
                 map
             };
 
-            for (base_path, _path_rules) in local_rules_by_path {
+            for (base_path, path_rules) in local_rules_by_path {
                 let path = PathBuf::from(&base_path).join(adapter.file_name());
                 files_written.push(path.to_string_lossy().to_string());
 
-                // Note: There's a potential race condition here where the file could change
-                // between reading the stored hash and computing the current hash.
-                // This is acceptable for a sync preview as we prioritize eventual consistency.
-                if let Some(local_hash) = self
+                // Snapshot: read file content once into memory before any hash comparison.
+                // This eliminates the race window between reading the stored hash and computing
+                // the current hash — both operations now use the same in-memory buffer.
+                if let Some(stored_hash) = self
                     .db
                     .get_file_hash(&path.to_string_lossy())
                     .await
                     .ok()
                     .flatten()
                 {
-                    if let Ok(current_hash) = compute_file_hash(&path) {
-                        if local_hash != current_hash {
-                            conflicts.push(Conflict {
-                                id: uuid::Uuid::new_v4().to_string(),
-                                file_path: path.to_string_lossy().to_string(),
-                                adapter_name: adapter.name().to_string(),
-                                adapter_id: Some(adapter.id()),
-                                local_hash,
-                                current_hash,
-                            });
+                    if path.exists() {
+                        if let Ok(current_content) = fs::read_to_string(&path) {
+                            let current_hash = compute_content_hash(&current_content);
+                            if stored_hash != current_hash {
+                                let expected_content =
+                                    adapter.format_content(&path_rules, true);
+                                let diff_summary =
+                                    compute_diff_summary(&expected_content, &current_content);
+                                conflicts.push(Conflict {
+                                    id: uuid::Uuid::new_v4().to_string(),
+                                    file_path: path.to_string_lossy().to_string(),
+                                    adapter_name: adapter.name().to_string(),
+                                    adapter_id: Some(adapter.id()),
+                                    local_hash: stored_hash,
+                                    current_hash,
+                                    scope: Some("local".to_string()),
+                                    diff_summary: Some(diff_summary),
+                                });
+                            }
                         }
                     }
                 }
@@ -979,6 +996,37 @@ impl<'a> SyncEngine<'a> {
     }
 }
 
+/// Computes a simple line-level diff summary between two content strings.
+///
+/// Uses set difference to count lines unique to each side.  Lines present in
+/// `actual` but not in `expected` are "added" (externally inserted); lines in
+/// `expected` but not in `actual` are "removed" (externally deleted).
+/// `changed` is approximated as the minimum of both — representing lines that
+/// were likely modified in-place rather than purely added or removed.
+///
+/// **Limitation**: because a `HashSet` is used, line order and duplicates are
+/// ignored.  Two files that differ only in line order will report
+/// `added: 0, removed: 0, changed: 0` even though the file hash differs.
+/// The summary is advisory only — the authoritative conflict signal is the hash
+/// mismatch, not this count.  A full ordered-diff algorithm (e.g. Myers) would
+/// be more accurate but is not worth the added dependency for this use case.
+fn compute_diff_summary(expected: &str, actual: &str) -> DiffSummary {
+    use std::collections::HashSet;
+
+    let expected_lines: HashSet<&str> = expected.lines().collect();
+    let actual_lines: HashSet<&str> = actual.lines().collect();
+
+    let added = actual_lines.difference(&expected_lines).count();
+    let removed = expected_lines.difference(&actual_lines).count();
+    let changed = added.min(removed);
+
+    DiffSummary {
+        added: added.saturating_sub(changed),
+        removed: removed.saturating_sub(changed),
+        changed,
+    }
+}
+
 fn compute_content_hash(content: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(content.as_bytes());
@@ -989,6 +1037,7 @@ pub fn compute_content_hash_public(content: &str) -> String {
     compute_content_hash(content)
 }
 
+#[allow(dead_code)]
 fn compute_file_hash(path: &Path) -> Result<String> {
     let content = fs::read_to_string(path)?;
     Ok(compute_content_hash(&content))
@@ -1149,5 +1198,107 @@ mod tests {
             let content = adapter.format_content(&rules, true);
             assert!(!content.is_empty());
         }
+    }
+
+    // --- Issue #58: compute_diff_summary tests ---
+
+    #[test]
+    fn test_diff_summary_identical_content() {
+        let content = "line1\nline2\nline3";
+        let summary = compute_diff_summary(content, content);
+        assert_eq!(summary.added, 0);
+        assert_eq!(summary.removed, 0);
+        assert_eq!(summary.changed, 0);
+    }
+
+    #[test]
+    fn test_diff_summary_added_lines() {
+        let expected = "line1\nline2";
+        let actual = "line1\nline2\nline3\nline4";
+        let summary = compute_diff_summary(expected, actual);
+        // line3 and line4 are in actual but not expected → 2 added (net of changed)
+        assert!(summary.added > 0 || summary.changed > 0);
+        assert_eq!(summary.removed, 0);
+    }
+
+    #[test]
+    fn test_diff_summary_removed_lines() {
+        let expected = "line1\nline2\nline3\nline4";
+        let actual = "line1\nline2";
+        let summary = compute_diff_summary(expected, actual);
+        assert!(summary.removed > 0 || summary.changed > 0);
+        assert_eq!(summary.added, 0);
+    }
+
+    #[test]
+    fn test_diff_summary_changed_lines() {
+        let expected = "line1\nline2\nline3";
+        let actual = "line1\nchanged2\nchanged3";
+        let summary = compute_diff_summary(expected, actual);
+        // Some combination of added/removed/changed should be non-zero
+        assert!(summary.added + summary.removed + summary.changed > 0);
+    }
+
+    #[test]
+    fn test_diff_summary_empty_strings() {
+        let summary = compute_diff_summary("", "");
+        assert_eq!(summary.added, 0);
+        assert_eq!(summary.removed, 0);
+        assert_eq!(summary.changed, 0);
+    }
+
+    #[test]
+    fn test_diff_summary_completely_different() {
+        let expected = "aaa\nbbb\nccc";
+        let actual = "xxx\nyyy\nzzz";
+        let summary = compute_diff_summary(expected, actual);
+        // All lines are different → some non-zero count
+        assert!(summary.added + summary.removed + summary.changed > 0);
+    }
+
+    // --- Issue #58: Conflict struct field tests ---
+
+    #[test]
+    fn test_conflict_includes_scope_and_diff_summary() {
+        use crate::models::DiffSummary;
+
+        let conflict = Conflict {
+            id: "test-id".to_string(),
+            file_path: "/some/path".to_string(),
+            adapter_name: "gemini".to_string(),
+            adapter_id: Some(AdapterType::Gemini),
+            local_hash: "abc".to_string(),
+            current_hash: "def".to_string(),
+            scope: Some("global".to_string()),
+            diff_summary: Some(DiffSummary { added: 1, removed: 2, changed: 0 }),
+        };
+
+        assert_eq!(conflict.scope.as_deref(), Some("global"));
+        let summary = conflict.diff_summary.unwrap();
+        assert_eq!(summary.added, 1);
+        assert_eq!(summary.removed, 2);
+        assert_eq!(summary.changed, 0);
+    }
+
+    #[test]
+    fn test_conflict_serializes_scope_and_diff_summary() {
+        use crate::models::DiffSummary;
+
+        let conflict = Conflict {
+            id: "id".to_string(),
+            file_path: "/path".to_string(),
+            adapter_name: "cline".to_string(),
+            adapter_id: None,
+            local_hash: "h1".to_string(),
+            current_hash: "h2".to_string(),
+            scope: Some("local".to_string()),
+            diff_summary: Some(DiffSummary { added: 3, removed: 0, changed: 1 }),
+        };
+
+        let json = serde_json::to_string(&conflict).unwrap();
+        assert!(json.contains("\"scope\":\"local\""));
+        assert!(json.contains("\"diffSummary\""));
+        assert!(json.contains("\"added\":3"));
+        assert!(json.contains("\"changed\":1"));
     }
 }

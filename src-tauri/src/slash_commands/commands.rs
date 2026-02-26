@@ -78,12 +78,13 @@ pub async fn cleanup_slash_commands(
 pub async fn remove_slash_command_files(
     command_name: String,
     adapters: Vec<String>,
+    target_paths: Vec<String>,
     database: State<'_, Arc<Database>>,
 ) -> Result<SlashCommandSyncResult> {
     let engine = SlashCommandSyncEngine::new(Arc::clone(&database));
 
-    // Remove command files
-    let result = engine.remove_command(&command_name, &adapters)?;
+    // Remove command files for all adapters and repo-root local paths.
+    let result = engine.remove_command(&command_name, &adapters, &target_paths)?;
 
     Ok(result)
 }
