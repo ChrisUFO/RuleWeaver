@@ -1956,7 +1956,7 @@ enabledAdapters:
     }
 
     #[test]
-    fn scan_directory_excludes_slash_commands_and_skills() {
+    fn scan_directory_finds_all_artifact_types() {
         let temp_dir = tempfile::TempDir::new().unwrap();
 
         // Create rule file
@@ -2304,7 +2304,7 @@ This is the rule content.
     // =====================================
 
     #[test]
-    fn import_mixed_artifacts_only_includes_rules() {
+    fn import_mixed_artifacts_finds_all_types() {
         let temp_dir = tempfile::TempDir::new().unwrap();
 
         // Create rule
