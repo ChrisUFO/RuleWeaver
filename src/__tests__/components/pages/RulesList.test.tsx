@@ -100,6 +100,7 @@ describe("RulesList import workflow", () => {
           scope: "global",
           targetPaths: null,
           enabledAdapters: ["cline"],
+          artifactType: "rule",
           contentHash: "hash",
           fileSize: 12,
         },
@@ -135,6 +136,7 @@ describe("RulesList import workflow", () => {
           scope: "global",
           targetPaths: null,
           enabledAdapters: ["cline"],
+          artifactType: "rule",
           contentHash: "hash",
           fileSize: 12,
         },
@@ -143,6 +145,9 @@ describe("RulesList import workflow", () => {
     });
     vi.mocked(api.ruleImport.importAiToolRules).mockResolvedValue({
       imported: [],
+      importedRules: [],
+      importedCommands: [],
+      importedSkills: [],
       skipped: [],
       conflicts: [],
       errors: [],
@@ -181,6 +186,7 @@ describe("RulesList import workflow", () => {
           scope: "global",
           targetPaths: null,
           enabledAdapters: ["cline"],
+          artifactType: "rule",
           contentHash: "hash",
           fileSize: 12,
         },
@@ -189,6 +195,9 @@ describe("RulesList import workflow", () => {
     });
     vi.mocked(api.ruleImport.importAiToolRules).mockResolvedValue({
       imported: [],
+      importedRules: [],
+      importedCommands: [],
+      importedSkills: [],
       skipped: [],
       conflicts: [],
       errors: [],
@@ -230,6 +239,7 @@ describe("RulesList import workflow", () => {
           scope: "global",
           targetPaths: null,
           enabledAdapters: ["gemini"],
+          artifactType: "rule",
           contentHash: "hash",
           fileSize: 12,
         },
@@ -238,6 +248,9 @@ describe("RulesList import workflow", () => {
     });
     vi.mocked(api.ruleImport.importFromFile).mockResolvedValue({
       imported: [],
+      importedRules: [],
+      importedCommands: [],
+      importedSkills: [],
       skipped: [],
       conflicts: [],
       errors: [],
@@ -278,6 +291,7 @@ describe("RulesList import workflow", () => {
           scope: "global",
           targetPaths: null,
           enabledAdapters: ["cline"],
+          artifactType: "rule",
           contentHash: "hash",
           fileSize: 12,
         },
@@ -286,6 +300,9 @@ describe("RulesList import workflow", () => {
     });
     vi.mocked(api.ruleImport.importAiToolRules).mockResolvedValue({
       imported: [],
+      importedRules: [],
+      importedCommands: [],
+      importedSkills: [],
       skipped: [],
       conflicts: [],
       errors: [],
