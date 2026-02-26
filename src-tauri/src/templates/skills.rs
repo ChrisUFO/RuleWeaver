@@ -42,6 +42,7 @@ pub fn get_bundled_skill_templates() -> Vec<TemplateSkill> {
                 entry_point: "python review.py".to_string(),
                 scope: Scope::Global,
                 enabled: true,
+                ..Default::default()
             },
             files: vec![TemplateFile {
                 filename: "review.py".to_string(),
@@ -63,6 +64,7 @@ pub fn get_bundled_skill_templates() -> Vec<TemplateSkill> {
                 directory_path: "".to_string(),
                 entry_point: "python write.py".to_string(),
                 enabled: true,
+                ..Default::default()
             },
             files: vec![TemplateFile {
                 filename: "write.py".to_string(),
@@ -83,6 +85,7 @@ pub fn get_bundled_skill_templates() -> Vec<TemplateSkill> {
                 directory_path: "".to_string(),
                 entry_point: "python plan.py".to_string(),
                 enabled: true,
+                ..Default::default()
             },
             files: vec![TemplateFile {
                 filename: "plan.py".to_string(),
@@ -102,6 +105,7 @@ pub fn get_bundled_skill_templates() -> Vec<TemplateSkill> {
                 entry_point: "pwsh -File ./sysinfo.ps1".to_string(),
                 scope: Scope::Global,
                 enabled: true,
+                ..Default::default()
             },
             files: vec![TemplateFile {
                 filename: "sysinfo.ps1".to_string(),

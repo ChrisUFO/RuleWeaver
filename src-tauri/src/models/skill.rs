@@ -16,6 +16,12 @@ pub struct Skill {
     pub enabled: bool,
     pub directory_path: String,
     pub entry_point: String,
+    /// Adapters to sync this skill to. Empty = all supported adapters.
+    #[serde(default)]
+    pub target_adapters: Vec<String>,
+    /// Repository roots for local-scope syncing.
+    #[serde(default)]
+    pub target_paths: Vec<String>,
     #[serde(with = "crate::models::timestamp")]
     pub created_at: DateTime<Utc>,
     #[serde(with = "crate::models::timestamp")]
@@ -192,6 +198,26 @@ pub fn validate_skill_schema(schema: &[SkillParameter]) -> Result<()> {
     Ok(())
 }
 
+/// Validate that all adapter IDs in `target_adapters` are known and support skills.
+pub fn validate_skill_target_adapters(target_adapters: &[String]) -> Result<()> {
+    use crate::models::registry::{ArtifactType, REGISTRY};
+    use crate::models::{AdapterType, Scope};
+    for adapter_str in target_adapters {
+        let adapter = AdapterType::from_str(adapter_str).ok_or_else(|| {
+            AppError::Validation(format!("Unknown adapter: '{}'", adapter_str))
+        })?;
+        REGISTRY
+            .validate_support(&adapter, &Scope::Global, ArtifactType::Skill)
+            .map_err(|_| {
+                AppError::Validation(format!(
+                    "Adapter '{}' does not support skills",
+                    adapter_str
+                ))
+            })?;
+    }
+    Ok(())
+}
+
 pub fn validate_skill_entry_point(entry_point: &str) -> Result<()> {
     let trimmed = entry_point.trim();
     if trimmed.is_empty() {
@@ -225,6 +251,12 @@ pub struct CreateSkillInput {
     pub entry_point: String,
     #[serde(default = "default_true")]
     pub enabled: bool,
+    /// Adapters to sync this skill to. Empty = all supported adapters.
+    #[serde(default)]
+    pub target_adapters: Vec<String>,
+    /// Repository roots for local-scope syncing.
+    #[serde(default)]
+    pub target_paths: Vec<String>,
 }
 
 fn default_true() -> bool {
@@ -242,4 +274,8 @@ pub struct UpdateSkillInput {
     pub directory_path: Option<String>,
     pub entry_point: Option<String>,
     pub enabled: Option<bool>,
+    /// Adapters to sync this skill to. None = no change; Some([]) = all adapters.
+    pub target_adapters: Option<Vec<String>>,
+    /// Repository roots for local-scope syncing.
+    pub target_paths: Option<Vec<String>>,
 }

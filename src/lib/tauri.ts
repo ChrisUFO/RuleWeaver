@@ -158,6 +158,8 @@ export const api = {
     create: (input: CreateSkillInput) => invoke<Skill>("create_skill", { input }),
     update: (id: string, input: UpdateSkillInput) => invoke<Skill>("update_skill", { id, input }),
     delete: (id: string) => invoke<void>("delete_skill", { id }),
+    sync: () => invoke<number>("sync_skills"),
+    getSupportedAdapters: () => invoke<string[]>("get_skill_supported_adapters"),
     getTemplates: () => invoke<TemplateSkill[]>("get_skill_templates"),
     installTemplate: (templateId: string) =>
       invoke<Skill>("install_skill_template", { templateId }),

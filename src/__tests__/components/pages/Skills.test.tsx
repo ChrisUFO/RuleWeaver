@@ -17,6 +17,7 @@ vi.mock("../../../lib/tauri", () => ({
       create: vi.fn(),
       update: vi.fn(),
       delete: vi.fn(),
+      getSupportedAdapters: vi.fn().mockResolvedValue(["claude_code", "cursor"]),
     },
     app: {
       openInExplorer: vi.fn(),
@@ -47,6 +48,8 @@ const mockSkills: Skill[] = [
     entryPoint: "run.sh",
     scope: "global",
     enabled: true,
+    targetAdapters: [],
+    targetPaths: [],
     createdAt: Date.now(),
     updatedAt: Date.now(),
   },
@@ -60,6 +63,8 @@ const mockSkills: Skill[] = [
     entryPoint: "main.py",
     scope: "global",
     enabled: false,
+    targetAdapters: ["claude_code"],
+    targetPaths: [],
     createdAt: Date.now(),
     updatedAt: Date.now(),
   },
@@ -109,6 +114,8 @@ describe("Skills Component", () => {
       entryPoint: "run.sh",
       scope: "global",
       enabled: true,
+      targetAdapters: [],
+      targetPaths: [],
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
@@ -227,5 +234,58 @@ describe("Skills Component", () => {
     await user.click(openFolderBtn);
 
     expect(api.app.openInExplorer).toHaveBeenCalledWith("/test/path");
+  });
+
+  it("shows adapter distribution checkboxes when supported adapters are loaded", async () => {
+    vi.mocked(api.skills.getAll).mockResolvedValue(mockSkills);
+    renderWithProviders(<Skills />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Test Skill 1")).toBeInTheDocument();
+    });
+
+    const user = userEvent.setup();
+    await user.click(screen.getByText("Test Skill 1"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Adapter Distribution")).toBeInTheDocument();
+    });
+
+    // Both adapters from the mock should render (underscore -> Title Case)
+    expect(screen.getByText("Claude Code")).toBeInTheDocument();
+    expect(screen.getByText("Cursor")).toBeInTheDocument();
+  });
+
+  it("includes targetAdapters in save payload when adapters are selected", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.skills.getAll).mockResolvedValue(mockSkills);
+    vi.mocked(api.skills.update).mockResolvedValue({ ...mockSkills[0] });
+    renderWithProviders(<Skills />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Test Skill 1")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByText("Test Skill 1"));
+
+    // Wait for adapter checkboxes to render, then check "Claude Code"
+    await waitFor(() => {
+      expect(screen.getByText("Claude Code")).toBeInTheDocument();
+    });
+
+    const claudeCodeLabel = screen.getByText("Claude Code").closest("label")!;
+    await user.click(claudeCodeLabel);
+
+    const saveBtn = screen.getByRole("button", { name: /save changes/i });
+    await user.click(saveBtn);
+
+    await waitFor(() => {
+      expect(api.skills.update).toHaveBeenCalledWith(
+        "skill-1",
+        expect.objectContaining({
+          targetAdapters: ["claude_code"],
+        })
+      );
+    });
   });
 });

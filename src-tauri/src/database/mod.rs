@@ -587,7 +587,7 @@ impl Database {
     pub async fn get_all_skills(&self) -> Result<Vec<Skill>> {
         let conn = self.0.lock().await;
         let mut stmt = conn.prepare(
-            "SELECT id, name, description, instructions, input_schema, enabled, created_at, updated_at, directory_path, entry_point, scope
+            "SELECT id, name, description, instructions, input_schema, enabled, created_at, updated_at, directory_path, entry_point, scope, target_adapters, target_paths
              FROM skills
              ORDER BY updated_at DESC",
         )?;
@@ -624,6 +624,14 @@ impl Database {
                             )),
                         )
                     })?,
+                    target_adapters: {
+                        let raw: String = row.get(11)?;
+                        serde_json::from_str(&raw).unwrap_or_default()
+                    },
+                    target_paths: {
+                        let raw: String = row.get(12)?;
+                        serde_json::from_str(&raw).unwrap_or_default()
+                    },
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -634,7 +642,7 @@ impl Database {
     pub async fn get_skill_by_id(&self, id: &str) -> Result<Skill> {
         let conn = self.0.lock().await;
         let mut stmt = conn.prepare(
-            "SELECT id, name, description, instructions, input_schema, enabled, created_at, updated_at, directory_path, entry_point, scope
+            "SELECT id, name, description, instructions, input_schema, enabled, created_at, updated_at, directory_path, entry_point, scope, target_adapters, target_paths
              FROM skills WHERE id = ?",
         )?;
 
@@ -670,6 +678,14 @@ impl Database {
                             )),
                         )
                     })?,
+                    target_adapters: {
+                        let raw: String = row.get(11)?;
+                        serde_json::from_str(&raw).unwrap_or_default()
+                    },
+                    target_paths: {
+                        let raw: String = row.get(12)?;
+                        serde_json::from_str(&raw).unwrap_or_default()
+                    },
                 })
             })
             .map_err(|e| match e {
@@ -687,10 +703,12 @@ impl Database {
         let now = chrono::Utc::now().timestamp();
         let id = input.id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
         let input_schema_json = serde_json::to_string(&input.input_schema)?;
+        let target_adapters_json = serde_json::to_string(&input.target_adapters)?;
+        let target_paths_json = serde_json::to_string(&input.target_paths)?;
 
         conn.execute(
-            "INSERT INTO skills (id, name, description, instructions, input_schema, enabled, directory_path, entry_point, scope, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO skills (id, name, description, instructions, input_schema, enabled, directory_path, entry_point, scope, target_adapters, target_paths, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             params![
                 &id,
                 &input.name,
@@ -701,6 +719,8 @@ impl Database {
                 &input.directory_path,
                 &input.entry_point,
                 &input.scope.as_str(),
+                &target_adapters_json,
+                &target_paths_json,
                 &now,
                 &now
             ],
@@ -722,11 +742,15 @@ impl Database {
         let directory_path = input.directory_path.unwrap_or(existing.directory_path);
         let entry_point = input.entry_point.unwrap_or(existing.entry_point);
         let scope = input.scope.unwrap_or(existing.scope);
+        let target_adapters = input.target_adapters.unwrap_or(existing.target_adapters);
+        let target_paths = input.target_paths.unwrap_or(existing.target_paths);
         let now = chrono::Utc::now().timestamp();
         let input_schema_json = serde_json::to_string(&input_schema)?;
+        let target_adapters_json = serde_json::to_string(&target_adapters)?;
+        let target_paths_json = serde_json::to_string(&target_paths)?;
 
         conn.execute(
-            "UPDATE skills SET name = ?, description = ?, instructions = ?, input_schema = ?, enabled = ?, directory_path = ?, entry_point = ?, scope = ?, updated_at = ? WHERE id = ?",
+            "UPDATE skills SET name = ?, description = ?, instructions = ?, input_schema = ?, enabled = ?, directory_path = ?, entry_point = ?, scope = ?, target_adapters = ?, target_paths = ?, updated_at = ? WHERE id = ?",
             params![
                 &name,
                 &description,
@@ -736,6 +760,8 @@ impl Database {
                 &directory_path,
                 &entry_point,
                 &scope.as_str(),
+                &target_adapters_json,
+                &target_paths_json,
                 &now,
                 &id
             ],
@@ -1126,16 +1152,18 @@ impl Database {
         let conn = self.0.lock().await;
         let now = chrono::Utc::now().timestamp();
         let input_schema_json = serde_json::to_string(&skill.input_schema)?;
+        let target_adapters_json = serde_json::to_string(&skill.target_adapters)?;
+        let target_paths_json = serde_json::to_string(&skill.target_paths)?;
 
         let sql = match mode {
             crate::models::ImportMode::Overwrite => {
                 log::info!("Import: Overwriting skill {}", skill.id);
-                "INSERT OR REPLACE INTO skills (id, name, description, instructions, input_schema, enabled, directory_path, entry_point, created_at, updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                "INSERT OR REPLACE INTO skills (id, name, description, instructions, input_schema, enabled, directory_path, entry_point, target_adapters, target_paths, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             }
             crate::models::ImportMode::Skip => {
-                "INSERT OR IGNORE INTO skills (id, name, description, instructions, input_schema, enabled, directory_path, entry_point, created_at, updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                "INSERT OR IGNORE INTO skills (id, name, description, instructions, input_schema, enabled, directory_path, entry_point, target_adapters, target_paths, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             }
         };
 
@@ -1150,6 +1178,8 @@ impl Database {
                 skill.enabled,
                 skill.directory_path,
                 skill.entry_point,
+                target_adapters_json,
+                target_paths_json,
                 skill.created_at.timestamp(),
                 now
             ],
@@ -1543,7 +1573,27 @@ fn run_migrations(conn: &mut Connection) -> Result<()> {
         )?;
     }
 
-    transaction.execute("PRAGMA user_version = 12", [])?;
+    if current_version < 13 {
+        let mut stmt = transaction.prepare("PRAGMA table_info(skills)")?;
+        let cols: Vec<String> = stmt
+            .query_map([], |row| row.get(1))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+
+        if !cols.iter().any(|c| c == "target_adapters") {
+            transaction.execute(
+                "ALTER TABLE skills ADD COLUMN target_adapters TEXT NOT NULL DEFAULT '[]'",
+                [],
+            )?;
+        }
+        if !cols.iter().any(|c| c == "target_paths") {
+            transaction.execute(
+                "ALTER TABLE skills ADD COLUMN target_paths TEXT NOT NULL DEFAULT '[]'",
+                [],
+            )?;
+        }
+    }
+
+    transaction.execute("PRAGMA user_version = 13", [])?;
     transaction.commit()?;
 
     Ok(())
@@ -1593,6 +1643,7 @@ mod tests {
             entry_point: "main.sh".to_string(),
             scope: Scope::Global,
             enabled: true,
+            ..Default::default()
         };
 
         let created = db.create_skill(input.clone()).await.unwrap();

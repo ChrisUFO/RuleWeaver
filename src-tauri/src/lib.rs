@@ -457,6 +457,7 @@ pub fn run() {
             commands::get_command_templates,
             commands::install_command_template,
             commands::sync_skills,
+            commands::get_skill_supported_adapters,
             commands::get_mcp_status,
             commands::start_mcp_server,
             commands::stop_mcp_server,

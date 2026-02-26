@@ -28,6 +28,10 @@ export interface Skill {
   directoryPath: string;
   entryPoint: string;
   enabled: boolean;
+  /** Adapter IDs to sync this skill to. Empty = all supported adapters. */
+  targetAdapters: string[];
+  /** Repository roots for local-scope syncing. */
+  targetPaths: string[];
   createdAt: number;
   updatedAt: number;
 }
@@ -42,6 +46,8 @@ export interface CreateSkillInput {
   directoryPath?: string;
   entryPoint?: string;
   enabled?: boolean;
+  targetAdapters?: string[];
+  targetPaths?: string[];
 }
 
 export interface UpdateSkillInput {
@@ -53,6 +59,8 @@ export interface UpdateSkillInput {
   directoryPath?: string;
   entryPoint?: string;
   enabled?: boolean;
+  targetAdapters?: string[];
+  targetPaths?: string[];
 }
 
 export interface TemplateFile {
