@@ -123,14 +123,16 @@ pub fn run() {
                                         mark_bootstrap_done = true;
                                         log::info!(
                                             "Bootstrap import complete: {} imported, {} skipped, {} conflicts",
-                                            import_result.imported.len(),
+                                            import_result.imported_rules.len(),
                                             import_result.skipped.len(),
                                             import_result.conflicts.len()
                                         );
 
-                                        if import_result.imported.len()
+                                        if import_result.imported_rules.len()
                                             + import_result.skipped.len()
                                             + import_result.conflicts.len()
+                                            + import_result.imported_commands.len()
+                                            + import_result.imported_skills.len()
                                             > 0
                                         {
                                             use tauri_plugin_notification::NotificationExt;
@@ -139,7 +141,7 @@ pub fn run() {
                                                 .title("Existing Rules Imported")
                                                 .body(format!(
                                                     "Imported {} rule(s), skipped {}, conflicts {}",
-                                                    import_result.imported.len(),
+                                                    import_result.imported_rules.len(),
                                                     import_result.skipped.len(),
                                                     import_result.conflicts.len()
                                                 ))

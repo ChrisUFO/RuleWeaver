@@ -144,11 +144,9 @@ export function ImportDialog({
       }
 
       // Backend scan_ai_tool_import_candidates now returns EVERYTHING.
-      // We should filter it here for the current artifactType.
       const allScan = await api.ruleImport.scanAiToolCandidates();
-      const filteredCandidates = allScan.candidates.filter((c) => c.artifactType === artifactType);
 
-      await openImportPreview("ai", "", filteredCandidates, allScan.errors);
+      await openImportPreview("ai", "", allScan.candidates, allScan.errors);
     } catch (error) {
       toast.error(addToast, { title: "Scan Failed", error });
     } finally {

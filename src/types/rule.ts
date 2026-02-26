@@ -1,4 +1,6 @@
 export type Scope = "global" | "local";
+import { CommandModel } from "./command";
+import { Skill } from "./skill";
 
 export type AdapterType =
   | "antigravity"
@@ -128,8 +130,8 @@ export interface ImportSkip {
 export interface ImportExecutionResult {
   imported: Rule[];
   importedRules: Rule[];
-  importedCommands: unknown[]; // Avoid circular dependency
-  importedSkills: unknown[];
+  importedCommands: CommandModel[];
+  importedSkills: Skill[];
   skipped: ImportSkip[];
   conflicts: ImportConflict[];
   errors: string[];

@@ -64,9 +64,9 @@ pub struct ImportSkip {
 pub struct ImportConflict {
     pub candidate_id: String,
     pub candidate_name: String,
-    /// @deprecated use existing_id
+    #[deprecated(note = "use existing_id")]
     pub existing_rule_id: Option<String>,
-    /// @deprecated use existing_name
+    #[deprecated(note = "use existing_name")]
     pub existing_rule_name: Option<String>,
     pub existing_id: Option<String>,
     pub existing_name: Option<String>,
@@ -83,7 +83,7 @@ pub struct ImportScanResult {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct ImportExecutionResult {
-    /// @deprecated use imported_rules
+    #[deprecated(note = "use imported_rules")]
     pub imported: Vec<Rule>,
     pub imported_rules: Vec<Rule>,
     pub imported_commands: Vec<Command>,

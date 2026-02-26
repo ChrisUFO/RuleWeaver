@@ -91,6 +91,22 @@ pub fn scan_clipboard_to_candidates(
     name: Option<&str>,
     max_size: u64,
 ) -> Result<ImportScanResult> {
+    // Basic content validation: Check for malicious patterns or extremely short content
+    let trimmed_content = content.trim();
+    if trimmed_content.is_empty() {
+        return Err(AppError::InvalidInput {
+            message: "Clipboard content is empty".to_string(),
+        });
+    }
+
+    // Check for common malicious script patterns
+    let lower_content = trimmed_content.to_lowercase();
+    if lower_content.contains("rm -rf /") || lower_content.contains("format c:") {
+        return Err(AppError::InvalidInput {
+            message: "Potentially malicious patterns detected in clipboard content".to_string(),
+        });
+    }
+
     if content.len() as u64 > max_size {
         return Err(AppError::InvalidInput {
             message: format!("Clipboard content exceeds max size ({} bytes)", max_size),
@@ -353,35 +369,55 @@ fn scan_directory_for_artifact_type(
 
 /// Check if a path is within a slash command or skill directory
 fn is_slash_command_or_skill_directory(path: &Path) -> bool {
-    let path_str = path.to_string_lossy().to_lowercase();
+    let path_str_lower = path.to_string_lossy().to_lowercase();
 
-    // Slash command directory patterns (case-insensitive)
-    let slash_command_patterns = [
-        "/commands/",
-        "/workflows/",
-        "/.gemini/antigravity/global_workflows/",
-        "/documents/cline/workflows/",
-        "\\commands\\",
-        "\\workflows\\",
-    ];
-
-    // Skill directory patterns (case-insensitive)
-    let skill_patterns = ["/skills/", "/documents/cline/skills/", "\\skills\\"];
-
-    for pattern in &slash_command_patterns {
-        if path_str.contains(pattern) {
+    for pattern in SLASH_COMMAND_PATTERNS {
+        if path_str_lower.contains(pattern) {
             return true;
         }
     }
-
-    for pattern in &skill_patterns {
-        if path_str.contains(pattern) {
+    for pattern in SKILL_PATTERNS {
+        if path_str_lower.contains(pattern) {
             return true;
         }
     }
-
     false
 }
+
+/// Detect artifact type based on directory patterns in the path
+fn detect_artifact_type_from_path(path: &Path) -> ImportArtifactType {
+    let path_str_lower = path.to_string_lossy().to_lowercase();
+
+    // Check for slash command patterns
+    for pattern in SLASH_COMMAND_PATTERNS {
+        if path_str_lower.contains(pattern) {
+            return ImportArtifactType::SlashCommand;
+        }
+    }
+
+    // Check for skill patterns
+    for pattern in SKILL_PATTERNS {
+        if path_str_lower.contains(pattern) {
+            return ImportArtifactType::Skill;
+        }
+    }
+
+    // Default to rule
+    ImportArtifactType::Rule
+}
+
+const SLASH_COMMAND_PATTERNS: &[&str] = &[
+    "/commands/",
+    "/workflows/",
+    "\\commands\\",
+    "\\workflows\\",
+    ".gemini/antigravity/global_workflows",
+    "documents/cline/workflows",
+    ".agents/workflows",
+    ".clinerules/workflows",
+];
+
+const SKILL_PATTERNS: &[&str] = &["/skills/", "\\skills\\", "documents/cline/skills"];
 
 pub async fn execute_import(
     db: Arc<Database>,
@@ -464,7 +500,7 @@ pub async fn execute_import(
                                 description: None,
                                 content: Some(candidate.content.clone()),
                                 scope: Some(effective_scope),
-                                target_paths: candidate.target_paths.clone(),
+                                target_paths: None, // Security: Always strip on import
                                 enabled_adapters: Some(effective_adapters.clone()),
                                 enabled: Some(true),
                             },
@@ -474,7 +510,10 @@ pub async fn execute_import(
                     existing_rules.retain(|r| r.id != update.id);
                     existing_rules.push(update.clone());
                     result.imported_rules.push(update.clone());
-                    result.imported.push(update);
+                    #[allow(deprecated)]
+                    {
+                        result.imported.push(update);
+                    }
                 }
                 ImportArtifactType::SlashCommand => {
                     let update = db
@@ -483,6 +522,7 @@ pub async fn execute_import(
                             UpdateCommandInput {
                                 name: Some(candidate.proposed_name.clone()),
                                 script: Some(candidate.content.clone()),
+                                target_paths: None, // Security: Always strip on import
                                 ..Default::default()
                             },
                         )
@@ -544,6 +584,7 @@ pub async fn execute_import(
 
             match options.conflict_mode {
                 ImportConflictMode::Skip => {
+                    #[allow(deprecated)]
                     result.conflicts.push(ImportConflict {
                         candidate_id: candidate.id.clone(),
                         candidate_name: candidate.proposed_name.clone(),
@@ -566,7 +607,7 @@ pub async fn execute_import(
                                         description: None,
                                         content: Some(candidate.content.clone()),
                                         scope: Some(effective_scope),
-                                        target_paths: candidate.target_paths.clone(),
+                                        target_paths: None, // Security: Always strip on import
                                         enabled_adapters: Some(effective_adapters.clone()),
                                         enabled: Some(true),
                                     },
@@ -577,7 +618,10 @@ pub async fn execute_import(
                             existing_rules.retain(|r| r.id != update.id);
                             existing_rules.push(update.clone());
                             result.imported_rules.push(update.clone());
-                            result.imported.push(update);
+                            #[allow(deprecated)]
+                            {
+                                result.imported.push(update);
+                            }
                         }
                         ImportArtifactType::SlashCommand => {
                             let update = db
@@ -586,6 +630,7 @@ pub async fn execute_import(
                                     UpdateCommandInput {
                                         name: Some(candidate.proposed_name.clone()),
                                         script: Some(candidate.content.clone()),
+                                        target_paths: None, // Security: Always strip on import
                                         ..Default::default()
                                     },
                                 )
@@ -650,7 +695,7 @@ pub async fn execute_import(
                                     description: String::new(),
                                     content: candidate.content.clone(),
                                     scope: effective_scope,
-                                    target_paths: candidate.target_paths.clone(),
+                                    target_paths: None, // Security: Always strip on import
                                     enabled_adapters: effective_adapters.clone(),
                                     enabled: true,
                                 })
@@ -659,7 +704,10 @@ pub async fn execute_import(
                             source_map.insert(source_key, created.id.clone());
                             existing_rules.push(created.clone());
                             result.imported_rules.push(created.clone());
-                            result.imported.push(created);
+                            #[allow(deprecated)]
+                            {
+                                result.imported.push(created);
+                            }
                         }
                         ImportArtifactType::SlashCommand => {
                             let created = db
@@ -693,6 +741,10 @@ pub async fn execute_import(
             }
         }
 
+        // Security: Strip target_paths from all import candidates to prevent arbitrary file writes.
+        // We only allow programmatic target_paths for locally created or managed artifacts.
+        let _target_paths: Option<Vec<String>> = None;
+
         match candidate.artifact_type {
             ImportArtifactType::Rule => {
                 let created = db
@@ -702,7 +754,7 @@ pub async fn execute_import(
                         description: String::new(),
                         content: candidate.content.clone(),
                         scope: effective_scope,
-                        target_paths: candidate.target_paths.clone(),
+                        target_paths: None, // Security: Always strip on import
                         enabled_adapters: effective_adapters,
                         enabled: true,
                     })
@@ -712,7 +764,10 @@ pub async fn execute_import(
                 existing_rules.retain(|r| r.id != created.id); // Guard against DB race
                 existing_rules.push(created.clone());
                 result.imported_rules.push(created.clone());
-                result.imported.push(created);
+                #[allow(deprecated)]
+                {
+                    result.imported.push(created);
+                }
             }
             ImportArtifactType::SlashCommand => {
                 let created = db
@@ -856,14 +911,15 @@ async fn write_source_map(db: Arc<Database>, map: &HashMap<String, String>) -> R
 
 fn source_identity(candidate: &ImportCandidate) -> String {
     format!(
-        "{}|{}|{}",
+        "{}|{}|{}|{:?}",
         serde_json::to_string(&candidate.source_type).unwrap_or_else(|_| "unknown".to_string()),
         candidate
             .source_tool
             .as_ref()
             .map(|a| a.as_str().to_string())
             .unwrap_or_else(|| "none".to_string()),
-        candidate.source_path
+        candidate.source_path,
+        candidate.artifact_type
     )
 }
 
@@ -906,44 +962,6 @@ struct LocalToolPath {
     adapter: AdapterType,
     relative_path: &'static str,
     artifact_type: ImportArtifactType,
-}
-
-/// Detect artifact type based on directory patterns in the path
-fn detect_artifact_type_from_path(path: &Path) -> ImportArtifactType {
-    let path_str = path.to_string_lossy().to_lowercase();
-    let path_str_lower = path_str.to_lowercase();
-
-    // Slash command directories - these are workflow/command files
-    let slash_command_patterns = [
-        "/commands/",
-        "/workflows/",
-        "\\commands\\",
-        "\\workflows\\",
-        ".gemini/antigravity/global_workflows",
-        "documents/cline/workflows",
-        ".agents/workflows",
-        ".clinerules/workflows",
-    ];
-
-    // Skill directories - these contain skill definitions
-    let skill_patterns = ["/skills/", "\\skills\\", "documents/cline/skills"];
-
-    // Check for slash command patterns
-    for pattern in &slash_command_patterns {
-        if path_str_lower.contains(pattern) {
-            return ImportArtifactType::SlashCommand;
-        }
-    }
-
-    // Check for skill patterns
-    for pattern in &skill_patterns {
-        if path_str_lower.contains(pattern) {
-            return ImportArtifactType::Skill;
-        }
-    }
-
-    // Default to rule
-    ImportArtifactType::Rule
 }
 
 fn global_tool_paths(home: &Path) -> Vec<ToolPath> {
@@ -1582,7 +1600,7 @@ mod tests {
         .await
         .expect("execute import");
 
-        assert_eq!(result.imported.len(), 0);
+        assert_eq!(result.imported_rules.len(), 0);
         assert_eq!(result.skipped.len(), 1);
     }
 
@@ -1630,8 +1648,8 @@ mod tests {
         .await
         .expect("execute import");
 
-        assert_eq!(result.imported.len(), 1);
-        assert_eq!(result.imported[0].name, "quality-2");
+        assert_eq!(result.imported_rules.len(), 1);
+        assert_eq!(result.imported_rules[0].name, "quality-2");
     }
 
     #[tokio::test]
@@ -1679,9 +1697,9 @@ mod tests {
         .await
         .expect("execute import");
 
-        assert_eq!(result.imported.len(), 1);
-        assert_eq!(result.imported[0].id, existing.id);
-        assert_eq!(result.imported[0].content, "updated");
+        assert_eq!(result.imported_rules.len(), 1);
+        assert_eq!(result.imported_rules[0].id, existing.id);
+        assert_eq!(result.imported_rules[0].content, "updated");
     }
 
     #[test]
@@ -1781,8 +1799,8 @@ enabledAdapters:
         .await
         .expect("first import");
 
-        assert_eq!(first_result.imported.len(), 1);
-        let imported_id = first_result.imported[0].id.clone();
+        assert_eq!(first_result.imported_rules.len(), 1);
+        let imported_id = first_result.imported_rules[0].id.clone();
 
         let second_candidate = candidate_from_text(
             "updated content".to_string(),
@@ -1807,9 +1825,9 @@ enabledAdapters:
         .await
         .expect("second import");
 
-        assert_eq!(second_result.imported.len(), 1);
-        assert_eq!(second_result.imported[0].id, imported_id);
-        assert_eq!(second_result.imported[0].content, "updated content");
+        assert_eq!(second_result.imported_rules.len(), 1);
+        assert_eq!(second_result.imported_rules[0].id, imported_id);
+        assert_eq!(second_result.imported_rules[0].content, "updated content");
     }
 
     #[test]

@@ -27,12 +27,10 @@ pub async fn import_ai_tool_rules(
 ) -> Result<ImportExecutionResult> {
     let opts = options.unwrap_or_default();
     let max_size = rule_import::resolve_max_size(&opts);
-    let scan = rule_import::scan_ai_tool_candidates(db.inner().clone(), max_size).await?;
-    let mut filtered_scan = scan.clone();
-    filtered_scan
-        .candidates
+    let mut scan = rule_import::scan_ai_tool_candidates(db.inner().clone(), max_size).await?;
+    scan.candidates
         .retain(|c| c.artifact_type == crate::models::ImportArtifactType::Rule);
-    rule_import::execute_import(db.inner().clone(), filtered_scan, opts).await
+    rule_import::execute_import(db.inner().clone(), scan, opts).await
 }
 
 #[tauri::command]
@@ -42,12 +40,10 @@ pub async fn import_ai_tool_commands(
 ) -> Result<ImportExecutionResult> {
     let opts = options.unwrap_or_default();
     let max_size = rule_import::resolve_max_size(&opts);
-    let scan = rule_import::scan_ai_tool_candidates(db.inner().clone(), max_size).await?;
-    let mut filtered_scan = scan.clone();
-    filtered_scan
-        .candidates
+    let mut scan = rule_import::scan_ai_tool_candidates(db.inner().clone(), max_size).await?;
+    scan.candidates
         .retain(|c| c.artifact_type == crate::models::ImportArtifactType::SlashCommand);
-    rule_import::execute_import(db.inner().clone(), filtered_scan, opts).await
+    rule_import::execute_import(db.inner().clone(), scan, opts).await
 }
 
 #[tauri::command]
@@ -57,12 +53,10 @@ pub async fn import_ai_tool_skills(
 ) -> Result<ImportExecutionResult> {
     let opts = options.unwrap_or_default();
     let max_size = rule_import::resolve_max_size(&opts);
-    let scan = rule_import::scan_ai_tool_candidates(db.inner().clone(), max_size).await?;
-    let mut filtered_scan = scan.clone();
-    filtered_scan
-        .candidates
+    let mut scan = rule_import::scan_ai_tool_candidates(db.inner().clone(), max_size).await?;
+    scan.candidates
         .retain(|c| c.artifact_type == crate::models::ImportArtifactType::Skill);
-    rule_import::execute_import(db.inner().clone(), filtered_scan, opts).await
+    rule_import::execute_import(db.inner().clone(), scan, opts).await
 }
 
 #[tauri::command]
