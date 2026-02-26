@@ -115,18 +115,19 @@ pub async fn update_command(
             &existing.slash_command_adapters,
             &existing.target_paths,
         );
-    }
-
-    // Orphan prevention: if adapters were deselected, remove files only for
-    // the adapters that are no longer in the updated list.
-    let deselected: Vec<String> = existing
-        .slash_command_adapters
-        .iter()
-        .filter(|a| !updated.slash_command_adapters.contains(a))
-        .cloned()
-        .collect();
-    if !deselected.is_empty() {
-        let _ = engine.remove_command(&existing.name, &deselected, &existing.target_paths);
+    } else {
+        // Orphan prevention: if adapters were deselected, remove files only for
+        // the adapters that are no longer in the updated list.
+        // (Skipped on rename because the rename block already removed all old files.)
+        let deselected: Vec<String> = existing
+            .slash_command_adapters
+            .iter()
+            .filter(|a| !updated.slash_command_adapters.contains(a))
+            .cloned()
+            .collect();
+        if !deselected.is_empty() {
+            let _ = engine.remove_command(&existing.name, &deselected, &existing.target_paths);
+        }
     }
 
     // Autosync slash commands on save when the command opts in to slash generation.

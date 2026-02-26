@@ -133,6 +133,16 @@ pub struct SlashCommandConflict {
     pub message: String,
 }
 
+/// Remove a file if it exists. Returns `true` if a file was removed, or an `io::Error` on failure.
+fn remove_path_if_exists(path: &PathBuf) -> std::result::Result<bool, std::io::Error> {
+    if path.exists() {
+        fs::remove_file(path)?;
+        Ok(true)
+    } else {
+        Ok(false)
+    }
+}
+
 /// Engine for syncing slash commands to AI tools
 pub struct SlashCommandSyncEngine {
     database: Arc<Database>,
@@ -338,50 +348,40 @@ impl SlashCommandSyncEngine {
 
             // Remove the global home-rooted file via PathResolver.
             match adapter.get_command_path(&safe_name, true) {
-                Ok(global_path) => {
-                    if global_path.exists() {
-                        match fs::remove_file(&global_path) {
-                            Ok(()) => result.files_removed += 1,
-                            Err(e) => result.errors.push(format!(
-                                "Failed to remove global file {} for {}: {}",
-                                global_path.display(),
-                                adapter_name,
-                                e
-                            )),
-                        }
-                    }
-                }
-                Err(e) => {
-                    result.errors.push(format!(
-                        "Failed to resolve global path for {}: {}",
-                        adapter_name, e
-                    ));
-                }
+                Ok(global_path) => match remove_path_if_exists(&global_path) {
+                    Ok(true) => result.files_removed += 1,
+                    Ok(false) => {}
+                    Err(e) => result.errors.push(format!(
+                        "Failed to remove global file {} for {}: {}",
+                        global_path.display(),
+                        adapter_name,
+                        e
+                    )),
+                },
+                Err(e) => result.errors.push(format!(
+                    "Failed to resolve global path for {}: {}",
+                    adapter_name, e
+                )),
             }
 
             // Remove per-repo-root local files via PathResolver.
             for root in target_paths {
                 let root_path = PathBuf::from(root);
                 match adapter.get_command_path_for_root(&safe_name, &root_path) {
-                    Ok(local_path) => {
-                        if local_path.exists() {
-                            match fs::remove_file(&local_path) {
-                                Ok(()) => result.files_removed += 1,
-                                Err(e) => result.errors.push(format!(
-                                    "Failed to remove local file {} for {}: {}",
-                                    local_path.display(),
-                                    adapter_name,
-                                    e
-                                )),
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        result.errors.push(format!(
-                            "Failed to resolve local path for {} in {}: {}",
-                            adapter_name, root, e
-                        ));
-                    }
+                    Ok(local_path) => match remove_path_if_exists(&local_path) {
+                        Ok(true) => result.files_removed += 1,
+                        Ok(false) => {}
+                        Err(e) => result.errors.push(format!(
+                            "Failed to remove local file {} for {}: {}",
+                            local_path.display(),
+                            adapter_name,
+                            e
+                        )),
+                    },
+                    Err(e) => result.errors.push(format!(
+                        "Failed to resolve local path for {} in {}: {}",
+                        adapter_name, root, e
+                    )),
                 }
             }
         }
@@ -429,8 +429,15 @@ impl SlashCommandSyncEngine {
                 && path.extension().unwrap_or_default() == adapter.file_extension()
             {
                 // Only consider files that carry the RuleWeaver marker.
-                if let Ok(content) = fs::read_to_string(&path) {
-                    if content.contains(RULEWEAVER_MARKER) {
+                // Read only the first few lines to avoid loading large files into memory.
+                if let Ok(file) = fs::File::open(&path) {
+                    use std::io::{BufRead, BufReader};
+                    let reader = BufReader::new(file);
+                    if reader
+                        .lines()
+                        .take(5)
+                        .any(|line| line.map_or(false, |l| l.contains(RULEWEAVER_MARKER)))
+                    {
                         candidates.push(path);
                     }
                 }
