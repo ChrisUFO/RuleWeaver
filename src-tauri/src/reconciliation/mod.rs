@@ -1642,7 +1642,7 @@ mod tests {
         let desired = DesiredState::default();
 
         // Create actual state by scanning - user file should be SKIPPED
-        let mut actual = ActualState::default();
+        let actual = ActualState::default();
 
         // Directly scan the user file
         let scanned = engine
@@ -2262,7 +2262,9 @@ mod tests {
             db
         });
 
-        let engine = ReconciliationEngine::new(db).unwrap();
+        let mut path_resolver = crate::path_resolver::PathResolver::new().unwrap();
+        path_resolver.add_repository_root(std::path::PathBuf::from("/repo"));
+        let engine = ReconciliationEngine { db, path_resolver };
         let desired = rt.block_on(async { engine.compute_desired_state().await.unwrap() });
 
         let skill_entries: Vec<_> = desired
@@ -2274,7 +2276,7 @@ mod tests {
         // Local skills require registered repository roots
         // Since we don't have any registered, the count depends on the engine's behavior
         assert!(
-            skill_entries.len() >= 0,
+            !skill_entries.is_empty(),
             "Should handle local skills gracefully"
         );
 

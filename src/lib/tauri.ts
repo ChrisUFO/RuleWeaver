@@ -51,6 +51,10 @@ export const api = {
       invoke<ImportScanResult>("scan_rule_clipboard_import", { content, name, options }),
     importAiToolRules: (options?: ImportExecutionOptions) =>
       invoke<ImportExecutionResult>("import_ai_tool_rules", { options }),
+    importAiToolCommands: (options?: ImportExecutionOptions) =>
+      invoke<ImportExecutionResult>("import_ai_tool_commands", { options }),
+    importAiToolSkills: (options?: ImportExecutionOptions) =>
+      invoke<ImportExecutionResult>("import_ai_tool_skills", { options }),
     importFromFile: (path: string, options?: ImportExecutionOptions) =>
       invoke<ImportExecutionResult>("import_rule_from_file", { path, options }),
     importFromDirectory: (path: string, options?: ImportExecutionOptions) =>
@@ -59,6 +63,14 @@ export const api = {
       invoke<ImportExecutionResult>("import_rule_from_url", { url, options }),
     importFromClipboard: (content: string, name?: string, options?: ImportExecutionOptions) =>
       invoke<ImportExecutionResult>("import_rule_from_clipboard", { content, name, options }),
+    importCommandsFromDirectory: (path: string, options?: ImportExecutionOptions) =>
+      invoke<ImportExecutionResult>("import_commands_from_directory", { path, options }),
+    scanCommandDirectoryImport: (path: string, options?: ImportExecutionOptions) =>
+      invoke<ImportScanResult>("scan_command_directory_import", { path, options }),
+    importSkillsFromDirectory: (path: string, options?: ImportExecutionOptions) =>
+      invoke<ImportExecutionResult>("import_skills_from_directory", { path, options }),
+    scanSkillDirectoryImport: (path: string, options?: ImportExecutionOptions) =>
+      invoke<ImportScanResult>("scan_skill_directory_import", { path, options }),
     getHistory: () => invoke<ImportHistoryEntry[]>("get_rule_import_history"),
   },
 

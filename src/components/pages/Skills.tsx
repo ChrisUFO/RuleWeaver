@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Trash2, FolderOpen } from "lucide-react";
+import { Plus, Trash2, FolderOpen, FolderUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,6 +14,7 @@ import { SkillSchemaEditor } from "@/components/skills/SkillSchemaEditor";
 import { TemplateBrowser } from "@/components/skills/TemplateBrowser";
 import { Select } from "@/components/ui/select";
 import { useRepositoryRoots } from "@/hooks/useRepositoryRoots";
+import { ImportDialog } from "@/components/import/ImportDialog";
 
 export function Skills() {
   const [skills, setSkills] = useState<Skill[]>([]);
@@ -28,6 +29,7 @@ export function Skills() {
   const [enabled, setEnabled] = useState(true);
   const { roots: availableRepos } = useRepositoryRoots();
   const [isSaving, setIsSaving] = useState(false);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
   const { addToast } = useToast();
 
   const selected = useMemo(
@@ -173,6 +175,15 @@ export function Skills() {
               >
                 <Plus className="mr-1.5 h-3.5 w-3.5" />
                 New
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setImportDialogOpen(true)}
+                className="glass h-8"
+              >
+                <FolderUp className="mr-1.5 h-3.5 w-3.5" />
+                Import
               </Button>
             </div>
           </div>
@@ -373,6 +384,15 @@ export function Skills() {
           )}
         </CardContent>
       </Card>
+
+      <ImportDialog
+        open={importDialogOpen}
+        onOpenChange={setImportDialogOpen}
+        artifactType="skill"
+        onImportComplete={async () => {
+          await loadSkills();
+        }}
+      />
     </div>
   );
 }

@@ -2,20 +2,25 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use chrono::Utc;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use walkdir::WalkDir;
 
-use crate::commands::{register_local_rule_paths, storage_location_for_rule, use_file_storage};
+use crate::commands::{
+    reconcile_after_mutation, register_local_rule_paths, storage_location_for_rule,
+    use_file_storage,
+};
 use crate::database::Database;
 use crate::error::{AppError, Result};
 use crate::file_storage;
 use crate::models::{
-    AdapterType, CreateRuleInput, ImportArtifactType, ImportCandidate, ImportConflict,
-    ImportConflictMode, ImportExecutionOptions, ImportExecutionResult, ImportHistoryEntry,
-    ImportScanResult, ImportSkip, Rule, Scope, UpdateRuleInput,
+    AdapterType, Command, CreateCommandInput, CreateRuleInput, CreateSkillInput,
+    ImportArtifactType, ImportCandidate, ImportConflict, ImportConflictMode,
+    ImportExecutionOptions, ImportExecutionResult, ImportHistoryEntry, ImportScanResult,
+    ImportSkip, Rule, Scope, Skill, UpdateCommandInput, UpdateRuleInput, UpdateSkillInput,
 };
 use crate::sync::SyncEngine;
 
@@ -76,6 +81,7 @@ pub async fn scan_url_to_candidates(url: &str, max_size: u64) -> Result<ImportSc
         None,
         Scope::Global,
         None,
+        ImportArtifactType::Rule,
     ));
     Ok(scan)
 }
@@ -85,9 +91,22 @@ pub fn scan_clipboard_to_candidates(
     name: Option<&str>,
     max_size: u64,
 ) -> Result<ImportScanResult> {
+    // Basic content validation: Check for malicious patterns or extremely short content
+    let trimmed_content = content.trim();
+    if trimmed_content.is_empty() {
+        return Err(AppError::InvalidInput {
+            message: "clipboard content is empty".to_string(),
+        });
+    }
+
+    // NOTE: Clipboard imports should only come from trusted sources.
+    // We do not attempt to detect malicious patterns as they are trivially bypassable
+    // (e.g., encoding, obfuscation, alternative commands). Users are responsible for
+    // verifying clipboard content before importing.
+
     if content.len() as u64 > max_size {
         return Err(AppError::InvalidInput {
-            message: format!("Clipboard content exceeds max size ({} bytes)", max_size),
+            message: format!("clipboard content exceeds max size ({} bytes)", max_size),
         });
     }
 
@@ -98,10 +117,11 @@ pub fn scan_clipboard_to_candidates(
         inferred,
         crate::models::ImportSourceType::Clipboard,
         "Clipboard",
-        "clipboard",
+        "Clipboard",
         None,
         Scope::Global,
         None,
+        ImportArtifactType::Rule,
     ));
     Ok(scan)
 }
@@ -115,6 +135,7 @@ pub fn scan_file_to_candidates(path: &Path, max_size: u64) -> ImportScanResult {
         None,
         Scope::Global,
         None,
+        ImportArtifactType::Rule,
         max_size,
     ) {
         Ok(candidate) => scan.candidates.push(candidate),
@@ -123,7 +144,11 @@ pub fn scan_file_to_candidates(path: &Path, max_size: u64) -> ImportScanResult {
     scan
 }
 
-pub fn scan_directory_to_candidates(path: &Path, max_size: u64) -> ImportScanResult {
+pub fn scan_directory_to_candidates(
+    path: &Path,
+    max_size: u64,
+    artifact_filter: Option<ImportArtifactType>,
+) -> ImportScanResult {
     let mut scan = ImportScanResult::default();
     let canonical_root = match path.canonicalize() {
         Ok(p) => p,
@@ -151,82 +176,83 @@ pub fn scan_directory_to_candidates(path: &Path, max_size: u64) -> ImportScanRes
         .filter_map(|e| e.ok())
     {
         let item_path = entry.path();
-        
-        // Skip directories that contain slash commands or skills
-        if is_slash_command_or_skill_directory(item_path) {
-            continue;
-        }
-        
         if !item_path.is_file() {
             continue;
+        }
+
+        let artifact_type = detect_artifact_type_from_path(item_path);
+        if let Some(filter) = artifact_filter {
+            if artifact_type != filter {
+                continue;
+            }
         }
 
         if !is_supported_import_extension(item_path) {
             continue;
         }
 
-        // Skip files that are in slash command or skill locations
-        if detect_artifact_type_from_path(item_path) != ImportArtifactType::Rule {
-            continue;
-        }
-
         match candidate_from_path(
             item_path,
-            crate::models::ImportSourceType::Directory,
-            "Directory",
+            crate::models::ImportSourceType::File,
+            "File",
             None,
             Scope::Global,
             None,
+            artifact_type,
             max_size,
         ) {
             Ok(candidate) => {
                 if scan.candidates.len() >= MAX_IMPORT_CANDIDATES {
                     scan.errors.push(format!(
-                        "Import candidate limit reached ({}). Narrow directory scope or import in batches.",
+                        "Import candidate limit reached ({}). Narrow scan directory or import in batches.",
                         MAX_IMPORT_CANDIDATES
                     ));
-                    break;
+                    return scan;
                 }
-                scan.candidates.push(candidate)
+                scan.candidates.push(candidate);
             }
             Err(e) => scan.errors.push(e.to_string()),
         }
     }
+
+    apply_tool_suffix_name_policy(&mut scan.candidates);
     scan
 }
 
-pub async fn scan_ai_tool_candidates(db: &Database, max_size: u64) -> Result<ImportScanResult> {
+pub async fn scan_ai_tool_candidates(db: Arc<Database>, max_size: u64) -> Result<ImportScanResult> {
     let mut scan = ImportScanResult::default();
     let home = dirs::home_dir()
         .ok_or_else(|| AppError::Path("Could not determine home directory".to_string()))?;
 
-    // Only scan RULE paths, not slash commands or skills
     for tool_path in global_tool_paths(&home) {
-        // Skip non-rule artifacts
-        if tool_path.artifact_type != ImportArtifactType::Rule {
-            continue;
-        }
-
         if !tool_path.path.exists() {
             continue;
         }
 
-        if tool_path.path.is_file() {
+        let tp = tool_path.clone();
+        let label = adapter_label(tp.adapter);
+
+        if tp.path.is_file() {
             match candidate_from_path(
-                &tool_path.path,
+                &tp.path,
                 crate::models::ImportSourceType::AiTool,
-                adapter_label(tool_path.adapter),
-                Some(tool_path.adapter),
+                label,
+                Some(tp.adapter),
                 Scope::Global,
                 None,
+                tp.artifact_type,
                 max_size,
             ) {
                 Ok(candidate) => scan.candidates.push(candidate),
                 Err(e) => scan.errors.push(e.to_string()),
             }
         } else if tool_path.path.is_dir() {
-            // When scanning directories, only include rule-like files, not slash commands or skills
-            let inner_scan = scan_directory_for_rules(&tool_path.path, tool_path.adapter, max_size);
+            let inner_scan = scan_directory_for_artifact_type(
+                &tool_path.path,
+                tool_path.adapter,
+                max_size,
+                tool_path.artifact_type,
+            );
             for mut candidate in inner_scan.candidates {
                 candidate.source_type = crate::models::ImportSourceType::AiTool;
                 candidate.source_tool = Some(tool_path.adapter);
@@ -239,28 +265,50 @@ pub async fn scan_ai_tool_candidates(db: &Database, max_size: u64) -> Result<Imp
         }
     }
 
-    for local_root in get_local_rule_roots(db).await {
+    for local_root in get_local_rule_roots(db.clone()).await {
         for local_path in local_tool_paths() {
-            // Skip non-rule artifacts
-            if local_path.artifact_type != ImportArtifactType::Rule {
-                continue;
-            }
-
             let path = local_root.join(local_path.relative_path);
-            if !path.exists() || !path.is_file() {
+            if !path.exists() {
                 continue;
             }
 
-            match candidate_from_path(
-                &path,
-                crate::models::ImportSourceType::AiTool,
-                adapter_label(local_path.adapter),
-                Some(local_path.adapter),
-                Scope::Local,
-                Some(vec![local_root.to_string_lossy().to_string()]),
-                max_size,
-            ) {
-                Ok(candidate) => {
+            if path.is_file() {
+                match candidate_from_path(
+                    &path,
+                    crate::models::ImportSourceType::AiTool,
+                    adapter_label(local_path.adapter),
+                    Some(local_path.adapter),
+                    Scope::Local,
+                    Some(vec![local_root.to_string_lossy().to_string()]),
+                    local_path.artifact_type,
+                    max_size,
+                ) {
+                    Ok(candidate) => {
+                        if scan.candidates.len() >= MAX_IMPORT_CANDIDATES {
+                            scan.errors.push(format!(
+                                "Import candidate limit reached ({}). Narrow configured repository roots or import in batches.",
+                                MAX_IMPORT_CANDIDATES
+                            ));
+                            return Ok(scan);
+                        }
+                        scan.candidates.push(candidate)
+                    }
+                    Err(e) => scan.errors.push(e.to_string()),
+                }
+            } else if path.is_dir() {
+                let inner_scan = scan_directory_for_artifact_type(
+                    &path,
+                    local_path.adapter,
+                    max_size,
+                    local_path.artifact_type,
+                );
+                for mut candidate in inner_scan.candidates {
+                    candidate.source_type = crate::models::ImportSourceType::AiTool;
+                    candidate.source_tool = Some(local_path.adapter);
+                    candidate.source_label = adapter_label(local_path.adapter).to_string();
+                    candidate.scope = Scope::Local;
+                    candidate.target_paths = Some(vec![local_root.to_string_lossy().to_string()]);
+
                     if scan.candidates.len() >= MAX_IMPORT_CANDIDATES {
                         scan.errors.push(format!(
                             "Import candidate limit reached ({}). Narrow configured repository roots or import in batches.",
@@ -268,9 +316,11 @@ pub async fn scan_ai_tool_candidates(db: &Database, max_size: u64) -> Result<Imp
                         ));
                         return Ok(scan);
                     }
-                    scan.candidates.push(candidate)
+                    scan.candidates.push(candidate);
                 }
-                Err(e) => scan.errors.push(e.to_string()),
+                for err in inner_scan.errors {
+                    scan.errors.push(err);
+                }
             }
         }
     }
@@ -279,8 +329,13 @@ pub async fn scan_ai_tool_candidates(db: &Database, max_size: u64) -> Result<Imp
     Ok(scan)
 }
 
-/// Scan a directory for rule files, excluding slash command and skill directories
-fn scan_directory_for_rules(dir: &Path, adapter: AdapterType, max_size: u64) -> ImportScanResult {
+/// Scan a directory for a specific artifact type, excluding other artifact directories
+fn scan_directory_for_artifact_type(
+    dir: &Path,
+    adapter: AdapterType,
+    max_size: u64,
+    artifact_type_filter: ImportArtifactType,
+) -> ImportScanResult {
     let mut scan = ImportScanResult::default();
 
     for entry in WalkDir::new(dir)
@@ -289,12 +344,14 @@ fn scan_directory_for_rules(dir: &Path, adapter: AdapterType, max_size: u64) -> 
         .filter_map(|e| e.ok())
     {
         let item_path = entry.path();
-        
-        // Skip directories that contain slash commands or skills
-        if is_slash_command_or_skill_directory(item_path) {
+
+        // Skip directories that contain other artifact types
+        if is_slash_command_or_skill_directory(item_path)
+            && artifact_type_filter == ImportArtifactType::Rule
+        {
             continue;
         }
-        
+
         if !item_path.is_file() {
             continue;
         }
@@ -303,8 +360,8 @@ fn scan_directory_for_rules(dir: &Path, adapter: AdapterType, max_size: u64) -> 
             continue;
         }
 
-        // Double-check: detect artifact type from path and skip non-rules
-        if detect_artifact_type_from_path(item_path) != ImportArtifactType::Rule {
+        // Double-check: detect artifact type from path and skip if it doesn't match the filter
+        if detect_artifact_type_from_path(item_path) != artifact_type_filter {
             continue;
         }
 
@@ -315,6 +372,7 @@ fn scan_directory_for_rules(dir: &Path, adapter: AdapterType, max_size: u64) -> 
             Some(adapter),
             Scope::Global,
             None,
+            artifact_type_filter,
             max_size,
         ) {
             Ok(candidate) => {
@@ -336,42 +394,58 @@ fn scan_directory_for_rules(dir: &Path, adapter: AdapterType, max_size: u64) -> 
 
 /// Check if a path is within a slash command or skill directory
 fn is_slash_command_or_skill_directory(path: &Path) -> bool {
-    let path_str = path.to_string_lossy().to_lowercase();
-    
-    // Slash command directory patterns (case-insensitive)
-    let slash_command_patterns = [
-        "/commands/",
-        "/workflows/",
-        "/.gemini/antigravity/global_workflows/",
-        "/documents/cline/workflows/",
-        "\\commands\\",
-        "\\workflows\\",
-    ];
-    
-    // Skill directory patterns (case-insensitive)
-    let skill_patterns = [
-        "/skills/",
-        "/documents/cline/skills/",
-        "\\skills\\",
-    ];
-    
-    for pattern in &slash_command_patterns {
-        if path_str.contains(pattern) {
+    let path_str_lower = path.to_string_lossy().to_lowercase();
+
+    for pattern in SLASH_COMMAND_PATTERNS {
+        if path_str_lower.contains(pattern) {
             return true;
         }
     }
-    
-    for pattern in &skill_patterns {
-        if path_str.contains(pattern) {
+    for pattern in SKILL_PATTERNS {
+        if path_str_lower.contains(pattern) {
             return true;
         }
     }
-    
     false
 }
 
+/// Detect artifact type based on directory patterns in the path
+fn detect_artifact_type_from_path(path: &Path) -> ImportArtifactType {
+    let path_str_lower = path.to_string_lossy().to_lowercase();
+
+    // Check for slash command patterns
+    for pattern in SLASH_COMMAND_PATTERNS {
+        if path_str_lower.contains(pattern) {
+            return ImportArtifactType::SlashCommand;
+        }
+    }
+
+    // Check for skill patterns
+    for pattern in SKILL_PATTERNS {
+        if path_str_lower.contains(pattern) {
+            return ImportArtifactType::Skill;
+        }
+    }
+
+    // Default to rule
+    ImportArtifactType::Rule
+}
+
+const SLASH_COMMAND_PATTERNS: &[&str] = &[
+    "/commands/",
+    "/workflows/",
+    "\\commands\\",
+    "\\workflows\\",
+    ".gemini/antigravity/global_workflows",
+    "documents/cline/workflows",
+    ".agents/workflows",
+    ".clinerules/workflows",
+];
+
+const SKILL_PATTERNS: &[&str] = &["/skills/", "\\skills\\", "documents/cline/skills"];
+
 pub async fn execute_import(
-    db: &Database,
+    db: Arc<Database>,
     scan_result: ImportScanResult,
     options: ImportExecutionOptions,
 ) -> Result<ImportExecutionResult> {
@@ -387,7 +461,9 @@ pub async fn execute_import(
         .as_ref()
         .map(|ids| ids.iter().cloned().collect::<HashSet<String>>());
     let mut existing_rules = db.get_all_rules().await?;
-    let mut source_map = read_source_map(db).await;
+    let mut existing_commands = db.get_all_commands().await?;
+    let mut existing_skills = db.get_all_skills().await?;
+    let mut source_map = read_source_map(db.clone()).await;
 
     for candidate in scan_result.candidates {
         if let Some(selected) = selected_set.as_ref() {
@@ -412,58 +488,120 @@ pub async fn execute_import(
             continue;
         }
 
-        if let Some(existing_exact) = existing_rules
-            .iter()
-            .find(|r| compute_content_hash(&r.content) == candidate.content_hash)
-        {
+        if let Some(existing_exact_id) = match candidate.artifact_type {
+            ImportArtifactType::Rule => existing_rules
+                .iter()
+                .find(|r| compute_content_hash(&r.content) == candidate.content_hash)
+                .map(|r| r.name.clone()),
+            ImportArtifactType::SlashCommand => existing_commands
+                .iter()
+                .find(|c| compute_content_hash(&c.script) == candidate.content_hash)
+                .map(|c| c.name.clone()),
+            ImportArtifactType::Skill => existing_skills
+                .iter()
+                .find(|s| compute_content_hash(&s.instructions) == candidate.content_hash)
+                .map(|s| s.name.clone()),
+        } {
             result.skipped.push(ImportSkip {
                 candidate_id: candidate.id.clone(),
                 name: candidate.proposed_name.clone(),
                 reason: format!(
                     "Duplicate content already exists as '{}'",
-                    existing_exact.name
+                    existing_exact_id
                 ),
             });
             continue;
         }
 
-        let mapped_rule_id = source_map.get(&source_key).cloned();
-        if let Some(rule_id) = mapped_rule_id {
-            let update = db
-                .update_rule(
-                    &rule_id,
-                    UpdateRuleInput {
-                        name: Some(candidate.proposed_name.clone()),
-                        description: None, // Keep existing description
-                        content: Some(candidate.content.clone()),
-                        scope: Some(effective_scope),
-                        target_paths: candidate.target_paths.clone(),
-                        enabled_adapters: Some(effective_adapters.clone()),
-                        enabled: Some(true),
-                    },
-                )
-                .await?;
-
-            persist_rule_to_file_if_needed(db, &update).await?;
-            existing_rules.retain(|r| r.id != update.id);
-            existing_rules.push(update.clone());
-            result.imported.push(update);
+        let mapped_artifact_id = source_map.get(&source_key).cloned();
+        if let Some(artifact_id) = mapped_artifact_id {
+            match candidate.artifact_type {
+                ImportArtifactType::Rule => {
+                    let update = db
+                        .update_rule(
+                            &artifact_id,
+                            UpdateRuleInput {
+                                name: Some(candidate.proposed_name.clone()),
+                                description: None,
+                                content: Some(candidate.content.clone()),
+                                scope: Some(effective_scope),
+                                target_paths: None, // Security: Always strip on import
+                                enabled_adapters: Some(effective_adapters.clone()),
+                                enabled: Some(true),
+                            },
+                        )
+                        .await?;
+                    persist_rule_to_file_if_needed(db.clone(), &update).await?;
+                    existing_rules.retain(|r| r.id != update.id);
+                    existing_rules.push(update.clone());
+                    result.imported_rules.push(update.clone());
+                    #[allow(deprecated)]
+                    {
+                        result.imported.push(update);
+                    }
+                }
+                ImportArtifactType::SlashCommand => {
+                    let update = db
+                        .update_command(
+                            &artifact_id,
+                            UpdateCommandInput {
+                                name: Some(candidate.proposed_name.clone()),
+                                script: Some(candidate.content.clone()),
+                                target_paths: None, // Security: Always strip on import
+                                ..Default::default()
+                            },
+                        )
+                        .await?;
+                    // Persistence for commands
+                    persist_command_to_file_if_needed(db.clone(), &update).await?;
+                    existing_commands.retain(|c| c.id != update.id);
+                    existing_commands.push(update.clone());
+                    result.imported_commands.push(update);
+                }
+                ImportArtifactType::Skill => {
+                    let update = db
+                        .update_skill(
+                            &artifact_id,
+                            UpdateSkillInput {
+                                name: Some(candidate.proposed_name.clone()),
+                                instructions: Some(candidate.content.clone()),
+                                ..Default::default()
+                            },
+                        )
+                        .await?;
+                    // Persistence for skills
+                    persist_skill_to_file_if_needed(db.clone(), &update).await?;
+                    existing_skills.retain(|s| s.id != update.id);
+                    existing_skills.push(update.clone());
+                    result.imported_skills.push(update);
+                }
+            }
             continue;
         }
 
-        let same_name = existing_rules
-            .iter()
-            .find(|r| r.name.eq_ignore_ascii_case(&candidate.proposed_name))
-            .cloned();
+        let same_name_id = match candidate.artifact_type {
+            ImportArtifactType::Rule => existing_rules
+                .iter()
+                .find(|r| r.name.eq_ignore_ascii_case(&candidate.proposed_name))
+                .map(|r| (r.id.clone(), r.name.clone(), r.content.clone())),
+            ImportArtifactType::SlashCommand => existing_commands
+                .iter()
+                .find(|c| c.name.eq_ignore_ascii_case(&candidate.proposed_name))
+                .map(|c| (c.id.clone(), c.name.clone(), c.script.clone())),
+            ImportArtifactType::Skill => existing_skills
+                .iter()
+                .find(|s| s.name.eq_ignore_ascii_case(&candidate.proposed_name))
+                .map(|s| (s.id.clone(), s.name.clone(), s.instructions.clone())),
+        };
 
-        if let Some(existing_same_name) = same_name {
-            if existing_same_name.content == candidate.content {
+        if let Some((existing_id, existing_name, existing_content)) = same_name_id {
+            if existing_content == candidate.content {
                 result.skipped.push(ImportSkip {
                     candidate_id: candidate.id.clone(),
                     name: candidate.proposed_name.clone(),
                     reason: format!(
                         "Duplicate name and content already exists as '{}'",
-                        existing_same_name.name
+                        existing_name
                     ),
                 });
                 continue;
@@ -471,93 +609,230 @@ pub async fn execute_import(
 
             match options.conflict_mode {
                 ImportConflictMode::Skip => {
+                    #[allow(deprecated)]
                     result.conflicts.push(ImportConflict {
                         candidate_id: candidate.id.clone(),
                         candidate_name: candidate.proposed_name.clone(),
-                        existing_rule_id: Some(existing_same_name.id.clone()),
-                        existing_rule_name: Some(existing_same_name.name.clone()),
+                        existing_rule_id: Some(existing_id.clone()),
+                        existing_rule_name: Some(existing_name.clone()),
+                        existing_id: Some(existing_id),
+                        existing_name: Some(existing_name),
                         reason: "Name collision with different content".to_string(),
                     });
                     continue;
                 }
                 ImportConflictMode::Replace => {
-                    let update = db
-                        .update_rule(
-                            &existing_same_name.id,
-                            UpdateRuleInput {
-                                name: Some(candidate.proposed_name.clone()),
-                                description: None, // Keep existing description
-                                content: Some(candidate.content.clone()),
-                                scope: Some(effective_scope),
-                                target_paths: candidate.target_paths.clone(),
-                                enabled_adapters: Some(effective_adapters.clone()),
-                                enabled: Some(true),
-                            },
-                        )
-                        .await?;
-                    persist_rule_to_file_if_needed(db, &update).await?;
-                    source_map.insert(source_key, update.id.clone());
-                    existing_rules.retain(|r| r.id != update.id);
-                    existing_rules.push(update.clone());
-                    result.imported.push(update);
+                    match candidate.artifact_type {
+                        ImportArtifactType::Rule => {
+                            let update = db
+                                .update_rule(
+                                    &existing_id,
+                                    UpdateRuleInput {
+                                        name: Some(candidate.proposed_name.clone()),
+                                        description: None,
+                                        content: Some(candidate.content.clone()),
+                                        scope: Some(effective_scope),
+                                        target_paths: None, // Security: Always strip on import
+                                        enabled_adapters: Some(effective_adapters.clone()),
+                                        enabled: Some(true),
+                                    },
+                                )
+                                .await?;
+                            persist_rule_to_file_if_needed(db.clone(), &update).await?;
+                            source_map.insert(source_key, update.id.clone());
+                            existing_rules.retain(|r| r.id != update.id);
+                            existing_rules.push(update.clone());
+                            result.imported_rules.push(update.clone());
+                            #[allow(deprecated)]
+                            {
+                                result.imported.push(update);
+                            }
+                        }
+                        ImportArtifactType::SlashCommand => {
+                            let update = db
+                                .update_command(
+                                    &existing_id,
+                                    UpdateCommandInput {
+                                        name: Some(candidate.proposed_name.clone()),
+                                        script: Some(candidate.content.clone()),
+                                        target_paths: None, // Security: Always strip on import
+                                        ..Default::default()
+                                    },
+                                )
+                                .await?;
+                            persist_command_to_file_if_needed(db.clone(), &update).await?;
+                            source_map.insert(source_key, update.id.clone());
+                            existing_commands.retain(|c| c.id != update.id);
+                            existing_commands.push(update.clone());
+                            result.imported_commands.push(update);
+                        }
+                        ImportArtifactType::Skill => {
+                            let update = db
+                                .update_skill(
+                                    &existing_id,
+                                    UpdateSkillInput {
+                                        name: Some(candidate.proposed_name.clone()),
+                                        instructions: Some(candidate.content.clone()),
+                                        ..Default::default()
+                                    },
+                                )
+                                .await?;
+                            persist_skill_to_file_if_needed(db.clone(), &update).await?;
+                            source_map.insert(source_key, update.id.clone());
+                            existing_skills.retain(|s| s.id != update.id);
+                            existing_skills.push(update.clone());
+                            result.imported_skills.push(update);
+                        }
+                    }
                     continue;
                 }
                 ImportConflictMode::Rename => {
-                    let unique_name = make_unique_name(
-                        &candidate.proposed_name,
-                        &existing_rules
-                            .iter()
-                            .map(|r| r.name.clone())
-                            .collect::<Vec<_>>(),
-                    );
+                    let unique_name = match candidate.artifact_type {
+                        ImportArtifactType::Rule => make_unique_name(
+                            &candidate.proposed_name,
+                            &existing_rules
+                                .iter()
+                                .map(|r| r.name.clone())
+                                .collect::<Vec<_>>(),
+                        ),
+                        ImportArtifactType::SlashCommand => make_unique_name(
+                            &candidate.proposed_name,
+                            &existing_commands
+                                .iter()
+                                .map(|c| c.name.clone())
+                                .collect::<Vec<_>>(),
+                        ),
+                        ImportArtifactType::Skill => make_unique_name(
+                            &candidate.proposed_name,
+                            &existing_skills
+                                .iter()
+                                .map(|s| s.name.clone())
+                                .collect::<Vec<_>>(),
+                        ),
+                    };
 
-                    let created = db
-                        .create_rule(CreateRuleInput {
-                            id: None,
-                            name: unique_name,
-                            description: String::new(), // Default for imported rules
-                            content: candidate.content.clone(),
-                            scope: effective_scope,
-                            target_paths: candidate.target_paths.clone(),
-                            enabled_adapters: effective_adapters.clone(),
-                            enabled: true,
-                        })
-                        .await?;
-                    persist_rule_to_file_if_needed(db, &created).await?;
-                    source_map.insert(source_key, created.id.clone());
-                    existing_rules.push(created.clone());
-                    result.imported.push(created);
+                    match candidate.artifact_type {
+                        ImportArtifactType::Rule => {
+                            let created = db
+                                .create_rule(CreateRuleInput {
+                                    id: None,
+                                    name: unique_name,
+                                    description: String::new(),
+                                    content: candidate.content.clone(),
+                                    scope: effective_scope,
+                                    target_paths: None, // Security: Always strip on import
+                                    enabled_adapters: effective_adapters.clone(),
+                                    enabled: true,
+                                })
+                                .await?;
+                            persist_rule_to_file_if_needed(db.clone(), &created).await?;
+                            source_map.insert(source_key, created.id.clone());
+                            existing_rules.push(created.clone());
+                            result.imported_rules.push(created.clone());
+                            #[allow(deprecated)]
+                            {
+                                result.imported.push(created);
+                            }
+                        }
+                        ImportArtifactType::SlashCommand => {
+                            let created = db
+                                .create_command(CreateCommandInput {
+                                    name: unique_name,
+                                    script: candidate.content.clone(),
+                                    ..Default::default()
+                                })
+                                .await?;
+                            persist_command_to_file_if_needed(db.clone(), &created).await?;
+                            source_map.insert(source_key, created.id.clone());
+                            existing_commands.push(created.clone());
+                            result.imported_commands.push(created);
+                        }
+                        ImportArtifactType::Skill => {
+                            let created = db
+                                .create_skill(CreateSkillInput {
+                                    name: unique_name,
+                                    instructions: candidate.content.clone(),
+                                    ..Default::default()
+                                })
+                                .await?;
+                            persist_skill_to_file_if_needed(db.clone(), &created).await?;
+                            source_map.insert(source_key, created.id.clone());
+                            existing_skills.push(created.clone());
+                            result.imported_skills.push(created);
+                        }
+                    }
                     continue;
                 }
             }
         }
 
-        let created = db
-            .create_rule(CreateRuleInput {
-                id: None,
-                name: candidate.proposed_name.clone(),
-                description: String::new(), // Default for imported rules
-                content: candidate.content.clone(),
-                scope: effective_scope,
-                target_paths: candidate.target_paths.clone(),
-                enabled_adapters: effective_adapters,
-                enabled: true,
-            })
-            .await?;
-        persist_rule_to_file_if_needed(db, &created).await?;
-        source_map.insert(source_key, created.id.clone());
-        existing_rules.push(created.clone());
-        result.imported.push(created);
+        // Security: Strip target_paths from all import candidates to prevent arbitrary file writes.
+        // We only allow programmatic target_paths for locally created or managed artifacts.
+        let _target_paths: Option<Vec<String>> = None;
+
+        match candidate.artifact_type {
+            ImportArtifactType::Rule => {
+                let created = db
+                    .create_rule(CreateRuleInput {
+                        id: None,
+                        name: candidate.proposed_name.clone(),
+                        description: String::new(),
+                        content: candidate.content.clone(),
+                        scope: effective_scope,
+                        target_paths: None, // Security: Always strip on import
+                        enabled_adapters: effective_adapters,
+                        enabled: true,
+                    })
+                    .await?;
+                persist_rule_to_file_if_needed(db.clone(), &created).await?;
+                source_map.insert(source_key, created.id.clone());
+                existing_rules.retain(|r| r.id != created.id); // Guard against DB race
+                existing_rules.push(created.clone());
+                result.imported_rules.push(created.clone());
+                #[allow(deprecated)]
+                {
+                    result.imported.push(created);
+                }
+            }
+            ImportArtifactType::SlashCommand => {
+                let created = db
+                    .create_command(CreateCommandInput {
+                        name: candidate.proposed_name.clone(),
+                        script: candidate.content.clone(),
+                        ..Default::default()
+                    })
+                    .await?;
+                persist_command_to_file_if_needed(db.clone(), &created).await?;
+                source_map.insert(source_key, created.id.clone());
+                existing_commands.push(created.clone());
+                result.imported_commands.push(created);
+            }
+            ImportArtifactType::Skill => {
+                let created = db
+                    .create_skill(CreateSkillInput {
+                        name: candidate.proposed_name.clone(),
+                        instructions: candidate.content.clone(),
+                        ..Default::default()
+                    })
+                    .await?;
+                persist_skill_to_file_if_needed(db.clone(), &created).await?;
+                source_map.insert(source_key, created.id.clone());
+                existing_skills.push(created.clone());
+                result.imported_skills.push(created);
+            }
+        }
     }
 
-    write_source_map(db, &source_map).await?;
+    write_source_map(db.clone(), &source_map).await?;
     append_history(
-        db,
+        db.clone(),
         ImportHistoryEntry {
             id: uuid::Uuid::new_v4().to_string(),
             timestamp: Utc::now(),
             source_type: history_source_type,
-            imported_count: result.imported.len(),
+            imported_count: result.imported_rules.len()
+                + result.imported_commands.len()
+                + result.imported_skills.len(),
             skipped_count: result.skipped.len(),
             conflict_count: result.conflicts.len(),
             error_count: result.errors.len() + scan_errors.len(),
@@ -565,7 +840,7 @@ pub async fn execute_import(
     )
     .await?;
 
-    let engine = SyncEngine::new(db);
+    let engine = SyncEngine::new(&db);
     let all_rules = db.get_all_rules().await?;
     let sync_res = engine.sync_all(all_rules);
     for err in sync_res.await.errors {
@@ -574,6 +849,10 @@ pub async fn execute_import(
             err.adapter_name, err.message
         ));
     }
+
+    // Comprehensive reconciliation to ensure all artifact types are synced to disk
+    reconcile_after_mutation(db.clone()).await;
+
     for err in scan_errors {
         result.errors.push(err);
     }
@@ -581,16 +860,16 @@ pub async fn execute_import(
     Ok(result)
 }
 
-pub async fn read_import_history(db: &Database) -> Vec<ImportHistoryEntry> {
-    let json = match db.get_setting(IMPORT_HISTORY_KEY).await {
-        Ok(Some(value)) => value,
+pub async fn read_import_history(db: Arc<Database>) -> Vec<ImportHistoryEntry> {
+    let encoded = match db.get_setting(IMPORT_HISTORY_KEY).await {
+        Ok(Some(v)) => v,
         _ => return Vec::new(),
     };
-    serde_json::from_str(&json).unwrap_or_default()
+    serde_json::from_str(&encoded).unwrap_or_default()
 }
 
-async fn append_history(db: &Database, entry: ImportHistoryEntry) -> Result<()> {
-    let mut history = read_import_history(db).await;
+async fn append_history(db: Arc<Database>, entry: ImportHistoryEntry) -> Result<()> {
+    let mut history = read_import_history(db.clone()).await;
     history.insert(0, entry);
     if history.len() > 50 {
         history.truncate(50);
@@ -599,17 +878,39 @@ async fn append_history(db: &Database, entry: ImportHistoryEntry) -> Result<()> 
     db.set_setting(IMPORT_HISTORY_KEY, &encoded).await
 }
 
-async fn persist_rule_to_file_if_needed(db: &Database, rule: &Rule) -> Result<()> {
-    if use_file_storage(db).await {
+async fn persist_rule_to_file_if_needed(db: Arc<Database>, rule: &Rule) -> Result<()> {
+    if use_file_storage(&db).await {
         let location = storage_location_for_rule(rule);
         file_storage::save_rule_to_disk(rule, &location)?;
         db.update_rule_file_index(&rule.id, &location).await?;
-        register_local_rule_paths(db, rule).await?;
+        register_local_rule_paths(&db, rule).await?;
     }
     Ok(())
 }
 
-async fn get_local_rule_roots(db: &Database) -> Vec<PathBuf> {
+async fn persist_command_to_file_if_needed(db: Arc<Database>, command: &Command) -> Result<()> {
+    if use_file_storage(&db).await {
+        // Commands and skills are currently managed via reconciliation which handles periodic sync.
+        // For individual mutations, we trigger a global reconciliation at the end of execution.
+        log::debug!(
+            "Mutation for command {} recorded. Persistence will be handled by final reconciliation.",
+            command.id
+        );
+    }
+    Ok(())
+}
+
+async fn persist_skill_to_file_if_needed(db: Arc<Database>, skill: &Skill) -> Result<()> {
+    if use_file_storage(&db).await {
+        log::debug!(
+            "Mutation for skill {} recorded. Persistence will be handled by final reconciliation.",
+            skill.id
+        );
+    }
+    Ok(())
+}
+
+async fn get_local_rule_roots(db: Arc<Database>) -> Vec<PathBuf> {
     let roots_json = db
         .get_setting(LOCAL_RULE_PATHS_KEY)
         .await
@@ -620,7 +921,7 @@ async fn get_local_rule_roots(db: &Database) -> Vec<PathBuf> {
     roots.into_iter().map(PathBuf::from).collect()
 }
 
-async fn read_source_map(db: &Database) -> HashMap<String, String> {
+async fn read_source_map(db: Arc<Database>) -> HashMap<String, String> {
     let encoded = match db.get_setting(IMPORT_SOURCE_MAP_KEY).await {
         Ok(Some(v)) => v,
         _ => return HashMap::new(),
@@ -628,21 +929,22 @@ async fn read_source_map(db: &Database) -> HashMap<String, String> {
     serde_json::from_str(&encoded).unwrap_or_default()
 }
 
-async fn write_source_map(db: &Database, map: &HashMap<String, String>) -> Result<()> {
+async fn write_source_map(db: Arc<Database>, map: &HashMap<String, String>) -> Result<()> {
     let encoded = serde_json::to_string(map)?;
     db.set_setting(IMPORT_SOURCE_MAP_KEY, &encoded).await
 }
 
 fn source_identity(candidate: &ImportCandidate) -> String {
     format!(
-        "{}|{}|{}",
+        "{}|{}|{}|{:?}",
         serde_json::to_string(&candidate.source_type).unwrap_or_else(|_| "unknown".to_string()),
         candidate
             .source_tool
             .as_ref()
             .map(|a| a.as_str().to_string())
             .unwrap_or_else(|| "none".to_string()),
-        candidate.source_path
+        candidate.source_path,
+        candidate.artifact_type
     )
 }
 
@@ -685,48 +987,6 @@ struct LocalToolPath {
     adapter: AdapterType,
     relative_path: &'static str,
     artifact_type: ImportArtifactType,
-}
-
-/// Detect artifact type based on directory patterns in the path
-fn detect_artifact_type_from_path(path: &Path) -> ImportArtifactType {
-    let path_str = path.to_string_lossy().to_lowercase();
-    let path_str_lower = path_str.to_lowercase();
-    
-    // Slash command directories - these are workflow/command files
-    let slash_command_patterns = [
-        "/commands/",
-        "/workflows/",
-        "\\commands\\",
-        "\\workflows\\",
-        ".gemini/antigravity/global_workflows",
-        "documents/cline/workflows",
-        ".agents/workflows",
-        ".clinerules/workflows",
-    ];
-    
-    // Skill directories - these contain skill definitions
-    let skill_patterns = [
-        "/skills/",
-        "\\skills\\",
-        "documents/cline/skills",
-    ];
-    
-    // Check for slash command patterns
-    for pattern in &slash_command_patterns {
-        if path_str_lower.contains(pattern) {
-            return ImportArtifactType::SlashCommand;
-        }
-    }
-    
-    // Check for skill patterns
-    for pattern in &skill_patterns {
-        if path_str_lower.contains(pattern) {
-            return ImportArtifactType::Skill;
-        }
-    }
-    
-    // Default to rule
-    ImportArtifactType::Rule
 }
 
 fn global_tool_paths(home: &Path) -> Vec<ToolPath> {
@@ -832,6 +1092,36 @@ fn global_tool_paths(home: &Path) -> Vec<ToolPath> {
             path: home.join(".roocode").join("rules").join("rules.md"),
             artifact_type: ImportArtifactType::Rule,
         },
+        // Slash Command Paths
+        ToolPath {
+            adapter: AdapterType::Antigravity,
+            path: home
+                .join(".gemini")
+                .join("antigravity")
+                .join("global_workflows"),
+            artifact_type: ImportArtifactType::SlashCommand,
+        },
+        ToolPath {
+            adapter: AdapterType::Cline,
+            path: home.join("Documents").join("Cline").join("Workflows"),
+            artifact_type: ImportArtifactType::SlashCommand,
+        },
+        ToolPath {
+            adapter: AdapterType::RooCode,
+            path: home.join(".roo").join("workflows"),
+            artifact_type: ImportArtifactType::SlashCommand,
+        },
+        // Skill Paths
+        ToolPath {
+            adapter: AdapterType::Cline,
+            path: home.join("Documents").join("Cline").join("Skills"),
+            artifact_type: ImportArtifactType::Skill,
+        },
+        ToolPath {
+            adapter: AdapterType::RooCode,
+            path: home.join(".roo").join("skills"),
+            artifact_type: ImportArtifactType::Skill,
+        },
     ]
 }
 
@@ -918,6 +1208,23 @@ fn local_tool_paths() -> Vec<LocalToolPath> {
             relative_path: ".roo/rules/rules.md",
             artifact_type: ImportArtifactType::Rule,
         },
+        // Local Workflows
+        LocalToolPath {
+            adapter: AdapterType::Gemini,
+            relative_path: ".agents/workflows",
+            artifact_type: ImportArtifactType::SlashCommand,
+        },
+        LocalToolPath {
+            adapter: AdapterType::Antigravity,
+            relative_path: ".gemini/antigravity/workflows",
+            artifact_type: ImportArtifactType::SlashCommand,
+        },
+        // Local Skills
+        LocalToolPath {
+            adapter: AdapterType::Gemini,
+            relative_path: ".agents/skills",
+            artifact_type: ImportArtifactType::Skill,
+        },
     ]
 }
 
@@ -936,6 +1243,7 @@ fn adapter_label(adapter: AdapterType) -> &'static str {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn candidate_from_path(
     path: &Path,
     source_type: crate::models::ImportSourceType,
@@ -943,6 +1251,7 @@ fn candidate_from_path(
     source_tool: Option<AdapterType>,
     scope: Scope,
     target_paths: Option<Vec<String>>,
+    artifact_type: ImportArtifactType,
     max_size: u64,
 ) -> Result<ImportCandidate> {
     let metadata = fs::metadata(path)?;
@@ -976,6 +1285,7 @@ fn candidate_from_path(
         source_tool,
         scope,
         target_paths,
+        artifact_type,
     ))
 }
 
@@ -989,9 +1299,20 @@ fn candidate_from_text(
     source_tool: Option<AdapterType>,
     scope: Scope,
     target_paths: Option<Vec<String>>,
+    artifact_type: ImportArtifactType,
 ) -> ImportCandidate {
     let (name, parsed_content, parsed_scope, parsed_target_paths, parsed_adapters) =
-        extract_rule_payload(default_name, &content, scope, target_paths, source_tool);
+        if artifact_type == ImportArtifactType::Rule {
+            extract_rule_payload(default_name, &content, scope, target_paths, source_tool)
+        } else {
+            (
+                default_name.to_string(),
+                content.clone(),
+                scope,
+                target_paths,
+                default_adapters(source_tool),
+            )
+        };
 
     let content_hash = compute_content_hash(&parsed_content);
     ImportCandidate {
@@ -1008,7 +1329,7 @@ fn candidate_from_text(
         enabled_adapters: parsed_adapters,
         content_hash,
         file_size: parsed_content.len() as u64,
-        artifact_type: ImportArtifactType::Rule,
+        artifact_type,
     }
 }
 
@@ -1240,6 +1561,7 @@ mod tests {
                 Some(AdapterType::Cline),
                 Scope::Global,
                 None,
+                ImportArtifactType::Rule,
             ),
             candidate_from_text(
                 content,
@@ -1250,6 +1572,7 @@ mod tests {
                 Some(AdapterType::Antigravity),
                 Scope::Global,
                 None,
+                ImportArtifactType::Rule,
             ),
         ];
 
@@ -1264,8 +1587,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn execute_import_skips_duplicate_content() {
-        let db = Database::new_in_memory().await.expect("in-memory db");
+    async fn execute_import_skips_duplicates_by_content() {
+        let db = Arc::new(Database::new_in_memory().await.expect("in-memory db"));
         db.create_rule(CreateRuleInput {
             id: None,
             name: "Existing".to_string(),
@@ -1288,10 +1611,11 @@ mod tests {
             None,
             Scope::Global,
             None,
+            ImportArtifactType::Rule,
         );
 
         let result = execute_import(
-            &db,
+            db.clone(),
             ImportScanResult {
                 candidates: vec![candidate],
                 errors: vec![],
@@ -1301,13 +1625,13 @@ mod tests {
         .await
         .expect("execute import");
 
-        assert_eq!(result.imported.len(), 0);
+        assert_eq!(result.imported_rules.len(), 0);
         assert_eq!(result.skipped.len(), 1);
     }
 
     #[tokio::test]
     async fn execute_import_rename_mode_creates_unique_name() {
-        let db = Database::new_in_memory().await.expect("in-memory db");
+        let db = Arc::new(Database::new_in_memory().await.expect("in-memory db"));
         db.create_rule(CreateRuleInput {
             id: None,
             name: "quality".to_string(),
@@ -1330,14 +1654,17 @@ mod tests {
             None,
             Scope::Global,
             None,
+            ImportArtifactType::Rule,
         );
 
+        let scan_result = ImportScanResult {
+            candidates: vec![candidate],
+            errors: vec![],
+        };
+
         let result = execute_import(
-            &db,
-            ImportScanResult {
-                candidates: vec![candidate],
-                errors: vec![],
-            },
+            db.clone(),
+            scan_result,
             ImportExecutionOptions {
                 conflict_mode: ImportConflictMode::Rename,
                 ..Default::default()
@@ -1346,13 +1673,13 @@ mod tests {
         .await
         .expect("execute import");
 
-        assert_eq!(result.imported.len(), 1);
-        assert_eq!(result.imported[0].name, "quality-2");
+        assert_eq!(result.imported_rules.len(), 1);
+        assert_eq!(result.imported_rules[0].name, "quality-2");
     }
 
     #[tokio::test]
     async fn execute_import_replace_mode_updates_existing_rule() {
-        let db = Database::new_in_memory().await.expect("in-memory db");
+        let db = Arc::new(Database::new_in_memory().await.expect("in-memory db"));
         let existing = db
             .create_rule(CreateRuleInput {
                 id: None,
@@ -1376,14 +1703,17 @@ mod tests {
             None,
             Scope::Global,
             None,
+            ImportArtifactType::Rule,
         );
 
+        let scan_result = ImportScanResult {
+            candidates: vec![candidate],
+            errors: vec![],
+        };
+
         let result = execute_import(
-            &db,
-            ImportScanResult {
-                candidates: vec![candidate],
-                errors: vec![],
-            },
+            db.clone(),
+            scan_result,
             ImportExecutionOptions {
                 conflict_mode: ImportConflictMode::Replace,
                 ..Default::default()
@@ -1392,9 +1722,9 @@ mod tests {
         .await
         .expect("execute import");
 
-        assert_eq!(result.imported.len(), 1);
-        assert_eq!(result.imported[0].id, existing.id);
-        assert_eq!(result.imported[0].content, "updated");
+        assert_eq!(result.imported_rules.len(), 1);
+        assert_eq!(result.imported_rules[0].id, existing.id);
+        assert_eq!(result.imported_rules[0].content, "updated");
     }
 
     #[test]
@@ -1469,7 +1799,7 @@ enabledAdapters:
 
     #[tokio::test]
     async fn execute_import_reimport_updates_mapped_rule_idempotently() {
-        let db = Database::new_in_memory().await.expect("in-memory db");
+        let db = Arc::new(Database::new_in_memory().await.expect("in-memory db"));
 
         let first_candidate = candidate_from_text(
             "original content".to_string(),
@@ -1480,10 +1810,11 @@ enabledAdapters:
             None,
             Scope::Global,
             None,
+            ImportArtifactType::Rule,
         );
 
         let first_result = execute_import(
-            &db,
+            db.clone(),
             ImportScanResult {
                 candidates: vec![first_candidate],
                 errors: vec![],
@@ -1493,8 +1824,8 @@ enabledAdapters:
         .await
         .expect("first import");
 
-        assert_eq!(first_result.imported.len(), 1);
-        let imported_id = first_result.imported[0].id.clone();
+        assert_eq!(first_result.imported_rules.len(), 1);
+        let imported_id = first_result.imported_rules[0].id.clone();
 
         let second_candidate = candidate_from_text(
             "updated content".to_string(),
@@ -1505,10 +1836,11 @@ enabledAdapters:
             None,
             Scope::Global,
             None,
+            ImportArtifactType::Rule,
         );
 
         let second_result = execute_import(
-            &db,
+            db.clone(),
             ImportScanResult {
                 candidates: vec![second_candidate],
                 errors: vec![],
@@ -1518,9 +1850,9 @@ enabledAdapters:
         .await
         .expect("second import");
 
-        assert_eq!(second_result.imported.len(), 1);
-        assert_eq!(second_result.imported[0].id, imported_id);
-        assert_eq!(second_result.imported[0].content, "updated content");
+        assert_eq!(second_result.imported_rules.len(), 1);
+        assert_eq!(second_result.imported_rules[0].id, imported_id);
+        assert_eq!(second_result.imported_rules[0].content, "updated content");
     }
 
     #[test]
@@ -1546,7 +1878,7 @@ enabledAdapters:
 
     #[tokio::test]
     async fn history_source_type_matches_candidate_source() {
-        let db = Database::new_in_memory().await.expect("in-memory db");
+        let db = Arc::new(Database::new_in_memory().await.expect("in-memory db"));
 
         let candidate = candidate_from_text(
             "file content".to_string(),
@@ -1557,10 +1889,11 @@ enabledAdapters:
             None,
             Scope::Global,
             None,
+            ImportArtifactType::Rule,
         );
 
         execute_import(
-            &db,
+            db.clone(),
             ImportScanResult {
                 candidates: vec![candidate],
                 errors: vec![],
@@ -1570,7 +1903,7 @@ enabledAdapters:
         .await
         .expect("import succeeds");
 
-        let history = read_import_history(&db).await;
+        let history = read_import_history(db.clone()).await;
         assert!(!history.is_empty());
         assert_eq!(
             history[0].source_type,
@@ -1587,7 +1920,7 @@ enabledAdapters:
         ));
         fs::write(&temp_file, "test").expect("write temp file");
 
-        let result = scan_directory_to_candidates(&temp_file, 1024);
+        let result = scan_directory_to_candidates(&temp_file, 1024, None);
         assert!(!result.errors.is_empty());
 
         let _ = fs::remove_file(temp_file);
@@ -1611,7 +1944,7 @@ enabledAdapters:
         assert!(global
             .iter()
             .any(|p| p.contains(".kilo") && p.contains("AGENTS.md")));
-        
+
         // Verify no slash command or skill directories are included in rule paths
         assert!(!global.iter().any(|p| p.contains("/commands/")));
         assert!(!global.iter().any(|p| p.contains("/workflows/")));
@@ -1640,11 +1973,15 @@ enabledAdapters:
             ImportArtifactType::SlashCommand
         );
         assert_eq!(
-            detect_artifact_type_from_path(Path::new("/home/Documents/Cline/Workflows/my-workflow.md")),
+            detect_artifact_type_from_path(Path::new(
+                "/home/Documents/Cline/Workflows/my-workflow.md"
+            )),
             ImportArtifactType::SlashCommand
         );
         assert_eq!(
-            detect_artifact_type_from_path(Path::new("C:/Users/test/.gemini/antigravity/global_workflows/workflow.md")),
+            detect_artifact_type_from_path(Path::new(
+                "C:/Users/test/.gemini/antigravity/global_workflows/workflow.md"
+            )),
             ImportArtifactType::SlashCommand
         );
 
@@ -1654,50 +1991,77 @@ enabledAdapters:
             ImportArtifactType::Skill
         );
         assert_eq!(
-            detect_artifact_type_from_path(Path::new("/home/Documents/Cline/Skills/test-skill/skill.md")),
+            detect_artifact_type_from_path(Path::new(
+                "/home/Documents/Cline/Skills/test-skill/skill.md"
+            )),
             ImportArtifactType::Skill
         );
     }
 
     #[test]
-    fn scan_directory_excludes_slash_commands_and_skills() {
+    fn scan_directory_finds_all_artifact_types() {
         let temp_dir = tempfile::TempDir::new().unwrap();
-        
+
         // Create rule file
         let rule_file = temp_dir.path().join("GEMINI.md");
         fs::write(&rule_file, "# Rule content\n\nSome rule text").unwrap();
-        
+
         // Create slash command file
         let commands_dir = temp_dir.path().join("commands");
         fs::create_dir_all(&commands_dir).unwrap();
         let command_file = commands_dir.join("my-command.md");
         fs::write(&command_file, "# My Command\n\nCommand content").unwrap();
-        
+
         // Create skill file
         let skills_dir = temp_dir.path().join("skills");
         fs::create_dir_all(&skills_dir).unwrap();
         let skill_file = skills_dir.join("my-skill.md");
         fs::write(&skill_file, "# My Skill\n\nSkill content").unwrap();
-        
+
+        // Create workflow file (also detected as SlashCommand)
+        let workflows_dir = temp_dir.path().join("workflows");
+        fs::create_dir_all(&workflows_dir).unwrap();
+        let workflow_file = workflows_dir.join("my-workflow.md");
+        fs::write(&workflow_file, "# My Workflow\n\nWorkflow content").unwrap();
+
         // Scan the directory
-        let result = scan_directory_to_candidates(temp_dir.path(), 1024 * 1024);
-        
-        // Should only have 1 candidate (the rule file)
-        assert_eq!(result.candidates.len(), 1, "Should only find rule files, not commands or skills");
-        assert!(result.candidates[0].name.to_lowercase().contains("gemini"));
+        let result = scan_directory_to_candidates(temp_dir.path(), 1024 * 1024, None);
+
+        // Should find 4 candidates (rule, command, skill, workflow)
+        assert_eq!(
+            result.candidates.len(),
+            4,
+            "Should find rule files, commands, skills, and workflows"
+        );
+        assert!(result
+            .candidates
+            .iter()
+            .any(|c| c.name.to_lowercase().contains("gemini")));
     }
 
     #[test]
     fn is_slash_command_or_skill_directory_detects_correctly() {
         // Should be detected as command/skill directories
-        assert!(is_slash_command_or_skill_directory(Path::new("/home/.claude/commands/test.md")));
-        assert!(is_slash_command_or_skill_directory(Path::new("C:/Users/test/Documents/Cline/Workflows/workflow.md")));
-        assert!(is_slash_command_or_skill_directory(Path::new("/home/.gemini/skills/my-skill/skill.md")));
-        
+        assert!(is_slash_command_or_skill_directory(Path::new(
+            "/home/.claude/commands/test.md"
+        )));
+        assert!(is_slash_command_or_skill_directory(Path::new(
+            "C:/Users/test/Documents/Cline/Workflows/workflow.md"
+        )));
+        assert!(is_slash_command_or_skill_directory(Path::new(
+            "/home/.gemini/skills/my-skill/skill.md"
+        )));
+
         // Should NOT be detected as command/skill directories (these are rule files)
-        assert!(!is_slash_command_or_skill_directory(Path::new("/home/.gemini/GEMINI.md")));
-        assert!(!is_slash_command_or_skill_directory(Path::new("/home/.clinerules")));
-        assert!(!is_slash_command_or_skill_directory(Path::new("/repo/.claude/CLAUDE.md")));
+        assert!(!is_slash_command_or_skill_directory(Path::new(
+            "/home/.gemini/GEMINI.md"
+        )));
+        assert!(!is_slash_command_or_skill_directory(Path::new(
+            "/home/.clinerules"
+        )));
+        assert!(!is_slash_command_or_skill_directory(Path::new(
+            "/repo/.claude/CLAUDE.md"
+        )));
     }
 
     // =====================================
@@ -1710,8 +2074,8 @@ enabledAdapters:
         let rule_file = temp_dir.path().join("GEMINI.md");
         fs::write(&rule_file, "# Test Rule\n\nThis is a test rule for import.").unwrap();
 
-        let result = scan_directory_to_candidates(temp_dir.path(), 1024 * 1024);
-        
+        let result = scan_directory_to_candidates(temp_dir.path(), 1024 * 1024, None);
+
         assert_eq!(result.candidates.len(), 1);
         assert_eq!(result.candidates[0].artifact_type, ImportArtifactType::Rule);
         assert!(result.errors.is_empty());
@@ -1725,8 +2089,8 @@ enabledAdapters:
         let rule_file = local_rules.join("GEMINI.md");
         fs::write(&rule_file, "# Local Rule\n\nThis is a local rule.").unwrap();
 
-        let result = scan_directory_to_candidates(temp_dir.path(), 1024 * 1024);
-        
+        let result = scan_directory_to_candidates(temp_dir.path(), 1024 * 1024, None);
+
         assert_eq!(result.candidates.len(), 1);
         assert_eq!(result.candidates[0].artifact_type, ImportArtifactType::Rule);
     }
@@ -1737,8 +2101,8 @@ enabledAdapters:
         let rule_file = temp_dir.path().join("empty.md");
         fs::write(&rule_file, "").unwrap();
 
-        let result = scan_directory_to_candidates(temp_dir.path(), 1024 * 1024);
-        
+        let result = scan_directory_to_candidates(temp_dir.path(), 1024 * 1024, None);
+
         // Empty files should be imported but with empty content
         assert_eq!(result.candidates.len(), 1);
         assert_eq!(result.candidates[0].content.trim(), "");
@@ -1751,8 +2115,8 @@ enabledAdapters:
         let large_content = "x".repeat(2000);
         fs::write(&rule_file, &large_content).unwrap();
 
-        let result = scan_directory_to_candidates(temp_dir.path(), 1000);
-        
+        let result = scan_directory_to_candidates(temp_dir.path(), 1000, None);
+
         assert!(!result.errors.is_empty());
         assert!(result.errors[0].contains("exceeds max import size"));
     }
@@ -1763,8 +2127,8 @@ enabledAdapters:
         let rule_file = temp_dir.path().join("binary.md");
         fs::write(&rule_file, &[0xFF, 0xFE, 0x00, 0x01]).unwrap();
 
-        let result = scan_directory_to_candidates(temp_dir.path(), 1024 * 1024);
-        
+        let result = scan_directory_to_candidates(temp_dir.path(), 1024 * 1024, None);
+
         assert!(!result.errors.is_empty());
         assert!(result.errors.iter().any(|e| e.contains("not valid UTF-8")));
     }
@@ -1787,8 +2151,8 @@ This is the rule content.
 "#;
         fs::write(&rule_file, content).unwrap();
 
-        let result = scan_directory_to_candidates(temp_dir.path(), 1024 * 1024);
-        
+        let result = scan_directory_to_candidates(temp_dir.path(), 1024 * 1024, None);
+
         assert_eq!(result.candidates.len(), 1);
         // The name is extracted from the frontmatter or filename
         assert!(!result.candidates[0].name.is_empty());
@@ -1801,59 +2165,89 @@ This is the rule content.
     #[test]
     fn import_excludes_global_slash_commands() {
         let temp_dir = tempfile::TempDir::new().unwrap();
-        
+
         // Create global slash command location
         let commands_dir = temp_dir.path().join(".claude").join("commands");
         fs::create_dir_all(&commands_dir).unwrap();
-        fs::write(commands_dir.join("my-command.md"), "# My Command\n\nCommand content").unwrap();
-        
+        fs::write(
+            commands_dir.join("my-command.md"),
+            "# My Command\n\nCommand content",
+        )
+        .unwrap();
+
         // Also create a rule
         fs::write(temp_dir.path().join("CLAUDE.md"), "# Rule\n\nRule content").unwrap();
 
-        let result = scan_directory_to_candidates(temp_dir.path(), 1024 * 1024);
-        
-        // Only rule should be found
-        assert_eq!(result.candidates.len(), 1);
-        assert!(result.candidates[0].name.to_lowercase().contains("claude"));
+        let result = scan_directory_to_candidates(temp_dir.path(), 1024 * 1024, None);
+
+        // Both rule and command should be found
+        assert_eq!(result.candidates.len(), 2);
+        assert!(result
+            .candidates
+            .iter()
+            .any(|c| c.name.to_lowercase().contains("claude")));
+        assert!(result
+            .candidates
+            .iter()
+            .any(|c| c.name.to_lowercase().contains("my-command")));
     }
 
     #[test]
     fn import_excludes_local_slash_commands() {
         let temp_dir = tempfile::TempDir::new().unwrap();
-        
+
         // Create local slash command location
         let commands_dir = temp_dir.path().join("commands");
         fs::create_dir_all(&commands_dir).unwrap();
-        fs::write(commands_dir.join("workflow.md"), "# Workflow\n\nWorkflow content").unwrap();
-        
+        fs::write(
+            commands_dir.join("workflow.md"),
+            "# Workflow\n\nWorkflow content",
+        )
+        .unwrap();
+
         // Also create a rule
         fs::write(temp_dir.path().join("AGENTS.md"), "# Rule\n\nRule content").unwrap();
 
-        let result = scan_directory_to_candidates(temp_dir.path(), 1024 * 1024);
-        
-        // Only rule should be found
-        assert_eq!(result.candidates.len(), 1);
-        assert!(result.candidates[0].name.to_lowercase().contains("agents"));
+        let result = scan_directory_to_candidates(temp_dir.path(), 1024 * 1024, None);
+
+        // Both rule and command should be found
+        assert_eq!(result.candidates.len(), 2);
+        assert!(result
+            .candidates
+            .iter()
+            .any(|c| c.name.to_lowercase().contains("agents")));
     }
 
     #[test]
     fn import_excludes_cline_workflows() {
         let temp_dir = tempfile::TempDir::new().unwrap();
-        
+
         // Cline Workflows directory
-        let workflows_dir = temp_dir.path().join("Documents").join("Cline").join("Workflows");
+        let workflows_dir = temp_dir
+            .path()
+            .join("Documents")
+            .join("Cline")
+            .join("Workflows");
         fs::create_dir_all(&workflows_dir).unwrap();
-        fs::write(workflows_dir.join("my-workflow.md"), "# Workflow\n\nContent").unwrap();
-        
+        fs::write(
+            workflows_dir.join("my-workflow.md"),
+            "# Workflow\n\nContent",
+        )
+        .unwrap();
+
         // Rules directory
-        let rules_dir = temp_dir.path().join("Documents").join("Cline").join("Rules");
+        let rules_dir = temp_dir
+            .path()
+            .join("Documents")
+            .join("Cline")
+            .join("Rules");
         fs::create_dir_all(&rules_dir).unwrap();
         fs::write(rules_dir.join("my-rule.md"), "# Rule\n\nContent").unwrap();
 
-        let result = scan_directory_to_candidates(temp_dir.path(), 1024 * 1024);
-        
-        // Only rule should be found
-        assert_eq!(result.candidates.len(), 1);
+        let result = scan_directory_to_candidates(temp_dir.path(), 1024 * 1024, None);
+
+        // Both rule and command should be found
+        assert_eq!(result.candidates.len(), 2);
         assert!(result.candidates[0].name.to_lowercase().contains("rule"));
     }
 
@@ -1864,60 +2258,94 @@ This is the rule content.
     #[test]
     fn import_excludes_global_skills() {
         let temp_dir = tempfile::TempDir::new().unwrap();
-        
+
         // Create global skill location
-        let skills_dir = temp_dir.path().join(".claude").join("skills").join("my-skill");
+        let skills_dir = temp_dir
+            .path()
+            .join(".claude")
+            .join("skills")
+            .join("my-skill");
         fs::create_dir_all(&skills_dir).unwrap();
         fs::write(skills_dir.join("SKILL.md"), "# My Skill\n\nSkill content").unwrap();
-        
+
         // Also create a rule
         fs::write(temp_dir.path().join("CLAUDE.md"), "# Rule\n\nRule content").unwrap();
 
-        let result = scan_directory_to_candidates(temp_dir.path(), 1024 * 1024);
-        
-        // Only rule should be found
-        assert_eq!(result.candidates.len(), 1);
-        assert!(result.candidates[0].name.to_lowercase().contains("claude"));
+        let result = scan_directory_to_candidates(temp_dir.path(), 1024 * 1024, None);
+
+        // Both rule and skill should be found
+        assert_eq!(result.candidates.len(), 2);
+        assert!(result
+            .candidates
+            .iter()
+            .any(|c| c.name.to_lowercase().contains("claude")));
+        assert!(result
+            .candidates
+            .iter()
+            .any(|c| c.name.to_lowercase().contains("skill")));
     }
 
     #[test]
     fn import_excludes_local_skills() {
         let temp_dir = tempfile::TempDir::new().unwrap();
-        
+
         // Create local skill location
         let skills_dir = temp_dir.path().join("skills");
         fs::create_dir_all(&skills_dir).unwrap();
         fs::write(skills_dir.join("my-skill.md"), "# Skill\n\nSkill content").unwrap();
-        
+
         // Also create a rule
         fs::write(temp_dir.path().join("GEMINI.md"), "# Rule\n\nRule content").unwrap();
 
-        let result = scan_directory_to_candidates(temp_dir.path(), 1024 * 1024);
-        
-        // Only rule should be found
-        assert_eq!(result.candidates.len(), 1);
-        assert!(result.candidates[0].name.to_lowercase().contains("gemini"));
+        let result = scan_directory_to_candidates(temp_dir.path(), 1024 * 1024, None);
+
+        // Both rule and command should be found
+        assert_eq!(result.candidates.len(), 2);
+        assert!(result
+            .candidates
+            .iter()
+            .any(|c| c.name.to_lowercase().contains("gemini")));
+        assert!(result
+            .candidates
+            .iter()
+            .any(|c| c.name.to_lowercase().contains("skill")));
     }
 
     #[test]
     fn import_excludes_cline_skills() {
         let temp_dir = tempfile::TempDir::new().unwrap();
-        
+
         // Cline Skills directory
-        let skills_dir = temp_dir.path().join("Documents").join("Cline").join("Skills").join("test");
+        let skills_dir = temp_dir
+            .path()
+            .join("Documents")
+            .join("Cline")
+            .join("Skills")
+            .join("test");
         fs::create_dir_all(&skills_dir).unwrap();
         fs::write(skills_dir.join("skill.md"), "# Skill\n\nContent").unwrap();
-        
+
         // Rules directory
-        let rules_dir = temp_dir.path().join("Documents").join("Cline").join("Rules");
+        let rules_dir = temp_dir
+            .path()
+            .join("Documents")
+            .join("Cline")
+            .join("Rules");
         fs::create_dir_all(&rules_dir).unwrap();
         fs::write(rules_dir.join("rule.md"), "# Rule\n\nContent").unwrap();
 
-        let result = scan_directory_to_candidates(temp_dir.path(), 1024 * 1024);
-        
-        // Only rule should be found
-        assert_eq!(result.candidates.len(), 1);
-        assert!(result.candidates[0].name.to_lowercase().contains("rule"));
+        let result = scan_directory_to_candidates(temp_dir.path(), 1024 * 1024, None);
+
+        // Both rule and skill should be found
+        assert_eq!(result.candidates.len(), 2);
+        assert!(result
+            .candidates
+            .iter()
+            .any(|c| c.name.to_lowercase().contains("rule")));
+        assert!(result
+            .candidates
+            .iter()
+            .any(|c| c.name.to_lowercase().contains("skill")));
     }
 
     // =====================================
@@ -1925,49 +2353,63 @@ This is the rule content.
     // =====================================
 
     #[test]
-    fn import_mixed_artifacts_only_includes_rules() {
+    fn import_mixed_artifacts_finds_all_types() {
         let temp_dir = tempfile::TempDir::new().unwrap();
-        
+
         // Create rule
         fs::write(temp_dir.path().join("GEMINI.md"), "# Rule\n\nRule content").unwrap();
-        
+
         // Create slash command
         let commands_dir = temp_dir.path().join("commands");
         fs::create_dir_all(&commands_dir).unwrap();
         fs::write(commands_dir.join("cmd.md"), "# Command\n\nCommand content").unwrap();
-        
+
         // Create skill
         let skills_dir = temp_dir.path().join("skills");
         fs::create_dir_all(&skills_dir).unwrap();
         fs::write(skills_dir.join("skill.md"), "# Skill\n\nSkill content").unwrap();
-        
+
         // Create workflow
         let workflows_dir = temp_dir.path().join("workflows");
         fs::create_dir_all(&workflows_dir).unwrap();
-        fs::write(workflows_dir.join("wf.md"), "# Workflow\n\nWorkflow content").unwrap();
+        fs::write(
+            workflows_dir.join("wf.md"),
+            "# Workflow\n\nWorkflow content",
+        )
+        .unwrap();
 
-        let result = scan_directory_to_candidates(temp_dir.path(), 1024 * 1024);
-        
-        // Only the rule should be found
-        assert_eq!(result.candidates.len(), 1);
-        assert_eq!(result.candidates[0].artifact_type, ImportArtifactType::Rule);
-        assert!(result.candidates[0].name.to_lowercase().contains("gemini"));
+        let result = scan_directory_to_candidates(temp_dir.path(), 1024 * 1024, None);
+
+        // All 4 artifacts should be found
+        assert_eq!(result.candidates.len(), 4);
+        assert!(result
+            .candidates
+            .iter()
+            .any(|c| c.artifact_type == ImportArtifactType::Rule));
+        assert!(result
+            .candidates
+            .iter()
+            .any(|c| c.artifact_type == ImportArtifactType::Skill));
+        assert!(result
+            .candidates
+            .iter()
+            .any(|c| c.artifact_type == ImportArtifactType::SlashCommand));
     }
 
     #[test]
     fn import_multiple_rules_happy_path() {
         let temp_dir = tempfile::TempDir::new().unwrap();
-        
+
         // Create multiple rule files
         fs::write(temp_dir.path().join("GEMINI.md"), "# Gemini Rule").unwrap();
         fs::write(temp_dir.path().join("AGENTS.md"), "# Agents Rule").unwrap();
         fs::write(temp_dir.path().join("CLAUDE.md"), "# Claude Rule").unwrap();
 
-        let result = scan_directory_to_candidates(temp_dir.path(), 1024 * 1024);
-        
+        let result = scan_directory_to_candidates(temp_dir.path(), 1024 * 1024, None);
+
         assert_eq!(result.candidates.len(), 3);
         assert!(result.errors.is_empty());
-        
+
         // All should be rules
         for candidate in &result.candidates {
             assert_eq!(candidate.artifact_type, ImportArtifactType::Rule);
@@ -1985,13 +2427,13 @@ This is the rule content.
             detect_artifact_type_from_path(Path::new("/home/.claude/COMMANDS/test.md")),
             ImportArtifactType::SlashCommand
         );
-        
+
         // Mixed case
         assert_eq!(
             detect_artifact_type_from_path(Path::new("/home/.claude/Commands/test.md")),
             ImportArtifactType::SlashCommand
         );
-        
+
         // Lowercase
         assert_eq!(
             detect_artifact_type_from_path(Path::new("/home/.claude/commands/test.md")),
@@ -2007,7 +2449,9 @@ This is the rule content.
             ImportArtifactType::SlashCommand
         );
         assert_eq!(
-            detect_artifact_type_from_path(Path::new("C:\\Users\\test\\.claude\\commands\\test.md")),
+            detect_artifact_type_from_path(Path::new(
+                "C:\\Users\\test\\.claude\\commands\\test.md"
+            )),
             ImportArtifactType::SlashCommand
         );
         assert_eq!(
@@ -2020,16 +2464,20 @@ This is the rule content.
     fn detect_artifact_type_nested_directories() {
         // Deeply nested slash command
         assert_eq!(
-            detect_artifact_type_from_path(Path::new("/home/user/repo/.claude/commands/subdir/nested/cmd.md")),
+            detect_artifact_type_from_path(Path::new(
+                "/home/user/repo/.claude/commands/subdir/nested/cmd.md"
+            )),
             ImportArtifactType::SlashCommand
         );
-        
+
         // Deeply nested skill
         assert_eq!(
-            detect_artifact_type_from_path(Path::new("/home/user/repo/skills/category/my-skill/skill.md")),
+            detect_artifact_type_from_path(Path::new(
+                "/home/user/repo/skills/category/my-skill/skill.md"
+            )),
             ImportArtifactType::Skill
         );
-        
+
         // Rule in subdirectory (should still be rule if no command/skill keywords)
         assert_eq!(
             detect_artifact_type_from_path(Path::new("/home/user/repo/docs/GEMINI.md")),

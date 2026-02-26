@@ -1,4 +1,4 @@
-import { Plus, Search } from "lucide-react";
+import { Plus, Search, FolderUp } from "lucide-react";
 import { CommandTemplateBrowser } from "./CommandTemplateBrowser";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,7 @@ interface CommandListProps {
   onQueryChange: (q: string) => void;
   onCreate: () => void;
   onSync: () => void;
+  onImport: () => void;
 }
 
 export function CommandList({
@@ -29,6 +30,7 @@ export function CommandList({
   onQueryChange,
   onCreate,
   onSync,
+  onImport,
 }: CommandListProps) {
   return (
     <Card className="glass-card premium-shadow border-none overflow-hidden">
@@ -42,6 +44,10 @@ export function CommandList({
             <Button size="sm" onClick={onCreate} disabled={isSaving} className="glow-primary h-8">
               <Plus className="mr-1.5 h-3.5 w-3.5" />
               New
+            </Button>
+            <Button size="sm" variant="outline" onClick={onImport} className="glass h-8">
+              <FolderUp className="mr-1.5 h-3.5 w-3.5" />
+              Import
             </Button>
           </div>
         </div>

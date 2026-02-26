@@ -100,6 +100,7 @@ describe("RulesList import workflow", () => {
           scope: "global",
           targetPaths: null,
           enabledAdapters: ["cline"],
+          artifactType: "rule",
           contentHash: "hash",
           fileSize: 12,
         },
@@ -116,7 +117,9 @@ describe("RulesList import workflow", () => {
     });
 
     expect(screen.getByText("Import Existing AI Tool Rules")).toBeInTheDocument();
-    expect(screen.getByText("quality-cline")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText("quality-cline")).toBeInTheDocument();
+    });
   });
 
   it("imports selected AI candidates from preview dialog", async () => {
@@ -135,6 +138,7 @@ describe("RulesList import workflow", () => {
           scope: "global",
           targetPaths: null,
           enabledAdapters: ["cline"],
+          artifactType: "rule",
           contentHash: "hash",
           fileSize: 12,
         },
@@ -143,6 +147,9 @@ describe("RulesList import workflow", () => {
     });
     vi.mocked(api.ruleImport.importAiToolRules).mockResolvedValue({
       imported: [],
+      importedRules: [],
+      importedCommands: [],
+      importedSkills: [],
       skipped: [],
       conflicts: [],
       errors: [],
@@ -153,7 +160,7 @@ describe("RulesList import workflow", () => {
     await userEvent.click(screen.getByRole("button", { name: /import ai/i }));
     await waitFor(() => expect(screen.getByText("quality-cline")).toBeInTheDocument());
 
-    await userEvent.click(screen.getByRole("button", { name: /import selected/i }));
+    await userEvent.click(screen.getByRole("button", { name: /process import/i }));
 
     await waitFor(() => {
       expect(api.ruleImport.importAiToolRules).toHaveBeenCalledWith(
@@ -181,6 +188,7 @@ describe("RulesList import workflow", () => {
           scope: "global",
           targetPaths: null,
           enabledAdapters: ["cline"],
+          artifactType: "rule",
           contentHash: "hash",
           fileSize: 12,
         },
@@ -189,6 +197,9 @@ describe("RulesList import workflow", () => {
     });
     vi.mocked(api.ruleImport.importAiToolRules).mockResolvedValue({
       imported: [],
+      importedRules: [],
+      importedCommands: [],
+      importedSkills: [],
       skipped: [],
       conflicts: [],
       errors: [],
@@ -200,7 +211,7 @@ describe("RulesList import workflow", () => {
     await waitFor(() => expect(screen.getByText("quality-cline")).toBeInTheDocument());
 
     await userEvent.selectOptions(screen.getByLabelText(/conflict mode/i), "replace");
-    await userEvent.click(screen.getByRole("button", { name: /import selected/i }));
+    await userEvent.click(screen.getByRole("button", { name: /process import/i }));
 
     await waitFor(() => {
       expect(api.ruleImport.importAiToolRules).toHaveBeenCalledWith(
@@ -230,6 +241,7 @@ describe("RulesList import workflow", () => {
           scope: "global",
           targetPaths: null,
           enabledAdapters: ["gemini"],
+          artifactType: "rule",
           contentHash: "hash",
           fileSize: 12,
         },
@@ -238,6 +250,9 @@ describe("RulesList import workflow", () => {
     });
     vi.mocked(api.ruleImport.importFromFile).mockResolvedValue({
       imported: [],
+      importedRules: [],
+      importedCommands: [],
+      importedSkills: [],
       skipped: [],
       conflicts: [],
       errors: [],
@@ -251,8 +266,8 @@ describe("RulesList import workflow", () => {
     });
 
     expect(screen.getByText("Import Rules From File")).toBeInTheDocument();
-    expect(screen.getByText(/Source: C:\/tmp\/rule\.md/i)).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: /import selected/i }));
+    expect(screen.getAllByText(/C:\/tmp\/rule\.md/i).length).toBeGreaterThan(0);
+    await userEvent.click(screen.getByRole("button", { name: /process import/i }));
 
     await waitFor(() => {
       expect(api.ruleImport.importFromFile).toHaveBeenCalledWith(
@@ -278,6 +293,7 @@ describe("RulesList import workflow", () => {
           scope: "global",
           targetPaths: null,
           enabledAdapters: ["cline"],
+          artifactType: "rule",
           contentHash: "hash",
           fileSize: 12,
         },
@@ -286,6 +302,9 @@ describe("RulesList import workflow", () => {
     });
     vi.mocked(api.ruleImport.importAiToolRules).mockResolvedValue({
       imported: [],
+      importedRules: [],
+      importedCommands: [],
+      importedSkills: [],
       skipped: [],
       conflicts: [],
       errors: [],
@@ -300,7 +319,7 @@ describe("RulesList import workflow", () => {
     await userEvent.click(screen.getByLabelText(/enable adapter override/i));
     await userEvent.click(screen.getByLabelText(/use adapter gemini/i));
 
-    await userEvent.click(screen.getByRole("button", { name: /import selected/i }));
+    await userEvent.click(screen.getByRole("button", { name: /process import/i }));
 
     await waitFor(() => {
       expect(api.ruleImport.importAiToolRules).toHaveBeenCalledWith(
@@ -317,7 +336,7 @@ describe("RulesList import workflow", () => {
     renderWithProviders(<RulesList onSelectRule={vi.fn()} onCreateRule={vi.fn()} />);
 
     await userEvent.click(screen.getByRole("button", { name: /import url/i }));
-    await userEvent.click(screen.getByRole("button", { name: /scan url/i }));
+    await userEvent.click(screen.getByRole("button", { name: /scan remote source/i }));
 
     expect(screen.getByText(/URL Required/i)).toBeInTheDocument();
   });

@@ -17,7 +17,7 @@ pub async fn scan_ai_tool_import_candidates(
 ) -> Result<ImportScanResult> {
     let opts = options.unwrap_or_default();
     let max_size = rule_import::resolve_max_size(&opts);
-    rule_import::scan_ai_tool_candidates(&db, max_size).await
+    rule_import::scan_ai_tool_candidates(db.inner().clone(), max_size).await
 }
 
 #[tauri::command]
@@ -27,8 +27,36 @@ pub async fn import_ai_tool_rules(
 ) -> Result<ImportExecutionResult> {
     let opts = options.unwrap_or_default();
     let max_size = rule_import::resolve_max_size(&opts);
-    let scan = rule_import::scan_ai_tool_candidates(&db, max_size).await?;
-    rule_import::execute_import(&db, scan, opts).await
+    let mut scan = rule_import::scan_ai_tool_candidates(db.inner().clone(), max_size).await?;
+    scan.candidates
+        .retain(|c| c.artifact_type == crate::models::ImportArtifactType::Rule);
+    rule_import::execute_import(db.inner().clone(), scan, opts).await
+}
+
+#[tauri::command]
+pub async fn import_ai_tool_commands(
+    options: Option<ImportExecutionOptions>,
+    db: State<'_, Arc<Database>>,
+) -> Result<ImportExecutionResult> {
+    let opts = options.unwrap_or_default();
+    let max_size = rule_import::resolve_max_size(&opts);
+    let mut scan = rule_import::scan_ai_tool_candidates(db.inner().clone(), max_size).await?;
+    scan.candidates
+        .retain(|c| c.artifact_type == crate::models::ImportArtifactType::SlashCommand);
+    rule_import::execute_import(db.inner().clone(), scan, opts).await
+}
+
+#[tauri::command]
+pub async fn import_ai_tool_skills(
+    options: Option<ImportExecutionOptions>,
+    db: State<'_, Arc<Database>>,
+) -> Result<ImportExecutionResult> {
+    let opts = options.unwrap_or_default();
+    let max_size = rule_import::resolve_max_size(&opts);
+    let mut scan = rule_import::scan_ai_tool_candidates(db.inner().clone(), max_size).await?;
+    scan.candidates
+        .retain(|c| c.artifact_type == crate::models::ImportArtifactType::Skill);
+    rule_import::execute_import(db.inner().clone(), scan, opts).await
 }
 
 #[tauri::command]
@@ -40,7 +68,7 @@ pub async fn import_rule_from_file(
     let opts = options.unwrap_or_default();
     let max_size = rule_import::resolve_max_size(&opts);
     let scan = rule_import::scan_file_to_candidates(&PathBuf::from(path), max_size);
-    rule_import::execute_import(&db, scan, opts).await
+    rule_import::execute_import(db.inner().clone(), scan, opts).await
 }
 
 #[tauri::command]
@@ -61,8 +89,12 @@ pub async fn import_rules_from_directory(
 ) -> Result<ImportExecutionResult> {
     let opts = options.unwrap_or_default();
     let max_size = rule_import::resolve_max_size(&opts);
-    let scan = rule_import::scan_directory_to_candidates(&PathBuf::from(path), max_size);
-    rule_import::execute_import(&db, scan, opts).await
+    let scan = rule_import::scan_directory_to_candidates(
+        &PathBuf::from(path),
+        max_size,
+        Some(crate::models::ImportArtifactType::Rule),
+    );
+    rule_import::execute_import(db.inner().clone(), scan, opts).await
 }
 
 #[tauri::command]
@@ -72,7 +104,11 @@ pub fn scan_rule_directory_import(
 ) -> ImportScanResult {
     let opts = options.unwrap_or_default();
     let max_size = rule_import::resolve_max_size(&opts);
-    rule_import::scan_directory_to_candidates(&PathBuf::from(path), max_size)
+    rule_import::scan_directory_to_candidates(
+        &PathBuf::from(path),
+        max_size,
+        Some(crate::models::ImportArtifactType::Rule),
+    )
 }
 
 #[tauri::command]
@@ -84,7 +120,7 @@ pub async fn import_rule_from_url(
     let opts = options.unwrap_or_default();
     let max_size = rule_import::resolve_max_size(&opts);
     let scan = rule_import::scan_url_to_candidates(&url, max_size).await?;
-    rule_import::execute_import(&db, scan, opts).await
+    rule_import::execute_import(db.inner().clone(), scan, opts).await
 }
 
 #[tauri::command]
@@ -107,7 +143,7 @@ pub async fn import_rule_from_clipboard(
     let opts = options.unwrap_or_default();
     let max_size = rule_import::resolve_max_size(&opts);
     let scan = rule_import::scan_clipboard_to_candidates(&content, name.as_deref(), max_size)?;
-    rule_import::execute_import(&db, scan, opts).await
+    rule_import::execute_import(db.inner().clone(), scan, opts).await
 }
 
 #[tauri::command]
@@ -122,8 +158,70 @@ pub fn scan_rule_clipboard_import(
 }
 
 #[tauri::command]
-pub async fn get_rule_import_history(db: State<'_, Arc<Database>>) -> Result<Vec<ImportHistoryEntry>> {
-    Ok(rule_import::read_import_history(&db).await)
+pub async fn get_rule_import_history(
+    db: State<'_, Arc<Database>>,
+) -> Result<Vec<ImportHistoryEntry>> {
+    Ok(rule_import::read_import_history(db.inner().clone()).await)
+}
+
+#[tauri::command]
+pub async fn import_commands_from_directory(
+    path: String,
+    options: Option<ImportExecutionOptions>,
+    db: State<'_, Arc<Database>>,
+) -> Result<ImportExecutionResult> {
+    let opts = options.unwrap_or_default();
+    let max_size = rule_import::resolve_max_size(&opts);
+    let scan = rule_import::scan_directory_to_candidates(
+        &PathBuf::from(path),
+        max_size,
+        Some(crate::models::ImportArtifactType::SlashCommand),
+    );
+    rule_import::execute_import(db.inner().clone(), scan, opts).await
+}
+
+#[tauri::command]
+pub fn scan_command_directory_import(
+    path: String,
+    options: Option<ImportExecutionOptions>,
+) -> ImportScanResult {
+    let opts = options.unwrap_or_default();
+    let max_size = rule_import::resolve_max_size(&opts);
+    rule_import::scan_directory_to_candidates(
+        &PathBuf::from(path),
+        max_size,
+        Some(crate::models::ImportArtifactType::SlashCommand),
+    )
+}
+
+#[tauri::command]
+pub async fn import_skills_from_directory(
+    path: String,
+    options: Option<ImportExecutionOptions>,
+    db: State<'_, Arc<Database>>,
+) -> Result<ImportExecutionResult> {
+    let opts = options.unwrap_or_default();
+    let max_size = rule_import::resolve_max_size(&opts);
+    let scan = rule_import::scan_directory_to_candidates(
+        &PathBuf::from(path),
+        max_size,
+        Some(crate::models::ImportArtifactType::Skill),
+    );
+    rule_import::execute_import(db.inner().clone(), scan, opts).await
+}
+
+#[tauri::command]
+pub fn scan_skill_directory_import(
+    path: String,
+    options: Option<ImportExecutionOptions>,
+) -> ImportScanResult {
+    let opts = options.unwrap_or_default();
+    let max_size = rule_import::resolve_max_size(&opts);
+    rule_import::scan_directory_to_candidates(
+        &PathBuf::from(path),
+        max_size,
+        Some(crate::models::ImportArtifactType::Skill),
+    )
 }
 
 #[cfg(test)]

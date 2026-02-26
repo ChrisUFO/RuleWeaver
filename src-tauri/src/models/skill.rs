@@ -211,7 +211,7 @@ pub fn validate_skill_entry_point(entry_point: &str) -> Result<()> {
     Ok(())
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateSkillInput {
     pub id: Option<String>,
