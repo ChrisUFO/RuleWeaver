@@ -1200,6 +1200,7 @@ fn adapter_label(adapter: AdapterType) -> &'static str {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn candidate_from_path(
     path: &Path,
     source_type: crate::models::ImportSourceType,
