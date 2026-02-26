@@ -436,7 +436,7 @@ impl SlashCommandSyncEngine {
                     if reader
                         .lines()
                         .take(5)
-                        .any(|line| line.map_or(false, |l| l.contains(RULEWEAVER_MARKER)))
+                        .any(|line| line.is_ok_and(|l| l.contains(RULEWEAVER_MARKER)))
                     {
                         candidates.push(path);
                     }
