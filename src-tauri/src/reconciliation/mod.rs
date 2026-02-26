@@ -1462,6 +1462,8 @@ mod tests {
             generate_slash_commands: false,
             slash_command_adapters: vec![],
             target_paths: vec![],
+            timeout_ms: None,
+            max_retries: None,
         })
         .await
         .unwrap();
@@ -1494,6 +1496,8 @@ mod tests {
             generate_slash_commands: true,
             slash_command_adapters: vec!["claude-code".to_string()],
             target_paths: vec![],
+            timeout_ms: None,
+            max_retries: None,
         })
         .await
         .unwrap();
@@ -2040,6 +2044,8 @@ mod tests {
                 generate_slash_commands: true,
                 slash_command_adapters: vec!["claude-code".to_string(), "opencode".to_string()],
                 target_paths: vec![],
+                timeout_ms: None,
+                max_retries: None,
             })
             .await
             .unwrap();
@@ -2083,6 +2089,8 @@ mod tests {
                 generate_slash_commands: true,
                 slash_command_adapters: vec!["claude-code".to_string()],
                 target_paths: vec!["/test/repo".to_string()],
+                timeout_ms: None,
+                max_retries: None,
             })
             .await
             .unwrap();
@@ -2129,6 +2137,8 @@ mod tests {
                 generate_slash_commands: false,
                 slash_command_adapters: vec![],
                 target_paths: vec![],
+                timeout_ms: None,
+                max_retries: None,
             })
             .await
             .unwrap();
@@ -2172,6 +2182,8 @@ mod tests {
                 generate_slash_commands: false,
                 slash_command_adapters: vec![],
                 target_paths: vec![],
+                timeout_ms: None,
+                max_retries: None,
             })
             .await
             .unwrap();
@@ -2211,6 +2223,8 @@ mod tests {
                 generate_slash_commands: false,
                 slash_command_adapters: vec![],
                 target_paths: vec![],
+                timeout_ms: None,
+                max_retries: None,
             })
             .await
             .unwrap();

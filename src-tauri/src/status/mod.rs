@@ -220,7 +220,7 @@ impl StatusEngine {
             };
             let scope = found.scope.unwrap_or(Scope::Global);
 
-            if !self.matches_filter(adapter, artifact_type, scope, found.scope.and_then(|_| Some(String::new())).as_ref(), filter) {
+            if !self.matches_filter(adapter, artifact_type, scope, found.scope.map(|_| String::new()).as_ref(), filter) {
                 continue;
             }
 

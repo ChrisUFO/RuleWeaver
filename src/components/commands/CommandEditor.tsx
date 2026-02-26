@@ -1,4 +1,4 @@
-import { Play, Trash2, CheckCircle, Loader2 } from "lucide-react";
+import { Play, Trash2, CheckCircle, Loader2, Shield, AlertTriangle, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -6,7 +6,12 @@ import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import { SlashCommandsSection } from "./SlashCommandsSection";
 import type { CommandModel, ExecutionLog } from "@/types/command";
-import type { CommandFormData, TestOutput, AdapterInfo, SlashSyncStatus } from "@/hooks/useCommandsState";
+import type {
+  CommandFormData,
+  TestOutput,
+  AdapterInfo,
+  SlashSyncStatus,
+} from "@/hooks/useCommandsState";
 
 interface CommandEditorProps {
   selected: CommandModel | null;
@@ -192,6 +197,54 @@ export function CommandEditor({
           onRepairAdapter={onRepairSlashCommand}
         />
 
+        <div className="rounded-xl border border-white/5 bg-white/5 p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Shield className="h-4 w-4 text-primary/60" />
+            <span className="text-sm font-semibold">Execution Policy</span>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-2">
+              <label htmlFor="timeout-ms" className="text-xs text-muted-foreground">
+                Timeout (ms)
+              </label>
+              <Input
+                id="timeout-ms"
+                type="number"
+                min={1000}
+                step={1000}
+                value={form.timeoutMs ?? ""}
+                onChange={(e) =>
+                  onUpdateForm({
+                    timeoutMs: e.target.value ? parseInt(e.target.value, 10) : null,
+                  })
+                }
+                placeholder="30000 (default)"
+              />
+            </div>
+            <div className="grid gap-2">
+              <label htmlFor="max-retries" className="text-xs text-muted-foreground">
+                Max Retries
+              </label>
+              <Input
+                id="max-retries"
+                type="number"
+                min={0}
+                max={3}
+                value={form.maxRetries ?? ""}
+                onChange={(e) =>
+                  onUpdateForm({
+                    maxRetries: e.target.value ? parseInt(e.target.value, 10) : null,
+                  })
+                }
+                placeholder="0 (default)"
+              />
+            </div>
+          </div>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Retries apply to transient failures (timeouts, network errors). Maximum 3 retries.
+          </p>
+        </div>
+
         {selected.arguments.length > 0 && (
           <div className="rounded-md border p-3 space-y-2">
             <div className="text-sm font-medium">Test Arguments</div>
@@ -273,7 +326,28 @@ export function CommandEditor({
             {commandHistory.slice(0, 10).map((h) => (
               <div key={h.id} className="rounded border p-2">
                 <div className="flex items-center justify-between text-xs">
-                  <span className="font-medium">exit {h.exitCode}</span>
+                  <div className="flex items-center gap-2">
+                    <span className={`font-medium ${h.exitCode !== 0 ? "text-red-400" : ""}`}>
+                      exit {h.exitCode}
+                    </span>
+                    {h.failureClass && h.failureClass !== "Success" && (
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                        <AlertTriangle className="h-3 w-3" />
+                        {h.failureClass}
+                      </span>
+                    )}
+                    {h.isRedacted && (
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] bg-slate-500/20 text-slate-400 border border-slate-500/30">
+                        <EyeOff className="h-3 w-3" />
+                        redacted
+                      </span>
+                    )}
+                    {(h.attemptNumber ?? 1) > 1 && (
+                      <span className="text-[10px] text-muted-foreground">
+                        attempt {h.attemptNumber}
+                      </span>
+                    )}
+                  </div>
                   <span className="text-muted-foreground">{h.durationMs}ms</span>
                 </div>
                 <div className="mt-1 truncate text-xs text-muted-foreground">

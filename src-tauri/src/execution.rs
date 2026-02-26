@@ -5,6 +5,8 @@ use tokio::time::timeout;
 use crate::constants::limits::{MAX_ARG_LENGTH, MAX_SCRIPT_LENGTH};
 use crate::database::{Database, ExecutionLogInput};
 use crate::error::{AppError, Result};
+use crate::models::FailureClass;
+use crate::redaction::redact;
 
 pub fn template_token(arg_name: &str) -> String {
     format!("{{{{{}}}}}", arg_name)
@@ -74,8 +76,6 @@ pub fn sanitize_argument_value(value: &str) -> Result<String> {
 
         #[cfg(not(target_os = "windows"))]
         {
-            // On Unix, to prevent word splitting and glob expansion on unquoted
-            // variables, we must escape the argument to be a single shell literal.
             let mut escaped = String::with_capacity(value.len() + 2);
             escaped.push('\'');
             escaped.push_str(&value.replace('\'', "'\\''"));
@@ -95,16 +95,13 @@ pub fn sanitize_argument_value(value: &str) -> Result<String> {
 
 #[cfg(target_os = "windows")]
 fn escape_cmd_argument(value: &str) -> String {
-    // Fast path: if no special characters are present, we can avoid allocating a new string.
     if !value.chars().any(|c| matches!(c, '^' | '&' | '<' | '>' | '|' | '(' | ')' | '%' | '!' | '"')) {
         return value.to_string();
     }
 
-    // Pre-allocate with some extra space to reduce reallocations.
     let mut escaped = String::with_capacity(value.len() + 16);
     for c in value.chars() {
         match c {
-            // Escape special cmd characters with ^
             '^' | '&' | '<' | '>' | '|' | '(' | ')' | '%' | '!' | '"' => {
                 escaped.push('^');
                 escaped.push(c);
@@ -129,8 +126,8 @@ pub fn contains_disallowed_pattern(script: &str) -> Option<String> {
         ("base64 -d", "encoding", "base64 decode"),
         ("base64 --decode", "encoding", "base64 decode"),
         ("| sh", "shell pipe", "pipe to shell"),
-        ("| bash", "shell pipe", "pipe to shell"),
-        ("| zsh", "shell pipe", "pipe to shell"),
+        ("| bash", "shell pipe", "pipe to bash"),
+        ("| zsh", "shell pipe", "pipe to zsh"),
         ("`", "substitution", "backticks"),
         ("$(", "substitution", "command substitution"),
         ("eval ", "dynamic execution", "eval"),
@@ -173,7 +170,6 @@ pub async fn execute_shell_with_timeout_env_dir(
         });
     }
 
-    // Validate that the current working directory is accessible
     if let Err(e) = std::env::current_dir() {
         return Err(AppError::Io(e));
     }
@@ -209,6 +205,45 @@ pub async fn execute_shell_with_timeout_env_dir(
     }
 }
 
+pub fn classify_failure(exit_code: i32, stderr: &str, is_timeout: bool) -> FailureClass {
+    if is_timeout {
+        return FailureClass::Timeout;
+    }
+
+    if exit_code == 0 {
+        return FailureClass::Success;
+    }
+
+    let stderr_lower = stderr.to_lowercase();
+
+    if stderr_lower.contains("permission denied")
+        || stderr_lower.contains("access is denied")
+        || stderr_lower.contains("access denied")
+        || stderr_lower.contains("eacces")
+    {
+        return FailureClass::PermissionDenied;
+    }
+
+    if stderr_lower.contains("command not found")
+        || stderr_lower.contains("is not recognized")
+        || stderr_lower.contains("' is not recognized")
+        || stderr_lower.contains("no such file or directory")
+        || stderr_lower.contains("enoent")
+    {
+        return FailureClass::MissingBinary;
+    }
+
+    if stderr_lower.contains("invalid argument")
+        || stderr_lower.contains("invalid option")
+        || stderr_lower.contains("validation")
+        || stderr_lower.contains("invalid input")
+    {
+        return FailureClass::ValidationError;
+    }
+
+    FailureClass::NonZeroExit
+}
+
 pub struct ExecuteAndLogInput<'a> {
     pub db: Option<&'a Database>,
     pub command_id: &'a str,
@@ -218,33 +253,103 @@ pub struct ExecuteAndLogInput<'a> {
     pub envs: &'a [(String, String)],
     pub arguments_json: &'a str,
     pub triggered_by: &'a str,
+    pub max_retries: Option<u8>,
+    pub adapter_context: Option<&'a str>,
 }
 
 pub async fn execute_and_log(input: ExecuteAndLogInput<'_>) -> Result<(i32, String, String, u64)> {
-    let start = std::time::Instant::now();
-    let result = execute_shell_with_timeout_env(input.script, input.timeout_dur, input.envs).await;
-    let duration_ms = start.elapsed().as_millis() as u64;
+    let max_attempts = input.max_retries.map(|r| (r as u32) + 1).unwrap_or(1).min(4);
+    
+    let mut last_exit_code: i32 = 0;
+    let mut last_stdout = String::new();
+    let mut last_stderr = String::new();
+    let mut last_duration_ms: u64 = 0;
 
-    match result {
-        Ok((exit_code, stdout, stderr)) => {
-            if let Some(db) = input.db {
-                let _ = db
-                    .add_execution_log(&ExecutionLogInput {
-                        command_id: input.command_id,
-                        command_name: input.command_name,
-                        arguments_json: input.arguments_json,
-                        stdout: &stdout,
-                        stderr: &stderr,
-                        exit_code,
-                        duration_ms,
-                        triggered_by: input.triggered_by,
-                    })
-                    .await;
+    for attempt in 1..=max_attempts {
+        let attempt_start = std::time::Instant::now();
+        
+        match execute_shell_with_timeout_env(input.script, input.timeout_dur, input.envs).await {
+            Ok((exit_code, stdout, stderr)) => {
+                let (stdout_redacted, stdout_was_redacted) = redact(&stdout);
+                let (stderr_redacted, stderr_was_redacted) = redact(&stderr);
+                let is_redacted = stdout_was_redacted || stderr_was_redacted;
+                let is_timeout = false;
+                let failure_class = classify_failure(exit_code, &stderr_redacted, is_timeout);
+                let duration_ms = attempt_start.elapsed().as_millis() as u64;
+
+                last_exit_code = exit_code;
+                last_stdout = stdout_redacted.clone();
+                last_stderr = stderr_redacted.clone();
+                last_duration_ms = duration_ms;
+
+                if let Some(db) = input.db {
+                    let _ = db
+                        .add_execution_log(&ExecutionLogInput {
+                            command_id: input.command_id,
+                            command_name: input.command_name,
+                            arguments_json: input.arguments_json,
+                            stdout: &stdout_redacted,
+                            stderr: &stderr_redacted,
+                            exit_code,
+                            duration_ms,
+                            triggered_by: input.triggered_by,
+                            failure_class: Some(failure_class.as_str()),
+                            adapter_context: input.adapter_context,
+                            is_redacted,
+                            attempt_number: attempt as u8,
+                        })
+                        .await;
+                }
+
+                if exit_code == 0 {
+                    return Ok((exit_code, stdout_redacted, stderr_redacted, duration_ms));
+                }
+
+                let should_retry = attempt < max_attempts && failure_class.is_retryable();
+                if !should_retry {
+                    return Ok((exit_code, stdout_redacted, stderr_redacted, duration_ms));
+                }
             }
-            Ok((exit_code, stdout, stderr, duration_ms))
+            Err(AppError::InvalidInput { message }) if message.contains("timed out") => {
+                let failure_class = FailureClass::Timeout;
+                let duration_ms = input.timeout_dur.as_millis() as u64;
+
+                last_exit_code = -1;
+                last_stdout = String::new();
+                last_stderr = message.clone();
+                last_duration_ms = duration_ms;
+
+                if let Some(db) = input.db {
+                    let _ = db
+                        .add_execution_log(&ExecutionLogInput {
+                            command_id: input.command_id,
+                            command_name: input.command_name,
+                            arguments_json: input.arguments_json,
+                            stdout: "",
+                            stderr: &message,
+                            exit_code: -1,
+                            duration_ms,
+                            triggered_by: input.triggered_by,
+                            failure_class: Some(failure_class.as_str()),
+                            adapter_context: input.adapter_context,
+                            is_redacted: false,
+                            attempt_number: attempt as u8,
+                        })
+                        .await;
+                }
+
+                let should_retry = attempt < max_attempts && failure_class.is_retryable();
+                if !should_retry {
+                    return Err(AppError::InvalidInput { message });
+                }
+            }
+            Err(e) => {
+                return Err(e);
+            }
         }
-        Err(e) => Err(e),
     }
+
+    Ok((last_exit_code, last_stdout, last_stderr, last_duration_ms))
 }
 
 #[cfg(test)]
@@ -275,7 +380,45 @@ mod tests {
     #[cfg(not(target_os = "windows"))]
     fn test_sanitize_argument_value_unix_injection() {
         let input = "foo'; rm -rf /; echo 'bar";
-        // Expected: 'foo'\; rm -rf /; echo 'bar'
         assert_eq!(sanitize_argument_value(input).unwrap(), "'foo'\\'; rm -rf /; echo 'bar'");
+    }
+
+    #[test]
+    fn test_classify_failure_timeout() {
+        assert_eq!(classify_failure(0, "", true), FailureClass::Timeout);
+    }
+
+    #[test]
+    fn test_classify_failure_success() {
+        assert_eq!(classify_failure(0, "", false), FailureClass::Success);
+    }
+
+    #[test]
+    fn test_classify_failure_permission_denied() {
+        assert_eq!(classify_failure(1, "permission denied", false), FailureClass::PermissionDenied);
+    }
+
+    #[test]
+    fn test_classify_failure_missing_binary() {
+        assert_eq!(classify_failure(1, "command not found", false), FailureClass::MissingBinary);
+    }
+
+    #[test]
+    fn test_classify_failure_validation_error() {
+        assert_eq!(classify_failure(1, "invalid argument", false), FailureClass::ValidationError);
+    }
+
+    #[test]
+    fn test_classify_failure_non_zero_exit() {
+        assert_eq!(classify_failure(1, "some other error", false), FailureClass::NonZeroExit);
+    }
+
+    #[test]
+    fn test_failure_class_is_retryable() {
+        assert!(FailureClass::Timeout.is_retryable());
+        assert!(FailureClass::NonZeroExit.is_retryable());
+        assert!(FailureClass::PermissionDenied.is_retryable());
+        assert!(!FailureClass::ValidationError.is_retryable());
+        assert!(!FailureClass::MissingBinary.is_retryable());
     }
 }

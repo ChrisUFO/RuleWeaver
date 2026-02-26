@@ -19,6 +19,8 @@ export interface CommandFormData {
   slashCommandAdapters: string[];
   targetPaths: string[];
   testArgs: Record<string, string>;
+  timeoutMs: number | null;
+  maxRetries: number | null;
 }
 
 export interface TestOutput {
@@ -71,6 +73,8 @@ const initialFormData: CommandFormData = {
   slashCommandAdapters: [],
   targetPaths: [],
   testArgs: {},
+  timeoutMs: null,
+  maxRetries: null,
 };
 
 export function useCommandsState(
@@ -163,6 +167,8 @@ export function useCommandsState(
       slashCommandAdapters: selected.slashCommandAdapters ?? [],
       targetPaths: selected.targetPaths ?? [],
       testArgs: nextArgs,
+      timeoutMs: selected.timeoutMs ?? null,
+      maxRetries: selected.maxRetries ?? null,
     });
     if (selected.generateSlashCommands && (selected.slashCommandAdapters ?? []).length > 0) {
       loadSlashStatus(selected.id);
@@ -225,6 +231,8 @@ export function useCommandsState(
         generateSlashCommands: form.generateSlashCommands,
         slashCommandAdapters: form.slashCommandAdapters,
         targetPaths: form.targetPaths,
+        timeoutMs: form.timeoutMs ?? undefined,
+        maxRetries: form.maxRetries ?? undefined,
       });
       setCommands((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
       toast.success(addToast, { title: "Command Saved", description: updated.name });

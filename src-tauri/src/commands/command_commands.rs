@@ -274,6 +274,8 @@ async fn test_command_internal(
         envs: &envs,
         arguments_json: &args_json,
         triggered_by: "test",
+        max_retries: cmd.max_retries,
+        adapter_context: None,
     })
     .await?;
 

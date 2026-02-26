@@ -774,6 +774,8 @@ async fn handle_command_call(
         envs: &envs,
         arguments_json: &args_json,
         triggered_by: "mcp",
+        max_retries: cmd.max_retries,
+        adapter_context: Some("mcp"),
     })
     .await
     {
@@ -1009,6 +1011,10 @@ async fn handle_skill_call(
                 exit_code: if is_error { 1 } else { 0 },
                 duration_ms,
                 triggered_by: "mcp-skill",
+                failure_class: None,
+                adapter_context: Some("mcp-skill"),
+                is_redacted: false,
+                attempt_number: 1,
             })
             .await;
     }

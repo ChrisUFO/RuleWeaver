@@ -7,6 +7,7 @@ mod file_storage;
 mod mcp;
 mod models;
 mod path_resolver;
+mod redaction;
 mod reconciliation;
 mod rule_import;
 mod slash_commands;
@@ -466,6 +467,7 @@ pub fn run() {
             commands::get_mcp_connection_instructions,
             commands::get_mcp_logs,
             commands::get_execution_history,
+            commands::get_execution_history_filtered,
             slash_commands::commands::sync_slash_command,
             slash_commands::commands::sync_all_slash_commands,
             slash_commands::commands::get_slash_command_status,

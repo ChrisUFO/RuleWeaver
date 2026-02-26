@@ -16,6 +16,8 @@ export interface CommandModel {
   generateSlashCommands?: boolean;
   slashCommandAdapters?: string[];
   targetPaths?: string[];
+  timeoutMs?: number;
+  maxRetries?: number;
   createdAt: number;
   updatedAt: number;
 }
@@ -29,6 +31,8 @@ export interface CreateCommandInput {
   arguments?: CommandArgument[];
   exposeViaMcp?: boolean;
   targetPaths?: string[];
+  timeoutMs?: number;
+  maxRetries?: number;
 }
 
 export interface UpdateCommandInput {
@@ -41,6 +45,8 @@ export interface UpdateCommandInput {
   generateSlashCommands?: boolean;
   slashCommandAdapters?: string[];
   targetPaths?: string[];
+  timeoutMs?: number;
+  maxRetries?: number;
 }
 
 export interface TestCommandResult {
@@ -74,6 +80,10 @@ export interface ExecutionLog {
   durationMs: number;
   executedAt: number;
   triggeredBy: string;
+  failureClass?: string;
+  adapterContext?: string;
+  isRedacted?: boolean;
+  attemptNumber?: number;
 }
 export interface TemplateCommand {
   templateId: string;

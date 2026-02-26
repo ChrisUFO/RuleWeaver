@@ -37,6 +37,10 @@ pub struct ExecutionLogInput<'a> {
     pub exit_code: i32,
     pub duration_ms: u64,
     pub triggered_by: &'a str,
+    pub failure_class: Option<&'a str>,
+    pub adapter_context: Option<&'a str>,
+    pub is_redacted: bool,
+    pub attempt_number: u8,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -361,7 +365,7 @@ impl Database {
     pub async fn get_all_commands(&self) -> Result<Vec<Command>> {
         let conn = self.0.lock().await;
         let mut stmt = conn.prepare(
-            "SELECT id, name, description, script, arguments, expose_via_mcp, is_placeholder, generate_slash_commands, slash_command_adapters, target_paths, created_at, updated_at
+            "SELECT id, name, description, script, arguments, expose_via_mcp, is_placeholder, generate_slash_commands, slash_command_adapters, target_paths, created_at, updated_at, timeout_ms, max_retries
              FROM commands
              ORDER BY updated_at DESC",
         )?;
@@ -380,6 +384,8 @@ impl Database {
                 let target_paths_json: String = row.get(9)?;
                 let created_at: i64 = row.get(10)?;
                 let updated_at: i64 = row.get(11)?;
+                let timeout_ms: Option<i64> = row.get(12)?;
+                let max_retries: Option<i32> = row.get(13)?;
 
                 let arguments: Vec<CommandArgument> = serde_json::from_str(&arguments_json)
                     .map_err(|e| {
@@ -419,6 +425,8 @@ impl Database {
                     generate_slash_commands,
                     slash_command_adapters,
                     target_paths,
+                    timeout_ms: timeout_ms.map(|t| t as u64),
+                    max_retries: max_retries.map(|r| r as u8),
                     created_at: parse_timestamp_or_now(created_at),
                     updated_at: parse_timestamp_or_now(updated_at),
                 })
@@ -431,7 +439,7 @@ impl Database {
     pub async fn get_command_by_id(&self, id: &str) -> Result<Command> {
         let conn = self.0.lock().await;
         let mut stmt = conn.prepare(
-            "SELECT id, name, description, script, arguments, expose_via_mcp, is_placeholder, generate_slash_commands, slash_command_adapters, target_paths, created_at, updated_at
+            "SELECT id, name, description, script, arguments, expose_via_mcp, is_placeholder, generate_slash_commands, slash_command_adapters, target_paths, created_at, updated_at, timeout_ms, max_retries
              FROM commands
              WHERE id = ?",
         )?;
@@ -450,6 +458,8 @@ impl Database {
                 let target_paths_json: String = row.get(9)?;
                 let created_at: i64 = row.get(10)?;
                 let updated_at: i64 = row.get(11)?;
+                let timeout_ms: Option<i64> = row.get(12)?;
+                let max_retries: Option<i32> = row.get(13)?;
 
                 let arguments: Vec<CommandArgument> = serde_json::from_str(&arguments_json)
                     .map_err(|e| {
@@ -489,6 +499,8 @@ impl Database {
                     generate_slash_commands,
                     slash_command_adapters,
                     target_paths,
+                    timeout_ms: timeout_ms.map(|t| t as u64),
+                    max_retries: max_retries.map(|r| r as u8),
                     created_at: parse_timestamp_or_now(created_at),
                     updated_at: parse_timestamp_or_now(updated_at),
                 })
@@ -512,8 +524,8 @@ impl Database {
         let target_paths_json = serde_json::to_string(&input.target_paths)?;
 
         conn.execute(
-            "INSERT INTO commands (id, name, description, script, arguments, expose_via_mcp, is_placeholder, generate_slash_commands, slash_command_adapters, target_paths, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO commands (id, name, description, script, arguments, expose_via_mcp, is_placeholder, generate_slash_commands, slash_command_adapters, target_paths, created_at, updated_at, timeout_ms, max_retries)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             params![
                 id,
                 input.name,
@@ -526,7 +538,9 @@ impl Database {
                 slash_adapters_json,
                 target_paths_json,
                 now,
-                now
+                now,
+                input.timeout_ms.map(|t| t as i64),
+                input.max_retries.map(|r| r as i32)
             ],
         )?;
 
@@ -551,13 +565,15 @@ impl Database {
             .slash_command_adapters
             .unwrap_or(existing.slash_command_adapters);
         let target_paths = input.target_paths.unwrap_or(existing.target_paths);
+        let timeout_ms = input.timeout_ms.or(existing.timeout_ms);
+        let max_retries = input.max_retries.or(existing.max_retries);
         let now = chrono::Utc::now().timestamp();
         let arguments_json = serde_json::to_string(&arguments)?;
         let slash_adapters_json = serde_json::to_string(&slash_command_adapters)?;
         let target_paths_json = serde_json::to_string(&target_paths)?;
 
         conn.execute(
-            "UPDATE commands SET name = ?, description = ?, script = ?, arguments = ?, expose_via_mcp = ?, is_placeholder = ?, generate_slash_commands = ?, slash_command_adapters = ?, target_paths = ?, updated_at = ?
+            "UPDATE commands SET name = ?, description = ?, script = ?, arguments = ?, expose_via_mcp = ?, is_placeholder = ?, generate_slash_commands = ?, slash_command_adapters = ?, target_paths = ?, updated_at = ?, timeout_ms = ?, max_retries = ?
              WHERE id = ?",
             params![
                 name,
@@ -570,6 +586,8 @@ impl Database {
                 slash_adapters_json,
                 target_paths_json,
                 now,
+                timeout_ms.map(|t| t as i64),
+                max_retries.map(|r| r as i32),
                 id
             ],
         )?;
@@ -819,8 +837,8 @@ impl Database {
         let now = chrono::Utc::now().timestamp();
 
         conn.execute(
-            "INSERT INTO execution_logs (id, command_id, command_name, arguments, stdout, stderr, exit_code, duration_ms, executed_at, triggered_by)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO execution_logs (id, command_id, command_name, arguments, stdout, stderr, exit_code, duration_ms, executed_at, triggered_by, failure_class, adapter_context, is_redacted, attempt_number)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             params![
                 id,
                 input.command_id,
@@ -831,7 +849,11 @@ impl Database {
                 input.exit_code,
                 input.duration_ms as i64,
                 now,
-                input.triggered_by
+                input.triggered_by,
+                input.failure_class,
+                input.adapter_context,
+                input.is_redacted as i32,
+                input.attempt_number as i32
             ],
         )?;
 
@@ -841,7 +863,7 @@ impl Database {
     pub async fn get_execution_history(&self, limit: u32) -> Result<Vec<ExecutionLog>> {
         let conn = self.0.lock().await;
         let mut stmt = conn.prepare(
-            "SELECT id, command_id, command_name, arguments, stdout, stderr, exit_code, duration_ms, executed_at, triggered_by
+            "SELECT id, command_id, command_name, arguments, stdout, stderr, exit_code, duration_ms, executed_at, triggered_by, failure_class, adapter_context, is_redacted, attempt_number
              FROM execution_logs
              ORDER BY executed_at DESC
              LIMIT ?",
@@ -861,6 +883,85 @@ impl Database {
                     duration_ms: row.get::<_, i64>(7)? as u64,
                     executed_at: parse_timestamp_or_now(timestamp),
                     triggered_by: row.get(9)?,
+                    failure_class: row.get(10)?,
+                    adapter_context: row.get(11)?,
+                    is_redacted: row.get::<_, i32>(12)? != 0,
+                    attempt_number: row.get::<_, i32>(13)? as u8,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+
+        Ok(rows)
+    }
+
+    pub async fn get_execution_history_filtered(
+        &self,
+        command_id: Option<&str>,
+        failure_class: Option<&str>,
+        limit: u32,
+        offset: u32,
+    ) -> Result<Vec<ExecutionLog>> {
+        let conn = self.0.lock().await;
+
+        let (sql, params): (String, Vec<Box<dyn rusqlite::ToSql>>) = match (&command_id, &failure_class) {
+            (Some(cid), Some(fc)) => (
+                "SELECT id, command_id, command_name, arguments, stdout, stderr, exit_code, duration_ms, executed_at, triggered_by, failure_class, adapter_context, is_redacted, attempt_number
+                 FROM execution_logs
+                 WHERE command_id = ? AND failure_class = ?
+                 ORDER BY executed_at DESC
+                 LIMIT ? OFFSET ?"
+                    .to_string(),
+                vec![Box::new(cid.to_string()), Box::new(fc.to_string()), Box::new(limit as i64), Box::new(offset as i64)],
+            ),
+            (Some(cid), None) => (
+                "SELECT id, command_id, command_name, arguments, stdout, stderr, exit_code, duration_ms, executed_at, triggered_by, failure_class, adapter_context, is_redacted, attempt_number
+                 FROM execution_logs
+                 WHERE command_id = ?
+                 ORDER BY executed_at DESC
+                 LIMIT ? OFFSET ?"
+                    .to_string(),
+                vec![Box::new(cid.to_string()), Box::new(limit as i64), Box::new(offset as i64)],
+            ),
+            (None, Some(fc)) => (
+                "SELECT id, command_id, command_name, arguments, stdout, stderr, exit_code, duration_ms, executed_at, triggered_by, failure_class, adapter_context, is_redacted, attempt_number
+                 FROM execution_logs
+                 WHERE failure_class = ?
+                 ORDER BY executed_at DESC
+                 LIMIT ? OFFSET ?"
+                    .to_string(),
+                vec![Box::new(fc.to_string()), Box::new(limit as i64), Box::new(offset as i64)],
+            ),
+            (None, None) => (
+                "SELECT id, command_id, command_name, arguments, stdout, stderr, exit_code, duration_ms, executed_at, triggered_by, failure_class, adapter_context, is_redacted, attempt_number
+                 FROM execution_logs
+                 ORDER BY executed_at DESC
+                 LIMIT ? OFFSET ?"
+                    .to_string(),
+                vec![Box::new(limit as i64), Box::new(offset as i64)],
+            ),
+        };
+
+        let params_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+        let mut stmt = conn.prepare(&sql)?;
+
+        let rows = stmt
+            .query_map(params_refs.as_slice(), |row| {
+                let timestamp: i64 = row.get(8)?;
+                Ok(ExecutionLog {
+                    id: row.get(0)?,
+                    command_id: row.get(1)?,
+                    command_name: row.get(2)?,
+                    arguments: row.get(3)?,
+                    stdout: row.get(4)?,
+                    stderr: row.get(5)?,
+                    exit_code: row.get(6)?,
+                    duration_ms: row.get::<_, i64>(7)? as u64,
+                    executed_at: parse_timestamp_or_now(timestamp),
+                    triggered_by: row.get(9)?,
+                    failure_class: row.get(10)?,
+                    adapter_context: row.get(11)?,
+                    is_redacted: row.get::<_, i32>(12)? != 0,
+                    attempt_number: row.get::<_, i32>(13)? as u8,
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -1593,7 +1694,64 @@ fn run_migrations(conn: &mut Connection) -> Result<()> {
         }
     }
 
-    transaction.execute("PRAGMA user_version = 13", [])?;
+    if current_version < 14 {
+        let mut stmt = transaction.prepare("PRAGMA table_info(commands)")?;
+        let cols: Vec<String> = stmt
+            .query_map([], |row| row.get(1))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+
+        if !cols.iter().any(|c| c == "timeout_ms") {
+            transaction.execute(
+                "ALTER TABLE commands ADD COLUMN timeout_ms INTEGER",
+                [],
+            )?;
+        }
+        if !cols.iter().any(|c| c == "max_retries") {
+            transaction.execute(
+                "ALTER TABLE commands ADD COLUMN max_retries INTEGER",
+                [],
+            )?;
+        }
+    }
+
+    if current_version < 15 {
+        let mut stmt = transaction.prepare("PRAGMA table_info(execution_logs)")?;
+        let cols: Vec<String> = stmt
+            .query_map([], |row| row.get(1))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+
+        if !cols.iter().any(|c| c == "failure_class") {
+            transaction.execute(
+                "ALTER TABLE execution_logs ADD COLUMN failure_class TEXT",
+                [],
+            )?;
+        }
+        if !cols.iter().any(|c| c == "adapter_context") {
+            transaction.execute(
+                "ALTER TABLE execution_logs ADD COLUMN adapter_context TEXT",
+                [],
+            )?;
+        }
+        if !cols.iter().any(|c| c == "is_redacted") {
+            transaction.execute(
+                "ALTER TABLE execution_logs ADD COLUMN is_redacted INTEGER NOT NULL DEFAULT 0",
+                [],
+            )?;
+        }
+        if !cols.iter().any(|c| c == "attempt_number") {
+            transaction.execute(
+                "ALTER TABLE execution_logs ADD COLUMN attempt_number INTEGER NOT NULL DEFAULT 1",
+                [],
+            )?;
+        }
+
+        transaction.execute(
+            "CREATE INDEX IF NOT EXISTS idx_execution_logs_command_id ON execution_logs(command_id)",
+            [],
+        )?;
+    }
+
+    transaction.execute("PRAGMA user_version = 15", [])?;
     transaction.commit()?;
 
     Ok(())
@@ -1691,6 +1849,8 @@ mod tests {
                 generate_slash_commands: false,
                 slash_command_adapters: vec![],
                 target_paths: vec!["C:/repo-a".to_string()],
+                timeout_ms: None,
+                max_retries: None,
             })
             .await
             .unwrap();

@@ -183,6 +183,18 @@ export const api = {
   execution: {
     getHistory: (limit?: number) =>
       invoke<ExecutionLog[]>("get_execution_history", { limit: limit ?? 100 }),
+    getHistoryFiltered: (
+      commandId?: string,
+      failureClass?: string,
+      limit?: number,
+      offset?: number
+    ) =>
+      invoke<ExecutionLog[]>("get_execution_history_filtered", {
+        commandId,
+        failureClass,
+        limit: limit ?? 50,
+        offset: offset ?? 0,
+      }),
   },
 
   slashCommands: {
