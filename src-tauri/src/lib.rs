@@ -113,12 +113,12 @@ pub fn run() {
                         ..Default::default()
                     };
                     let max_size = crate::rule_import::resolve_max_size(&options);
-                    match crate::rule_import::scan_ai_tool_candidates(&db, max_size).await {
+                    match crate::rule_import::scan_ai_tool_candidates(db.clone(), max_size).await {
                         Ok(scan) => {
                             if scan.candidates.is_empty() {
                                 mark_bootstrap_done = true;
                             } else {
-                                match crate::rule_import::execute_import(&db, scan, options).await {
+                                match crate::rule_import::execute_import(db.clone(), scan, options).await {
                                     Ok(import_result) => {
                                         mark_bootstrap_done = true;
                                         log::info!(
@@ -418,6 +418,8 @@ pub fn run() {
             commands::get_storage_mode,
             commands::scan_ai_tool_import_candidates,
             commands::import_ai_tool_rules,
+            commands::import_ai_tool_commands,
+            commands::import_ai_tool_skills,
             commands::scan_rule_file_import,
             commands::import_rule_from_file,
             commands::scan_rule_directory_import,
@@ -427,6 +429,10 @@ pub fn run() {
             commands::scan_rule_clipboard_import,
             commands::import_rule_from_clipboard,
             commands::get_rule_import_history,
+            commands::import_commands_from_directory,
+            commands::scan_command_directory_import,
+            commands::import_skills_from_directory,
+            commands::scan_skill_directory_import,
             commands::export_configuration,
             commands::import_configuration,
             commands::preview_import,

@@ -77,6 +77,7 @@ export interface SyncHistoryEntry {
 }
 
 export type ImportSourceType = "ai_tool" | "file" | "directory" | "url" | "clipboard";
+export type ImportArtifactType = "rule" | "command" | "skill" | "other" | "unknown";
 export type ImportConflictMode = "skip" | "rename" | "replace";
 
 export interface ImportCandidate {
@@ -85,6 +86,7 @@ export interface ImportCandidate {
   sourceLabel: string;
   sourcePath: string;
   sourceTool?: AdapterType;
+  artifactType: ImportArtifactType;
   name: string;
   proposedName: string;
   content: string;
@@ -93,6 +95,7 @@ export interface ImportCandidate {
   enabledAdapters: AdapterType[];
   contentHash: string;
   fileSize: number;
+  metadata?: string;
 }
 
 export interface ImportScanResult {
@@ -124,6 +127,9 @@ export interface ImportSkip {
 
 export interface ImportExecutionResult {
   imported: Rule[];
+  importedRules: Rule[];
+  importedCommands: unknown[]; // Avoid circular dependency
+  importedSkills: unknown[];
   skipped: ImportSkip[];
   conflicts: ImportConflict[];
   errors: string[];

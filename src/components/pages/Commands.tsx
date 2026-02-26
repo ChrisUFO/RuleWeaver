@@ -1,4 +1,6 @@
+import { useState } from "react";
 import { useToast } from "@/components/ui/toast";
+import { ImportDialog } from "@/components/import/ImportDialog";
 import { CommandsListSkeleton } from "@/components/ui/skeleton";
 import { useRepositoryRoots } from "@/hooks/useRepositoryRoots";
 import { useCommandsState } from "@/hooks/useCommandsState";
@@ -7,6 +9,7 @@ import { CommandEditor } from "@/components/commands/CommandEditor";
 
 export function Commands() {
   const { addToast } = useToast();
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
   const { roots: availableRepos } = useRepositoryRoots();
   const {
     selectedId,
@@ -41,6 +44,7 @@ export function Commands() {
         onQueryChange={handlers.setQuery}
         onCreate={handlers.handleCreate}
         onSync={handlers.handleSyncCommands}
+        onImport={() => setImportDialogOpen(true)}
       />
 
       <CommandEditor
@@ -60,6 +64,15 @@ export function Commands() {
         onDelete={handlers.handleDelete}
         onTest={handlers.handleTest}
         onSyncSlashCommands={handlers.handleSyncSlashCommands}
+      />
+
+      <ImportDialog
+        open={importDialogOpen}
+        onOpenChange={setImportDialogOpen}
+        artifactType="command"
+        onImportComplete={async () => {
+          await handlers.handleSyncCommands();
+        }}
       />
     </div>
   );

@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::models::{AdapterType, Rule, Scope};
+use crate::models::{AdapterType, Command, Rule, Scope, Skill};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -64,8 +64,12 @@ pub struct ImportSkip {
 pub struct ImportConflict {
     pub candidate_id: String,
     pub candidate_name: String,
+    /// @deprecated use existing_id
     pub existing_rule_id: Option<String>,
+    /// @deprecated use existing_name
     pub existing_rule_name: Option<String>,
+    pub existing_id: Option<String>,
+    pub existing_name: Option<String>,
     pub reason: String,
 }
 
@@ -79,7 +83,11 @@ pub struct ImportScanResult {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct ImportExecutionResult {
+    /// @deprecated use imported_rules
     pub imported: Vec<Rule>,
+    pub imported_rules: Vec<Rule>,
+    pub imported_commands: Vec<Command>,
+    pub imported_skills: Vec<Skill>,
     pub skipped: Vec<ImportSkip>,
     pub conflicts: Vec<ImportConflict>,
     pub errors: Vec<String>,
