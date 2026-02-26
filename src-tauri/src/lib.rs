@@ -10,6 +10,7 @@ mod path_resolver;
 mod reconciliation;
 mod rule_import;
 mod slash_commands;
+mod status;
 mod sync;
 pub mod templates;
 
@@ -481,6 +482,11 @@ pub fn run() {
             commands::get_stale_paths,
             commands::get_reconciliation_logs,
             commands::clear_reconciliation_logs,
+            status::commands::get_artifact_status,
+            status::commands::get_artifact_status_summary,
+            status::commands::repair_artifact,
+            status::commands::repair_all_artifacts,
+            status::commands::refresh_artifact_status,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

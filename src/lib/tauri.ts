@@ -24,6 +24,12 @@ import type {
   TemplateCommand,
 } from "@/types/command";
 import type { CreateSkillInput, Skill, UpdateSkillInput, TemplateSkill } from "@/types/skill";
+import type {
+  ArtifactStatusEntry,
+  RepairResult,
+  StatusFilter,
+  StatusSummary,
+} from "@/types/status";
 
 export const api = {
   rules: {
@@ -232,5 +238,17 @@ export const api = {
 
   registry: {
     getTools: () => invoke<ToolEntry[]>("get_tool_registry"),
+  },
+
+  status: {
+    getArtifactStatus: (filter?: StatusFilter) =>
+      invoke<ArtifactStatusEntry[]>("get_artifact_status", { filter }),
+    getSummary: (filter?: StatusFilter) =>
+      invoke<StatusSummary>("get_artifact_status_summary", { filter }),
+    repairArtifact: (entryId: string) => invoke<RepairResult>("repair_artifact", { entryId }),
+    repairAll: (filter?: StatusFilter) =>
+      invoke<RepairResult[]>("repair_all_artifacts", { filter }),
+    refresh: (filter?: StatusFilter) =>
+      invoke<ArtifactStatusEntry[]>("refresh_artifact_status", { filter }),
   },
 };

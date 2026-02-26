@@ -9,6 +9,7 @@ import {
   ChevronRight,
   Terminal,
   Brain,
+  Activity,
 } from "lucide-react";
 
 interface SidebarProps {
@@ -23,6 +24,7 @@ const navItems = [
   { id: "rules", label: "Rules", icon: FileText },
   { id: "commands", label: "Commands", icon: Terminal },
   { id: "skills", label: "Skills", icon: Brain },
+  { id: "status", label: "Status", icon: Activity },
   { id: "settings", label: "Settings", icon: Settings },
 ];
 

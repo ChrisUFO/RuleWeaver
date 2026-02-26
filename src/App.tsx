@@ -5,6 +5,7 @@ import { Dashboard } from "./components/pages/Dashboard";
 import { RulesPage } from "./components/pages/RulesPage";
 import { Commands } from "./components/pages/Commands";
 import { Skills } from "./components/pages/Skills";
+import { Status } from "./components/pages/Status";
 import { Settings } from "./components/pages/Settings";
 import { ToastProvider } from "./components/ui/toast";
 import { ErrorBoundary } from "./components/ui/error-boundary";
@@ -84,6 +85,10 @@ function App() {
         action: () => setActiveView("skills"),
       },
       {
+        ...SHORTCUTS.STATUS,
+        action: () => setActiveView("status"),
+      },
+      {
         ...SHORTCUTS.HELP,
         action: () => setShortcutsDialogOpen(true),
       },
@@ -96,6 +101,7 @@ function App() {
       rules: <RulesPage />,
       commands: <Commands />,
       skills: <Skills />,
+      status: <Status />,
       settings: <Settings />,
     };
 
