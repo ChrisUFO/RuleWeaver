@@ -1984,7 +1984,10 @@ enabledAdapters:
             3,
             "Should find rule files, commands, and skills"
         );
-        assert!(result.candidates[0].name.to_lowercase().contains("gemini"));
+        assert!(result
+            .candidates
+            .iter()
+            .any(|c| c.name.to_lowercase().contains("gemini")));
     }
 
     #[test]
@@ -2128,9 +2131,16 @@ This is the rule content.
 
         let result = scan_directory_to_candidates(temp_dir.path(), 1024 * 1024, None);
 
-        // Only rule should be found
-        assert_eq!(result.candidates.len(), 1);
-        assert!(result.candidates[0].name.to_lowercase().contains("claude"));
+        // Both rule and command should be found
+        assert_eq!(result.candidates.len(), 2);
+        assert!(result
+            .candidates
+            .iter()
+            .any(|c| c.name.to_lowercase().contains("claude")));
+        assert!(result
+            .candidates
+            .iter()
+            .any(|c| c.name.to_lowercase().contains("my-command")));
     }
 
     #[test]
@@ -2151,9 +2161,12 @@ This is the rule content.
 
         let result = scan_directory_to_candidates(temp_dir.path(), 1024 * 1024, None);
 
-        // Only rule should be found
-        assert_eq!(result.candidates.len(), 1);
-        assert!(result.candidates[0].name.to_lowercase().contains("agents"));
+        // Both rule and command should be found
+        assert_eq!(result.candidates.len(), 2);
+        assert!(result
+            .candidates
+            .iter()
+            .any(|c| c.name.to_lowercase().contains("agents")));
     }
 
     #[test]
@@ -2213,7 +2226,14 @@ This is the rule content.
 
         // Both rule and skill should be found
         assert_eq!(result.candidates.len(), 2);
-        assert!(result.candidates[0].name.to_lowercase().contains("claude"));
+        assert!(result
+            .candidates
+            .iter()
+            .any(|c| c.name.to_lowercase().contains("claude")));
+        assert!(result
+            .candidates
+            .iter()
+            .any(|c| c.name.to_lowercase().contains("skill")));
     }
 
     #[test]
@@ -2232,7 +2252,14 @@ This is the rule content.
 
         // Both rule and command should be found
         assert_eq!(result.candidates.len(), 2);
-        assert!(result.candidates[0].name.to_lowercase().contains("gemini"));
+        assert!(result
+            .candidates
+            .iter()
+            .any(|c| c.name.to_lowercase().contains("gemini")));
+        assert!(result
+            .candidates
+            .iter()
+            .any(|c| c.name.to_lowercase().contains("skill")));
     }
 
     #[test]
@@ -2262,7 +2289,14 @@ This is the rule content.
 
         // Both rule and skill should be found
         assert_eq!(result.candidates.len(), 2);
-        assert!(result.candidates[0].name.to_lowercase().contains("rule"));
+        assert!(result
+            .candidates
+            .iter()
+            .any(|c| c.name.to_lowercase().contains("rule")));
+        assert!(result
+            .candidates
+            .iter()
+            .any(|c| c.name.to_lowercase().contains("skill")));
     }
 
     // =====================================
@@ -2299,8 +2333,18 @@ This is the rule content.
 
         // All 4 artifacts should be found
         assert_eq!(result.candidates.len(), 4);
-        assert_eq!(result.candidates[0].artifact_type, ImportArtifactType::Rule);
-        assert!(result.candidates[0].name.to_lowercase().contains("gemini"));
+        assert!(result
+            .candidates
+            .iter()
+            .any(|c| c.artifact_type == ImportArtifactType::Rule));
+        assert!(result
+            .candidates
+            .iter()
+            .any(|c| c.artifact_type == ImportArtifactType::Skill));
+        assert!(result
+            .candidates
+            .iter()
+            .any(|c| c.artifact_type == ImportArtifactType::SlashCommand));
     }
 
     #[test]

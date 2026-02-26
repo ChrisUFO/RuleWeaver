@@ -2262,7 +2262,9 @@ mod tests {
             db
         });
 
-        let engine = ReconciliationEngine::new(db).unwrap();
+        let mut path_resolver = crate::path_resolver::PathResolver::new().unwrap();
+        path_resolver.add_repository_root(std::path::PathBuf::from("/repo"));
+        let engine = ReconciliationEngine { db, path_resolver };
         let desired = rt.block_on(async { engine.compute_desired_state().await.unwrap() });
 
         let skill_entries: Vec<_> = desired
