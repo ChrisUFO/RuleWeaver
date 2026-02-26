@@ -3,6 +3,7 @@ mod constants;
 mod database;
 mod error;
 mod execution;
+mod feature_flags;
 mod file_storage;
 mod mcp;
 mod models;
