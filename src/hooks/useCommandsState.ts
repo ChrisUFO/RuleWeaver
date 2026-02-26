@@ -182,7 +182,7 @@ export function useCommandsState(
   const refresh = useCallback(async () => {
     setIsLoading(true);
     try {
-      await Promise.all([loadCommands(), loadHistory(), loadAvailableAdapters()]);
+      await Promise.all([loadCommands(), loadAvailableAdapters()]);
     } catch (error) {
       toast.error(addToast, { title: "Failed to Load Commands", error });
     } finally {
