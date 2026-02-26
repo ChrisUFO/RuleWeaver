@@ -24,6 +24,12 @@ import type {
   TemplateCommand,
 } from "@/types/command";
 import type { CreateSkillInput, Skill, UpdateSkillInput, TemplateSkill } from "@/types/skill";
+import type {
+  ArtifactStatusEntry,
+  RepairResult,
+  StatusFilter,
+  StatusSummary,
+} from "@/types/status";
 
 export const api = {
   rules: {
@@ -158,6 +164,8 @@ export const api = {
     create: (input: CreateSkillInput) => invoke<Skill>("create_skill", { input }),
     update: (id: string, input: UpdateSkillInput) => invoke<Skill>("update_skill", { id, input }),
     delete: (id: string) => invoke<void>("delete_skill", { id }),
+    sync: () => invoke<number>("sync_skills"),
+    getSupportedAdapters: () => invoke<string[]>("get_skill_supported_adapters"),
     getTemplates: () => invoke<TemplateSkill[]>("get_skill_templates"),
     installTemplate: (templateId: string) =>
       invoke<Skill>("install_skill_template", { templateId }),
@@ -175,6 +183,18 @@ export const api = {
   execution: {
     getHistory: (limit?: number) =>
       invoke<ExecutionLog[]>("get_execution_history", { limit: limit ?? 100 }),
+    getHistoryFiltered: (
+      commandId?: string,
+      failureClass?: string,
+      limit?: number,
+      offset?: number
+    ) =>
+      invoke<ExecutionLog[]>("get_execution_history_filtered", {
+        commandId,
+        failureClass,
+        limit: limit ?? 50,
+        offset: offset ?? 0,
+      }),
   },
 
   slashCommands: {
@@ -230,5 +250,17 @@ export const api = {
 
   registry: {
     getTools: () => invoke<ToolEntry[]>("get_tool_registry"),
+  },
+
+  status: {
+    getArtifactStatus: (filter?: StatusFilter) =>
+      invoke<ArtifactStatusEntry[]>("get_artifact_status", { filter }),
+    getSummary: (filter?: StatusFilter) =>
+      invoke<StatusSummary>("get_artifact_status_summary", { filter }),
+    repairArtifact: (entryId: string) => invoke<RepairResult>("repair_artifact", { entryId }),
+    repairAll: (filter?: StatusFilter) =>
+      invoke<RepairResult[]>("repair_all_artifacts", { filter }),
+    refresh: (filter?: StatusFilter) =>
+      invoke<ArtifactStatusEntry[]>("refresh_artifact_status", { filter }),
   },
 };

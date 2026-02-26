@@ -5,7 +5,7 @@ RuleWeaver is designed as a standalone desktop application. It requires deep fil
 ## Documentation
 
 - **AI Tools Reference:** See [`docs/ai-tools-commands-reference.md`](./docs/ai-tools-commands-reference.md) for comprehensive documentation on how each supported AI tool handles rules, custom commands, and skills.
-- **Implementation Plan:** See [`PLAN.md`](./PLAN.md) for the strategic implementation plan for GitHub issue #23 (Native Slash Command Support).
+- **Implementation Plan:** See [`PLAN.md`](./PLAN.md) for the strategic implementation plan for GitHub issues #45, #47, #57 (Skills Sync, Unified Status, Execution Reliability).
 
 ## Versioning Strategy
 
@@ -96,6 +96,25 @@ This layer handles all OS-level operations.
   - Supports dry-run preview mode for safe inspection before changes.
   - Logs all operations to `reconciliation_logs` table for audit trail.
   - Uses atomic writes (temp file + rename) to prevent partial state corruption.
+- **Skills Sync Engine:**
+  - Extends the adapter pattern to native skill distribution.
+  - Each skill can target specific adapters (or all supported adapters by default).
+  - Generates SKILL.md files directly in AI tool skill directories (e.g., `~/Documents/Cline/Skills/`).
+  - Respects adapter capabilities — skips unsupported tools silently.
+  - Works alongside MCP-only fallback for tools without native skill support.
+- **Status Engine (Unified Artifact Status):**
+  - Single operator view across all artifact types (rules, commands, skills).
+  - Projects reconciliation state into status entries with sync health indicators.
+  - Supports filtering by adapter, artifact type, scope, and sync status.
+  - Provides one-click repair actions to re-sync drifted or missing artifacts.
+  - Identifies conflicts and orphaned files without duplicate truth sources.
+- **Execution Engine:**
+  - Centralized command execution with timeout and retry policies.
+  - Per-command configuration for `timeout_ms` and `max_retries` (bounded to 3).
+  - Secret redaction pipeline scans stdout/stderr for API keys, tokens, and credentials.
+  - Structured failure classification (`Timeout`, `PermissionDenied`, `MissingBinary`, `NonZeroExit`).
+  - Only retryable failures (transient errors) trigger retries; validation/binary errors fail fast.
+  - Logs all execution attempts with metadata (failure class, redaction flag, attempt number).
 
 ### 3. The Target Layer (The AI Tools)
 

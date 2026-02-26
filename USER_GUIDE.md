@@ -192,6 +192,14 @@ Drag rule files onto the Rules page to trigger import preview.
 
 Switch/migrate in **Settings → Storage**.
 
+### Artifact Status Dashboard
+
+The Status page provides a unified view of all RuleWeaver-managed artifacts across your repositories and AI tools.
+
+- **Shimmer Summary**: At-a-glance view of Healthy, Out of Date, and Missing artifacts.
+- **Deep-Linking**: Click the icon in any status row to navigate directly to the Rule, Command, or Skill editor for that item.
+- **Targeted Repair**: Fix individual sync issues, or use "Repair All" to resolve everything at once.
+
 ---
 
 ## 4) Managing Commands
@@ -210,18 +218,22 @@ Commands are executable scripts that can be triggered via MCP or slash commands.
 2. Enter **name** and **description**
 3. Write the **script** (shell commands, supports placeholders)
 4. Define **arguments** (name, description, required, default value)
-5. Optionally select **target repositories**
-6. Toggle **Expose via MCP** to make available to AI tools
-7. Toggle **Generate Slash Commands** for native `/command` support
-8. Select **target AI tools** for slash commands
-9. Click **Save**
+5. **Execution Policy**:
+   - **Timeout (ms)**: Set a maximum execution time (defaults to 30,000ms).
+   - **Max Retries**: Configure up to 3 automatic retries for transient failures (timeouts, network errors).
+6. Optionally select **target repositories**
+7. Toggle **Expose via MCP** to make available to AI tools
+8. Toggle **Generate Slash Commands** for native `/command` support
+9. Select **target AI tools** for slash commands
+10. Click **Save**
 
 ### Testing Commands
 
-- Click **Test Run** to execute locally
-- View stdout/stderr output
-- See exit code and duration
-- Review recent execution history
+- Click **Test Run** to execute locally.
+- **Redaction**: RuleWeaver automatically redacts sensitive patterns (tokens, keys, passwords) from your command history to prevent accidental exposure.
+- View stdout/stderr output.
+- See exit code, duration, and retry attempts.
+- Review recent execution history with status badges.
 
 ### Slash Commands
 

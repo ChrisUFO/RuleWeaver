@@ -3,13 +3,16 @@ mod constants;
 mod database;
 mod error;
 mod execution;
+mod feature_flags;
 mod file_storage;
 mod mcp;
 mod models;
 mod path_resolver;
+mod redaction;
 mod reconciliation;
 mod rule_import;
 mod slash_commands;
+mod status;
 mod sync;
 pub mod templates;
 
@@ -457,6 +460,7 @@ pub fn run() {
             commands::get_command_templates,
             commands::install_command_template,
             commands::sync_skills,
+            commands::get_skill_supported_adapters,
             commands::get_mcp_status,
             commands::start_mcp_server,
             commands::stop_mcp_server,
@@ -464,6 +468,7 @@ pub fn run() {
             commands::get_mcp_connection_instructions,
             commands::get_mcp_logs,
             commands::get_execution_history,
+            commands::get_execution_history_filtered,
             slash_commands::commands::sync_slash_command,
             slash_commands::commands::sync_all_slash_commands,
             slash_commands::commands::get_slash_command_status,
@@ -480,6 +485,11 @@ pub fn run() {
             commands::get_stale_paths,
             commands::get_reconciliation_logs,
             commands::clear_reconciliation_logs,
+            status::commands::get_artifact_status,
+            status::commands::get_artifact_status_summary,
+            status::commands::repair_artifact,
+            status::commands::repair_all_artifacts,
+            status::commands::refresh_artifact_status,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

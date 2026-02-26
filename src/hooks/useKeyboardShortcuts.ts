@@ -59,6 +59,7 @@ export const SHORTCUTS = {
   RULES: { key: "2", ctrl: true, description: "Go to rules" },
   COMMANDS: { key: "3", ctrl: true, description: "Go to commands" },
   SKILLS: { key: "4", ctrl: true, description: "Go to skills" },
+  STATUS: { key: "5", ctrl: true, description: "Go to status" },
   HELP: { key: "?", shift: true, description: "Show keyboard shortcuts" },
   ESCAPE: { key: "Escape", description: "Close dialog/cancel" },
 } as const;

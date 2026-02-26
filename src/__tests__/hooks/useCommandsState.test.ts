@@ -35,6 +35,7 @@ vi.mock("@/lib/tauri", () => ({
     },
     execution: {
       getHistory: vi.fn().mockResolvedValue([]),
+      getHistoryFiltered: vi.fn().mockResolvedValue([]),
     },
     slashCommands: {
       getAdapters: vi

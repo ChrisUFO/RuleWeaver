@@ -1,11 +1,20 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Trash2, FolderOpen, FolderUp } from "lucide-react";
+import {
+  Plus,
+  Trash2,
+  FolderOpen,
+  FolderUp,
+  CheckCircle,
+  XCircle,
+  AlertCircle,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { api } from "@/lib/tauri";
 import { useToast } from "@/components/ui/toast";
 import type { Skill, SkillParameter } from "@/types/skill";
@@ -15,8 +24,14 @@ import { TemplateBrowser } from "@/components/skills/TemplateBrowser";
 import { Select } from "@/components/ui/select";
 import { useRepositoryRoots } from "@/hooks/useRepositoryRoots";
 import { ImportDialog } from "@/components/import/ImportDialog";
+import type { ArtifactStatusEntry } from "@/types/status";
 
-export function Skills() {
+interface SkillsProps {
+  initialSelectedId?: string | null;
+  onClearInitialId?: () => void;
+}
+
+export function Skills({ initialSelectedId, onClearInitialId }: SkillsProps) {
   const [skills, setSkills] = useState<Skill[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [name, setName] = useState("");
@@ -27,15 +42,29 @@ export function Skills() {
   const [scope, setScope] = useState<Scope>("global");
   const [directoryPath, setDirectoryPath] = useState("");
   const [enabled, setEnabled] = useState(true);
+  const [targetAdapters, setTargetAdapters] = useState<string[]>([]);
+  const [targetPaths, setTargetPaths] = useState<string[]>([]);
+  const [supportedAdapters, setSupportedAdapters] = useState<string[]>([]);
   const { roots: availableRepos } = useRepositoryRoots();
   const [isSaving, setIsSaving] = useState(false);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [adapterStatuses, setAdapterStatuses] = useState<Map<string, string>>(new Map());
   const { addToast } = useToast();
 
   const selected = useMemo(
     () => skills.find((s) => s.id === selectedId) ?? null,
     [skills, selectedId]
   );
+
+  useEffect(() => {
+    if (initialSelectedId && skills.length > 0) {
+      const exists = skills.some((s) => s.id === initialSelectedId);
+      if (exists) {
+        setSelectedId(initialSelectedId);
+        onClearInitialId?.();
+      }
+    }
+  }, [initialSelectedId, skills, onClearInitialId]);
 
   const loadSkills = async () => {
     const data = await api.skills.getAll();
@@ -50,6 +79,10 @@ export function Skills() {
         variant: "error",
       });
     });
+    api.skills
+      .getSupportedAdapters()
+      .then(setSupportedAdapters)
+      .catch(() => {});
   }, [addToast]);
 
   useEffect(() => {
@@ -60,6 +93,8 @@ export function Skills() {
       setInputSchema([]);
       setEntryPoint("");
       setEnabled(true);
+      setTargetAdapters([]);
+      setTargetPaths([]);
       return;
     }
     setName(selected.name);
@@ -70,6 +105,25 @@ export function Skills() {
     setScope(selected.scope);
     setDirectoryPath(selected.directoryPath || "");
     setEnabled(selected.enabled);
+    setTargetAdapters(selected.targetAdapters ?? []);
+    setTargetPaths(selected.targetPaths ?? []);
+  }, [selected]);
+
+  useEffect(() => {
+    if (!selected) {
+      setAdapterStatuses(new Map());
+      return;
+    }
+    api.status
+      .getArtifactStatus({ artifactType: "skill" })
+      .then((entries: ArtifactStatusEntry[]) => {
+        const statusMap = new Map<string, string>();
+        entries
+          .filter((e) => e.artifactId === selected.id)
+          .forEach((e) => statusMap.set(e.adapter, e.status));
+        setAdapterStatuses(statusMap);
+      })
+      .catch(() => {});
   }, [selected]);
 
   const createSkill = async () => {
@@ -111,6 +165,8 @@ export function Skills() {
         directoryPath: scope === "local" ? directoryPath : undefined,
         entryPoint: entryPoint,
         enabled,
+        targetAdapters,
+        targetPaths: scope === "local" ? targetPaths : [],
       });
       setSkills((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
       addToast({ title: "Skill Saved", description: updated.name, variant: "success" });
@@ -361,6 +417,119 @@ export function Skills() {
                   </div>
                 </div>
               </div>
+
+              {supportedAdapters.length > 0 && (
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground/60">
+                      Adapter Distribution
+                    </label>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Select which adapters this skill syncs to. Leave all unchecked to sync to all
+                      supported adapters.
+                    </p>
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {supportedAdapters.map((adapterId) => {
+                      const isChecked = targetAdapters.includes(adapterId);
+                      const status = adapterStatuses.get(adapterId);
+                      const label = adapterId
+                        .replace(/_/g, " ")
+                        .replace(/\b\w/g, (c) => c.toUpperCase());
+                      return (
+                        <label
+                          key={adapterId}
+                          className={cn(
+                            "flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 transition-colors",
+                            isChecked
+                              ? "border-primary/30 bg-primary/5"
+                              : "border-white/5 bg-white/2 hover:bg-white/5"
+                          )}
+                        >
+                          <Checkbox
+                            checked={isChecked}
+                            onChange={(checked) => {
+                              setTargetAdapters((prev) =>
+                                checked ? [...prev, adapterId] : prev.filter((a) => a !== adapterId)
+                              );
+                            }}
+                          />
+                          <span className="text-sm flex-1">{label}</span>
+                          {status === "synced" && (
+                            <span title="Synced">
+                              <CheckCircle className="h-3.5 w-3.5 text-green-500" />
+                            </span>
+                          )}
+                          {status === "missing" && (
+                            <span title="Missing">
+                              <XCircle className="h-3.5 w-3.5 text-red-500" />
+                            </span>
+                          )}
+                          {(status === "out_of_date" || status === "conflicted") && (
+                            <span title={status === "out_of_date" ? "Out of Date" : "Conflicted"}>
+                              <AlertCircle className="h-3.5 w-3.5 text-yellow-500" />
+                            </span>
+                          )}
+                        </label>
+                      );
+                    })}
+                  </div>
+                  {targetAdapters.length === 0 && (
+                    <p className="text-xs text-muted-foreground/50 italic">
+                      Syncing to all {supportedAdapters.length} supported adapter
+                      {supportedAdapters.length !== 1 ? "s" : ""}.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {scope === "local" && availableRepos.length > 0 && (
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground/60">
+                      Target Repositories
+                    </label>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Select which repositories this local-scope skill syncs to. Leave all unchecked
+                      to sync to all configured repositories.
+                    </p>
+                  </div>
+                  <div className="grid gap-2">
+                    {availableRepos.map((repo) => {
+                      const isChecked = targetPaths.includes(repo);
+                      return (
+                        <label
+                          key={repo}
+                          className={cn(
+                            "flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 transition-colors",
+                            isChecked
+                              ? "border-primary/30 bg-primary/5"
+                              : "border-white/5 bg-white/2 hover:bg-white/5"
+                          )}
+                        >
+                          <Checkbox
+                            checked={isChecked}
+                            onChange={(checked) => {
+                              setTargetPaths((prev) =>
+                                checked ? [...prev, repo] : prev.filter((p) => p !== repo)
+                              );
+                            }}
+                          />
+                          <span className="truncate font-mono text-xs text-muted-foreground">
+                            {repo}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                  {targetPaths.length === 0 && (
+                    <p className="text-xs text-muted-foreground/50 italic">
+                      Syncing to all {availableRepos.length} configured repositor
+                      {availableRepos.length !== 1 ? "ies" : "y"}.
+                    </p>
+                  )}
+                </div>
+              )}
 
               <div className="flex items-center justify-between rounded-md border p-4 bg-muted/20">
                 <div className="space-y-0.5">

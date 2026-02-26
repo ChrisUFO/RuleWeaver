@@ -19,6 +19,8 @@ export interface CommandFormData {
   slashCommandAdapters: string[];
   targetPaths: string[];
   testArgs: Record<string, string>;
+  timeoutMs: number | null;
+  maxRetries: number | null;
 }
 
 export interface TestOutput {
@@ -29,6 +31,8 @@ export interface TestOutput {
 
 export type SlashSyncStatus = "Synced" | "OutOfDate" | "NotSynced" | { Error: string };
 
+const HISTORY_PAGE_SIZE = 10;
+
 export interface UseCommandsStateReturn {
   commands: CommandModel[];
   selectedId: string;
@@ -36,6 +40,11 @@ export interface UseCommandsStateReturn {
   form: CommandFormData;
   testOutput: TestOutput | null;
   history: ExecutionLog[];
+  commandHistory: ExecutionLog[];
+  historyFilter: string;
+  historyPage: number;
+  historyHasMore: boolean;
+  isHistoryLoading: boolean;
   query: string;
   filtered: CommandModel[];
   availableAdapters: AdapterInfo[];
@@ -58,6 +67,8 @@ export interface UseCommandsStateReturn {
     handleSyncCommands: () => Promise<void>;
     handleSyncSlashCommands: () => Promise<void>;
     handleRepairSlashCommand: (adapter: string) => Promise<void>;
+    handleHistoryFilterChange: (filter: string) => void;
+    handleHistoryPageChange: (page: number) => void;
     refresh: () => Promise<void>;
   };
 }
@@ -71,16 +82,25 @@ const initialFormData: CommandFormData = {
   slashCommandAdapters: [],
   targetPaths: [],
   testArgs: {},
+  timeoutMs: null,
+  maxRetries: null,
 };
 
 export function useCommandsState(
-  addToast: ReturnType<typeof useToast>["addToast"]
+  addToast: ReturnType<typeof useToast>["addToast"],
+  initialSelectedId?: string | null,
+  onClearInitialId?: () => void
 ): UseCommandsStateReturn {
   const [commands, setCommands] = useState<CommandModel[]>([]);
   const [selectedId, setSelectedId] = useState<string>("");
   const [form, setForm] = useState<CommandFormData>(initialFormData);
   const [testOutput, setTestOutput] = useState<TestOutput | null>(null);
   const [history, setHistory] = useState<ExecutionLog[]>([]);
+  const [commandHistory, setCommandHistory] = useState<ExecutionLog[]>([]);
+  const [historyFilter, setHistoryFilter] = useState<string>("all");
+  const [historyPage, setHistoryPage] = useState<number>(0);
+  const [historyHasMore, setHistoryHasMore] = useState<boolean>(false);
+  const [isHistoryLoading, setIsHistoryLoading] = useState<boolean>(false);
   const [query, setQuery] = useState("");
   const [availableAdapters, setAvailableAdapters] = useState<AdapterInfo[]>([]);
   const [slashStatus, setSlashStatus] = useState<Record<string, SlashSyncStatus>>({});
@@ -95,6 +115,16 @@ export function useCommandsState(
     [commands, selectedId]
   );
 
+  useEffect(() => {
+    if (initialSelectedId && commands.length > 0) {
+      const exists = commands.some((c) => c.id === initialSelectedId);
+      if (exists) {
+        setSelectedId(initialSelectedId);
+        onClearInitialId?.();
+      }
+    }
+  }, [initialSelectedId, commands, onClearInitialId]);
+
   const filtered = useMemo(
     () => filterByQuery(commands, query, ["name", "description"] as const),
     [commands, query]
@@ -105,10 +135,30 @@ export function useCommandsState(
     setCommands(result);
   }, []);
 
-  const loadHistory = useCallback(async () => {
-    const logs = await api.execution.getHistory(50);
-    setHistory(logs);
-  }, []);
+  const loadFilteredHistory = useCallback(
+    async (commandId: string, filter: string, page: number) => {
+      if (!commandId) return;
+      setIsHistoryLoading(true);
+      try {
+        const failureClass = filter !== "all" ? filter : undefined;
+        const logs = await api.execution.getHistoryFiltered(
+          commandId,
+          failureClass,
+          HISTORY_PAGE_SIZE,
+          page * HISTORY_PAGE_SIZE
+        );
+        setHistory(logs);
+        setHistoryHasMore(logs.length === HISTORY_PAGE_SIZE);
+      } catch (error) {
+        console.error("Failed to load filtered history", { error });
+        setCommandHistory([]);
+        setHistoryHasMore(false);
+      } finally {
+        setIsHistoryLoading(false);
+      }
+    },
+    []
+  );
 
   const loadAvailableAdapters = useCallback(async () => {
     try {
@@ -132,13 +182,13 @@ export function useCommandsState(
   const refresh = useCallback(async () => {
     setIsLoading(true);
     try {
-      await Promise.all([loadCommands(), loadHistory(), loadAvailableAdapters()]);
+      await Promise.all([loadCommands(), loadAvailableAdapters()]);
     } catch (error) {
       toast.error(addToast, { title: "Failed to Load Commands", error });
     } finally {
       setIsLoading(false);
     }
-  }, [loadCommands, loadHistory, loadAvailableAdapters, addToast]);
+  }, [loadCommands, loadAvailableAdapters, addToast]);
 
   useEffect(() => {
     refresh();
@@ -148,6 +198,10 @@ export function useCommandsState(
     if (!selected) {
       setForm(initialFormData);
       setSlashStatus({});
+      setCommandHistory([]);
+      setHistoryFilter("all");
+      setHistoryPage(0);
+      setHistoryHasMore(false);
       return;
     }
     const nextArgs: Record<string, string> = {};
@@ -163,13 +217,18 @@ export function useCommandsState(
       slashCommandAdapters: selected.slashCommandAdapters ?? [],
       targetPaths: selected.targetPaths ?? [],
       testArgs: nextArgs,
+      timeoutMs: selected.timeoutMs ?? null,
+      maxRetries: selected.maxRetries ?? null,
     });
     if (selected.generateSlashCommands && (selected.slashCommandAdapters ?? []).length > 0) {
       loadSlashStatus(selected.id);
     } else {
       setSlashStatus({});
     }
-  }, [selected, loadSlashStatus]);
+    setHistoryFilter("all");
+    setHistoryPage(0);
+    loadFilteredHistory(selected.id, "all", 0);
+  }, [selected, loadSlashStatus, loadFilteredHistory]);
 
   const updateForm = useCallback((updates: Partial<CommandFormData>) => {
     setForm((prev) => ({ ...prev, ...updates }));
@@ -225,6 +284,8 @@ export function useCommandsState(
         generateSlashCommands: form.generateSlashCommands,
         slashCommandAdapters: form.slashCommandAdapters,
         targetPaths: form.targetPaths,
+        timeoutMs: form.timeoutMs ?? undefined,
+        maxRetries: form.maxRetries ?? undefined,
       });
       setCommands((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
       toast.success(addToast, { title: "Command Saved", description: updated.name });
@@ -264,7 +325,7 @@ export function useCommandsState(
         stderr: result.stderr,
         exitCode: result.exitCode,
       });
-      await loadHistory();
+      await loadFilteredHistory(selected.id, historyFilter, historyPage);
       toast[`${result.success ? "success" : "error"}`](addToast, {
         title: "Test Completed",
         description: result.success ? "Command succeeded" : "Command failed",
@@ -274,7 +335,7 @@ export function useCommandsState(
     } finally {
       setIsTesting(false);
     }
-  }, [selected, form.testArgs, loadHistory, addToast]);
+  }, [selected, form.testArgs, loadFilteredHistory, historyFilter, historyPage, addToast]);
 
   const handleSyncCommands = useCallback(async () => {
     setIsSyncing(true);
@@ -354,6 +415,25 @@ export function useCommandsState(
     [selected, addToast, loadSlashStatus]
   );
 
+  const handleHistoryFilterChange = useCallback(
+    (filter: string) => {
+      if (!selected) return;
+      setHistoryFilter(filter);
+      setHistoryPage(0);
+      loadFilteredHistory(selected.id, filter, 0);
+    },
+    [selected, loadFilteredHistory]
+  );
+
+  const handleHistoryPageChange = useCallback(
+    (page: number) => {
+      if (!selected) return;
+      setHistoryPage(page);
+      loadFilteredHistory(selected.id, historyFilter, page);
+    },
+    [selected, historyFilter, loadFilteredHistory]
+  );
+
   return {
     commands,
     selectedId,
@@ -361,6 +441,11 @@ export function useCommandsState(
     form,
     testOutput,
     history,
+    commandHistory,
+    historyFilter,
+    historyPage,
+    historyHasMore,
+    isHistoryLoading,
     query,
     filtered,
     availableAdapters,
@@ -383,6 +468,8 @@ export function useCommandsState(
       handleSyncCommands,
       handleSyncSlashCommands,
       handleRepairSlashCommand,
+      handleHistoryFilterChange,
+      handleHistoryPageChange,
       refresh,
     },
   };

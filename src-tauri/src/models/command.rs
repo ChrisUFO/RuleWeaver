@@ -19,6 +19,10 @@ pub struct Command {
     pub slash_command_adapters: Vec<String>,
     #[serde(default)]
     pub target_paths: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timeout_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_retries: Option<u8>,
     #[serde(with = "crate::models::timestamp")]
     pub created_at: DateTime<Utc>,
     #[serde(with = "crate::models::timestamp")]
@@ -50,6 +54,55 @@ fn default_arg_type() -> ArgumentType {
     ArgumentType::String
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum FailureClass {
+    Success,
+    ValidationError,
+    Timeout,
+    PermissionDenied,
+    MissingBinary,
+    NonZeroExit,
+    UnknownError,
+}
+
+impl FailureClass {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            FailureClass::Success => "success",
+            FailureClass::ValidationError => "validation_error",
+            FailureClass::Timeout => "timeout",
+            FailureClass::PermissionDenied => "permission_denied",
+            FailureClass::MissingBinary => "missing_binary",
+            FailureClass::NonZeroExit => "non_zero_exit",
+            FailureClass::UnknownError => "unknown_error",
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "success" => Some(FailureClass::Success),
+            "validation_error" => Some(FailureClass::ValidationError),
+            "timeout" => Some(FailureClass::Timeout),
+            "permission_denied" => Some(FailureClass::PermissionDenied),
+            "missing_binary" => Some(FailureClass::MissingBinary),
+            "non_zero_exit" => Some(FailureClass::NonZeroExit),
+            "unknown_error" => Some(FailureClass::UnknownError),
+            _ => None,
+        }
+    }
+
+    pub fn is_retryable(&self) -> bool {
+        !matches!(
+            self,
+            FailureClass::ValidationError
+                | FailureClass::MissingBinary
+                | FailureClass::PermissionDenied
+        )
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExecutionLog {
@@ -64,6 +117,14 @@ pub struct ExecutionLog {
     #[serde(with = "crate::models::timestamp")]
     pub executed_at: DateTime<Utc>,
     pub triggered_by: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub failure_class: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub adapter_context: Option<String>,
+    #[serde(default)]
+    pub is_redacted: bool,
+    #[serde(default)]
+    pub attempt_number: u8,
 }
 
 impl Command {
@@ -81,6 +142,8 @@ impl Command {
             generate_slash_commands: false,
             slash_command_adapters: Vec::new(),
             target_paths: Vec::new(),
+            timeout_ms: None,
+            max_retries: None,
             created_at: now,
             updated_at: now,
         }
@@ -106,6 +169,10 @@ pub struct CreateCommandInput {
     pub slash_command_adapters: Vec<String>,
     #[serde(default)]
     pub target_paths: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timeout_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_retries: Option<u8>,
 }
 
 fn default_true() -> bool {
@@ -124,6 +191,8 @@ pub struct UpdateCommandInput {
     pub generate_slash_commands: Option<bool>,
     pub slash_command_adapters: Option<Vec<String>>,
     pub target_paths: Option<Vec<String>>,
+    pub timeout_ms: Option<u64>,
+    pub max_retries: Option<u8>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -174,6 +243,8 @@ mod tests {
             generate_slash_commands: false,
             slash_command_adapters: vec![],
             target_paths: vec![],
+            timeout_ms: None,
+            max_retries: None,
         };
 
         let json = serde_json::to_string(&input).expect("serialize create input");

@@ -55,6 +55,10 @@ pub struct DesiredState {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExpectedArtifact {
+    /// The unique ID of the artifact (e.g., rule ID, command name)
+    pub id: String,
+    /// The display name of the artifact
+    pub name: String,
     /// The adapter this artifact is for
     pub adapter: AdapterType,
     /// The type of artifact
@@ -210,6 +214,8 @@ impl ReconciliationEngine {
                             desired.expected_paths.insert(
                                 path_str.clone(),
                                 ExpectedArtifact {
+                                    id: rule.id.clone(),
+                                    name: rule.name.clone(),
                                     adapter: *adapter,
                                     artifact_type: ArtifactType::Rule,
                                     scope: Scope::Global,
@@ -232,6 +238,8 @@ impl ReconciliationEngine {
                                     desired.expected_paths.insert(
                                         path_str.clone(),
                                         ExpectedArtifact {
+                                            id: rule.id.clone(),
+                                            name: rule.name.clone(),
                                             adapter: *adapter,
                                             artifact_type: ArtifactType::Rule,
                                             scope: Scope::Local,
@@ -279,6 +287,8 @@ impl ReconciliationEngine {
                 desired.expected_paths.insert(
                     path_str.clone(),
                     ExpectedArtifact {
+                        id: "command-stubs".to_string(),
+                        name: "COMMANDS.md".to_string(),
                         adapter,
                         artifact_type: ArtifactType::CommandStub,
                         scope: Scope::Global,
@@ -337,6 +347,8 @@ impl ReconciliationEngine {
                     desired.expected_paths.insert(
                         path_str.clone(),
                         ExpectedArtifact {
+                            id: format!("command-{}", safe_name),
+                            name: safe_name.clone(),
                             adapter: adapter_type,
                             artifact_type: ArtifactType::SlashCommand,
                             scope: Scope::Global,
@@ -357,6 +369,8 @@ impl ReconciliationEngine {
                         desired.expected_paths.insert(
                             path_str.clone(),
                             ExpectedArtifact {
+                                id: format!("command-{}", safe_name),
+                                name: safe_name.clone(),
                                 adapter: adapter_type,
                                 artifact_type: ArtifactType::SlashCommand,
                                 scope: Scope::Local,
@@ -374,6 +388,14 @@ impl ReconciliationEngine {
     }
 
     /// Compute desired state for skills.
+    ///
+    /// Respects per-skill `target_adapters`: when non-empty only those adapters
+    /// are included; unsupported adapters are silently skipped (MCP-only fallback
+    /// is handled by the MCP layer). When `target_adapters` is empty all registry-
+    /// supported adapters are used (existing behaviour).
+    ///
+    /// For local-scope skills, `target_paths` on the skill take priority over the
+    /// global repository roots when non-empty.
     async fn compute_desired_state_skills(&self, desired: &mut DesiredState) -> Result<()> {
         let skills = self.db.get_all_skills().await?;
 
@@ -382,26 +404,45 @@ impl ReconciliationEngine {
                 continue;
             }
 
-            for adapter in AdapterType::all() {
-                if REGISTRY
-                    .validate_support(&adapter, &skill.scope, ArtifactType::Skill)
-                    .is_err()
-                {
-                    continue;
-                }
+            // Determine which adapters to target for this skill.
+            let candidate_adapters: Vec<AdapterType> = if skill.target_adapters.is_empty() {
+                // Default: all adapters that support skills.
+                AdapterType::all()
+                    .into_iter()
+                    .filter(|a| {
+                        REGISTRY
+                            .validate_support(a, &skill.scope, ArtifactType::Skill)
+                            .is_ok()
+                    })
+                    .collect()
+            } else {
+                // Per-skill: only the explicitly listed adapters (skip unsupported).
+                skill
+                    .target_adapters
+                    .iter()
+                    .filter_map(|s| crate::models::AdapterType::from_str(s))
+                    .filter(|a| {
+                        REGISTRY
+                            .validate_support(a, &skill.scope, ArtifactType::Skill)
+                            .is_ok()
+                    })
+                    .collect()
+            };
 
-                // TODO: Extract skill formatting as well if needed, for now keeping it local or moving to formatter
-                let content = formatter::format_skill_content(&skill);
-                let content_hash = compute_content_hash(&content);
-                let safe_name = crate::path_resolver::sanitize_skill_name(&skill.name);
+            let content = formatter::format_skill_content(&skill);
+            let content_hash = compute_content_hash(&content);
+            let safe_name = crate::path_resolver::sanitize_skill_name(&skill.name);
 
+            for adapter in candidate_adapters {
                 match skill.scope {
                     Scope::Global => {
                         if let Ok(resolved) = self.path_resolver.skill_path(adapter, &safe_name) {
                             let path_str = resolved.path.to_string_lossy().to_string();
                             desired.expected_paths.insert(
-                                path_str.clone(),
+                                path_str,
                                 ExpectedArtifact {
+                                    id: skill.id.clone(),
+                                    name: skill.name.clone(),
                                     adapter,
                                     artifact_type: ArtifactType::Skill,
                                     scope: Scope::Global,
@@ -413,16 +454,28 @@ impl ReconciliationEngine {
                         }
                     }
                     Scope::Local => {
-                        let repo_roots = self.path_resolver.repository_roots();
-                        for repo_root in repo_roots {
+                        // Per-skill target_paths take priority; fall back to global roots.
+                        let roots: Vec<std::path::PathBuf> = if !skill.target_paths.is_empty() {
+                            skill
+                                .target_paths
+                                .iter()
+                                .map(std::path::PathBuf::from)
+                                .collect()
+                        } else {
+                            self.path_resolver.repository_roots().to_vec()
+                        };
+
+                        for repo_root in &roots {
                             if let Ok(resolved) = self
                                 .path_resolver
                                 .local_skill_path(adapter, &safe_name, repo_root)
                             {
                                 let path_str = resolved.path.to_string_lossy().to_string();
                                 desired.expected_paths.insert(
-                                    path_str.clone(),
+                                    path_str,
                                     ExpectedArtifact {
+                                        id: skill.id.clone(),
+                                        name: skill.name.clone(),
                                         adapter,
                                         artifact_type: ArtifactType::Skill,
                                         scope: Scope::Local,
@@ -922,7 +975,11 @@ impl ReconciliationEngine {
     /// Full reconciliation in one call.
     ///
     /// This computes desired state, scans actual state, generates a plan, and executes it.
-    pub async fn reconcile(&self, dry_run: bool) -> Result<ReconcileResult> {
+    pub async fn reconcile(
+        &self,
+        dry_run: bool,
+        target_path: Option<String>,
+    ) -> Result<ReconcileResult> {
         log::info!("Starting reconciliation (dry_run: {})", dry_run);
 
         let desired = self.compute_desired_state().await?;
@@ -931,14 +988,17 @@ impl ReconciliationEngine {
         let actual = self.scan_actual_state().await?;
         log::info!("Actual state: {} paths", actual.found_paths.len());
 
-        let plan = self.plan(&desired, &actual);
-        log::info!(
-            "Plan: {} to create, {} to update, {} to remove, {} unchanged",
-            plan.to_create.len(),
-            plan.to_update.len(),
-            plan.to_remove.len(),
-            plan.unchanged.len()
-        );
+        let mut plan = self.plan(&desired, &actual);
+
+        if let Some(target) = target_path {
+            plan.to_create
+                .retain(|a| a.path.to_string_lossy() == target);
+            plan.to_update
+                .retain(|a| a.path.to_string_lossy() == target);
+            plan.to_remove
+                .retain(|a| a.path.to_string_lossy() == target);
+            plan.unchanged.retain(|p| p.to_string_lossy() == target);
+        }
 
         let result = self.execute(&plan, dry_run).await?;
 
@@ -1157,6 +1217,8 @@ mod tests {
         desired.expected_paths.insert(
             "/new/path.md".to_string(),
             ExpectedArtifact {
+                id: "rule-1".to_string(),
+                name: "Rule 1".to_string(),
                 adapter: AdapterType::ClaudeCode,
                 artifact_type: ArtifactType::Rule,
                 scope: Scope::Global,
@@ -1183,6 +1245,8 @@ mod tests {
         desired.expected_paths.insert(
             "/existing/path.md".to_string(),
             ExpectedArtifact {
+                id: "rule-1".to_string(),
+                name: "Rule 1".to_string(),
                 adapter: AdapterType::ClaudeCode,
                 artifact_type: ArtifactType::Rule,
                 scope: Scope::Global,
@@ -1247,6 +1311,8 @@ mod tests {
         desired.expected_paths.insert(
             "/existing/path.md".to_string(),
             ExpectedArtifact {
+                id: "rule-1".to_string(),
+                name: "Rule 1".to_string(),
                 adapter: AdapterType::ClaudeCode,
                 artifact_type: ArtifactType::Rule,
                 scope: Scope::Global,
@@ -1285,6 +1351,8 @@ mod tests {
         desired.expected_paths.insert(
             "/new/path.md".to_string(),
             ExpectedArtifact {
+                id: "new-rule".to_string(),
+                name: "New Rule".to_string(),
                 adapter: AdapterType::ClaudeCode,
                 artifact_type: ArtifactType::Rule,
                 scope: Scope::Global,
@@ -1296,6 +1364,8 @@ mod tests {
         desired.expected_paths.insert(
             "/update/path.md".to_string(),
             ExpectedArtifact {
+                id: "update-rule".to_string(),
+                name: "Update Rule".to_string(),
                 adapter: AdapterType::ClaudeCode,
                 artifact_type: ArtifactType::Rule,
                 scope: Scope::Global,
@@ -1307,6 +1377,8 @@ mod tests {
         desired.expected_paths.insert(
             "/unchanged/path.md".to_string(),
             ExpectedArtifact {
+                id: "unchanged-rule".to_string(),
+                name: "Unchanged Rule".to_string(),
                 adapter: AdapterType::ClaudeCode,
                 artifact_type: ArtifactType::Rule,
                 scope: Scope::Global,
@@ -1427,6 +1499,8 @@ mod tests {
             generate_slash_commands: false,
             slash_command_adapters: vec![],
             target_paths: vec![],
+            timeout_ms: None,
+            max_retries: None,
         })
         .await
         .unwrap();
@@ -1459,6 +1533,8 @@ mod tests {
             generate_slash_commands: true,
             slash_command_adapters: vec!["claude-code".to_string()],
             target_paths: vec![],
+            timeout_ms: None,
+            max_retries: None,
         })
         .await
         .unwrap();
@@ -1490,6 +1566,7 @@ mod tests {
             directory_path: "/test/skills".to_string(),
             entry_point: "main.sh".to_string(),
             enabled: true,
+            ..Default::default()
         })
         .await
         .unwrap();
@@ -1509,7 +1586,7 @@ mod tests {
         let db = std::sync::Arc::new(crate::database::Database::new_in_memory().await.unwrap());
         let engine = ReconciliationEngine::new(db).unwrap();
 
-        let result = engine.reconcile(true).await.unwrap();
+        let result = engine.reconcile(true, None).await.unwrap();
 
         assert!(result.success, "Dry-run reconciliation should succeed");
     }
@@ -1520,12 +1597,12 @@ mod tests {
         let engine = ReconciliationEngine::new(db.clone()).unwrap();
 
         // First run on empty database
-        let r1 = engine.reconcile(false).await.unwrap();
+        let r1 = engine.reconcile(false, None).await.unwrap();
         assert!(r1.success);
 
         // Second run should be a no-op (no changes)
         let engine2 = ReconciliationEngine::new(db).unwrap();
-        let r2 = engine2.reconcile(false).await.unwrap();
+        let r2 = engine2.reconcile(false, None).await.unwrap();
         assert!(r2.success);
         assert_eq!(r2.created, 0, "Second run should not create anything");
         assert_eq!(r2.updated, 0, "Second run should not update anything");
@@ -2004,6 +2081,8 @@ mod tests {
                 generate_slash_commands: true,
                 slash_command_adapters: vec!["claude-code".to_string(), "opencode".to_string()],
                 target_paths: vec![],
+                timeout_ms: None,
+                max_retries: None,
             })
             .await
             .unwrap();
@@ -2047,6 +2126,8 @@ mod tests {
                 generate_slash_commands: true,
                 slash_command_adapters: vec!["claude-code".to_string()],
                 target_paths: vec!["/test/repo".to_string()],
+                timeout_ms: None,
+                max_retries: None,
             })
             .await
             .unwrap();
@@ -2093,6 +2174,8 @@ mod tests {
                 generate_slash_commands: false,
                 slash_command_adapters: vec![],
                 target_paths: vec![],
+                timeout_ms: None,
+                max_retries: None,
             })
             .await
             .unwrap();
@@ -2136,6 +2219,8 @@ mod tests {
                 generate_slash_commands: false,
                 slash_command_adapters: vec![],
                 target_paths: vec![],
+                timeout_ms: None,
+                max_retries: None,
             })
             .await
             .unwrap();
@@ -2175,6 +2260,8 @@ mod tests {
                 generate_slash_commands: false,
                 slash_command_adapters: vec![],
                 target_paths: vec![],
+                timeout_ms: None,
+                max_retries: None,
             })
             .await
             .unwrap();
@@ -2217,6 +2304,7 @@ mod tests {
                 directory_path: "/test/skills".to_string(),
                 entry_point: "main.sh".to_string(),
                 enabled: true,
+                ..Default::default()
             })
             .await
             .unwrap();
@@ -2255,6 +2343,7 @@ mod tests {
                 directory_path: "/repo/.skills/test-skill".to_string(),
                 entry_point: "main.sh".to_string(),
                 enabled: true,
+                ..Default::default()
             })
             .await
             .unwrap();
@@ -2302,6 +2391,7 @@ mod tests {
                 directory_path: "/test/skills".to_string(),
                 entry_point: "main.sh".to_string(),
                 enabled: false,
+                ..Default::default()
             })
             .await
             .unwrap();
@@ -2322,6 +2412,175 @@ mod tests {
             skill_entries.is_empty(),
             "Disabled skills should not be in desired state"
         );
+    }
+
+    // =====================================
+    // SKILL ADAPTER TARGETING TESTS (#45)
+    // =====================================
+
+    #[test]
+    fn test_skill_target_adapters_filters_to_listed_adapters() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let db = rt.block_on(async {
+            let db = std::sync::Arc::new(crate::database::Database::new_in_memory().await.unwrap());
+            // Create a skill targeting only ClaudeCode
+            db.create_skill(crate::models::CreateSkillInput {
+                id: None,
+                name: "Targeted Skill".to_string(),
+                description: "Only for Claude Code".to_string(),
+                instructions: "echo 'targeted'".to_string(),
+                scope: Scope::Global,
+                input_schema: vec![],
+                directory_path: "/test/skills".to_string(),
+                entry_point: "main.sh".to_string(),
+                enabled: true,
+                target_adapters: vec!["claude-code".to_string()],
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+            db
+        });
+
+        let engine = ReconciliationEngine::new(db).unwrap();
+        let desired = rt.block_on(async { engine.compute_desired_state().await.unwrap() });
+
+        let skill_entries: Vec<_> = desired
+            .expected_paths
+            .iter()
+            .filter(|(_, a)| a.artifact_type == ArtifactType::Skill)
+            .collect();
+
+        // All entries must be for the claude-code adapter only
+        assert!(
+            !skill_entries.is_empty(),
+            "Should have skill entries for targeted adapter"
+        );
+        for (_, artifact) in &skill_entries {
+            assert_eq!(
+                artifact.adapter,
+                crate::models::AdapterType::ClaudeCode,
+                "Skill should only appear for claude-code adapter"
+            );
+        }
+    }
+
+    #[test]
+    fn test_skill_empty_target_adapters_uses_all_supported() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let db = rt.block_on(async {
+            let db = std::sync::Arc::new(crate::database::Database::new_in_memory().await.unwrap());
+            // Empty target_adapters = all supported
+            db.create_skill(crate::models::CreateSkillInput {
+                id: None,
+                name: "All Adapters Skill".to_string(),
+                description: "Syncs to all".to_string(),
+                instructions: "echo 'all'".to_string(),
+                scope: Scope::Global,
+                input_schema: vec![],
+                directory_path: "/test/skills".to_string(),
+                entry_point: "main.sh".to_string(),
+                enabled: true,
+                target_adapters: vec![], // empty = all
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+            db
+        });
+
+        let engine = ReconciliationEngine::new(db).unwrap();
+        let desired = rt.block_on(async { engine.compute_desired_state().await.unwrap() });
+
+        let skill_entries: Vec<_> = desired
+            .expected_paths
+            .values()
+            .filter(|a| a.artifact_type == ArtifactType::Skill)
+            .collect();
+
+        // Should have entries for multiple adapters (at least 2 support skills)
+        let adapters: std::collections::HashSet<_> =
+            skill_entries.iter().map(|a| a.adapter).collect();
+        assert!(
+            adapters.len() >= 2,
+            "Empty target_adapters should produce entries for all supported adapters, got: {:?}",
+            adapters
+        );
+    }
+
+    #[test]
+    fn test_skill_unsupported_adapter_in_target_is_silently_skipped() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let db = rt.block_on(async {
+            let db = std::sync::Arc::new(crate::database::Database::new_in_memory().await.unwrap());
+            // Cursor does not support skills — it should be silently skipped without panic
+            db.create_skill(crate::models::CreateSkillInput {
+                id: None,
+                name: "Skip Unsupported".to_string(),
+                description: "Cursor does not support skills".to_string(),
+                instructions: "echo 'skip'".to_string(),
+                scope: Scope::Global,
+                input_schema: vec![],
+                directory_path: "/test/skills".to_string(),
+                entry_point: "main.sh".to_string(),
+                enabled: true,
+                target_adapters: vec!["cursor".to_string()],
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+            db
+        });
+
+        let engine = ReconciliationEngine::new(db).unwrap();
+        let desired = rt.block_on(async { engine.compute_desired_state().await.unwrap() });
+
+        // No skill artifacts should be generated (Cursor doesn't support skills)
+        let skill_entries: Vec<_> = desired
+            .expected_paths
+            .values()
+            .filter(|a| a.artifact_type == ArtifactType::Skill)
+            .collect();
+
+        assert!(
+            skill_entries.is_empty(),
+            "Unsupported adapter (Cursor) should produce no skill artifacts"
+        );
+    }
+
+    #[test]
+    fn test_validate_skill_target_adapters_rejects_unknown_id() {
+        let result =
+            crate::models::validate_skill_target_adapters(&["not-a-real-adapter".to_string()]);
+        assert!(result.is_err(), "Unknown adapter should fail validation");
+    }
+
+    #[test]
+    fn test_validate_skill_target_adapters_rejects_unsupported() {
+        // Cursor does not support skills
+        let result = crate::models::validate_skill_target_adapters(&["cursor".to_string()]);
+        assert!(
+            result.is_err(),
+            "Adapter that doesn't support skills should fail validation"
+        );
+    }
+
+    #[test]
+    fn test_validate_skill_target_adapters_accepts_valid() {
+        let result = crate::models::validate_skill_target_adapters(&[
+            "claude-code".to_string(),
+            "cline".to_string(),
+        ]);
+        assert!(
+            result.is_ok(),
+            "Valid skill-supporting adapters should pass"
+        );
+    }
+
+    #[test]
+    fn test_validate_skill_target_adapters_accepts_empty() {
+        let result = crate::models::validate_skill_target_adapters(&[]);
+        assert!(result.is_ok(), "Empty list (all adapters) should pass");
     }
 
     // =====================================

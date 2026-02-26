@@ -120,6 +120,8 @@ pub fn load_skill_from_directory(dir: &Path) -> Result<Skill> {
         enabled: metadata.enabled,
         directory_path: dir.to_string_lossy().to_string(),
         entry_point: metadata.entry_point,
+        target_adapters: Vec::new(),
+        target_paths: Vec::new(),
         created_at,
         updated_at,
     })
@@ -241,6 +243,7 @@ pub async fn sync_skills_to_db(db: &Database) -> Result<u32> {
                 directory_path: Some(skill.directory_path.clone()),
                 entry_point: Some(skill.entry_point.clone()),
                 enabled: Some(skill.enabled),
+                ..Default::default()
             };
             db.update_skill(&skill.id, update_input).await?;
         } else {
@@ -254,6 +257,7 @@ pub async fn sync_skills_to_db(db: &Database) -> Result<u32> {
                 directory_path: skill.directory_path.clone(),
                 entry_point: skill.entry_point.clone(),
                 enabled: skill.enabled,
+                ..Default::default()
             };
             db.create_skill(create_input).await?;
         }

@@ -5,7 +5,8 @@ use super::reconcile_after_mutation;
 use crate::database::Database;
 use crate::error::{AppError, Result};
 use crate::file_storage::skills::{delete_skill_from_disk, save_skill_to_disk};
-use crate::models::{CreateSkillInput, Skill, UpdateSkillInput};
+use crate::models::registry::{ArtifactType, REGISTRY};
+use crate::models::{AdapterType, CreateSkillInput, Scope, Skill, UpdateSkillInput};
 use crate::templates::skills::{get_bundled_skill_templates, TemplateSkill};
 
 #[tauri::command]
@@ -23,6 +24,7 @@ pub async fn create_skill(input: CreateSkillInput, db: State<'_, Arc<Database>>)
     crate::models::validate_skill_input(&input.name, &input.instructions)?;
     crate::models::validate_skill_schema(&input.input_schema)?;
     crate::models::validate_skill_entry_point(&input.entry_point)?;
+    crate::models::validate_skill_target_adapters(&input.target_adapters)?;
 
     // Create in DB first
     let created = db.create_skill(input).await?;
@@ -80,8 +82,14 @@ pub async fn update_skill(
         crate::models::validate_skill_entry_point(ep)?;
     }
 
+    if let Some(ref adapters) = input.target_adapters {
+        crate::models::validate_skill_target_adapters(adapters)?;
+    }
+
     let updated = db.update_skill(&id, input).await?;
     save_skill_to_disk(&updated)?;
+    // Run reconciliation so adapter files are updated immediately.
+    reconcile_after_mutation(db.inner().clone()).await;
     Ok(updated)
 }
 
@@ -193,9 +201,24 @@ pub async fn install_skill_template(
 
 #[tauri::command]
 pub async fn sync_skills(db: State<'_, Arc<Database>>) -> Result<u32> {
-    // Note: sync_skills_to_db currently takes a &Database but inside it probably calls sync DB methods.
-    // We need to update file_storage::skills::sync_skills_to_db to use the new async DB methods too.
-    // For now assuming it will be updated or we need to update it.
-    // Let's assume crate::file_storage::skills::sync_skills_to_db needs to be async.
-    crate::file_storage::skills::sync_skills_to_db(&db).await
+    // Sync from disk to DB (import any skills written outside the app).
+    let synced = crate::file_storage::skills::sync_skills_to_db(&db).await?;
+    // Then run reconciliation to distribute skills to all targeted adapter directories.
+    reconcile_after_mutation(db.inner().clone()).await;
+    Ok(synced)
+}
+
+/// Return the list of adapter IDs that support native skill distribution.
+/// The UI uses this to populate the adapter targeting checklist.
+#[tauri::command]
+pub fn get_skill_supported_adapters() -> Vec<String> {
+    AdapterType::all()
+        .into_iter()
+        .filter(|a| {
+            REGISTRY
+                .validate_support(a, &Scope::Global, ArtifactType::Skill)
+                .is_ok()
+        })
+        .map(|a| a.as_str().to_string())
+        .collect()
 }

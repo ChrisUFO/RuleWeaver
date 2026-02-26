@@ -12,9 +12,6 @@ pub struct TemplateCommand {
     pub metadata: CreateCommandInput,
 }
 
-/// Command templates are currently logic-only stubs (placeholders).
-/// They serve as discovery points for the AI to understand available actions,
-/// but require user-provided scripts or local configuration to be fully functional.
 pub fn get_bundled_command_templates() -> Vec<TemplateCommand> {
     vec![
         TemplateCommand {
@@ -31,6 +28,8 @@ pub fn get_bundled_command_templates() -> Vec<TemplateCommand> {
                 generate_slash_commands: false,
                 slash_command_adapters: vec![],
                 target_paths: vec![],
+                timeout_ms: None,
+                max_retries: None,
             },
         },
         TemplateCommand {
@@ -47,6 +46,8 @@ pub fn get_bundled_command_templates() -> Vec<TemplateCommand> {
                 generate_slash_commands: false,
                 slash_command_adapters: vec![],
                 target_paths: vec![],
+                timeout_ms: None,
+                max_retries: None,
             },
         },
         TemplateCommand {
@@ -59,10 +60,12 @@ pub fn get_bundled_command_templates() -> Vec<TemplateCommand> {
                 script: "echo \"Generating user story map...\"".to_string(),
                 arguments: vec![],
                 expose_via_mcp: true,
+                is_placeholder: true,
                 generate_slash_commands: false,
                 slash_command_adapters: vec![],
                 target_paths: vec![],
-                is_placeholder: true,
+                timeout_ms: None,
+                max_retries: None,
             },
         },
         TemplateCommand {
@@ -79,6 +82,8 @@ pub fn get_bundled_command_templates() -> Vec<TemplateCommand> {
                 generate_slash_commands: false,
                 slash_command_adapters: vec![],
                 target_paths: vec![],
+                timeout_ms: None,
+                max_retries: None,
             },
         },
         TemplateCommand {
@@ -95,6 +100,8 @@ pub fn get_bundled_command_templates() -> Vec<TemplateCommand> {
                 generate_slash_commands: false,
                 slash_command_adapters: vec![],
                 target_paths: vec![],
+                timeout_ms: None,
+                max_retries: None,
             },
         },
         TemplateCommand {
@@ -111,6 +118,8 @@ pub fn get_bundled_command_templates() -> Vec<TemplateCommand> {
                 generate_slash_commands: false,
                 slash_command_adapters: vec![],
                 target_paths: vec![],
+                timeout_ms: None,
+                max_retries: None,
             },
         },
         TemplateCommand {
@@ -127,6 +136,8 @@ pub fn get_bundled_command_templates() -> Vec<TemplateCommand> {
                 generate_slash_commands: false,
                 slash_command_adapters: vec![],
                 target_paths: vec![],
+                timeout_ms: None,
+                max_retries: None,
             },
         },
     ]

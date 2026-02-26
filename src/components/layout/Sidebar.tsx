@@ -9,7 +9,9 @@ import {
   ChevronRight,
   Terminal,
   Brain,
+  Activity,
 } from "lucide-react";
+import { featureManager, FEATURE_FLAGS } from "@/lib/featureManager";
 
 interface SidebarProps {
   collapsed: boolean;
@@ -18,11 +20,14 @@ interface SidebarProps {
   onViewChange: (view: string) => void;
 }
 
-const navItems = [
+const buildNavItems = () => [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { id: "rules", label: "Rules", icon: FileText },
   { id: "commands", label: "Commands", icon: Terminal },
   { id: "skills", label: "Skills", icon: Brain },
+  ...(featureManager.isEnabled(FEATURE_FLAGS.UNIFIED_ARTIFACT_STATUS)
+    ? [{ id: "status", label: "Status", icon: Activity }]
+    : []),
   { id: "settings", label: "Settings", icon: Settings },
 ];
 
@@ -87,7 +92,7 @@ export function Sidebar({ collapsed, onCollapsedChange, activeView, onViewChange
 
       {/* Navigation */}
       <nav className="flex-1 space-y-1 p-3">
-        {navItems.map((item) => {
+        {buildNavItems().map((item) => {
           const isActive = activeView === item.id;
           return (
             <button
