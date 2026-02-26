@@ -176,9 +176,7 @@ impl StatusEngine {
                 continue;
             }
 
-            let artifact_info = self
-                .get_artifact_info(&expected.artifact_type, &expected.content)
-                .await;
+            let artifact_info = self.get_artifact_info(expected);
 
             let (status, detail) = if let Some(found) = actual.found_paths.get(path_str) {
                 if found.content_hash == expected.content_hash {
@@ -335,38 +333,11 @@ impl StatusEngine {
         true
     }
 
-    async fn get_artifact_info(
+    fn get_artifact_info(
         &self,
-        artifact_type: &ArtifactType,
-        content: &Option<String>,
+        expected: &crate::reconciliation::ExpectedArtifact,
     ) -> (String, String) {
-        match artifact_type {
-            ArtifactType::Rule => {
-                if let Some(content) = content {
-                    if let Some(name) = self.extract_name_from_content(content, "name:") {
-                        return (format!("rule-{}", name), name);
-                    }
-                }
-                ("unknown-rule".to_string(), "Unknown Rule".to_string())
-            }
-            ArtifactType::CommandStub => ("command-stub".to_string(), "COMMANDS.md".to_string()),
-            ArtifactType::SlashCommand => {
-                if let Some(content) = content {
-                    if let Some(name) = self.extract_name_from_content(content, "name:") {
-                        return (format!("command-{}", name), name);
-                    }
-                }
-                ("unknown-command".to_string(), "Unknown Command".to_string())
-            }
-            ArtifactType::Skill => {
-                if let Some(content) = content {
-                    if let Some(name) = self.extract_name_from_content(content, "name:") {
-                        return (format!("skill-{}", name), name);
-                    }
-                }
-                ("unknown-skill".to_string(), "Unknown Skill".to_string())
-            }
-        }
+        (expected.id.clone(), expected.name.clone())
     }
 
     async fn get_artifact_info_from_found(&self, found: &FoundArtifact) -> (String, String) {
@@ -383,21 +354,6 @@ impl StatusEngine {
         );
 
         (artifact_id, file_name)
-    }
-
-    fn extract_name_from_content(&self, content: &str, field: &str) -> Option<String> {
-        for line in content.lines() {
-            let line_lower = line.to_lowercase();
-            if line_lower.starts_with(field) {
-                if let Some(pos) = line.find(':') {
-                    let value = line[pos + 1..].trim();
-                    if !value.is_empty() {
-                        return Some(value.to_string());
-                    }
-                }
-            }
-        }
-        None
     }
 
     async fn get_last_operations_by_path(

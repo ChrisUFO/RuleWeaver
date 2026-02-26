@@ -55,6 +55,10 @@ pub struct DesiredState {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExpectedArtifact {
+    /// The unique ID of the artifact (e.g., rule ID, command name)
+    pub id: String,
+    /// The display name of the artifact
+    pub name: String,
     /// The adapter this artifact is for
     pub adapter: AdapterType,
     /// The type of artifact
@@ -210,6 +214,8 @@ impl ReconciliationEngine {
                             desired.expected_paths.insert(
                                 path_str.clone(),
                                 ExpectedArtifact {
+                                    id: rule.id.clone(),
+                                    name: rule.name.clone(),
                                     adapter: *adapter,
                                     artifact_type: ArtifactType::Rule,
                                     scope: Scope::Global,
@@ -232,6 +238,8 @@ impl ReconciliationEngine {
                                     desired.expected_paths.insert(
                                         path_str.clone(),
                                         ExpectedArtifact {
+                                            id: rule.id.clone(),
+                                            name: rule.name.clone(),
                                             adapter: *adapter,
                                             artifact_type: ArtifactType::Rule,
                                             scope: Scope::Local,
@@ -279,6 +287,8 @@ impl ReconciliationEngine {
                 desired.expected_paths.insert(
                     path_str.clone(),
                     ExpectedArtifact {
+                        id: "command-stubs".to_string(),
+                        name: "COMMANDS.md".to_string(),
                         adapter,
                         artifact_type: ArtifactType::CommandStub,
                         scope: Scope::Global,
@@ -337,6 +347,8 @@ impl ReconciliationEngine {
                     desired.expected_paths.insert(
                         path_str.clone(),
                         ExpectedArtifact {
+                            id: format!("command-{}", safe_name),
+                            name: safe_name.clone(),
                             adapter: adapter_type,
                             artifact_type: ArtifactType::SlashCommand,
                             scope: Scope::Global,
@@ -357,6 +369,8 @@ impl ReconciliationEngine {
                         desired.expected_paths.insert(
                             path_str.clone(),
                             ExpectedArtifact {
+                                id: format!("command-{}", safe_name),
+                                name: safe_name.clone(),
                                 adapter: adapter_type,
                                 artifact_type: ArtifactType::SlashCommand,
                                 scope: Scope::Local,
@@ -427,6 +441,8 @@ impl ReconciliationEngine {
                             desired.expected_paths.insert(
                                 path_str,
                                 ExpectedArtifact {
+                                    id: skill.id.clone(),
+                                    name: skill.name.clone(),
                                     adapter,
                                     artifact_type: ArtifactType::Skill,
                                     scope: Scope::Global,
@@ -458,6 +474,8 @@ impl ReconciliationEngine {
                                 desired.expected_paths.insert(
                                     path_str,
                                     ExpectedArtifact {
+                                        id: skill.id.clone(),
+                                        name: skill.name.clone(),
                                         adapter,
                                         artifact_type: ArtifactType::Skill,
                                         scope: Scope::Local,
@@ -1199,6 +1217,8 @@ mod tests {
         desired.expected_paths.insert(
             "/new/path.md".to_string(),
             ExpectedArtifact {
+                id: "rule-1".to_string(),
+                name: "Rule 1".to_string(),
                 adapter: AdapterType::ClaudeCode,
                 artifact_type: ArtifactType::Rule,
                 scope: Scope::Global,
@@ -1225,6 +1245,8 @@ mod tests {
         desired.expected_paths.insert(
             "/existing/path.md".to_string(),
             ExpectedArtifact {
+                id: "rule-1".to_string(),
+                name: "Rule 1".to_string(),
                 adapter: AdapterType::ClaudeCode,
                 artifact_type: ArtifactType::Rule,
                 scope: Scope::Global,
@@ -1289,6 +1311,8 @@ mod tests {
         desired.expected_paths.insert(
             "/existing/path.md".to_string(),
             ExpectedArtifact {
+                id: "rule-1".to_string(),
+                name: "Rule 1".to_string(),
                 adapter: AdapterType::ClaudeCode,
                 artifact_type: ArtifactType::Rule,
                 scope: Scope::Global,
@@ -1327,6 +1351,8 @@ mod tests {
         desired.expected_paths.insert(
             "/new/path.md".to_string(),
             ExpectedArtifact {
+                id: "new-rule".to_string(),
+                name: "New Rule".to_string(),
                 adapter: AdapterType::ClaudeCode,
                 artifact_type: ArtifactType::Rule,
                 scope: Scope::Global,
@@ -1338,6 +1364,8 @@ mod tests {
         desired.expected_paths.insert(
             "/update/path.md".to_string(),
             ExpectedArtifact {
+                id: "update-rule".to_string(),
+                name: "Update Rule".to_string(),
                 adapter: AdapterType::ClaudeCode,
                 artifact_type: ArtifactType::Rule,
                 scope: Scope::Global,
@@ -1349,6 +1377,8 @@ mod tests {
         desired.expected_paths.insert(
             "/unchanged/path.md".to_string(),
             ExpectedArtifact {
+                id: "unchanged-rule".to_string(),
+                name: "Unchanged Rule".to_string(),
                 adapter: AdapterType::ClaudeCode,
                 artifact_type: ArtifactType::Rule,
                 scope: Scope::Global,
