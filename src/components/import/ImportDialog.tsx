@@ -62,9 +62,6 @@ export function ImportDialog({
   const [clipboardImportName, setClipboardImportName] = useState<string | undefined>(undefined);
   const [urlImportDialogOpen, setUrlImportDialogOpen] = useState(false);
   const [urlImportValue, setUrlImportValue] = useState("");
-  const [clipboardNameDialogOpen, setClipboardNameDialogOpen] = useState(false);
-  const [clipboardPendingContent, setClipboardPendingContent] = useState("");
-  const [clipboardNameInput, setClipboardNameInput] = useState("");
   const [importScopeOverride, setImportScopeOverride] = useState<"source" | Scope>("source");
   const [useAdapterOverride, setUseAdapterOverride] = useState(false);
   const [adapterOverrideSet, setAdapterOverrideSet] = useState<Set<AdapterType>>(new Set());
@@ -111,8 +108,6 @@ export function ImportDialog({
       setImportScanErrors(errors);
       setSelectedImportIds(new Set(candidates.map((c) => c.id)));
       setImportScopeOverride("source");
-      setUseAdapterOverride(false);
-      setAdapterOverrideSet(new Set());
     },
     []
   );
@@ -159,19 +154,9 @@ export function ImportDialog({
     } finally {
       setIsScanningImport(false);
     }
-  }, [artifactType, api.ruleImport, addToast, openImportPreview]);
+  }, [artifactType, addToast, openImportPreview]);
 
-  useEffect(() => {
-    if (initialSourceMode && isOpen) {
-      setImportSourceMode(initialSourceMode);
-      // Trigger auto-scan if it's AI
-      if (initialSourceMode === "ai") {
-        void scanAiToolArtifacts();
-      }
-    }
-  }, [initialSourceMode, isOpen, scanAiToolArtifacts]);
-
-  const scanImportFromFile = async () => {
+  const scanImportFromFile = useCallback(async () => {
     const selected = await open({
       multiple: false,
       filters: [{ name: "Artifact Files", extensions: ["md", "txt", "json", "yaml", "yml"] }],
@@ -180,11 +165,6 @@ export function ImportDialog({
 
     setIsScanningImport(true);
     try {
-      // For now, scanFromFile generic backend command handles all but doesn't have a filter yet?
-      // Actually, scanFromFile uses scan_directory_to_candidates internally in backend?
-      // No, scan_rule_file_import calls candidate_from_path(path, ImportArtifactType::Rule).
-      // We might need to update backend to support artifact_type in scan_file too.
-      // But let's assume it works for rules mostly or use directory scan if needed.
       const scan = await api.ruleImport.scanFromFile(selected);
       await openImportPreview("file", selected, scan.candidates, scan.errors);
     } catch (error) {
@@ -192,9 +172,9 @@ export function ImportDialog({
     } finally {
       setIsScanningImport(false);
     }
-  };
+  }, [addToast, openImportPreview]);
 
-  const scanImportFromDirectory = async () => {
+  const scanImportFromDirectory = useCallback(async () => {
     const selected = await open({ directory: true, multiple: false });
     if (!selected || Array.isArray(selected)) return;
 
@@ -214,21 +194,24 @@ export function ImportDialog({
     } finally {
       setIsScanningImport(false);
     }
-  };
+  }, [artifactType, addToast, openImportPreview]);
 
-  const scanImportFromUrl = async (url: string) => {
-    if (!url.trim()) return;
+  const scanImportFromUrl = useCallback(
+    async (url: string) => {
+      if (!url.trim()) return;
 
-    setIsScanningImport(true);
-    try {
-      const scan = await api.ruleImport.scanFromUrl(url);
-      await openImportPreview("url", url, scan.candidates, scan.errors);
-    } catch (error) {
-      toast.error(addToast, { title: "Scan Failed", error });
-    } finally {
-      setIsScanningImport(false);
-    }
-  };
+      setIsScanningImport(true);
+      try {
+        const scan = await api.ruleImport.scanFromUrl(url);
+        await openImportPreview("url", url, scan.candidates, scan.errors);
+      } catch (error) {
+        toast.error(addToast, { title: "Scan Failed", error });
+      } finally {
+        setIsScanningImport(false);
+      }
+    },
+    [addToast, openImportPreview]
+  );
 
   const submitUrlImportScan = async () => {
     const value = urlImportValue.trim();
@@ -244,7 +227,7 @@ export function ImportDialog({
     await scanImportFromUrl(value);
   };
 
-  const scanImportFromClipboard = async () => {
+  const scanImportFromClipboard = useCallback(async () => {
     try {
       const text = await navigator.clipboard.readText();
       if (!text.trim()) {
@@ -255,33 +238,38 @@ export function ImportDialog({
         return;
       }
 
-      setClipboardPendingContent(text);
-      setClipboardNameInput(clipboardImportName ?? "");
-      setClipboardNameDialogOpen(true);
-    } catch (error) {
-      toast.error(addToast, { title: "Scan Failed", error });
+      setIsScanningImport(true);
+      try {
+        const scan = await api.ruleImport.scanFromClipboard(text);
+        await openImportPreview("clipboard", text, scan.candidates, scan.errors);
+      } catch (error) {
+        toast.error(addToast, { title: "Scan Failed", error });
+      } finally {
+        setIsScanningImport(false);
+      }
+    } catch {
+      toast.error(addToast, {
+        title: "Clipboard Access Denied",
+        description: "Please allow clipboard permissions",
+      });
     }
-  };
+  }, [addToast, openImportPreview]);
 
-  const submitClipboardImportScan = async () => {
-    if (!clipboardPendingContent.trim()) {
-      setClipboardNameDialogOpen(false);
-      return;
+  useEffect(() => {
+    if (initialSourceMode && isOpen) {
+      setImportSourceMode(initialSourceMode);
+      // Trigger auto-scan for AI, File, or Directory if they are initial
+      if (initialSourceMode === "ai") {
+        void scanAiToolArtifacts();
+      } else if (initialSourceMode === "file") {
+        void scanImportFromFile();
+      } else if (initialSourceMode === "directory") {
+        void scanImportFromDirectory();
+      } else if (initialSourceMode === "url") {
+        setUrlImportDialogOpen(true);
+      }
     }
-
-    setClipboardNameDialogOpen(false);
-    setIsScanningImport(true);
-    try {
-      const name = clipboardNameInput.trim() || undefined;
-      setClipboardImportName(name);
-      const scan = await api.ruleImport.scanFromClipboard(clipboardPendingContent, name);
-      await openImportPreview("clipboard", clipboardPendingContent, scan.candidates, scan.errors);
-    } catch (error) {
-      toast.error(addToast, { title: "Scan Failed", error });
-    } finally {
-      setIsScanningImport(false);
-    }
-  };
+  }, [initialSourceMode, isOpen, scanAiToolArtifacts, scanImportFromFile, scanImportFromDirectory]);
 
   const toggleImportCandidate = (id: string, checked: boolean) => {
     setSelectedImportIds((prev) => {
@@ -409,7 +397,7 @@ export function ImportDialog({
           <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-2">
             {importSourceMode !== "ai" && importSourceValue && (
               <div className="rounded-md border p-3 text-xs font-mono text-muted-foreground break-all bg-black/10">
-                <span className="font-bold mr-2 uppercase">Source:</span>
+                <span className="font-bold mr-1 uppercase">Source: </span>
                 {importSourceMode === "clipboard" ? "Clipboard CONTENT" : importSourceValue}
               </div>
             )}
@@ -709,34 +697,6 @@ export function ImportDialog({
             </Button>
             <Button onClick={submitUrlImportScan} className="glow-primary">
               Scan Remote Source
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={clipboardNameDialogOpen} onOpenChange={setClipboardNameDialogOpen}>
-        <DialogContent onClose={() => setClipboardNameDialogOpen(false)} className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Clipboard Import Label</DialogTitle>
-            <DialogDescription>
-              Provide an optional label to identify this candidate.
-            </DialogDescription>
-          </DialogHeader>
-
-          <Input
-            value={clipboardNameInput}
-            onChange={(e) => setClipboardNameInput(e.target.value)}
-            placeholder="my-custom-import"
-            aria-label="Clipboard import name"
-            className="bg-black/20"
-          />
-
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setClipboardNameDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={submitClipboardImportScan} className="glow-primary">
-              Analyze Clipboard
             </Button>
           </DialogFooter>
         </DialogContent>
