@@ -68,7 +68,7 @@ fn validate_skill_name(skill_name: &str) -> Result<()> {
 ///
 /// Converts the name to lowercase and replaces invalid characters with dashes.
 pub fn sanitize_skill_name(skill_name: &str) -> String {
-    skill_name
+    let sanitized: String = skill_name
         .to_lowercase()
         .chars()
         .map(|c| {
@@ -80,7 +80,13 @@ pub fn sanitize_skill_name(skill_name: &str) -> String {
         })
         .collect::<String>()
         .trim_matches('-')
-        .to_string()
+        .to_string();
+
+    if sanitized.is_empty() {
+        "unnamed-skill".to_string()
+    } else {
+        sanitized
+    }
 }
 
 /// Global shared PathResolver instance.
