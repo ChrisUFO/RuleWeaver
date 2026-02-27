@@ -25,6 +25,7 @@ async fn test_skill_create_reconcile_writes_skill_md() {
         enabled: true,
         target_adapters: vec![],  // all supported
         target_paths: vec![],
+        base_path: None,
     })
     .await
     .unwrap();
@@ -76,6 +77,7 @@ async fn test_skill_adapter_targeting_limits_distribution() {
         enabled: true,
         target_adapters: vec!["claude-code".into()],
         target_paths: vec![],
+        base_path: None,
     })
     .await
     .unwrap();
@@ -129,10 +131,10 @@ async fn test_skill_delete_reconcile_removes_skill_md() {
             directory_path: "".into(),
             entry_point: "".into(),
             enabled: true,
-            target_adapters: vec!["claude-code".into()],
-            target_paths: vec![],
-        })
-        .await
+                    target_adapters: vec!["claude-code".into()],
+                    target_paths: vec![],
+                    base_path: None,
+                })        .await
         .unwrap();
 
     // Create initial files
@@ -176,10 +178,10 @@ async fn test_skill_update_reconcile_updates_content() {
             directory_path: "".into(),
             entry_point: "".into(),
             enabled: true,
-            target_adapters: vec!["claude-code".into()],
-            target_paths: vec![],
-        })
-        .await
+                    target_adapters: vec!["claude-code".into()],
+                    target_paths: vec![],
+                    base_path: None,
+                })        .await
         .unwrap();
 
     let engine = common::make_engine(db.clone(), home_dir.path());
@@ -236,6 +238,7 @@ async fn test_cursor_gets_no_skill_files() {
         enabled: true,
         target_adapters: vec!["cursor".into()],
         target_paths: vec![],
+        base_path: None,
     })
     .await
     .unwrap();
@@ -280,6 +283,7 @@ async fn test_windsurf_gets_skill_files() {
         enabled: true,
         target_adapters: vec!["windsurf".into()],
         target_paths: vec![],
+        base_path: None,
     })
     .await
     .unwrap();

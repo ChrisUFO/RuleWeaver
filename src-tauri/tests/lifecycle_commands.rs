@@ -24,6 +24,7 @@ async fn test_command_create_reconcile_writes_stub() {
         generate_slash_commands: false,
         slash_command_adapters: vec![],
         target_paths: vec![],
+        base_path: None,
         timeout_ms: None,
         max_retries: None,
     })
@@ -116,6 +117,7 @@ async fn test_cursor_gets_no_command_stub() {
         generate_slash_commands: false,
         slash_command_adapters: vec![],
         target_paths: vec![],
+        base_path: None,
         timeout_ms: None,
         max_retries: None,
     })
@@ -163,6 +165,7 @@ async fn test_slash_command_create_produces_desired_paths() {
         generate_slash_commands: true,
         slash_command_adapters: vec!["claude-code".into()],
         target_paths: vec![],
+        base_path: None,
         timeout_ms: None,
         max_retries: None,
     })
