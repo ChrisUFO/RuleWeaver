@@ -11,6 +11,14 @@ export function getToolFileName(tool: ToolEntry): string {
 }
 
 /**
+ * Normalizes a path for visual previews by ensuring consistent forward slashes
+ * and trimming leading/trailing whitespace.
+ */
+export function normalizePath(path: string): string {
+  return path.trim().replace(/\\/g, "/");
+}
+
+/**
  * Generates a name for a duplicated item with "(Copy) N" suffixing.
  * e.g. "Rule" -> "Rule (Copy)"
  * e.g. "Rule (Copy)" -> "Rule (Copy) 2"

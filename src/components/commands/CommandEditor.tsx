@@ -8,15 +8,18 @@ import {
   AlertTriangle,
   EyeOff,
   HelpCircle,
+  Globe,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select } from "@/components/ui/select";
 import { SlashCommandsSection } from "./SlashCommandsSection";
-import { cn } from "@/lib/utils";
+import { cn, normalizePath } from "@/lib/utils";
+import { useMemo } from "react";
 import { featureManager, FEATURE_FLAGS } from "@/lib/featureManager";
 import type { CommandModel, ExecutionLog } from "@/types/command";
 import type {
@@ -104,6 +107,11 @@ export function CommandEditor({
   onHistoryFilterChange,
   onHistoryPageChange,
 }: CommandEditorProps) {
+  const sortedRepos = useMemo(
+    () => [...availableRepos].sort((a, b) => a.localeCompare(b)),
+    [availableRepos]
+  );
+
   if (!selected) {
     return (
       <Card className="glass-card premium-shadow border-none overflow-hidden">
@@ -176,18 +184,29 @@ export function CommandEditor({
         </div>
 
         <div className="grid gap-2">
-          <label className="text-sm font-medium">Workspace Context (Optional Base Path)</label>
+          <div className="flex items-center justify-between">
+            <label className="text-sm font-medium">Workspace Context (Optional Base Path)</label>
+            {form.basePath && (
+              <Badge
+                variant="outline"
+                className="flex items-center gap-1 bg-primary/10 text-primary border-primary/20 text-[10px] uppercase tracking-wider py-0 px-1.5 h-5 font-bold"
+              >
+                <Globe className="h-2.5 w-2.5" />
+                Portable
+              </Badge>
+            )}
+          </div>
           <p className="text-xs text-muted-foreground mb-1">
             Select a repository root to make the command configuration portable (target paths become
             relative).
           </p>
-          {availableRepos.length === 0 ? (
+          {sortedRepos.length === 0 ? (
             <p className="text-xs text-muted-foreground">
               No configured repositories found. Add them in Settings.
             </p>
           ) : (
             <Select
-              value={availableRepos.includes(form.basePath || "") ? form.basePath || "" : ""}
+              value={sortedRepos.includes(form.basePath || "") ? form.basePath || "" : ""}
               onChange={(value) => {
                 onUpdateForm({ basePath: value || null });
                 if (value) {
@@ -197,7 +216,7 @@ export function CommandEditor({
               }}
               options={[
                 { value: "", label: "None (Use Absolute Paths)" },
-                ...availableRepos.map((repo) => ({ value: repo, label: repo })),
+                ...sortedRepos.map((repo) => ({ value: repo, label: repo })),
               ]}
               aria-label="Select base path workspace"
             />
@@ -206,40 +225,55 @@ export function CommandEditor({
 
         <div className="grid gap-2">
           <label className="text-sm font-medium">Target Repositories (Optional)</label>
-          {availableRepos.length === 0 ? (
+          {sortedRepos.length === 0 ? (
             <p className="text-xs text-muted-foreground">
               No repositories configured. Add repository roots in Settings.
             </p>
           ) : (
             <div className="rounded-md border p-3 space-y-2">
-              {availableRepos.map((repo) => {
+              {sortedRepos.map((repo) => {
                 const isBase = form.basePath === repo;
                 const targetString = isBase ? "./" : repo;
                 const isChecked =
                   form.targetPaths.includes(targetString) || form.targetPaths.includes(repo);
 
                 return (
-                  <label key={repo} className="flex items-center gap-2 text-sm">
-                    <Checkbox
-                      checked={isChecked}
-                      onChange={(checked) => {
-                        // If unchecking, remove both relative and absolute forms just in case
-                        if (!checked) {
-                          onToggleTargetPath(targetString, false);
-                          if (isBase) onToggleTargetPath(repo, false);
-                        } else {
-                          onToggleTargetPath(targetString, true);
-                        }
-                      }}
-                      aria-label={`Target repository ${repo}`}
-                    />
-                    <span className="truncate">
-                      {repo}{" "}
-                      {isBase && (
-                        <span className="text-xs text-muted-foreground ml-1">(Saved as ./)</span>
-                      )}
-                    </span>
-                  </label>
+                  <div key={repo} className="space-y-1">
+                    <label className="flex items-center gap-2 text-sm cursor-pointer">
+                      <Checkbox
+                        checked={isChecked}
+                        onChange={(checked) => {
+                          // If unchecking, remove both relative and absolute forms just in case
+                          if (!checked) {
+                            onToggleTargetPath(targetString, false);
+                            if (isBase) onToggleTargetPath(repo, false);
+                          } else {
+                            onToggleTargetPath(targetString, true);
+                          }
+                        }}
+                        aria-label={`Target repository ${repo}`}
+                      />
+                      <span className="truncate">
+                        {repo}{" "}
+                        {isBase && (
+                          <span className="text-[10px] bg-primary/10 text-primary px-1 rounded font-bold ml-1 uppercase tracking-tighter">
+                            Relative
+                          </span>
+                        )}
+                      </span>
+                    </label>
+                    {isChecked && isBase && (
+                      <p className="text-[10px] text-muted-foreground ml-6 flex items-center gap-1 opacity-70">
+                        <span className="font-semibold">Resolves to:</span>
+                        <span
+                          className="font-mono bg-white/5 px-1 rounded truncate max-w-[300px]"
+                          title={normalizePath(repo)}
+                        >
+                          {normalizePath(repo)}
+                        </span>
+                      </p>
+                    )}
+                  </div>
                 );
               })}
             </div>

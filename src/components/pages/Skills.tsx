@@ -8,8 +8,9 @@ import {
   CheckCircle,
   XCircle,
   AlertCircle,
+  Globe,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, normalizePath, generateDuplicateName } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -17,7 +18,6 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { api } from "@/lib/tauri";
-import { generateDuplicateName } from "@/lib/utils";
 import { useToast } from "@/components/ui/toast";
 import type { Skill, SkillParameter } from "@/types/skill";
 import { Scope } from "@/types/rule";
@@ -51,7 +51,8 @@ export function Skills({ initialSelectedId, onClearInitialId }: SkillsProps) {
   const [targetAdapters, setTargetAdapters] = useState<string[]>([]);
   const [targetPaths, setTargetPaths] = useState<string[]>([]);
   const [supportedAdapters, setSupportedAdapters] = useState<string[]>([]);
-  const { roots: availableRepos } = useRepositoryRoots();
+  const { roots } = useRepositoryRoots();
+  const availableRepos = useMemo(() => [...roots].sort((a, b) => a.localeCompare(b)), [roots]);
   const [isSaving, setIsSaving] = useState(false);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [adapterStatuses, setAdapterStatuses] = useState<Map<string, string>>(new Map());
@@ -486,7 +487,18 @@ export function Skills({ initialSelectedId, onClearInitialId }: SkillsProps) {
                       )}
                     </div>
                     <div className="space-y-2">
-                      <label className="text-sm font-medium">Directory Path</label>
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium">Directory Path</label>
+                        {basePath && (
+                          <Badge
+                            variant="outline"
+                            className="flex items-center gap-1 bg-primary/10 text-primary border-primary/20 text-[10px] uppercase tracking-wider py-0 px-1.5 h-5 font-bold"
+                          >
+                            <Globe className="h-2.5 w-2.5" />
+                            Portable
+                          </Badge>
+                        )}
+                      </div>
                       <Input
                         value={directoryPath}
                         onChange={(e) => setDirectoryPath(e.target.value)}
@@ -497,17 +509,25 @@ export function Skills({ initialSelectedId, onClearInitialId }: SkillsProps) {
                         }
                       />
                       {basePath && directoryPath && (
-                        <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
-                          <span className="font-semibold">Resolves to:</span>
+                        <p className="text-xs text-muted-foreground mt-1 flex items-center gap-2">
+                          <span className="font-semibold opacity-70">Resolves to:</span>
                           <span
-                            className="font-mono bg-black/20 px-1 py-0.5 rounded opacity-80 truncate"
-                            title={`${basePath}${directoryPath.startsWith("./") ? directoryPath.slice(1) : directoryPath.startsWith("${WORKSPACE_ROOT}") ? directoryPath.slice(17) : "/" + directoryPath}`}
+                            className="font-mono bg-white/5 border border-white/5 px-1.5 py-0.5 rounded text-[10px] opacity-90 truncate max-w-[250px]"
+                            title={normalizePath(
+                              directoryPath.startsWith("./")
+                                ? `${basePath}${directoryPath.slice(1)}`
+                                : directoryPath.startsWith("${WORKSPACE_ROOT}")
+                                  ? `${basePath}${directoryPath.slice(17)}`
+                                  : directoryPath
+                            )}
                           >
-                            {directoryPath.startsWith("./")
-                              ? `${basePath}${directoryPath.slice(1)}`
-                              : directoryPath.startsWith("${WORKSPACE_ROOT}")
-                                ? `${basePath}${directoryPath.slice(17)}`
-                                : directoryPath}
+                            {normalizePath(
+                              directoryPath.startsWith("./")
+                                ? `${basePath}${directoryPath.slice(1)}`
+                                : directoryPath.startsWith("${WORKSPACE_ROOT}")
+                                  ? `${basePath}${directoryPath.slice(17)}`
+                                  : directoryPath
+                            )}
                           </span>
                         </p>
                       )}

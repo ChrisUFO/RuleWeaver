@@ -870,16 +870,29 @@ fn normalize_path(path: &Path) -> std::result::Result<PathBuf, AppError> {
 /// If the path starts with `./` or contains `${WORKSPACE_ROOT}`,
 /// it will be resolved against the `base_path`.
 /// If the path is already absolute, or no base_path is provided, it returns the original path.
+///
+/// This function prevents directory traversal by ensuring the final path is within
+/// the base_path boundary if a relative path was provided.
 pub fn resolve_workspace_path(path: &str, base_path: Option<&str>) -> String {
     let mut resolved = path.to_string();
 
-    if let Some(base) = base_path {
-        if resolved.starts_with("./") {
-            let relative_part = resolved.trim_start_matches("./");
-            resolved = PathBuf::from(base).join(relative_part).to_string_lossy().to_string();
-        } else if resolved.contains("${WORKSPACE_ROOT}") {
-            resolved = resolved.replace("${WORKSPACE_ROOT}", base);
+    let base = match base_path {
+        Some(b) if !b.trim().is_empty() => b,
+        _ => return resolved,
+    };
+
+    if resolved.starts_with("./") {
+        let relative_part = resolved.trim_start_matches("./");
+        // Security: Prevent directory traversal (e.g., "./../../etc/passwd")
+        if relative_part.contains("..") {
+            let path_buf = PathBuf::from(relative_part);
+            if path_buf.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
+                return resolved; // Return original if traversal detected
+            }
         }
+        resolved = PathBuf::from(base).join(relative_part).to_string_lossy().to_string();
+    } else if resolved.contains("${WORKSPACE_ROOT}") {
+        resolved = resolved.replace("${WORKSPACE_ROOT}", base);
     }
 
     resolved
@@ -1387,6 +1400,12 @@ mod tests {
         assert_eq!(
             resolve_workspace_path("/absolute/path", base),
             "/absolute/path"
+        );
+
+        // Traversal prevention
+        assert_eq!(
+            resolve_workspace_path("./../../etc/passwd", base),
+            "./../../etc/passwd"
         );
     }
 }
