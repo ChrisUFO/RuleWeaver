@@ -244,8 +244,7 @@ pub fn run() {
             }
 
             let app_handle = app.handle().clone();
-            TrayIconBuilder::with_id("main")
-                .icon(app.default_window_icon().unwrap().clone())
+            let mut tray_builder = TrayIconBuilder::with_id("main")
                 .menu(&tray_menu)
                 .on_menu_event(move |app, event| match event.id().as_ref() {
                     "sync" => {
@@ -348,8 +347,13 @@ pub fn run() {
                             }
                         }
                     }
-                })
-                .build(app)?;
+                });
+
+            if let Some(icon) = app.default_window_icon() {
+                tray_builder = tray_builder.icon(icon.clone());
+            }
+
+            let _ = tray_builder.build(app)?;
 
             if let Some(window) = app_handle.get_webview_window("main") {
                 let app_for_events = app_handle.clone();

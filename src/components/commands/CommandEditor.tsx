@@ -210,7 +210,13 @@ export function CommandEditor({
               onChange={(value) => {
                 onUpdateForm({ basePath: value || null });
                 if (value) {
-                  const updatedTargets = form.targetPaths.map((p) => (p === value ? "./" : p));
+                  const updatedTargets = form.targetPaths.map((p) => {
+                    if (p.startsWith(value)) {
+                      const relativePath = p.slice(value.length).replace(/^[/\\]/, "");
+                      return relativePath ? `./${relativePath}` : "./";
+                    }
+                    return p;
+                  });
                   onUpdateForm({ targetPaths: updatedTargets });
                 }
               }}
