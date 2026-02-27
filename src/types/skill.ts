@@ -32,6 +32,7 @@ export interface Skill {
   targetAdapters: string[];
   /** Repository roots for local-scope syncing. */
   targetPaths: string[];
+  basePath?: string | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -48,6 +49,7 @@ export interface CreateSkillInput {
   enabled?: boolean;
   targetAdapters?: string[];
   targetPaths?: string[];
+  basePath?: string | null;
 }
 
 export interface UpdateSkillInput {
@@ -61,6 +63,7 @@ export interface UpdateSkillInput {
   enabled?: boolean;
   targetAdapters?: string[];
   targetPaths?: string[];
+  basePath?: string | null;
 }
 
 export interface TemplateFile {

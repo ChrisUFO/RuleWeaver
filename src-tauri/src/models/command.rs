@@ -24,6 +24,8 @@ pub struct Command {
     #[serde(default)]
     pub target_paths: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub base_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub timeout_ms: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_retries: Option<u8>,
@@ -149,6 +151,7 @@ impl Command {
             generate_slash_commands: false,
             slash_command_adapters: Vec::new(),
             target_paths: Vec::new(),
+            base_path: None,
             timeout_ms: None,
             max_retries: None,
             created_at: now,
@@ -177,6 +180,8 @@ pub struct CreateCommandInput {
     #[serde(default)]
     pub target_paths: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub base_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub timeout_ms: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_retries: Option<u8>,
@@ -198,6 +203,7 @@ pub struct UpdateCommandInput {
     pub generate_slash_commands: Option<bool>,
     pub slash_command_adapters: Option<Vec<String>>,
     pub target_paths: Option<Vec<String>>,
+    pub base_path: Option<String>,
     pub timeout_ms: Option<u64>,
     pub max_retries: Option<u8>,
 }
@@ -250,6 +256,7 @@ mod tests {
             generate_slash_commands: false,
             slash_command_adapters: vec![],
             target_paths: vec![],
+            base_path: None,
             timeout_ms: None,
             max_retries: None,
         };

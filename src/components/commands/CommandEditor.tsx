@@ -14,6 +14,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Select } from "@/components/ui/select";
 import { SlashCommandsSection } from "./SlashCommandsSection";
 import { cn } from "@/lib/utils";
 import { featureManager, FEATURE_FLAGS } from "@/lib/featureManager";
@@ -175,6 +176,35 @@ export function CommandEditor({
         </div>
 
         <div className="grid gap-2">
+          <label className="text-sm font-medium">Workspace Context (Optional Base Path)</label>
+          <p className="text-xs text-muted-foreground mb-1">
+            Select a repository root to make the command configuration portable (target paths become
+            relative).
+          </p>
+          {availableRepos.length === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              No configured repositories found. Add them in Settings.
+            </p>
+          ) : (
+            <Select
+              value={availableRepos.includes(form.basePath || "") ? form.basePath || "" : ""}
+              onChange={(value) => {
+                onUpdateForm({ basePath: value || null });
+                if (value) {
+                  const updatedTargets = form.targetPaths.map((p) => (p === value ? "./" : p));
+                  onUpdateForm({ targetPaths: updatedTargets });
+                }
+              }}
+              options={[
+                { value: "", label: "None (Use Absolute Paths)" },
+                ...availableRepos.map((repo) => ({ value: repo, label: repo })),
+              ]}
+              aria-label="Select base path workspace"
+            />
+          )}
+        </div>
+
+        <div className="grid gap-2">
           <label className="text-sm font-medium">Target Repositories (Optional)</label>
           {availableRepos.length === 0 ? (
             <p className="text-xs text-muted-foreground">
@@ -182,16 +212,36 @@ export function CommandEditor({
             </p>
           ) : (
             <div className="rounded-md border p-3 space-y-2">
-              {availableRepos.map((repo) => (
-                <label key={repo} className="flex items-center gap-2 text-sm">
-                  <Checkbox
-                    checked={form.targetPaths.includes(repo)}
-                    onChange={(checked) => onToggleTargetPath(repo, checked)}
-                    aria-label={`Target repository ${repo}`}
-                  />
-                  <span className="truncate">{repo}</span>
-                </label>
-              ))}
+              {availableRepos.map((repo) => {
+                const isBase = form.basePath === repo;
+                const targetString = isBase ? "./" : repo;
+                const isChecked =
+                  form.targetPaths.includes(targetString) || form.targetPaths.includes(repo);
+
+                return (
+                  <label key={repo} className="flex items-center gap-2 text-sm">
+                    <Checkbox
+                      checked={isChecked}
+                      onChange={(checked) => {
+                        // If unchecking, remove both relative and absolute forms just in case
+                        if (!checked) {
+                          onToggleTargetPath(targetString, false);
+                          if (isBase) onToggleTargetPath(repo, false);
+                        } else {
+                          onToggleTargetPath(targetString, true);
+                        }
+                      }}
+                      aria-label={`Target repository ${repo}`}
+                    />
+                    <span className="truncate">
+                      {repo}{" "}
+                      {isBase && (
+                        <span className="text-xs text-muted-foreground ml-1">(Saved as ./)</span>
+                      )}
+                    </span>
+                  </label>
+                );
+              })}
             </div>
           )}
         </div>

@@ -950,7 +950,11 @@ async fn handle_skill_call(
         skill.entry_point.clone()
     };
 
-    let dir = std::path::PathBuf::from(&skill.directory_path);
+    let resolved_path = crate::path_resolver::resolve_workspace_path(
+        &skill.directory_path,
+        skill.base_path.as_deref(),
+    );
+    let dir = std::path::PathBuf::from(&resolved_path);
     if !dir.exists() || !dir.is_dir() {
         return json!({
             "jsonrpc": "2.0",

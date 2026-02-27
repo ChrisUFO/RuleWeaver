@@ -865,6 +865,26 @@ fn normalize_path(path: &Path) -> std::result::Result<PathBuf, AppError> {
     Ok(normalized)
 }
 
+/// Resolve a path string using an optional base workspace path.
+///
+/// If the path starts with `./` or contains `${WORKSPACE_ROOT}`,
+/// it will be resolved against the `base_path`.
+/// If the path is already absolute, or no base_path is provided, it returns the original path.
+pub fn resolve_workspace_path(path: &str, base_path: Option<&str>) -> String {
+    let mut resolved = path.to_string();
+
+    if let Some(base) = base_path {
+        if resolved.starts_with("./") {
+            let relative_part = resolved.trim_start_matches("./");
+            resolved = PathBuf::from(base).join(relative_part).to_string_lossy().to_string();
+        } else if resolved.contains("${WORKSPACE_ROOT}") {
+            resolved = resolved.replace("${WORKSPACE_ROOT}", base);
+        }
+    }
+
+    resolved
+}
+
 /// Resolve a registry path string (e.g., "~/path" or "~") to an absolute PathBuf.
 ///
 /// This is a convenience function for backward compatibility.
@@ -1339,5 +1359,34 @@ mod tests {
 
         let result = resolver.slash_command_path(AdapterType::ClaudeCode, "valid.command", true);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_resolve_workspace_path() {
+        let base = Some("/home/user/project");
+        
+        // Starts with ./
+        assert_eq!(
+            resolve_workspace_path("./scripts/test.sh", base),
+            if cfg!(windows) { "/home/user/project\\scripts/test.sh" } else { "/home/user/project/scripts/test.sh" }
+        );
+        
+        // Contains ${WORKSPACE_ROOT}
+        assert_eq!(
+            resolve_workspace_path("${WORKSPACE_ROOT}/docs", base),
+            "/home/user/project/docs"
+        );
+        
+        // No base path
+        assert_eq!(
+            resolve_workspace_path("./scripts/test.sh", None),
+            "./scripts/test.sh"
+        );
+        
+        // Absolute path ignores base if not using variable
+        assert_eq!(
+            resolve_workspace_path("/absolute/path", base),
+            "/absolute/path"
+        );
     }
 }

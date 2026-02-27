@@ -46,6 +46,7 @@ export function Skills({ initialSelectedId, onClearInitialId }: SkillsProps) {
   const [entryPoint, setEntryPoint] = useState("");
   const [scope, setScope] = useState<Scope>("global");
   const [directoryPath, setDirectoryPath] = useState("");
+  const [basePath, setBasePath] = useState("");
   const [enabled, setEnabled] = useState(true);
   const [targetAdapters, setTargetAdapters] = useState<string[]>([]);
   const [targetPaths, setTargetPaths] = useState<string[]>([]);
@@ -88,7 +89,10 @@ export function Skills({ initialSelectedId, onClearInitialId }: SkillsProps) {
     });
     api.skills
       .getSupportedAdapters()
-      .then(setSupportedAdapters)
+      .then((adapters) => {
+        const sorted = [...adapters].sort((a, b) => a.localeCompare(b));
+        setSupportedAdapters(sorted);
+      })
       .catch(() => {});
   }, [addToast]);
 
@@ -99,6 +103,9 @@ export function Skills({ initialSelectedId, onClearInitialId }: SkillsProps) {
       setInstructions("");
       setInputSchema([]);
       setEntryPoint("");
+      setScope("global");
+      setDirectoryPath("");
+      setBasePath("");
       setEnabled(true);
       setTargetAdapters([]);
       setTargetPaths([]);
@@ -111,6 +118,7 @@ export function Skills({ initialSelectedId, onClearInitialId }: SkillsProps) {
     setEntryPoint(selected.entryPoint || "");
     setScope(selected.scope);
     setDirectoryPath(selected.directoryPath || "");
+    setBasePath(selected.basePath || "");
     setEnabled(selected.enabled);
     setTargetAdapters(selected.targetAdapters ?? []);
     setTargetPaths(selected.targetPaths ?? []);
@@ -170,6 +178,7 @@ export function Skills({ initialSelectedId, onClearInitialId }: SkillsProps) {
         scope,
         inputSchema: inputSchema,
         directoryPath: scope === "local" ? directoryPath : undefined,
+        basePath: scope === "local" ? basePath : undefined,
         entryPoint: entryPoint,
         enabled,
         targetAdapters,
@@ -444,31 +453,65 @@ export function Skills({ initialSelectedId, onClearInitialId }: SkillsProps) {
                   />
                 </div>
                 {scope === "local" && (
-                  <div className="space-y-2 md:col-span-2">
-                    <label className="text-sm font-medium">Directory Path (for local skill)</label>
-                    {availableRepos.length > 0 && (
-                      <Select
-                        value={availableRepos.includes(directoryPath) ? directoryPath : ""}
-                        onChange={(value) => {
-                          if (value) setDirectoryPath(value);
-                        }}
-                        options={[
-                          { value: "", label: "Select configured repository" },
-                          ...availableRepos.map((repo) => ({ value: repo, label: repo })),
-                        ]}
-                        aria-label="Select local repository"
-                      />
-                    )}
-                    <Input
-                      value={directoryPath}
-                      onChange={(e) => setDirectoryPath(e.target.value)}
-                      placeholder="/absolute/path/to/project/.agent/skills/my-skill"
-                    />
-                    {availableRepos.length === 0 && (
+                  <div className="space-y-4 md:col-span-2 rounded-xl border border-white/5 bg-white/2 p-4">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">
+                        Workspace Context (Optional Base Path)
+                      </label>
                       <p className="text-xs text-muted-foreground">
-                        No configured repositories found. Add them in Settings.
+                        Select a repository root to make the directory path portable (relative to
+                        workspace).
                       </p>
-                    )}
+                      {availableRepos.length > 0 ? (
+                        <Select
+                          value={availableRepos.includes(basePath) ? basePath : ""}
+                          onChange={(value) => {
+                            setBasePath(value || "");
+                            if (value && directoryPath.startsWith(value)) {
+                              setDirectoryPath(
+                                "./" + directoryPath.slice(value.length).replace(/^[/\\]/, "")
+                              );
+                            }
+                          }}
+                          options={[
+                            { value: "", label: "None (Use Absolute Path)" },
+                            ...availableRepos.map((repo) => ({ value: repo, label: repo })),
+                          ]}
+                          aria-label="Select base path workspace"
+                        />
+                      ) : (
+                        <p className="text-xs text-muted-foreground">
+                          No configured repositories found. Add them in Settings.
+                        </p>
+                      )}
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Directory Path</label>
+                      <Input
+                        value={directoryPath}
+                        onChange={(e) => setDirectoryPath(e.target.value)}
+                        placeholder={
+                          basePath
+                            ? "./.agent/skills/my-skill"
+                            : "/absolute/path/to/project/.agent/skills/my-skill"
+                        }
+                      />
+                      {basePath && directoryPath && (
+                        <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+                          <span className="font-semibold">Resolves to:</span>
+                          <span
+                            className="font-mono bg-black/20 px-1 py-0.5 rounded opacity-80 truncate"
+                            title={`${basePath}${directoryPath.startsWith("./") ? directoryPath.slice(1) : directoryPath.startsWith("${WORKSPACE_ROOT}") ? directoryPath.slice(17) : "/" + directoryPath}`}
+                          >
+                            {directoryPath.startsWith("./")
+                              ? `${basePath}${directoryPath.slice(1)}`
+                              : directoryPath.startsWith("${WORKSPACE_ROOT}")
+                                ? `${basePath}${directoryPath.slice(17)}`
+                                : directoryPath}
+                          </span>
+                        </p>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>

@@ -17,7 +17,8 @@ export const useRegistryStore = create<RegistryState>((set) => ({
     set({ isLoading: true, error: null });
     try {
       const tools = await api.registry.getTools();
-      set({ tools, isLoading: false });
+      const sortedTools = [...tools].sort((a, b) => a.name.localeCompare(b.name));
+      set({ tools: sortedTools, isLoading: false });
     } catch (error) {
       set({
         error: error instanceof Error ? error.message : "Failed to fetch tools registry",

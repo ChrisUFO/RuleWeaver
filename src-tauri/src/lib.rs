@@ -245,6 +245,7 @@ pub fn run() {
 
             let app_handle = app.handle().clone();
             TrayIconBuilder::with_id("main")
+                .icon(app.default_window_icon().unwrap().clone())
                 .menu(&tray_menu)
                 .on_menu_event(move |app, event| match event.id().as_ref() {
                     "sync" => {

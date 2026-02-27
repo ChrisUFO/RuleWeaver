@@ -122,6 +122,7 @@ pub fn load_skill_from_directory(dir: &Path) -> Result<Skill> {
         entry_point: metadata.entry_point,
         target_adapters: Vec::new(),
         target_paths: Vec::new(),
+        base_path: None,
         created_at,
         updated_at,
     })
