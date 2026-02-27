@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Plus,
+  Copy,
   Trash2,
   FolderOpen,
   FolderUp,
@@ -16,6 +17,7 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { api } from "@/lib/tauri";
+import { generateDuplicateName } from "@/lib/utils";
 import { useToast } from "@/components/ui/toast";
 import type { Skill, SkillParameter } from "@/types/skill";
 import { Scope } from "@/types/rule";
@@ -24,6 +26,7 @@ import { TemplateBrowser } from "@/components/skills/TemplateBrowser";
 import { Select } from "@/components/ui/select";
 import { useRepositoryRoots } from "@/hooks/useRepositoryRoots";
 import { ImportDialog } from "@/components/import/ImportDialog";
+import { useKeyboardShortcuts, SHORTCUTS } from "@/hooks/useKeyboardShortcuts";
 import type { ArtifactStatusEntry } from "@/types/status";
 
 interface SkillsProps {
@@ -200,6 +203,56 @@ export function Skills({ initialSelectedId, onClearInitialId }: SkillsProps) {
     }
   };
 
+  const duplicateSkill = async (skillToDuplicate?: Skill) => {
+    const base = skillToDuplicate ?? selected;
+    if (!base) return;
+
+    setIsSaving(true);
+    try {
+      const isSelected = base.id === selected?.id;
+      const currentName = isSelected ? name : base.name;
+      const currentDescription = isSelected ? description : base.description;
+      const currentInstructions = isSelected ? instructions : base.instructions;
+      const currentEntryPoint = isSelected ? entryPoint : base.entryPoint || "";
+      const currentScope = isSelected ? scope : base.scope;
+      const currentInputSchema = isSelected ? inputSchema : base.inputSchema || [];
+      const currentEnabled = isSelected ? enabled : base.enabled;
+      const currentTargetAdapters = isSelected ? targetAdapters : (base.targetAdapters ?? []);
+      const currentTargetPaths = isSelected ? targetPaths : (base.targetPaths ?? []);
+
+      const existingNames = skills.map((s) => s.name);
+      const newName = generateDuplicateName(currentName, existingNames);
+
+      const created = await api.skills.create({
+        name: newName,
+        description: currentDescription,
+        instructions: currentInstructions,
+        entryPoint: currentEntryPoint,
+        scope: currentScope,
+        inputSchema: currentInputSchema,
+        enabled: currentEnabled,
+        targetAdapters: currentTargetAdapters,
+        targetPaths: currentTargetPaths,
+      });
+
+      await loadSkills();
+      setSelectedId(created.id);
+      addToast({
+        title: "Skill Duplicated",
+        description: `"${created.name}" created`,
+        variant: "success",
+      });
+    } catch (error) {
+      addToast({
+        title: "Duplicate Failed",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "error",
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const openFolder = async () => {
     if (!selected?.directoryPath) return;
     try {
@@ -212,6 +265,13 @@ export function Skills({ initialSelectedId, onClearInitialId }: SkillsProps) {
       });
     }
   };
+
+  useKeyboardShortcuts({
+    shortcuts: [
+      { ...SHORTCUTS.SAVE, action: saveSkill },
+      { ...SHORTCUTS.DUPLICATE, action: () => duplicateSkill() },
+    ],
+  });
 
   return (
     <div className="grid gap-6 lg:grid-cols-[320px,1fr] max-w-7xl mx-auto">
@@ -247,13 +307,13 @@ export function Skills({ initialSelectedId, onClearInitialId }: SkillsProps) {
         </CardHeader>
         <CardContent className="space-y-1.5 pt-4 px-2">
           {skills.map((skill) => (
-            <button
+            <div
               key={skill.id}
               className={cn(
-                "w-full group relative overflow-hidden flex flex-col items-start rounded-xl px-4 py-3 text-left transition-all duration-300",
+                "w-full group relative overflow-hidden flex flex-col items-start rounded-xl px-4 py-3 text-left transition-all duration-300 border cursor-pointer",
                 selectedId === skill.id
-                  ? "bg-primary/10 border border-primary/20 premium-shadow"
-                  : "hover:bg-white/5 border border-transparent hover:border-white/5"
+                  ? "bg-primary/10 border-primary/20 premium-shadow"
+                  : "hover:bg-white/5 border-transparent hover:border-white/5"
               )}
               onClick={() => setSelectedId(skill.id)}
             >
@@ -268,19 +328,33 @@ export function Skills({ initialSelectedId, onClearInitialId }: SkillsProps) {
                 >
                   {skill.name}
                 </div>
-                {!skill.enabled && (
-                  <Badge
-                    variant="secondary"
-                    className="h-4 text-[9px] px-1.5 uppercase font-bold tracking-tighter"
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-primary/20"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      duplicateSkill(skill);
+                    }}
+                    title="Duplicate Skill (Ctrl+D)"
                   >
-                    Disabled
-                  </Badge>
-                )}
+                    <Copy className="h-3.5 w-3.5" />
+                  </Button>
+                  {!skill.enabled && (
+                    <Badge
+                      variant="secondary"
+                      className="h-4 text-[9px] px-1.5 uppercase font-bold tracking-tighter"
+                    >
+                      Disabled
+                    </Badge>
+                  )}
+                </div>
               </div>
               <div className="mt-1 truncate text-[11px] text-muted-foreground/60 group-hover:text-muted-foreground/80 opacity-80">
                 {skill.description}
               </div>
-            </button>
+            </div>
           ))}
           {skills.length === 0 && (
             <p className="text-xs text-muted-foreground/60 text-center py-8">
@@ -543,6 +617,15 @@ export function Skills({ initialSelectedId, onClearInitialId }: SkillsProps) {
               <div className="flex gap-2 pt-2 border-t">
                 <Button onClick={saveSkill} disabled={isSaving}>
                   {isSaving ? "Saving..." : "Save Changes"}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => duplicateSkill()}
+                  disabled={isSaving}
+                  title="Duplicate (Ctrl+D)"
+                >
+                  <Copy className="mr-2 h-4 w-4" />
+                  Duplicate
                 </Button>
                 <Button variant="outline" onClick={deleteSkill} disabled={isSaving}>
                   <Trash2 className="mr-2 h-4 w-4" />

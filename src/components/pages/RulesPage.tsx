@@ -42,11 +42,11 @@ export function RulesPage({ initialSelectedId, onClearInitialId }: RulesPageProp
   };
 
   if (isNewRule) {
-    return <RuleEditor rule={null} onBack={handleBack} isNew />;
+    return <RuleEditor rule={null} onBack={handleBack} onSelectRule={handleSelectRule} isNew />;
   }
 
   if (selectedRule) {
-    return <RuleEditor rule={selectedRule} onBack={handleBack} />;
+    return <RuleEditor rule={selectedRule} onBack={handleBack} onSelectRule={handleSelectRule} />;
   }
 
   return <RulesList onSelectRule={handleSelectRule} onCreateRule={handleCreateRule} />;

@@ -1,4 +1,4 @@
-import { Plus, Search, FolderUp } from "lucide-react";
+import { Plus, Search, FolderUp, Copy } from "lucide-react";
 import { CommandTemplateBrowser } from "./CommandTemplateBrowser";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ interface CommandListProps {
   isSaving: boolean;
   isSyncing: boolean;
   onSelect: (id: string) => void;
+  onDuplicate: (cmd: CommandModel) => void;
   onQueryChange: (q: string) => void;
   onCreate: () => void;
   onSync: () => void;
@@ -72,13 +73,13 @@ export function CommandList({
       </CardHeader>
       <CardContent className="space-y-2 pt-4 px-2">
         {commands.map((cmd) => (
-          <button
+          <div
             key={cmd.id}
             className={cn(
-              "w-full group relative overflow-hidden flex flex-col items-start rounded-xl px-4 py-3 text-left transition-all duration-300",
+              "w-full group relative overflow-hidden flex flex-col items-start rounded-xl px-4 py-3 text-left transition-all duration-300 border cursor-pointer",
               selectedId === cmd.id
-                ? "bg-primary/10 border border-primary/20 premium-shadow"
-                : "hover:bg-white/5 border border-transparent hover:border-white/5"
+                ? "bg-primary/10 border-primary/20 premium-shadow"
+                : "hover:bg-white/5 border-transparent hover:border-white/5"
             )}
             onClick={() => onSelect(cmd.id)}
           >
@@ -93,26 +94,40 @@ export function CommandList({
               >
                 {cmd.name}
               </div>
-              {cmd.exposeViaMcp ? (
-                <Badge
-                  variant="default"
-                  className="h-4 text-[9px] px-1.5 uppercase font-bold tracking-tighter bg-primary/20 text-primary border-primary/20"
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-primary/20"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDuplicate(cmd);
+                  }}
+                  title="Duplicate Command (Ctrl+D)"
                 >
-                  MCP
-                </Badge>
-              ) : (
-                <Badge
-                  variant="outline"
-                  className="h-4 text-[9px] px-1.5 uppercase font-bold tracking-tighter border-white/10 text-muted-foreground/60"
-                >
-                  Local
-                </Badge>
-              )}
+                  <Copy className="h-3.5 w-3.5" />
+                </Button>
+                {cmd.exposeViaMcp ? (
+                  <Badge
+                    variant="default"
+                    className="h-4 text-[9px] px-1.5 uppercase font-bold tracking-tighter bg-primary/20 text-primary border-primary/20"
+                  >
+                    MCP
+                  </Badge>
+                ) : (
+                  <Badge
+                    variant="outline"
+                    className="h-4 text-[9px] px-1.5 uppercase font-bold tracking-tighter border-white/10 text-muted-foreground/60"
+                  >
+                    Local
+                  </Badge>
+                )}
+              </div>
             </div>
             <div className="mt-1 truncate text-[11px] text-muted-foreground/60 group-hover:text-muted-foreground/80">
               {cmd.description}
             </div>
-          </button>
+          </div>
         ))}
         {commands.length === 0 && (
           <p className="text-xs text-muted-foreground/60 text-center py-8">No commands found.</p>

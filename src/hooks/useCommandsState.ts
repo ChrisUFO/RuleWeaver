@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useMemo } from "react";
 import { api } from "@/lib/tauri";
 import { toast } from "@/lib/toast-helpers";
 import { togglePathInSet, filterByQuery } from "@/lib/collection-utils";
+import { generateDuplicateName } from "@/lib/utils";
 import type { useToast } from "@/components/ui/toast";
 import type { CommandModel, ExecutionLog } from "@/types/command";
 
@@ -63,6 +64,7 @@ export interface UseCommandsStateReturn {
     handleCreate: () => Promise<void>;
     handleSave: () => Promise<void>;
     handleDelete: () => Promise<void>;
+    handleDuplicate: (command?: CommandModel) => Promise<void>;
     handleTest: () => Promise<void>;
     handleSyncCommands: () => Promise<void>;
     handleSyncSlashCommands: () => Promise<void>;
@@ -311,6 +313,62 @@ export function useCommandsState(
     }
   }, [selected, addToast]);
 
+  const handleDuplicate = useCallback(
+    async (commandToDuplicate?: CommandModel) => {
+      const base = commandToDuplicate ?? selected;
+      if (!base) return;
+
+      setIsSaving(true);
+      try {
+        const isSelected = base.id === selected?.id;
+        const name = isSelected ? form.name : base.name;
+        const description = isSelected ? form.description : base.description;
+        const script = isSelected ? form.script : base.script;
+        const exposeViaMcp = isSelected ? form.exposeViaMcp : base.exposeViaMcp;
+        const targetPaths = isSelected ? form.targetPaths : (base.targetPaths ?? []);
+        const timeoutMs = isSelected ? form.timeoutMs : (base.timeoutMs ?? null);
+        const maxRetries = isSelected ? form.maxRetries : (base.maxRetries ?? null);
+        const generateSlashCommands = isSelected
+          ? form.generateSlashCommands
+          : (base.generateSlashCommands ?? false);
+        const slashCommandAdapters = isSelected
+          ? form.slashCommandAdapters
+          : (base.slashCommandAdapters ?? []);
+
+        const existingNames = commands.map((c) => c.name);
+        const newName = generateDuplicateName(name, existingNames);
+
+        const created = await api.commands.create({
+          name: newName,
+          description,
+          script,
+          isPlaceholder: base.isPlaceholder,
+          arguments: base.arguments,
+          exposeViaMcp,
+          targetPaths,
+          timeoutMs: timeoutMs ?? undefined,
+          maxRetries: maxRetries ?? undefined,
+        });
+
+        if (generateSlashCommands) {
+          await api.commands.update(created.id, {
+            generateSlashCommands,
+            slashCommandAdapters,
+          });
+        }
+
+        await loadCommands();
+        setSelectedId(created.id);
+        toast.success(addToast, { title: "Command Duplicated", description: created.name });
+      } catch (error) {
+        toast.error(addToast, { title: "Duplicate Failed", error });
+      } finally {
+        setIsSaving(false);
+      }
+    },
+    [selected, form, loadCommands, addToast]
+  );
+
   const handleTest = useCallback(async () => {
     if (!selected) return;
     setIsTesting(true);
@@ -464,6 +522,7 @@ export function useCommandsState(
       handleCreate,
       handleSave,
       handleDelete,
+      handleDuplicate,
       handleTest,
       handleSyncCommands,
       handleSyncSlashCommands,

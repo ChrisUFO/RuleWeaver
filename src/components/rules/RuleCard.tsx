@@ -130,9 +130,10 @@ export function RuleCard({
                   onToggleMenu();
                 }}
                 role="menuitem"
+                title="Duplicate (Ctrl+D)"
               >
                 <Copy className="h-4 w-4" aria-hidden="true" />
-                Duplicate
+                Duplicate (Ctrl+D)
               </button>
               <button
                 className="flex w-full items-center gap-2 px-3 py-2 text-sm text-destructive hover:bg-accent focus:outline-none focus:bg-accent"

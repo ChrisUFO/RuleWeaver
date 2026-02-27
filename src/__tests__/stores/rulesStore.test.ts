@@ -1,7 +1,4 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { useRulesStore } from "@/stores/rulesStore";
-import { api } from "@/lib/tauri";
-import type { Rule, AdapterType } from "@/types/rule";
 
 vi.mock("@/lib/tauri", () => ({
   api: {
@@ -15,6 +12,15 @@ vi.mock("@/lib/tauri", () => ({
     },
   },
 }));
+
+vi.mock("@/lib/utils", () => ({
+  generateDuplicateName: vi.fn((name) => `${name} (Copy)`),
+  cn: vi.fn((...args) => args.join(" ")),
+}));
+
+import { useRulesStore } from "@/stores/rulesStore";
+import { api } from "@/lib/tauri";
+import type { Rule, AdapterType } from "@/types/rule";
 
 function createMockRule(overrides?: Partial<Rule>): Rule {
   return {

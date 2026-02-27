@@ -23,6 +23,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { RuleTemplateBrowser } from "@/components/rules/RuleTemplateBrowser";
+import { useKeyboardShortcuts, SHORTCUTS } from "@/hooks/useKeyboardShortcuts";
 
 interface RulesListProps {
   onSelectRule: (rule: Rule) => void;
@@ -54,6 +55,21 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
   const [initialImportMode, setInitialImportMode] = useState<ImportSourceMode | null>(null);
   const [isDragImportActive, setIsDragImportActive] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  useKeyboardShortcuts({
+    shortcuts: [
+      {
+        ...SHORTCUTS.DUPLICATE,
+        action: () => {
+          if (selectedIds.size === 1) {
+            const id = Array.from(selectedIds)[0];
+            const rule = rules.find((r) => r.id === id);
+            if (rule) handleDuplicate(rule);
+          }
+        },
+      },
+    ],
+  });
 
   useEffect(() => {
     fetchRules();
@@ -204,7 +220,8 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
 
   const handleDuplicate = async (rule: Rule) => {
     try {
-      await duplicateRule(rule);
+      const newRule = await duplicateRule(rule);
+      onSelectRule(newRule);
       addToast({
         title: "Rule Duplicated",
         description: `"${rule.name}" has been duplicated`,

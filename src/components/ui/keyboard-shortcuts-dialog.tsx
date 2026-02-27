@@ -23,6 +23,7 @@ const shortcutList: ShortcutItem[] = [
   { key: "2", ctrl: true, label: "Rules" },
   { key: "3", ctrl: true, label: "Commands" },
   { key: "4", ctrl: true, label: "Skills" },
+  { key: "d", ctrl: true, label: "Duplicate Selected" },
   { key: ",", ctrl: true, label: "Settings" },
   { key: "Escape", label: "Close/Cancel" },
 ];

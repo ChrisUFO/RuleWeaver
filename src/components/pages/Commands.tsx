@@ -6,6 +6,7 @@ import { useRepositoryRoots } from "@/hooks/useRepositoryRoots";
 import { useCommandsState } from "@/hooks/useCommandsState";
 import { CommandList } from "@/components/commands/CommandList";
 import { CommandEditor } from "@/components/commands/CommandEditor";
+import { useKeyboardShortcuts, SHORTCUTS } from "@/hooks/useKeyboardShortcuts";
 
 interface CommandsProps {
   initialSelectedId?: string | null;
@@ -38,6 +39,13 @@ export function Commands({ initialSelectedId, onClearInitialId }: CommandsProps)
     handlers,
   } = useCommandsState(addToast, initialSelectedId, onClearInitialId);
 
+  useKeyboardShortcuts({
+    shortcuts: [
+      { ...SHORTCUTS.SAVE, action: handlers.handleSave },
+      { ...SHORTCUTS.DUPLICATE, action: () => handlers.handleDuplicate() },
+    ],
+  });
+
   if (isLoading) {
     return <CommandsListSkeleton />;
   }
@@ -51,6 +59,7 @@ export function Commands({ initialSelectedId, onClearInitialId }: CommandsProps)
         isSaving={isSaving}
         isSyncing={isSyncing}
         onSelect={handlers.setSelectedId}
+        onDuplicate={handlers.handleDuplicate}
         onQueryChange={handlers.setQuery}
         onCreate={handlers.handleCreate}
         onSync={handlers.handleSyncCommands}
@@ -77,6 +86,7 @@ export function Commands({ initialSelectedId, onClearInitialId }: CommandsProps)
         onToggleAdapter={handlers.toggleSlashCommandAdapter}
         onSave={handlers.handleSave}
         onDelete={handlers.handleDelete}
+        onDuplicate={handlers.handleDuplicate}
         onTest={handlers.handleTest}
         onSyncSlashCommands={handlers.handleSyncSlashCommands}
         onRepairSlashCommand={handlers.handleRepairSlashCommand}

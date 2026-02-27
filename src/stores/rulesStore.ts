@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { Rule, CreateRuleInput, UpdateRuleInput } from "@/types/rule";
 import { api } from "@/lib/tauri";
+import { generateDuplicateName } from "@/lib/utils";
 
 interface RulesState {
   rules: Rule[];
@@ -122,10 +123,13 @@ export const useRulesStore = create<RulesState>((set, get) => ({
   duplicateRule: async (rule: Rule) => {
     set({ isLoading: true, error: null });
     try {
+      const existingNames = get().rules.map((r) => r.name);
+      const newName = generateDuplicateName(rule.name, existingNames);
+
       // Create the rule with the correct enabled state directly
       // to avoid race condition between create and toggle
       const newRule = await api.rules.create({
-        name: `${rule.name} (Copy)`,
+        name: newName,
         description: rule.description,
         content: rule.content,
         scope: rule.scope,
