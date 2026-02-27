@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use crate::error::{AppError, Result};
 use crate::models::Scope;
 use chrono::{DateTime, Utc};
@@ -203,16 +205,12 @@ pub fn validate_skill_target_adapters(target_adapters: &[String]) -> Result<()> 
     use crate::models::registry::{ArtifactType, REGISTRY};
     use crate::models::{AdapterType, Scope};
     for adapter_str in target_adapters {
-        let adapter = AdapterType::from_str(adapter_str).ok_or_else(|| {
-            AppError::Validation(format!("Unknown adapter: '{}'", adapter_str))
-        })?;
+        let adapter = AdapterType::from_str(adapter_str)
+            .map_err(|_| AppError::Validation(format!("Unknown adapter: '{}'", adapter_str)))?;
         REGISTRY
             .validate_support(&adapter, &Scope::Global, ArtifactType::Skill)
             .map_err(|_| {
-                AppError::Validation(format!(
-                    "Adapter '{}' does not support skills",
-                    adapter_str
-                ))
+                AppError::Validation(format!("Adapter '{}' does not support skills", adapter_str))
             })?;
     }
     Ok(())

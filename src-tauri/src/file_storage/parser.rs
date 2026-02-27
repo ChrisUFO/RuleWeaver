@@ -2,6 +2,7 @@ use chrono::{DateTime, Utc};
 use regex::Regex;
 use serde::Deserialize;
 use std::path::Path;
+use std::str::FromStr;
 use std::sync::OnceLock;
 
 use crate::error::{AppError, Result};
@@ -49,7 +50,7 @@ impl ParsedRuleFile {
             .frontmatter
             .enabled_adapters
             .iter()
-            .filter_map(|s| AdapterType::from_str(s))
+            .filter_map(|s| AdapterType::from_str(s).ok())
             .collect();
 
         if enabled_adapters.is_empty() {

@@ -429,12 +429,19 @@ impl Default for ToolRegistry {
 }
 
 /// Render the capability-flags section of the support matrix.
-fn capability_flags_table(sorted_adapters: &[crate::models::rule::AdapterType], registry: &ToolRegistry) -> String {
+fn capability_flags_table(
+    sorted_adapters: &[crate::models::rule::AdapterType],
+    registry: &ToolRegistry,
+) -> String {
     let yn = |b: bool| if b { "✅" } else { "❌" };
     let mut out = String::new();
     out.push_str("## Capability Flags\n\n");
-    out.push_str("| Tool | Rules | Command Stubs | Slash Commands | Skills | Global Scope | Local Scope |\n");
-    out.push_str("| ---- | :---: | :-----------: | :------------: | :----: | :----------: | :---------: |\n");
+    out.push_str(
+        "| Tool | Rules | Command Stubs | Slash Commands | Skills | Global Scope | Local Scope |\n",
+    );
+    out.push_str(
+        "| ---- | :---: | :-----------: | :------------: | :----: | :----------: | :---------: |\n",
+    );
     for adapter in sorted_adapters {
         if let Some(entry) = registry.get(adapter) {
             let c = &entry.capabilities;
@@ -454,7 +461,10 @@ fn capability_flags_table(sorted_adapters: &[crate::models::rule::AdapterType], 
 }
 
 /// Render the path-configuration section of the support matrix.
-fn path_configuration_table(sorted_adapters: &[crate::models::rule::AdapterType], registry: &ToolRegistry) -> String {
+fn path_configuration_table(
+    sorted_adapters: &[crate::models::rule::AdapterType],
+    registry: &ToolRegistry,
+) -> String {
     let opt = |o: Option<&'static str>| o.unwrap_or("—");
     let mut out = String::new();
     out.push_str("## Path Configuration\n\n");
@@ -480,7 +490,10 @@ fn path_configuration_table(sorted_adapters: &[crate::models::rule::AdapterType]
 }
 
 /// Render the slash-command-extensions section of the support matrix.
-fn slash_command_extensions_table(sorted_adapters: &[crate::models::rule::AdapterType], registry: &ToolRegistry) -> String {
+fn slash_command_extensions_table(
+    sorted_adapters: &[crate::models::rule::AdapterType],
+    registry: &ToolRegistry,
+) -> String {
     let mut out = String::new();
     out.push_str("## Slash Command Extensions\n\n");
     out.push_str("| Tool | File Extension | Argument Pattern |\n");
@@ -524,7 +537,9 @@ pub fn generate_support_matrix() -> String {
     out.push_str(&slash_command_extensions_table(&sorted_adapters, registry));
     out.push('\n');
     out.push_str("---\n\n");
-    out.push_str("*See `docs/PARITY.md` for documented divergences and known unsupported combinations.*\n");
+    out.push_str(
+        "*See `docs/PARITY.md` for documented divergences and known unsupported combinations.*\n",
+    );
 
     out
 }
@@ -729,11 +744,20 @@ mod tests {
     #[test]
     fn test_generate_support_matrix_contains_all_adapter_names() {
         let matrix = generate_support_matrix();
-        assert!(matrix.contains("Claude Code"), "Matrix must contain Claude Code");
+        assert!(
+            matrix.contains("Claude Code"),
+            "Matrix must contain Claude Code"
+        );
         assert!(matrix.contains("Cursor"), "Matrix must contain Cursor");
         assert!(matrix.contains("Windsurf"), "Matrix must contain Windsurf");
-        assert!(matrix.contains("Kilo Code"), "Matrix must contain Kilo Code");
-        assert!(matrix.contains("Antigravity"), "Matrix must contain Antigravity");
+        assert!(
+            matrix.contains("Kilo Code"),
+            "Matrix must contain Kilo Code"
+        );
+        assert!(
+            matrix.contains("Antigravity"),
+            "Matrix must contain Antigravity"
+        );
         assert!(matrix.contains("Gemini"), "Matrix must contain Gemini");
         assert!(matrix.contains("OpenCode"), "Matrix must contain OpenCode");
         assert!(matrix.contains("Cline"), "Matrix must contain Cline");

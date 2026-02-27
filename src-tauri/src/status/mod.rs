@@ -4,6 +4,7 @@
 //! built on top of the reconciliation engine outputs. It provides a status projection and
 //! repair action surface without duplicating truth sources.
 
+use std::str::FromStr;
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
@@ -12,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use crate::database::Database;
 use crate::error::Result;
 use crate::models::registry::ArtifactType;
-use crate::models::{AdapterType, Scope};
+use crate::models::{AdapterType, ParseEnumError, Scope};
 use crate::reconciliation::{FoundArtifact, ReconciliationEngine};
 
 pub mod commands;
@@ -40,17 +41,20 @@ impl ArtifactSyncStatus {
             ArtifactSyncStatus::Error => "error",
         }
     }
+}
 
-    #[allow(dead_code)]
-    pub fn from_str(s: &str) -> Option<Self> {
+impl FromStr for ArtifactSyncStatus {
+    type Err = ParseEnumError;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         match s {
-            "synced" => Some(ArtifactSyncStatus::Synced),
-            "out_of_date" => Some(ArtifactSyncStatus::OutOfDate),
-            "missing" => Some(ArtifactSyncStatus::Missing),
-            "conflicted" => Some(ArtifactSyncStatus::Conflicted),
-            "unsupported" => Some(ArtifactSyncStatus::Unsupported),
-            "error" => Some(ArtifactSyncStatus::Error),
-            _ => None,
+            "synced" => Ok(ArtifactSyncStatus::Synced),
+            "out_of_date" => Ok(ArtifactSyncStatus::OutOfDate),
+            "missing" => Ok(ArtifactSyncStatus::Missing),
+            "conflicted" => Ok(ArtifactSyncStatus::Conflicted),
+            "unsupported" => Ok(ArtifactSyncStatus::Unsupported),
+            "error" => Ok(ArtifactSyncStatus::Error),
+            _ => Err(ParseEnumError),
         }
     }
 }
@@ -464,29 +468,29 @@ mod tests {
     fn test_artifact_sync_status_from_str() {
         assert_eq!(
             ArtifactSyncStatus::from_str("synced"),
-            Some(ArtifactSyncStatus::Synced)
+            Ok(ArtifactSyncStatus::Synced)
         );
         assert_eq!(
             ArtifactSyncStatus::from_str("out_of_date"),
-            Some(ArtifactSyncStatus::OutOfDate)
+            Ok(ArtifactSyncStatus::OutOfDate)
         );
         assert_eq!(
             ArtifactSyncStatus::from_str("missing"),
-            Some(ArtifactSyncStatus::Missing)
+            Ok(ArtifactSyncStatus::Missing)
         );
         assert_eq!(
             ArtifactSyncStatus::from_str("conflicted"),
-            Some(ArtifactSyncStatus::Conflicted)
+            Ok(ArtifactSyncStatus::Conflicted)
         );
         assert_eq!(
             ArtifactSyncStatus::from_str("unsupported"),
-            Some(ArtifactSyncStatus::Unsupported)
+            Ok(ArtifactSyncStatus::Unsupported)
         );
         assert_eq!(
             ArtifactSyncStatus::from_str("error"),
-            Some(ArtifactSyncStatus::Error)
+            Ok(ArtifactSyncStatus::Error)
         );
-        assert_eq!(ArtifactSyncStatus::from_str("invalid"), None);
+        assert!(ArtifactSyncStatus::from_str("invalid").is_err());
     }
 
     #[test]

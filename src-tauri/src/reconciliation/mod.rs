@@ -23,6 +23,7 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
@@ -321,8 +322,8 @@ impl ReconciliationEngine {
 
             for adapter_name in &command.slash_command_adapters {
                 let adapter_type = match AdapterType::from_str(adapter_name) {
-                    Some(a) => a,
-                    None => continue,
+                    Ok(a) => a,
+                    Err(_) => continue,
                 };
 
                 if REGISTRY
@@ -427,7 +428,7 @@ impl ReconciliationEngine {
                 skill
                     .target_adapters
                     .iter()
-                    .filter_map(|s| crate::models::AdapterType::from_str(s))
+                    .filter_map(|s| crate::models::AdapterType::from_str(s).ok())
                     .filter(|a| {
                         REGISTRY
                             .validate_support(a, &skill.scope, ArtifactType::Skill)

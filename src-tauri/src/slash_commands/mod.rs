@@ -1,7 +1,9 @@
+use std::path::PathBuf;
+use std::str::FromStr;
+
 use crate::error::{AppError, Result};
 use crate::models::Command;
 use crate::path_resolver::path_resolver;
-use std::path::PathBuf;
 
 #[allow(dead_code)]
 pub trait SlashCommandAdapter: Send + Sync {
@@ -33,7 +35,7 @@ pub trait SlashCommandAdapter: Send + Sync {
         
         // Get the adapter type from the adapter name
         let adapter = crate::models::AdapterType::from_str(self.name())
-            .ok_or_else(|| AppError::InvalidInput {
+            .map_err(|_| AppError::InvalidInput {
                 message: format!("Unknown adapter: {}", self.name()),
             })?;
 
@@ -58,7 +60,7 @@ pub trait SlashCommandAdapter: Send + Sync {
         
         // Get the adapter type from the adapter name
         let adapter = crate::models::AdapterType::from_str(self.name())
-            .ok_or_else(|| AppError::InvalidInput {
+            .map_err(|_| AppError::InvalidInput {
                 message: format!("Unknown adapter: {}", self.name()),
             })?;
 
