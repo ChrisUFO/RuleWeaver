@@ -49,8 +49,25 @@ echo "🧪 Running frontend tests..."
 npm run test
 
 echo ""
-echo "🧪 Running Rust tests..."
+echo "📊 Running frontend coverage gate..."
+npm run test:coverage
+
+echo ""
+echo "🧪 Running Rust tests (unit + integration)..."
 npm run test:rust
+
+echo ""
+echo "📄 Checking docs/SUPPORT_MATRIX.md is current..."
+npm run gen:docs
+if ! git diff --exit-code docs/SUPPORT_MATRIX.md > /dev/null 2>&1; then
+  echo ""
+  echo "══════════════════════════════════════════════════"
+  echo "  docs/SUPPORT_MATRIX.md is STALE."
+  echo "  Run: npm run gen:docs"
+  echo "  Then commit the updated file before pushing."
+  echo "══════════════════════════════════════════════════"
+  exit 1
+fi
 
 echo ""
 echo "✅ All pre-push checks passed"
