@@ -321,9 +321,8 @@ impl ReconciliationEngine {
             }
 
             for adapter_name in &command.slash_command_adapters {
-                let adapter_type = match AdapterType::from_str(adapter_name) {
-                    Ok(a) => a,
-                    Err(_) => continue,
+                let Ok(adapter_type) = AdapterType::from_str(adapter_name) else {
+                    continue;
                 };
 
                 if REGISTRY
