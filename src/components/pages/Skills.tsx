@@ -467,12 +467,27 @@ export function Skills({ initialSelectedId, onClearInitialId }: SkillsProps) {
                         <Select
                           value={availableRepos.includes(basePath) ? basePath : ""}
                           onChange={(value) => {
-                            setBasePath(value || "");
-                            if (value && directoryPath.startsWith(value)) {
-                              setDirectoryPath(
-                                "./" + directoryPath.slice(value.length).replace(/^[/\\]/, "")
-                              );
+                            const newBasePath = value || "";
+                            const oldBasePath = basePath;
+
+                            // 1. Resolve current directory path to absolute
+                            const absolutePath = resolveWorkspacePathPreview(
+                              directoryPath,
+                              oldBasePath
+                            );
+
+                            // 2. If new base path is set, make it relative
+                            if (newBasePath && absolutePath.startsWith(newBasePath)) {
+                              const relative = absolutePath
+                                .slice(newBasePath.length)
+                                .replace(/^[\\/]/, "");
+                              setDirectoryPath(relative ? `./${relative}` : "./");
+                            } else {
+                              // 3. Otherwise, use absolute path
+                              setDirectoryPath(absolutePath);
                             }
+
+                            setBasePath(newBasePath);
                           }}
                           options={[
                             { value: "", label: "None (Use Absolute Path)" },

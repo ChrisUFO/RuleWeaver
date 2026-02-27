@@ -883,29 +883,28 @@ pub fn resolve_workspace_path(path: &str, base_path: Option<&str>) -> String {
         _ => return resolved,
     };
 
+    let contains_traversal = |p: &std::path::Path| {
+        p.components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+    };
+
     if resolved.starts_with("./") {
         let relative_part = resolved.trim_start_matches("./");
-        let path_buf = PathBuf::from(relative_part);
+        let path_buf = std::path::PathBuf::from(relative_part);
 
         // Security: Prevent directory traversal (e.g., "./../../etc/passwd")
-        if path_buf
-            .components()
-            .any(|c| matches!(c, std::path::Component::ParentDir))
-        {
+        if contains_traversal(&path_buf) {
             return base.to_string(); // Fallback to safe base
         }
-        resolved = PathBuf::from(base)
+        resolved = std::path::PathBuf::from(base)
             .join(relative_part)
             .to_string_lossy()
             .to_string();
     } else if resolved.contains("${WORKSPACE_ROOT}") {
         let candidate = resolved.replace("${WORKSPACE_ROOT}", base);
         // Security: Ensure candidate stays within base boundary
-        let path_buf = PathBuf::from(&candidate);
-        if path_buf
-            .components()
-            .any(|c| matches!(c, std::path::Component::ParentDir))
-        {
+        let path_buf = std::path::PathBuf::from(&candidate);
+        if contains_traversal(&path_buf) {
             return base.to_string(); // Fallback to safe base
         }
         resolved = candidate;

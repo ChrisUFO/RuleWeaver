@@ -27,7 +27,10 @@ export function resolveWorkspacePathPreview(path: string, basePath?: string | nu
   if (!basePath || !path) return path;
 
   if (path.startsWith("./")) {
-    return normalizePath(`${basePath}${path.slice(1)}`);
+    const relative = path.substring(2);
+    const normalizedBase =
+      basePath.endsWith("/") || basePath.endsWith("\\") ? basePath.slice(0, -1) : basePath;
+    return normalizePath(`${normalizedBase}/${relative}`);
   }
 
   if (path.includes(WORKSPACE_ROOT_VAR)) {

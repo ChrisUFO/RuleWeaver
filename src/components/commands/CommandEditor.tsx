@@ -208,17 +208,26 @@ export function CommandEditor({
             <Select
               value={sortedRepos.includes(form.basePath || "") ? form.basePath || "" : ""}
               onChange={(value) => {
-                onUpdateForm({ basePath: value || null });
-                if (value) {
-                  const updatedTargets = form.targetPaths.map((p) => {
-                    if (p.startsWith(value)) {
-                      const relativePath = p.slice(value.length).replace(/^[/\\]/, "");
-                      return relativePath ? `./${relativePath}` : "./";
-                    }
-                    return p;
-                  });
-                  onUpdateForm({ targetPaths: updatedTargets });
-                }
+                const newBasePath = value || null;
+                const oldBasePath = form.basePath;
+
+                const updatedTargets = form.targetPaths.map((p) => {
+                  // 1. Resolve current path to an absolute path using the old base path.
+                  const absolutePath = resolveWorkspacePathPreview(p, oldBasePath);
+
+                  // 2. If a new base path is set, convert the absolute path to be relative to it.
+                  if (newBasePath && absolutePath.startsWith(newBasePath)) {
+                    const relativePath = absolutePath
+                      .slice(newBasePath.length)
+                      .replace(/^[\\/]/, "");
+                    return relativePath ? `./${relativePath}` : "./";
+                  }
+
+                  // 3. Otherwise, use the absolute path.
+                  return absolutePath;
+                });
+
+                onUpdateForm({ basePath: newBasePath, targetPaths: updatedTargets });
               }}
               options={[
                 { value: "", label: "None (Use Absolute Paths)" },
