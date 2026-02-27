@@ -13,6 +13,10 @@ path = "src/main.rs"
 name = "ruleweaver-mcp"
 path = "src/bin/mcp-server.rs"
 
+[[bin]]
+name = "gen_docs"
+path = "src/bin/gen_docs.rs"
+
 [lib]
 name = "ruleweaver_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
@@ -50,6 +54,29 @@ tauri-plugin-notification = "2"
 tauri-plugin-dialog = "2"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 url = "2"
+
+[features]
+test-helpers = []
+
+[[test]]
+name = "lifecycle_rules"
+required-features = ["test-helpers"]
+
+[[test]]
+name = "lifecycle_skills"
+required-features = ["test-helpers"]
+
+[[test]]
+name = "lifecycle_commands"
+required-features = ["test-helpers"]
+
+[[test]]
+name = "lifecycle_import"
+required-features = ["test-helpers"]
+
+[[test]]
+name = "registry_path_matrix"
+required-features = ["test-helpers"]
 
 [dev-dependencies]
 tempfile = "3"

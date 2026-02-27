@@ -24,7 +24,8 @@ Different types of AI configurations require different management strategies:
 - **Command Stub Sync:** Generates command files for supported tools (`COMMANDS.toml` / `COMMANDS.md`).
 - **Native Slash Commands:** Generate native `/commandname` triggers for 8 AI tools with automatic file generation and incremental sync.
 - **Background Keep-Alive:** Optional close-to-tray behavior keeps MCP available.
-- **Skills Foundation:** Initial Skills CRUD and UI scaffolding is available.
+- **Native Skills Distribution:** Skills are synced as `SKILL.md` files directly into each AI tool's skill directory (Claude Code, OpenCode, Cline, Gemini, Roo Code, Windsurf, Antigravity, Codex). Per-skill adapter targeting lets you control which tools receive each skill. Global and local scope both supported.
+- **Unified Status & Repair:** Single operator view across all artifact types (rules, commands, skills). Filter by adapter, artifact type, or sync status. One-click repair re-syncs drifted or missing artifacts.
 - **Priority Tiering:**
   1. Rules First (System Prompts, Code Standards)
   2. Custom Commands Second (Single scripts, quick actions)
@@ -88,6 +89,7 @@ If **Minimize to tray on close** is enabled (Settings -> MCP Server), closing th
 - `npm run typecheck` - Run TypeScript type checking
 - `npm run test` - Run frontend tests
 - `npm run test:rust` - Run Rust tests
+- `npm run gen:docs` - Regenerate `docs/SUPPORT_MATRIX.md` from the canonical tool registry
 
 ## Recommended IDE Setup
 

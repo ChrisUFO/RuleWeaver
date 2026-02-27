@@ -196,6 +196,15 @@ impl PathResolver {
         self.repository_roots.push(root);
     }
 
+    /// Create a PathResolver with an explicit home directory (for tests only).
+    #[cfg(any(test, feature = "test-helpers"))]
+    pub fn new_with_home(home_dir: PathBuf, repository_roots: Vec<PathBuf>) -> Self {
+        Self {
+            home_dir,
+            repository_roots,
+        }
+    }
+
     /// Resolve the global path for an artifact+adapter combination.
     ///
     /// # Errors
@@ -714,20 +723,27 @@ impl PathResolver {
     /// - `~` for home directory
     /// - `{repo}` placeholder for repository root (in local templates)
     fn resolve_template(&self, template: &str, repo_root: Option<&Path>) -> Result<PathBuf> {
-        let mut result = template.to_string();
-
-        // Replace ~ with home directory
-        if result.starts_with("~/") {
-            result = result.replace("~/", &self.home_dir.to_string_lossy());
-        } else if result == "~" {
-            result = self.home_dir.to_string_lossy().to_string();
+        // Expand ~ to home directory using PathBuf::join so the OS separator is
+        // always inserted correctly (string replace would miss the separator between
+        // the home dir and the rest of the path).
+        if template == "~" {
+            return Ok(self.home_dir.clone());
+        }
+        if let Some(suffix) = template.strip_prefix("~/") {
+            let mut path = self.home_dir.join(suffix);
+            // Apply {repo} substitution if present in the suffix
+            if let Some(root) = repo_root {
+                let s = path.to_string_lossy().replace("{repo}", &root.to_string_lossy());
+                path = PathBuf::from(s);
+            }
+            return Ok(path);
         }
 
-        // Replace {repo} placeholder with repository root
+        // Non-home template (e.g., local "{repo}/..." paths)
+        let mut result = template.to_string();
         if let Some(root) = repo_root {
             result = result.replace("{repo}", &root.to_string_lossy());
         }
-
         Ok(PathBuf::from(result))
     }
 

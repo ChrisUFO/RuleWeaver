@@ -169,6 +169,12 @@ impl ReconciliationEngine {
         Ok(Self { db, path_resolver })
     }
 
+    /// Create a ReconciliationEngine with an explicit PathResolver (for tests only).
+    #[cfg(any(test, feature = "test-helpers"))]
+    pub fn new_with_resolver(db: Arc<Database>, path_resolver: PathResolver) -> Self {
+        Self { db, path_resolver }
+    }
+
     /// Compute desired state from all database artifacts.
     ///
     /// This scans all rules, commands, and skills in the database and computes
@@ -203,7 +209,8 @@ impl ReconciliationEngine {
                     continue;
                 }
 
-                let content_hash = compute_content_hash(&rule.content);
+                let formatted = formatter::format_rule_content(&rule.name, &rule.content);
+                let content_hash = compute_content_hash(&formatted);
 
                 match rule.scope {
                     Scope::Global => {
@@ -221,7 +228,7 @@ impl ReconciliationEngine {
                                     scope: Scope::Global,
                                     repo_root: None,
                                     content_hash: content_hash.clone(),
-                                    content: Some(rule.content.clone()),
+                                    content: Some(formatted.clone()),
                                 },
                             );
                         }
@@ -245,7 +252,7 @@ impl ReconciliationEngine {
                                             scope: Scope::Local,
                                             repo_root: Some(PathBuf::from(target_path)),
                                             content_hash: content_hash.clone(),
-                                            content: Some(rule.content.clone()),
+                                            content: Some(formatted.clone()),
                                         },
                                     );
                                 }

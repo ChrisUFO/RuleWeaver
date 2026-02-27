@@ -91,7 +91,7 @@ impl Database {
         Self::new_with_db_path(db_path).await
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-helpers"))]
     pub async fn new_in_memory() -> Result<Self> {
         let conn = tokio::task::spawn_blocking(move || -> Result<Connection> {
             let mut conn = Connection::open_in_memory()?;

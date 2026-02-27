@@ -20,18 +20,20 @@ RuleWeaver is a unified desktop application that centrally manages configuration
 
 ### Supported AI Tools (10)
 
-| Tool        | Rules File                     | Commands                           |
-| ----------- | ------------------------------ | ---------------------------------- |
-| Antigravity | `~/.gemini/GEMINI.md`          | Workflows                          |
-| Gemini CLI  | `~/.gemini/GEMINI.md`          | `~/.gemini/commands/*.toml`        |
-| OpenCode    | `~/.config/opencode/AGENTS.md` | `~/.config/opencode/commands/*.md` |
-| Cline       | `~/.clinerules`                | Workflows                          |
-| Claude Code | `~/.claude/CLAUDE.md`          | `~/.claude/commands/*.md`          |
-| Codex       | `~/.codex/AGENTS.md`           | Skills                             |
-| Kilo Code   | `~/.kilocode/rules/AGENTS.md`  | —                                  |
-| Cursor      | `~/.cursorrules`               | `~/.cursor/commands/*.md`          |
-| Windsurf    | `~/.windsurf/rules/rules.md`   | —                                  |
-| Roo Code    | `~/.roo/rules/rules.md`        | `~/.roo/commands/*.md`             |
+| Tool        | Rules File                     | Slash Commands                     | Command Stubs | Skills                          |
+| ----------- | ------------------------------ | ---------------------------------- | ------------- | ------------------------------- |
+| Antigravity | `~/.gemini/GEMINI.md`          | `.agents/workflows/*.md`           | ✅            | `~/.gemini/antigravity/skills/` |
+| Gemini CLI  | `~/.gemini/GEMINI.md`          | `~/.gemini/commands/*.toml`        | ✅            | `~/.gemini/skills/`             |
+| OpenCode    | `~/.config/opencode/AGENTS.md` | `~/.config/opencode/commands/*.md` | ✅            | `~/.config/opencode/skills/`    |
+| Cline       | `~/.clinerules`                | `~/Documents/Cline/Workflows/`     | ✅            | `~/.cline/skills/` (Exp.)       |
+| Claude Code | `~/.claude/CLAUDE.md`          | `~/.claude/commands/*.md`          | ✅            | `~/.claude/skills/`             |
+| Codex       | `~/.codex/AGENTS.md`           | Skills                             | ✅            | `~/.agents/skills/`             |
+| Kilo Code   | `~/.kilocode/rules/AGENTS.md`  | —                                  | ❌ (pending)  | ❌ (pending)                    |
+| Cursor      | `~/.cursorrules`               | `~/.cursor/commands/*.md`          | ❌            | ❌                              |
+| Windsurf    | `~/.windsurf/rules/rules.md`   | — (pending)                        | ❌            | `~/.windsurf/skills/`           |
+| Roo Code    | `~/.roo/rules/rules.md`        | `~/.roo/commands/*.md`             | ✅            | `~/.roo/skills/`                |
+
+> **Note:** Cursor does not support command stubs or skills distribution. Windsurf and Kilo Code have capability flags set in the registry but directory paths are not yet configured — distribution will be enabled once they publish their directory specs. See [`docs/PARITY.md`](docs/PARITY.md) for the full capability matrix.
 
 ### Navigation
 
@@ -196,9 +198,23 @@ Switch/migrate in **Settings → Storage**.
 
 The Status page provides a unified view of all RuleWeaver-managed artifacts across your repositories and AI tools.
 
-- **Shimmer Summary**: At-a-glance view of Healthy, Out of Date, and Missing artifacts.
+- **Summary Row**: At-a-glance counts of Synced, Out of Date, Missing, Conflicted, and Unsupported artifacts.
+- **Filtering**: Narrow by artifact type (Rules / Commands / Skills), by AI tool, by scope (Global / Local), or by sync status.
 - **Deep-Linking**: Click the icon in any status row to navigate directly to the Rule, Command, or Skill editor for that item.
-- **Targeted Repair**: Fix individual sync issues, or use "Repair All" to resolve everything at once.
+- **Targeted Repair**: Fix individual sync issues with the per-row Repair button.
+- **Repair All**: Resolves all drifted/missing artifacts for the current filter in one click.
+
+### Artifact Lifecycle
+
+Understanding the RuleWeaver artifact lifecycle helps diagnose sync issues:
+
+1. **Create/Edit**: You create or update a rule, command, or skill in the RuleWeaver UI and save it. The artifact is persisted in the database.
+2. **Sync/Reconcile**: RuleWeaver computes the _desired state_ (what files should exist based on your configuration) and the _actual state_ (what files are on disk). It then writes, updates, or removes files to bring actual state in line with desired state.
+   - Rules are written as tool-specific files (e.g., `CLAUDE.md`, `GEMINI.md`).
+   - Commands generate stub files (`COMMANDS.md` / `COMMANDS.toml`) and slash command files.
+   - Skills generate `SKILL.md` files in each adapter's skill directory.
+3. **Drift**: If files are deleted externally, a tool path changes, or an adapter is removed from targeting, the artifact becomes _Out of Date_ or _Missing_.
+4. **Repair**: Use the Status page's Repair button to re-sync a specific artifact, or Repair All to resolve all drift at once.
 
 ---
 
@@ -274,7 +290,7 @@ RuleWeaver generates native slash commands that appear in AI tool autocomplete.
 
 ## 5) Managing Skills
 
-Skills are complex multi-step workflows with structured input schemas.
+Skills are complex multi-step workflows distributed as `SKILL.md` files to your AI tools' skill directories. RuleWeaver manages the full lifecycle: create once, distribute everywhere.
 
 ### Skills List
 
@@ -295,9 +311,34 @@ Skills are complex multi-step workflows with structured input schemas.
    - Enum values (for Enum type)
 5. Specify **entry point** (e.g., `run.sh`, `index.js`)
 6. Choose **scope** (global or local)
-7. If local, select or enter **directory path**
-8. Toggle **enabled**
-9. Click **Save Changes**
+7. If local, select one or more **target repositories**
+8. Configure **Adapter Distribution** (see below)
+9. Toggle **enabled**
+10. Click **Save Changes**
+
+### Adapter Distribution (Targeting)
+
+The **Adapter Distribution** section controls which AI tools receive this skill's `SKILL.md` file.
+
+- **All supported adapters (default):** Leave all checkboxes unchecked. The skill is distributed to every tool that supports the Agent Skills standard: Antigravity, Claude Code, Cline, Codex, Gemini, OpenCode, Roo Code, Windsurf.
+- **Specific adapters:** Check only the tools you want to receive this skill. Unchecked tools will not receive the file (and any existing file from this skill will be removed on the next reconcile).
+
+**Tools that do not appear in the list** (Cursor, Kilo Code) do not support the Agent Skills standard in a way compatible with RuleWeaver's distribution engine. These tools are silently skipped.
+
+### Skill File Locations
+
+Skills are written as `SKILL.md` inside a named subdirectory under each tool's skill directory:
+
+| Tool        | Global Skills Path                     | Local Skills Path          |
+| ----------- | -------------------------------------- | -------------------------- |
+| Antigravity | `~/.gemini/antigravity/skills/<name>/` | `.agents/skills/<name>/`   |
+| Claude Code | `~/.claude/skills/<name>/`             | `.claude/skills/<name>/`   |
+| Cline       | `~/.cline/skills/<name>/`              | `.cline/skills/<name>/`    |
+| Codex       | `~/.agents/skills/<name>/`             | `.agents/skills/<name>/`   |
+| Gemini CLI  | `~/.gemini/skills/<name>/`             | `.gemini/skills/<name>/`   |
+| OpenCode    | `~/.config/opencode/skills/<name>/`    | `.opencode/skills/<name>/` |
+| Roo Code    | `~/.roo/skills/<name>/`                | `.roo/skills/<name>/`      |
+| Windsurf    | `~/.windsurf/skills/<name>/`           | `.windsurf/skills/<name>/` |
 
 ### Template Browser
 

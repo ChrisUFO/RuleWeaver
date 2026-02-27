@@ -87,6 +87,21 @@ In the reconciliation engine (`src-tauri/src/reconciliation/mod.rs`), adapter ta
 
 ---
 
+## Machine-Readable Reference: `docs/SUPPORT_MATRIX.md`
+
+`docs/SUPPORT_MATRIX.md` is **generated directly from the `REGISTRY` constant** in
+`src-tauri/src/models/registry.rs` by the `gen_docs` binary. It is the authoritative,
+machine-readable capability reference and will never drift from the code.
+
+- Regenerate after any registry change: `npm run gen:docs`
+- The CI `docs-check` job fails on any PR where the file is stale
+- A Rust test (`test_support_matrix_is_current` in `registry.rs`) also asserts freshness
+
+Use `PARITY.md` (this file) for human-authored narrative about known divergences.
+Use `SUPPORT_MATRIX.md` for the exhaustive per-adapter × per-capability matrix.
+
+---
+
 ## Updating This Document
 
 When adding or modifying an adapter in `src-tauri/src/models/registry.rs`:
@@ -95,3 +110,4 @@ When adding or modifying an adapter in `src-tauri/src/models/registry.rs`:
 2. Add a "Documented Divergences" section for any capability flag / path config discrepancy.
 3. Remove divergence entries when the discrepancy is resolved (paths configured to match the capability flag).
 4. Update the "Last updated" line with the current date and release branch.
+5. Run `npm run gen:docs` to regenerate `docs/SUPPORT_MATRIX.md`.

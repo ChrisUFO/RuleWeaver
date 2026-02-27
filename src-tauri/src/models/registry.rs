@@ -247,7 +247,16 @@ impl ToolRegistry {
                 name: "Kilo Code",
                 description: "Kilo Code AI assistant",
                 icon: "kilo",
-                capabilities: full_support.clone(),
+                // Kilo Code supports rules only. Command stubs, slash commands, and skills are
+                // not yet distributed because paths are not configured.
+                capabilities: ToolCapabilities {
+                    supports_rules: true,
+                    supports_command_stubs: false,
+                    supports_slash_commands: false,
+                    supports_skills: false,
+                    supports_global_scope: true,
+                    supports_local_scope: true,
+                },
                 paths: PathTemplates {
                     global_path: "~/.kilocode/rules/AGENTS.md",
                     local_path_template: ".kilocode/rules/AGENTS.md",
@@ -304,7 +313,16 @@ impl ToolRegistry {
                 name: "Windsurf",
                 description: "Windsurf AI assistant",
                 icon: "windsurf",
-                capabilities: full_support.clone(),
+                // Windsurf supports rules and skills. Command stubs and slash commands are not
+                // distributed because no path or extension is configured.
+                capabilities: ToolCapabilities {
+                    supports_rules: true,
+                    supports_command_stubs: false,
+                    supports_slash_commands: false,
+                    supports_skills: true,
+                    supports_global_scope: true,
+                    supports_local_scope: true,
+                },
                 paths: PathTemplates {
                     global_path: "~/.windsurf/rules/rules.md",
                     local_path_template: ".windsurf/rules/rules.md",
@@ -402,6 +420,97 @@ impl ToolRegistry {
 
         Ok(())
     }
+}
+
+/// Generate the canonical support matrix markdown content from the live REGISTRY.
+///
+/// This function is the single source of truth for `docs/SUPPORT_MATRIX.md`.
+/// Both the `gen_docs` binary and the `test_support_matrix_is_current` test call
+/// this function to ensure the committed file always matches the registry.
+pub fn generate_support_matrix() -> String {
+    use crate::models::rule::AdapterType;
+
+    let registry = &REGISTRY;
+    let adapters = AdapterType::all();
+
+    let mut out = String::new();
+    out.push_str("<!-- AUTO-GENERATED: do not edit manually. Run `cargo run --bin gen_docs` to regenerate. -->\n");
+    out.push_str("# RuleWeaver Tool Support Matrix\n\n");
+    out.push_str("Generated from `src-tauri/src/models/registry.rs`. Any change to adapter capabilities or paths must be followed by running `cargo run --bin gen_docs` and committing the updated file.\n\n");
+    out.push_str("---\n\n");
+
+    // Capability flags table
+    out.push_str("## Capability Flags\n\n");
+    out.push_str("| Tool | Rules | Command Stubs | Slash Commands | Skills | Global Scope | Local Scope |\n");
+    out.push_str("| ---- | :---: | :-----------: | :------------: | :----: | :----------: | :---------: |\n");
+
+    let mut sorted_adapters = adapters.clone();
+    sorted_adapters.sort_by_key(|a| a.as_str());
+
+    for adapter in &sorted_adapters {
+        if let Some(entry) = registry.get(adapter) {
+            let c = &entry.capabilities;
+            let yn = |b: bool| if b { "✅" } else { "❌" };
+            out.push_str(&format!(
+                "| {} | {} | {} | {} | {} | {} | {} |\n",
+                entry.name,
+                yn(c.supports_rules),
+                yn(c.supports_command_stubs),
+                yn(c.supports_slash_commands),
+                yn(c.supports_skills),
+                yn(c.supports_global_scope),
+                yn(c.supports_local_scope),
+            ));
+        }
+    }
+
+    out.push('\n');
+    out.push_str("---\n\n");
+
+    // Path configuration table
+    out.push_str("## Path Configuration\n\n");
+    out.push_str("Paths prefixed with `~/` expand to the user home directory at runtime.\n\n");
+    out.push_str("| Tool | Rules (Global) | Rules (Local) | Commands Dir (Global) | Commands Dir (Local) | Skills Dir (Global) | Skills Dir (Local) |\n");
+    out.push_str("| ---- | -------------- | ------------- | --------------------- | -------------------- | ------------------- | ------------------ |\n");
+
+    for adapter in &sorted_adapters {
+        if let Some(entry) = registry.get(adapter) {
+            let p = &entry.paths;
+            let opt = |o: Option<&'static str>| o.unwrap_or("—");
+            out.push_str(&format!(
+                "| {} | `{}` | `{}` | {} | {} | {} | {} |\n",
+                entry.name,
+                p.global_path,
+                p.local_path_template,
+                opt(p.global_commands_dir).replace('|', "\\|"),
+                opt(p.local_commands_dir).replace('|', "\\|"),
+                opt(p.global_skills_dir).replace('|', "\\|"),
+                opt(p.local_skills_dir).replace('|', "\\|"),
+            ));
+        }
+    }
+
+    out.push('\n');
+    out.push_str("---\n\n");
+
+    // Slash command extension table
+    out.push_str("## Slash Command Extensions\n\n");
+    out.push_str("| Tool | File Extension | Argument Pattern |\n");
+    out.push_str("| ---- | -------------- | ---------------- |\n");
+
+    for adapter in &sorted_adapters {
+        if let Some(entry) = registry.get(adapter) {
+            let ext = entry.slash_command_extension.unwrap_or("—");
+            let pattern = entry.slash_command_argument_pattern.unwrap_or("—");
+            out.push_str(&format!("| {} | `{}` | `{}` |\n", entry.name, ext, pattern));
+        }
+    }
+
+    out.push('\n');
+    out.push_str("---\n\n");
+    out.push_str("*See `docs/PARITY.md` for documented divergences and known unsupported combinations.*\n");
+
+    out
 }
 
 #[cfg(test)]
@@ -569,5 +678,78 @@ mod tests {
         for entry in registry.all() {
             assert!(!entry.paths.skill_filename.is_empty());
         }
+    }
+
+    /// Verifies that `docs/SUPPORT_MATRIX.md` matches what `generate_support_matrix()` produces.
+    ///
+    /// If this test fails, run `cargo run --bin gen_docs` from the workspace root to regenerate
+    /// the file, then commit the updated `docs/SUPPORT_MATRIX.md`.
+    #[test]
+    fn test_support_matrix_is_current() {
+        let generated = generate_support_matrix();
+
+        // Locate docs/SUPPORT_MATRIX.md relative to the workspace root.
+        // CARGO_MANIFEST_DIR points to src-tauri/; workspace root is one level up.
+        let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let workspace_root = manifest_dir.parent().expect("workspace root must exist");
+        let matrix_path = workspace_root.join("docs").join("SUPPORT_MATRIX.md");
+
+        let on_disk = std::fs::read_to_string(&matrix_path).unwrap_or_else(|_| {
+            panic!(
+                "docs/SUPPORT_MATRIX.md does not exist or is not readable at {}. \
+                Run `cargo run --bin gen_docs` to generate it.",
+                matrix_path.display()
+            )
+        });
+
+        assert_eq!(
+            generated, on_disk,
+            "\ndocs/SUPPORT_MATRIX.md is stale.\n\
+            Run `cargo run --bin gen_docs` from the workspace root and commit the result.\n"
+        );
+    }
+
+    #[test]
+    fn test_generate_support_matrix_contains_all_adapter_names() {
+        let matrix = generate_support_matrix();
+        assert!(matrix.contains("Claude Code"), "Matrix must contain Claude Code");
+        assert!(matrix.contains("Cursor"), "Matrix must contain Cursor");
+        assert!(matrix.contains("Windsurf"), "Matrix must contain Windsurf");
+        assert!(matrix.contains("Kilo Code"), "Matrix must contain Kilo Code");
+        assert!(matrix.contains("Antigravity"), "Matrix must contain Antigravity");
+        assert!(matrix.contains("Gemini"), "Matrix must contain Gemini");
+        assert!(matrix.contains("OpenCode"), "Matrix must contain OpenCode");
+        assert!(matrix.contains("Cline"), "Matrix must contain Cline");
+        assert!(matrix.contains("Codex"), "Matrix must contain Codex");
+        assert!(matrix.contains("Roo Code"), "Matrix must contain Roo Code");
+    }
+
+    #[test]
+    fn test_generate_support_matrix_cursor_shows_no_skills() {
+        let matrix = generate_support_matrix();
+        // Find Cursor row and verify it has ❌ in the Skills column (4th ❌/✅ in the row)
+        let cursor_line = matrix
+            .lines()
+            .find(|l| l.starts_with("| Cursor"))
+            .expect("Cursor row must be in matrix");
+        assert!(
+            cursor_line.contains("❌"),
+            "Cursor row must contain ❌ for unsupported capabilities: {}",
+            cursor_line
+        );
+    }
+
+    #[test]
+    fn test_generate_support_matrix_windsurf_has_skill_paths() {
+        let matrix = generate_support_matrix();
+        // Windsurf's path row should contain the windsurf/skills path
+        let windsurf_path_line = matrix
+            .lines()
+            .find(|l| l.starts_with("| Windsurf") && l.contains("windsurf/skills"))
+            .is_some();
+        assert!(
+            windsurf_path_line,
+            "Windsurf must have windsurf/skills paths in the matrix"
+        );
     }
 }
