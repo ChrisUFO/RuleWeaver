@@ -28,6 +28,7 @@ export function CommandList({
   isSaving,
   isSyncing,
   onSelect,
+  onDuplicate,
   onQueryChange,
   onCreate,
   onSync,

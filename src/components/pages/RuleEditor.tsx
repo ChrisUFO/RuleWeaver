@@ -224,7 +224,7 @@ export function RuleEditor({ rule, onBack, onSelectRule, isNew = false }: RuleEd
         description: description.trim(),
         content,
         scope,
-        targetPaths: scope === "local" ? targetPaths : undefined,
+        targetPaths: scope === "local" ? targetPaths : null,
         enabledAdapters,
       });
       addToast({
