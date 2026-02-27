@@ -366,7 +366,7 @@ export function useCommandsState(
         setIsSaving(false);
       }
     },
-    [selected, form, loadCommands, addToast]
+    [selected, form, commands, loadCommands, addToast]
   );
 
   const handleTest = useCallback(async () => {
