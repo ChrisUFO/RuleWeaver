@@ -422,6 +422,12 @@ impl ToolRegistry {
     }
 }
 
+impl Default for ToolRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Generate the canonical support matrix markdown content from the live REGISTRY.
 ///
 /// This function is the single source of truth for `docs/SUPPORT_MATRIX.md`.
