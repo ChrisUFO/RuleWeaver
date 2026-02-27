@@ -69,13 +69,13 @@ async fn test_command_delete_reconcile_removes_stubs() {
             is_placeholder: false,
             generate_slash_commands: false,
             slash_command_adapters: vec![],
-            target_paths: vec![],
-            timeout_ms: None,
-            max_retries: None,
-        })
-        .await
-        .unwrap();
-
+                    target_paths: vec![],
+                    base_path: None,
+                    timeout_ms: None,
+                    max_retries: None,
+                })
+                .await
+                .unwrap();
     // Initial reconcile to write stubs
     let engine = common::make_engine(db.clone(), home_dir.path());
     let create_result = engine.reconcile(false, None).await.unwrap();
