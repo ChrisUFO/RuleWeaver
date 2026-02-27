@@ -60,11 +60,10 @@ configured path.
 
 ### Kilo Code — Skills and Command Stubs Not Yet Distributed
 
-Kilo Code's registry entry has capability flags `supports_skills: true` and
-`supports_command_stubs: true`, but the directory paths are not yet configured
-(`None`). As a result, **no files are distributed to Kilo Code** for skills or
-command stubs in this release. This will be resolved once Kilo Code publishes
-their directory spec.
+Kilo Code's registry entry has `supports_skills: false` and
+`supports_command_stubs: false`. As a result, **no files are distributed to
+Kilo Code** for skills or command stubs in this release. This will be resolved
+once Kilo Code publishes their directory spec and capability flags are updated.
 
 See `docs/PARITY.md` for the current known-divergence log.
 
@@ -93,11 +92,12 @@ Or directly:
 cargo run --manifest-path src-tauri/Cargo.toml --bin gen_docs
 ```
 
-The CI `docs-check` job will fail on any PR where `SUPPORT_MATRIX.md` is stale,
-printing:
+The pre-push hook will fail if `SUPPORT_MATRIX.md` is stale, printing:
 
 ```
-docs/SUPPORT_MATRIX.md is stale — run `npm run gen:docs` and commit the result
+docs/SUPPORT_MATRIX.md is STALE.
+Run: npm run gen:docs
+Then commit the updated file before pushing.
 ```
 
 ---

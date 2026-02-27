@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Settings } from "../../components/pages/Settings";
-import { ToastProvider } from "../../components/ui/toast";
+import { renderWithProviders } from "./test-utils";
 import { useSettingsState } from "../../hooks/useSettingsState";
 import type { UseSettingsStateReturn } from "../../hooks/useSettingsState";
 
@@ -121,8 +121,6 @@ function makeBaseState(overrides: Partial<UseSettingsStateReturn> = {}): UseSett
     ...overrides,
   };
 }
-
-const renderWithProviders = (ui: React.ReactElement) => render(<ToastProvider>{ui}</ToastProvider>);
 
 describe("Settings lifecycle", () => {
   beforeEach(() => {

@@ -1,29 +1,16 @@
 /// Integration tests: Skill lifecycle across create → reconcile → adapter targeting → delete.
-use std::sync::Arc;
+mod common;
+
 use tempfile::TempDir;
 
-use ruleweaver_lib::{
-    database::Database,
-    models::{CreateSkillInput, Scope, UpdateSkillInput},
-    path_resolver::PathResolver,
-    reconciliation::ReconciliationEngine,
-};
-
-async fn make_db() -> Arc<Database> {
-    Arc::new(Database::new_in_memory().await.unwrap())
-}
-
-fn make_engine(db: Arc<Database>, home: &std::path::Path) -> ReconciliationEngine {
-    let resolver = PathResolver::new_with_home(home.to_path_buf(), vec![]);
-    ReconciliationEngine::new_with_resolver(db, resolver)
-}
+use ruleweaver_lib::models::{CreateSkillInput, Scope, UpdateSkillInput};
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Test 1: Create skill → reconcile → SKILL.md written to supported adapter dir
 // ──────────────────────────────────────────────────────────────────────────────
 #[tokio::test]
 async fn test_skill_create_reconcile_writes_skill_md() {
-    let db = make_db().await;
+    let db = common::make_db().await;
     let home_dir = TempDir::new().unwrap();
 
     db.create_skill(CreateSkillInput {
@@ -42,7 +29,7 @@ async fn test_skill_create_reconcile_writes_skill_md() {
     .await
     .unwrap();
 
-    let engine = make_engine(db, home_dir.path());
+    let engine = common::make_engine(db, home_dir.path());
     let result = engine.reconcile(false, None).await.unwrap();
 
     assert!(result.success, "Reconcile must succeed");
@@ -73,7 +60,7 @@ async fn test_skill_create_reconcile_writes_skill_md() {
 // ──────────────────────────────────────────────────────────────────────────────
 #[tokio::test]
 async fn test_skill_adapter_targeting_limits_distribution() {
-    let db = make_db().await;
+    let db = common::make_db().await;
     let home_dir = TempDir::new().unwrap();
 
     // Target only claude-code
@@ -93,7 +80,7 @@ async fn test_skill_adapter_targeting_limits_distribution() {
     .await
     .unwrap();
 
-    let engine = make_engine(db, home_dir.path());
+    let engine = common::make_engine(db, home_dir.path());
     let desired = engine.compute_desired_state().await.unwrap();
 
     // Collect all skill paths
@@ -128,7 +115,7 @@ async fn test_skill_adapter_targeting_limits_distribution() {
 // ──────────────────────────────────────────────────────────────────────────────
 #[tokio::test]
 async fn test_skill_delete_reconcile_removes_skill_md() {
-    let db = make_db().await;
+    let db = common::make_db().await;
     let home_dir = TempDir::new().unwrap();
 
     let skill = db
@@ -149,7 +136,7 @@ async fn test_skill_delete_reconcile_removes_skill_md() {
         .unwrap();
 
     // Create initial files
-    let engine = make_engine(db.clone(), home_dir.path());
+    let engine = common::make_engine(db.clone(), home_dir.path());
     engine.reconcile(false, None).await.unwrap();
 
     let skill_path = home_dir
@@ -163,7 +150,7 @@ async fn test_skill_delete_reconcile_removes_skill_md() {
     // Delete the skill
     db.delete_skill(&skill.id).await.unwrap();
 
-    let engine2 = make_engine(db, home_dir.path());
+    let engine2 = common::make_engine(db, home_dir.path());
     let result = engine2.reconcile(false, None).await.unwrap();
 
     assert!(result.success);
@@ -175,7 +162,7 @@ async fn test_skill_delete_reconcile_removes_skill_md() {
 // ──────────────────────────────────────────────────────────────────────────────
 #[tokio::test]
 async fn test_skill_update_reconcile_updates_content() {
-    let db = make_db().await;
+    let db = common::make_db().await;
     let home_dir = TempDir::new().unwrap();
 
     let skill = db
@@ -195,7 +182,7 @@ async fn test_skill_update_reconcile_updates_content() {
         .await
         .unwrap();
 
-    let engine = make_engine(db.clone(), home_dir.path());
+    let engine = common::make_engine(db.clone(), home_dir.path());
     engine.reconcile(false, None).await.unwrap();
 
     // Update instructions
@@ -209,7 +196,7 @@ async fn test_skill_update_reconcile_updates_content() {
     .await
     .unwrap();
 
-    let engine2 = make_engine(db, home_dir.path());
+    let engine2 = common::make_engine(db, home_dir.path());
     let result = engine2.reconcile(false, None).await.unwrap();
 
     assert!(result.success);
@@ -233,7 +220,7 @@ async fn test_skill_update_reconcile_updates_content() {
 // ──────────────────────────────────────────────────────────────────────────────
 #[tokio::test]
 async fn test_cursor_gets_no_skill_files() {
-    let db = make_db().await;
+    let db = common::make_db().await;
     let home_dir = TempDir::new().unwrap();
 
     // Create skill targeting cursor — should be silently skipped
@@ -253,7 +240,7 @@ async fn test_cursor_gets_no_skill_files() {
     .await
     .unwrap();
 
-    let engine = make_engine(db, home_dir.path());
+    let engine = common::make_engine(db, home_dir.path());
     let desired = engine.compute_desired_state().await.unwrap();
 
     // No skill paths should be in desired state (cursor is silently skipped)
@@ -278,7 +265,7 @@ async fn test_cursor_gets_no_skill_files() {
 // ──────────────────────────────────────────────────────────────────────────────
 #[tokio::test]
 async fn test_windsurf_gets_skill_files() {
-    let db = make_db().await;
+    let db = common::make_db().await;
     let home_dir = TempDir::new().unwrap();
 
     db.create_skill(CreateSkillInput {
@@ -297,7 +284,7 @@ async fn test_windsurf_gets_skill_files() {
     .await
     .unwrap();
 
-    let engine = make_engine(db, home_dir.path());
+    let engine = common::make_engine(db, home_dir.path());
     let desired = engine.compute_desired_state().await.unwrap();
 
     let skill_paths: Vec<&String> = desired

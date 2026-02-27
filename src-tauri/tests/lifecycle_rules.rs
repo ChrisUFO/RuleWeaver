@@ -2,6 +2,8 @@
 ///
 /// These tests use an in-memory SQLite DB and a PathResolver pointed at a TempDir
 /// so no real filesystem paths are contaminated.
+mod common;
+
 use std::sync::Arc;
 use tempfile::TempDir;
 
@@ -17,11 +19,6 @@ async fn make_env() -> (Arc<Database>, TempDir) {
     let db = Arc::new(Database::new_in_memory().await.unwrap());
     let dir = TempDir::new().unwrap();
     (db, dir)
-}
-
-fn make_engine(db: Arc<Database>, home: &std::path::Path) -> ReconciliationEngine {
-    let resolver = PathResolver::new_with_home(home.to_path_buf(), vec![]);
-    ReconciliationEngine::new_with_resolver(db, resolver)
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -44,7 +41,7 @@ async fn test_rule_create_produces_desired_state() {
     .await
     .unwrap();
 
-    let engine = make_engine(db, home_dir.path());
+    let engine = common::make_engine(db, home_dir.path());
     let desired = engine.compute_desired_state().await.unwrap();
 
     // At least two paths should be in desired state (one per adapter)
@@ -84,7 +81,7 @@ async fn test_rule_create_reconcile_writes_files() {
     .await
     .unwrap();
 
-    let engine = make_engine(db, home_dir.path());
+    let engine = common::make_engine(db, home_dir.path());
     let result = engine.reconcile(false, None).await.unwrap();
 
     assert!(result.success, "Reconcile should succeed");
@@ -126,7 +123,7 @@ async fn test_rule_update_reconcile_updates_file() {
         .await
         .unwrap();
 
-    let engine = make_engine(db.clone(), home_dir.path());
+    let engine = common::make_engine(db.clone(), home_dir.path());
     engine.reconcile(false, None).await.unwrap();
 
     // Update the content
@@ -140,7 +137,7 @@ async fn test_rule_update_reconcile_updates_file() {
     .await
     .unwrap();
 
-    let engine2 = make_engine(db, home_dir.path());
+    let engine2 = common::make_engine(db, home_dir.path());
     let result = engine2.reconcile(false, None).await.unwrap();
 
     assert!(result.success);
@@ -175,7 +172,7 @@ async fn test_rule_delete_reconcile_removes_orphan() {
         .await
         .unwrap();
 
-    let engine = make_engine(db.clone(), home_dir.path());
+    let engine = common::make_engine(db.clone(), home_dir.path());
     engine.reconcile(false, None).await.unwrap();
 
     // Confirm file exists
@@ -185,7 +182,7 @@ async fn test_rule_delete_reconcile_removes_orphan() {
     // Delete the rule
     db.delete_rule(&rule.id).await.unwrap();
 
-    let engine2 = make_engine(db, home_dir.path());
+    let engine2 = common::make_engine(db, home_dir.path());
     let result = engine2.reconcile(false, None).await.unwrap();
 
     assert!(result.success);

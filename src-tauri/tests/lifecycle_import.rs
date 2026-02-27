@@ -1,16 +1,12 @@
 /// Integration tests: Import lifecycle — scan → execute import → DB state.
-use std::sync::Arc;
+mod common;
+
 use tempfile::TempDir;
 
 use ruleweaver_lib::{
-    database::Database,
     models::{ImportConflictMode, ImportExecutionOptions, Scope},
     rule_import::{execute_import, scan_file_to_candidates},
 };
-
-async fn make_db() -> Arc<Database> {
-    Arc::new(Database::new_in_memory().await.unwrap())
-}
 
 fn write_temp_rule(dir: &TempDir, filename: &str, content: &str) -> std::path::PathBuf {
     let path = dir.path().join(filename);
@@ -23,7 +19,7 @@ fn write_temp_rule(dir: &TempDir, filename: &str, content: &str) -> std::path::P
 // ──────────────────────────────────────────────────────────────────────────────
 #[tokio::test]
 async fn test_import_from_file_creates_rule_in_db() {
-    let db = make_db().await;
+    let db = common::make_db().await;
     let dir = TempDir::new().unwrap();
 
     let file_path = write_temp_rule(
@@ -68,7 +64,7 @@ async fn test_import_from_file_creates_rule_in_db() {
 // ──────────────────────────────────────────────────────────────────────────────
 #[tokio::test]
 async fn test_import_duplicate_content_skipped() {
-    let db = make_db().await;
+    let db = common::make_db().await;
     let dir = TempDir::new().unwrap();
 
     let file_path = write_temp_rule(
@@ -116,7 +112,7 @@ async fn test_import_duplicate_content_skipped() {
 // ──────────────────────────────────────────────────────────────────────────────
 #[tokio::test]
 async fn test_import_conflict_rename_policy() {
-    let db = make_db().await;
+    let db = common::make_db().await;
     let dir = TempDir::new().unwrap();
 
     // First import from a distinct source file — creates rule with proposed_name "my-rule"
@@ -189,7 +185,7 @@ async fn test_import_conflict_rename_policy() {
 // ──────────────────────────────────────────────────────────────────────────────
 #[tokio::test]
 async fn test_import_conflict_replace_policy() {
-    let db = make_db().await;
+    let db = common::make_db().await;
     let dir = TempDir::new().unwrap();
 
     // Create initial rule via import

@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Skills } from "../../components/pages/Skills";
 import { api } from "../../lib/tauri";
-import { ToastProvider } from "../../components/ui/toast";
+import { renderWithProviders } from "./test-utils";
 import type { Skill } from "../../types/skill";
 
 // Mock Tauri API
@@ -57,8 +57,6 @@ const mockSkill: Skill = {
   createdAt: Date.now(),
   updatedAt: Date.now(),
 };
-
-const renderWithProviders = (ui: React.ReactElement) => render(<ToastProvider>{ui}</ToastProvider>);
 
 describe("Skills adapter targeting lifecycle", () => {
   beforeEach(() => {

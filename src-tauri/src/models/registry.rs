@@ -428,35 +428,16 @@ impl Default for ToolRegistry {
     }
 }
 
-/// Generate the canonical support matrix markdown content from the live REGISTRY.
-///
-/// This function is the single source of truth for `docs/SUPPORT_MATRIX.md`.
-/// Both the `gen_docs` binary and the `test_support_matrix_is_current` test call
-/// this function to ensure the committed file always matches the registry.
-pub fn generate_support_matrix() -> String {
-    use crate::models::rule::AdapterType;
-
-    let registry = &REGISTRY;
-    let adapters = AdapterType::all();
-
+/// Render the capability-flags section of the support matrix.
+fn capability_flags_table(sorted_adapters: &[crate::models::rule::AdapterType], registry: &ToolRegistry) -> String {
+    let yn = |b: bool| if b { "✅" } else { "❌" };
     let mut out = String::new();
-    out.push_str("<!-- AUTO-GENERATED: do not edit manually. Run `cargo run --bin gen_docs` to regenerate. -->\n");
-    out.push_str("# RuleWeaver Tool Support Matrix\n\n");
-    out.push_str("Generated from `src-tauri/src/models/registry.rs`. Any change to adapter capabilities or paths must be followed by running `cargo run --bin gen_docs` and committing the updated file.\n\n");
-    out.push_str("---\n\n");
-
-    // Capability flags table
     out.push_str("## Capability Flags\n\n");
     out.push_str("| Tool | Rules | Command Stubs | Slash Commands | Skills | Global Scope | Local Scope |\n");
     out.push_str("| ---- | :---: | :-----------: | :------------: | :----: | :----------: | :---------: |\n");
-
-    let mut sorted_adapters = adapters.clone();
-    sorted_adapters.sort_by_key(|a| a.as_str());
-
-    for adapter in &sorted_adapters {
+    for adapter in sorted_adapters {
         if let Some(entry) = registry.get(adapter) {
             let c = &entry.capabilities;
-            let yn = |b: bool| if b { "✅" } else { "❌" };
             out.push_str(&format!(
                 "| {} | {} | {} | {} | {} | {} | {} |\n",
                 entry.name,
@@ -469,20 +450,20 @@ pub fn generate_support_matrix() -> String {
             ));
         }
     }
+    out
+}
 
-    out.push('\n');
-    out.push_str("---\n\n");
-
-    // Path configuration table
+/// Render the path-configuration section of the support matrix.
+fn path_configuration_table(sorted_adapters: &[crate::models::rule::AdapterType], registry: &ToolRegistry) -> String {
+    let opt = |o: Option<&'static str>| o.unwrap_or("—");
+    let mut out = String::new();
     out.push_str("## Path Configuration\n\n");
     out.push_str("Paths prefixed with `~/` expand to the user home directory at runtime.\n\n");
     out.push_str("| Tool | Rules (Global) | Rules (Local) | Commands Dir (Global) | Commands Dir (Local) | Skills Dir (Global) | Skills Dir (Local) |\n");
     out.push_str("| ---- | -------------- | ------------- | --------------------- | -------------------- | ------------------- | ------------------ |\n");
-
-    for adapter in &sorted_adapters {
+    for adapter in sorted_adapters {
         if let Some(entry) = registry.get(adapter) {
             let p = &entry.paths;
-            let opt = |o: Option<&'static str>| o.unwrap_or("—");
             out.push_str(&format!(
                 "| {} | `{}` | `{}` | {} | {} | {} | {} |\n",
                 entry.name,
@@ -495,23 +476,52 @@ pub fn generate_support_matrix() -> String {
             ));
         }
     }
+    out
+}
 
-    out.push('\n');
-    out.push_str("---\n\n");
-
-    // Slash command extension table
+/// Render the slash-command-extensions section of the support matrix.
+fn slash_command_extensions_table(sorted_adapters: &[crate::models::rule::AdapterType], registry: &ToolRegistry) -> String {
+    let mut out = String::new();
     out.push_str("## Slash Command Extensions\n\n");
     out.push_str("| Tool | File Extension | Argument Pattern |\n");
     out.push_str("| ---- | -------------- | ---------------- |\n");
-
-    for adapter in &sorted_adapters {
+    for adapter in sorted_adapters {
         if let Some(entry) = registry.get(adapter) {
             let ext = entry.slash_command_extension.unwrap_or("—");
             let pattern = entry.slash_command_argument_pattern.unwrap_or("—");
             out.push_str(&format!("| {} | `{}` | `{}` |\n", entry.name, ext, pattern));
         }
     }
+    out
+}
 
+/// Generate the canonical support matrix markdown content from the live REGISTRY.
+///
+/// This function is the single source of truth for `docs/SUPPORT_MATRIX.md`.
+/// Both the `gen_docs` binary and the `test_support_matrix_is_current` test call
+/// this function to ensure the committed file always matches the registry.
+pub fn generate_support_matrix() -> String {
+    use crate::models::rule::AdapterType;
+
+    let registry = &REGISTRY;
+    let mut sorted_adapters = AdapterType::all();
+    sorted_adapters.sort_by_key(|a| a.as_str());
+
+    let mut out = String::new();
+    out.push_str("<!-- AUTO-GENERATED: do not edit manually. Run `cargo run --bin gen_docs` to regenerate. -->\n");
+    out.push_str("# RuleWeaver Tool Support Matrix\n\n");
+    out.push_str("Generated from `src-tauri/src/models/registry.rs`. Any change to adapter capabilities or paths must be followed by running `cargo run --bin gen_docs` and committing the updated file.\n\n");
+    out.push_str("---\n\n");
+
+    out.push_str(&capability_flags_table(&sorted_adapters, registry));
+    out.push('\n');
+    out.push_str("---\n\n");
+
+    out.push_str(&path_configuration_table(&sorted_adapters, registry));
+    out.push('\n');
+    out.push_str("---\n\n");
+
+    out.push_str(&slash_command_extensions_table(&sorted_adapters, registry));
     out.push('\n');
     out.push_str("---\n\n");
     out.push_str("*See `docs/PARITY.md` for documented divergences and known unsupported combinations.*\n");
@@ -700,13 +710,10 @@ mod tests {
         let workspace_root = manifest_dir.parent().expect("workspace root must exist");
         let matrix_path = workspace_root.join("docs").join("SUPPORT_MATRIX.md");
 
-        let on_disk = std::fs::read_to_string(&matrix_path).unwrap_or_else(|_| {
-            panic!(
-                "docs/SUPPORT_MATRIX.md does not exist or is not readable at {}. \
-                Run `cargo run --bin gen_docs` to generate it.",
-                matrix_path.display()
-            )
-        });
+        let on_disk = std::fs::read_to_string(&matrix_path).expect(
+            "docs/SUPPORT_MATRIX.md does not exist or is not readable. \
+            Run `cargo run --bin gen_docs` to generate it.",
+        );
 
         assert_eq!(
             generated, on_disk,

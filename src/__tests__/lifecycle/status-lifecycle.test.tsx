@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Status } from "../../components/pages/Status";
 import { api } from "../../lib/tauri";
-import { ToastProvider } from "../../components/ui/toast";
+import { renderWithProviders } from "./test-utils";
 import type { ArtifactStatusEntry, StatusSummary } from "../../types/status";
 
 vi.mock("../../lib/tauri", () => ({
@@ -76,8 +76,6 @@ const mockSummary: StatusSummary = {
   unsupported: 0,
   error: 0,
 };
-
-const renderWithProviders = (ui: React.ReactElement) => render(<ToastProvider>{ui}</ToastProvider>);
 
 describe("Status lifecycle", () => {
   beforeEach(() => {

@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Commands } from "../../components/pages/Commands";
 import { api } from "../../lib/tauri";
-import { ToastProvider } from "../../components/ui/toast";
+import { renderWithProviders } from "./test-utils";
 import type { CommandModel } from "../../types/command";
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({
@@ -59,8 +59,6 @@ const mockCommand: CommandModel = {
   createdAt: Date.now(),
   updatedAt: Date.now(),
 };
-
-const renderWithProviders = (ui: React.ReactElement) => render(<ToastProvider>{ui}</ToastProvider>);
 
 describe("Commands lifecycle", () => {
   beforeEach(() => {

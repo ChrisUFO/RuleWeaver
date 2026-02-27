@@ -1,29 +1,16 @@
 /// Integration tests: Command lifecycle across create → stub sync → reconcile → delete.
-use std::sync::Arc;
+mod common;
+
 use tempfile::TempDir;
 
-use ruleweaver_lib::{
-    database::Database,
-    models::{AdapterType, CreateCommandInput},
-    path_resolver::PathResolver,
-    reconciliation::ReconciliationEngine,
-};
-
-async fn make_db() -> Arc<Database> {
-    Arc::new(Database::new_in_memory().await.unwrap())
-}
-
-fn make_engine(db: Arc<Database>, home: &std::path::Path) -> ReconciliationEngine {
-    let resolver = PathResolver::new_with_home(home.to_path_buf(), vec![]);
-    ReconciliationEngine::new_with_resolver(db, resolver)
-}
+use ruleweaver_lib::models::{AdapterType, CreateCommandInput};
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Test 1: Create command → reconcile → command stub file written
 // ──────────────────────────────────────────────────────────────────────────────
 #[tokio::test]
 async fn test_command_create_reconcile_writes_stub() {
-    let db = make_db().await;
+    let db = common::make_db().await;
     let home_dir = TempDir::new().unwrap();
 
     db.create_command(CreateCommandInput {
@@ -43,7 +30,7 @@ async fn test_command_create_reconcile_writes_stub() {
     .await
     .unwrap();
 
-    let engine = make_engine(db, home_dir.path());
+    let engine = common::make_engine(db, home_dir.path());
     let desired = engine.compute_desired_state().await.unwrap();
 
     // Should have command stub paths for supported adapters
@@ -67,7 +54,7 @@ async fn test_command_create_reconcile_writes_stub() {
 // ──────────────────────────────────────────────────────────────────────────────
 #[tokio::test]
 async fn test_command_delete_reconcile_removes_stubs() {
-    let db = make_db().await;
+    let db = common::make_db().await;
     let home_dir = TempDir::new().unwrap();
 
     let cmd = db
@@ -89,7 +76,7 @@ async fn test_command_delete_reconcile_removes_stubs() {
         .unwrap();
 
     // Initial reconcile to write stubs
-    let engine = make_engine(db.clone(), home_dir.path());
+    let engine = common::make_engine(db.clone(), home_dir.path());
     let create_result = engine.reconcile(false, None).await.unwrap();
     assert!(create_result.success);
     let initial_created = create_result.created;
@@ -99,7 +86,7 @@ async fn test_command_delete_reconcile_removes_stubs() {
     db.delete_command(&cmd.id).await.unwrap();
 
     // Reconcile should remove orphaned stubs
-    let engine2 = make_engine(db, home_dir.path());
+    let engine2 = common::make_engine(db, home_dir.path());
     let delete_result = engine2.reconcile(false, None).await.unwrap();
 
     assert!(delete_result.success);
@@ -114,7 +101,7 @@ async fn test_command_delete_reconcile_removes_stubs() {
 // ──────────────────────────────────────────────────────────────────────────────
 #[tokio::test]
 async fn test_cursor_gets_no_command_stub() {
-    let db = make_db().await;
+    let db = common::make_db().await;
     let home_dir = TempDir::new().unwrap();
 
     // Create a command (commands go to all supported adapters by default)
@@ -135,7 +122,7 @@ async fn test_cursor_gets_no_command_stub() {
     .await
     .unwrap();
 
-    let engine = make_engine(db, home_dir.path());
+    let engine = common::make_engine(db, home_dir.path());
     let desired = engine.compute_desired_state().await.unwrap();
 
     // Verify no command stub paths reference the Cursor adapter
@@ -161,7 +148,7 @@ async fn test_cursor_gets_no_command_stub() {
 // ──────────────────────────────────────────────────────────────────────────────
 #[tokio::test]
 async fn test_slash_command_create_produces_desired_paths() {
-    let db = make_db().await;
+    let db = common::make_db().await;
     let home_dir = TempDir::new().unwrap();
 
     // Command with slash commands enabled for ClaudeCode
@@ -182,7 +169,7 @@ async fn test_slash_command_create_produces_desired_paths() {
     .await
     .unwrap();
 
-    let engine = make_engine(db, home_dir.path());
+    let engine = common::make_engine(db, home_dir.path());
     let desired = engine.compute_desired_state().await.unwrap();
 
     let slash_paths: Vec<&String> = desired
