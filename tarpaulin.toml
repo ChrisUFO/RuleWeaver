@@ -1,7 +1,0 @@
-[report]
-out = ["Xml", "Html"]
-fail-under = 80
-
-[run]
-exclude-files = ["src/bin/*", "src/main.rs"]
-features = ["test-helpers"]

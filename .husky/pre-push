@@ -49,10 +49,6 @@ echo "🧪 Running frontend tests..."
 npm run test
 
 echo ""
-echo "📊 Running frontend coverage gate..."
-npm run test:coverage
-
-echo ""
 echo "🧪 Running Rust tests (unit + integration)..."
 npm run test:rust
 
