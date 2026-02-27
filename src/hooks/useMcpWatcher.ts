@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { useMcpStore } from "@/stores/mcpStore";
 import { MCP_TIMING } from "@/constants/timing";
@@ -10,6 +10,11 @@ import { MCP_TIMING } from "@/constants/timing";
 export function useMcpWatcher(onRefresh?: () => void) {
   const { mcpStatus, refreshMcpStatus } = useMcpStore();
   const [mcpJustRefreshed, setMcpJustRefreshed] = useState(false);
+  const onRefreshRef = useRef(onRefresh);
+
+  useEffect(() => {
+    onRefreshRef.current = onRefresh;
+  }, [onRefresh]);
 
   useEffect(() => {
     // Initial load
@@ -24,8 +29,8 @@ export function useMcpWatcher(onRefresh?: () => void) {
       try {
         const fn = await listen("mcp-artifacts-refreshed", () => {
           refreshMcpStatus();
-          if (onRefresh) {
-            onRefresh();
+          if (onRefreshRef.current) {
+            onRefreshRef.current();
           }
           setMcpJustRefreshed(true);
           setTimeout(() => setMcpJustRefreshed(false), MCP_TIMING.REFRESH_ANIMATION_DURATION_MS);
@@ -42,7 +47,7 @@ export function useMcpWatcher(onRefresh?: () => void) {
       clearInterval(timer);
       if (unlisten) unlisten();
     };
-  }, [refreshMcpStatus, onRefresh]);
+  }, [refreshMcpStatus]);
 
   return {
     mcpStatus,

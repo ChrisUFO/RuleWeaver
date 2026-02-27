@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import {
   Plus,
   Copy,
@@ -55,10 +55,10 @@ export function Skills({ initialSelectedId, onClearInitialId }: SkillsProps) {
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [adapterStatuses, setAdapterStatuses] = useState<Map<string, string>>(new Map());
 
-  const loadSkills = async () => {
+  const loadSkills = useCallback(async () => {
     const data = await api.skills.getAll();
     setSkills(data);
-  };
+  }, []);
 
   const { mcpStatus, mcpJustRefreshed } = useMcpWatcher(loadSkills);
   const { addToast } = useToast();
