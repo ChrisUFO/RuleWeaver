@@ -55,7 +55,13 @@ impl WatcherManager {
 
         for path in &paths {
             if path.exists() {
-                let canonical_path = std::fs::canonicalize(path).unwrap_or_else(|_| path.clone());
+                let canonical_path = match std::fs::canonicalize(path) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        log::warn!("Failed to canonicalize path '{}': {}. Using original path.", path.display(), e);
+                        path.clone()
+                    }
+                };
                 if watcher.watch(&canonical_path, RecursiveMode::Recursive).is_ok() {
                     self.watched_paths.insert(canonical_path);
                 }
@@ -71,8 +77,13 @@ impl WatcherManager {
 
             loop {
                 tokio::select! {
-                    Some(_event) = rx.recv() => {
-                        last_event = Some(tokio::time::Instant::now());
+                    maybe_event = rx.recv() => {
+                        if let Some(_event) = maybe_event {
+                            last_event = Some(tokio::time::Instant::now());
+                        } else {
+                            // Channel closed, the watcher has been dropped.
+                            break;
+                        }
                     }
                     _ = sleep(Duration::from_millis(100)) => {
                         if let Some(instant) = last_event {

@@ -154,22 +154,26 @@ impl McpManager {
             if state.running {
                 let mut paths = std::collections::HashSet::new();
                 for skill in &state.skills {
-                    if skill.enabled {
+                    if skill.enabled && !skill.directory_path.is_empty() {
                         paths.insert(std::path::PathBuf::from(&skill.directory_path));
                     }
                 }
                 for cmd in &state.commands {
                     for path in &cmd.target_paths {
-                        paths.insert(std::path::PathBuf::from(path));
+                        if !path.is_empty() {
+                            paths.insert(std::path::PathBuf::from(path));
+                        }
                     }
                 }
                 let paths_vec = paths.into_iter().collect::<Vec<_>>();
                 
                 let manager_clone = self.clone();
                 if let Some(db_arc) = state.db.clone() {
-                    let _ = state.watcher.start(paths_vec, move || {
+                    if let Err(e) = state.watcher.start(paths_vec, move || {
                         spawn_refresh_task(manager_clone.clone(), Arc::clone(&db_arc));
-                    });
+                    }) {
+                        log::error!("Failed to start artifact watcher: {}", e);
+                    }
                 }
             }
             
