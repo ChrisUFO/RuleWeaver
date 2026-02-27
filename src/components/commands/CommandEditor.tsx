@@ -18,7 +18,7 @@ import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select } from "@/components/ui/select";
 import { SlashCommandsSection } from "./SlashCommandsSection";
-import { cn, normalizePath } from "@/lib/utils";
+import { cn, resolveWorkspacePathPreview } from "@/lib/utils";
 import { useMemo } from "react";
 import { featureManager, FEATURE_FLAGS } from "@/lib/featureManager";
 import type { CommandModel, ExecutionLog } from "@/types/command";
@@ -273,9 +273,9 @@ export function CommandEditor({
                         <span className="font-semibold">Resolves to:</span>
                         <span
                           className="font-mono bg-white/5 px-1 rounded truncate max-w-[300px]"
-                          title={normalizePath(repo)}
+                          title={resolveWorkspacePathPreview(targetString, repo)}
                         >
-                          {normalizePath(repo)}
+                          {resolveWorkspacePathPreview(targetString, repo)}
                         </span>
                       </p>
                     )}

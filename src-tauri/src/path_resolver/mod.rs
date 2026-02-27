@@ -733,7 +733,9 @@ impl PathResolver {
             let mut path = self.home_dir.join(suffix);
             // Apply {repo} substitution if present in the suffix
             if let Some(root) = repo_root {
-                let s = path.to_string_lossy().replace("{repo}", &root.to_string_lossy());
+                let s = path
+                    .to_string_lossy()
+                    .replace("{repo}", &root.to_string_lossy());
                 path = PathBuf::from(s);
             }
             return Ok(path);
@@ -883,16 +885,30 @@ pub fn resolve_workspace_path(path: &str, base_path: Option<&str>) -> String {
 
     if resolved.starts_with("./") {
         let relative_part = resolved.trim_start_matches("./");
+        let path_buf = PathBuf::from(relative_part);
+
         // Security: Prevent directory traversal (e.g., "./../../etc/passwd")
-        if relative_part.contains("..") {
-            let path_buf = PathBuf::from(relative_part);
-            if path_buf.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
-                return resolved; // Return original if traversal detected
-            }
+        if path_buf
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+        {
+            return base.to_string(); // Fallback to safe base
         }
-        resolved = PathBuf::from(base).join(relative_part).to_string_lossy().to_string();
+        resolved = PathBuf::from(base)
+            .join(relative_part)
+            .to_string_lossy()
+            .to_string();
     } else if resolved.contains("${WORKSPACE_ROOT}") {
-        resolved = resolved.replace("${WORKSPACE_ROOT}", base);
+        let candidate = resolved.replace("${WORKSPACE_ROOT}", base);
+        // Security: Ensure candidate stays within base boundary
+        let path_buf = PathBuf::from(&candidate);
+        if path_buf
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+        {
+            return base.to_string(); // Fallback to safe base
+        }
+        resolved = candidate;
     }
 
     resolved
@@ -1377,25 +1393,29 @@ mod tests {
     #[test]
     fn test_resolve_workspace_path() {
         let base = Some("/home/user/project");
-        
+
         // Starts with ./
         assert_eq!(
             resolve_workspace_path("./scripts/test.sh", base),
-            if cfg!(windows) { "/home/user/project\\scripts/test.sh" } else { "/home/user/project/scripts/test.sh" }
+            if cfg!(windows) {
+                "/home/user/project\\scripts/test.sh"
+            } else {
+                "/home/user/project/scripts/test.sh"
+            }
         );
-        
+
         // Contains ${WORKSPACE_ROOT}
         assert_eq!(
             resolve_workspace_path("${WORKSPACE_ROOT}/docs", base),
             "/home/user/project/docs"
         );
-        
+
         // No base path
         assert_eq!(
             resolve_workspace_path("./scripts/test.sh", None),
             "./scripts/test.sh"
         );
-        
+
         // Absolute path ignores base if not using variable
         assert_eq!(
             resolve_workspace_path("/absolute/path", base),
@@ -1405,7 +1425,13 @@ mod tests {
         // Traversal prevention
         assert_eq!(
             resolve_workspace_path("./../../etc/passwd", base),
-            "./../../etc/passwd"
+            "/home/user/project"
+        );
+
+        // Traversal prevention with variable
+        assert_eq!(
+            resolve_workspace_path("${WORKSPACE_ROOT}/../../etc/passwd", base),
+            "/home/user/project"
         );
     }
 }

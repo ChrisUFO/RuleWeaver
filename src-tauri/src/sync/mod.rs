@@ -827,8 +827,7 @@ impl<'a> SyncEngine<'a> {
                         if let Ok(current_content) = fs::read_to_string(&path) {
                             let current_hash = compute_content_hash(&current_content);
                             if stored_hash != current_hash {
-                                let expected_content =
-                                    adapter.format_content(&global_rules, true);
+                                let expected_content = adapter.format_content(&global_rules, true);
                                 let diff_summary =
                                     compute_diff_summary(&expected_content, &current_content);
                                 conflicts.push(Conflict {
@@ -879,8 +878,7 @@ impl<'a> SyncEngine<'a> {
                         if let Ok(current_content) = fs::read_to_string(&path) {
                             let current_hash = compute_content_hash(&current_content);
                             if stored_hash != current_hash {
-                                let expected_content =
-                                    adapter.format_content(&path_rules, true);
+                                let expected_content = adapter.format_content(&path_rules, true);
                                 let diff_summary =
                                     compute_diff_summary(&expected_content, &current_content);
                                 conflicts.push(Conflict {
@@ -1271,7 +1269,11 @@ mod tests {
             local_hash: "abc".to_string(),
             current_hash: "def".to_string(),
             scope: Some("global".to_string()),
-            diff_summary: Some(DiffSummary { added: 1, removed: 2, changed: 0 }),
+            diff_summary: Some(DiffSummary {
+                added: 1,
+                removed: 2,
+                changed: 0,
+            }),
         };
 
         assert_eq!(conflict.scope.as_deref(), Some("global"));
@@ -1293,7 +1295,11 @@ mod tests {
             local_hash: "h1".to_string(),
             current_hash: "h2".to_string(),
             scope: Some("local".to_string()),
-            diff_summary: Some(DiffSummary { added: 3, removed: 0, changed: 1 }),
+            diff_summary: Some(DiffSummary {
+                added: 3,
+                removed: 0,
+                changed: 1,
+            }),
         };
 
         let json = serde_json::to_string(&conflict).unwrap();

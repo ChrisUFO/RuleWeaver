@@ -69,10 +69,7 @@ fn test_path_resolver_consistent_with_registry_all_adapters() {
 
             // If supported, the returned path must be absolute
             if registry_supports {
-                let path = resolver
-                    .global_path(*adapter, *artifact)
-                    .unwrap()
-                    .path;
+                let path = resolver.global_path(*adapter, *artifact).unwrap().path;
                 assert!(
                     path.is_absolute(),
                     "Path for {}/{} must be absolute, got: {:?}",
@@ -208,10 +205,7 @@ fn test_all_supported_paths_are_absolute() {
         // Check skill path for skill-supporting adapters with dirs configured
         let entry = REGISTRY.get(&adapter).unwrap();
         if entry.capabilities.supports_skills && entry.paths.global_skills_dir.is_some() {
-            let path = resolver
-                .skill_path(adapter, "test-skill")
-                .unwrap()
-                .path;
+            let path = resolver.skill_path(adapter, "test-skill").unwrap().path;
             assert!(
                 path.is_absolute(),
                 "Skill path for {} must be absolute: {:?}",

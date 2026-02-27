@@ -69,13 +69,13 @@ async fn test_command_delete_reconcile_removes_stubs() {
             is_placeholder: false,
             generate_slash_commands: false,
             slash_command_adapters: vec![],
-                    target_paths: vec![],
-                    base_path: None,
-                    timeout_ms: None,
-                    max_retries: None,
-                })
-                .await
-                .unwrap();
+            target_paths: vec![],
+            base_path: None,
+            timeout_ms: None,
+            max_retries: None,
+        })
+        .await
+        .unwrap();
     // Initial reconcile to write stubs
     let engine = common::make_engine(db.clone(), home_dir.path());
     let create_result = engine.reconcile(false, None).await.unwrap();
@@ -191,7 +191,9 @@ async fn test_slash_command_create_produces_desired_paths() {
 
     // Should be a .md file in .claude/commands/
     assert!(
-        slash_paths.iter().any(|p| p.contains("claude") && p.ends_with(".md")),
+        slash_paths
+            .iter()
+            .any(|p| p.contains("claude") && p.ends_with(".md")),
         "Slash command for Claude Code should be a .md file: {:?}",
         slash_paths
     );

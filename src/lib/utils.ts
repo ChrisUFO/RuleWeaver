@@ -10,12 +10,31 @@ export function getToolFileName(tool: ToolEntry): string {
   return tool.paths.localPathTemplate.split(/[/\\]/).pop() || "";
 }
 
+export const WORKSPACE_ROOT_VAR = "${WORKSPACE_ROOT}";
+
 /**
  * Normalizes a path for visual previews by ensuring consistent forward slashes
  * and trimming leading/trailing whitespace.
  */
 export function normalizePath(path: string): string {
   return path.trim().replace(/\\/g, "/");
+}
+
+/**
+ * Resolves a path for visual preview based on a base path and workspace variables.
+ */
+export function resolveWorkspacePathPreview(path: string, basePath?: string | null): string {
+  if (!basePath || !path) return path;
+
+  if (path.startsWith("./")) {
+    return normalizePath(`${basePath}${path.slice(1)}`);
+  }
+
+  if (path.includes(WORKSPACE_ROOT_VAR)) {
+    return normalizePath(path.replace(WORKSPACE_ROOT_VAR, basePath));
+  }
+
+  return path;
 }
 
 /**

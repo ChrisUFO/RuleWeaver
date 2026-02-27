@@ -10,7 +10,7 @@ import {
   AlertCircle,
   Globe,
 } from "lucide-react";
-import { cn, normalizePath, generateDuplicateName } from "@/lib/utils";
+import { cn, resolveWorkspacePathPreview, generateDuplicateName } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -513,21 +513,9 @@ export function Skills({ initialSelectedId, onClearInitialId }: SkillsProps) {
                           <span className="font-semibold opacity-70">Resolves to:</span>
                           <span
                             className="font-mono bg-white/5 border border-white/5 px-1.5 py-0.5 rounded text-[10px] opacity-90 truncate max-w-[250px]"
-                            title={normalizePath(
-                              directoryPath.startsWith("./")
-                                ? `${basePath}${directoryPath.slice(1)}`
-                                : directoryPath.startsWith("${WORKSPACE_ROOT}")
-                                  ? `${basePath}${directoryPath.slice(17)}`
-                                  : directoryPath
-                            )}
+                            title={resolveWorkspacePathPreview(directoryPath, basePath)}
                           >
-                            {normalizePath(
-                              directoryPath.startsWith("./")
-                                ? `${basePath}${directoryPath.slice(1)}`
-                                : directoryPath.startsWith("${WORKSPACE_ROOT}")
-                                  ? `${basePath}${directoryPath.slice(17)}`
-                                  : directoryPath
-                            )}
+                            {resolveWorkspacePathPreview(directoryPath, basePath)}
                           </span>
                         </p>
                       )}
