@@ -61,12 +61,15 @@ export interface McpStatus {
   running: boolean;
   port: number;
   uptimeSeconds: number;
+  apiToken?: string;
+  isWatching: boolean;
 }
 
 export interface McpConnectionInstructions {
   claudeCodeJson: string;
   opencodeJson: string;
   standaloneCommand: string;
+  apiToken: string;
 }
 
 export interface ExecutionLog {

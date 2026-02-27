@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import {
   Plus,
   Copy,
@@ -28,6 +28,8 @@ import { useRepositoryRoots } from "@/hooks/useRepositoryRoots";
 import { ImportDialog } from "@/components/import/ImportDialog";
 import { useKeyboardShortcuts, SHORTCUTS } from "@/hooks/useKeyboardShortcuts";
 import type { ArtifactStatusEntry } from "@/types/status";
+import { useMcpWatcher } from "@/hooks/useMcpWatcher";
+import { WatchingIndicator } from "@/components/ui/WatchingIndicator";
 
 interface SkillsProps {
   initialSelectedId?: string | null;
@@ -52,6 +54,13 @@ export function Skills({ initialSelectedId, onClearInitialId }: SkillsProps) {
   const [isSaving, setIsSaving] = useState(false);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [adapterStatuses, setAdapterStatuses] = useState<Map<string, string>>(new Map());
+
+  const loadSkills = useCallback(async () => {
+    const data = await api.skills.getAll();
+    setSkills(data);
+  }, []);
+
+  const { mcpStatus, mcpJustRefreshed } = useMcpWatcher(loadSkills);
   const { addToast } = useToast();
 
   const selected = useMemo(
@@ -68,11 +77,6 @@ export function Skills({ initialSelectedId, onClearInitialId }: SkillsProps) {
       }
     }
   }, [initialSelectedId, skills, onClearInitialId]);
-
-  const loadSkills = async () => {
-    const data = await api.skills.getAll();
-    setSkills(data);
-  };
 
   useEffect(() => {
     loadSkills().catch((error) => {
@@ -349,6 +353,15 @@ export function Skills({ initialSelectedId, onClearInitialId }: SkillsProps) {
                   >
                     <Copy className="h-3.5 w-3.5" />
                   </Button>
+                  {skill.enabled &&
+                    mcpStatus?.running &&
+                    mcpStatus.isWatching &&
+                    skill.directoryPath && (
+                      <WatchingIndicator
+                        path={skill.directoryPath}
+                        justRefreshed={mcpJustRefreshed}
+                      />
+                    )}
                   {!skill.enabled && (
                     <Badge
                       variant="secondary"

@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import type { CommandModel } from "@/types/command";
+import type { CommandModel, McpStatus } from "@/types/command";
+import { WatchingIndicator } from "@/components/ui/WatchingIndicator";
 
 interface CommandListProps {
   commands: readonly CommandModel[];
@@ -13,6 +14,8 @@ interface CommandListProps {
   query: string;
   isSaving: boolean;
   isSyncing: boolean;
+  mcpStatus: McpStatus | null;
+  mcpJustRefreshed?: boolean;
   onSelect: (id: string) => void;
   onDuplicate: (cmd: CommandModel) => void;
   onQueryChange: (q: string) => void;
@@ -27,6 +30,8 @@ export function CommandList({
   query,
   isSaving,
   isSyncing,
+  mcpStatus,
+  mcpJustRefreshed,
   onSelect,
   onDuplicate,
   onQueryChange,
@@ -116,6 +121,11 @@ export function CommandList({
                 >
                   <Copy className="h-3.5 w-3.5" />
                 </Button>
+                {mcpStatus?.running &&
+                  mcpStatus.isWatching &&
+                  (cmd.targetPaths?.length || 0) > 0 && (
+                    <WatchingIndicator paths={cmd.targetPaths} justRefreshed={!!mcpJustRefreshed} />
+                  )}{" "}
                 {cmd.exposeViaMcp ? (
                   <Badge
                     variant="default"

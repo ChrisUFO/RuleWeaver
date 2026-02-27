@@ -4,7 +4,8 @@ import { toast } from "@/lib/toast-helpers";
 import { togglePathInSet, filterByQuery } from "@/lib/collection-utils";
 import { generateDuplicateName } from "@/lib/utils";
 import type { useToast } from "@/components/ui/toast";
-import type { CommandModel, ExecutionLog } from "@/types/command";
+import type { CommandModel, ExecutionLog, McpStatus } from "@/types/command";
+import { useMcpWatcher } from "./useMcpWatcher";
 
 export interface AdapterInfo {
   name: string;
@@ -50,6 +51,8 @@ export interface UseCommandsStateReturn {
   filtered: CommandModel[];
   availableAdapters: AdapterInfo[];
   slashStatus: Record<string, SlashSyncStatus>;
+  mcpStatus: McpStatus | null;
+  mcpJustRefreshed: boolean;
   isLoading: boolean;
   isSaving: boolean;
   isTesting: boolean;
@@ -112,6 +115,13 @@ export function useCommandsState(
   const [isSyncing, setIsSyncing] = useState(false);
   const [isSlashCommandSyncing, setIsSlashCommandSyncing] = useState(false);
 
+  const loadCommands = useCallback(async () => {
+    const result = await api.commands.getAll();
+    setCommands(result);
+  }, []);
+
+  const { mcpStatus, mcpJustRefreshed, refreshMcpStatus } = useMcpWatcher(loadCommands);
+
   const selected = useMemo(
     () => commands.find((cmd) => cmd.id === selectedId) ?? null,
     [commands, selectedId]
@@ -131,11 +141,6 @@ export function useCommandsState(
     () => filterByQuery(commands, query, ["name", "description"] as const),
     [commands, query]
   );
-
-  const loadCommands = useCallback(async () => {
-    const result = await api.commands.getAll();
-    setCommands(result);
-  }, []);
 
   const loadFilteredHistory = useCallback(
     async (commandId: string, filter: string, page: number) => {
@@ -184,13 +189,13 @@ export function useCommandsState(
   const refresh = useCallback(async () => {
     setIsLoading(true);
     try {
-      await Promise.all([loadCommands(), loadAvailableAdapters()]);
+      await Promise.all([loadCommands(), loadAvailableAdapters(), refreshMcpStatus()]);
     } catch (error) {
       toast.error(addToast, { title: "Failed to Load Commands", error });
     } finally {
       setIsLoading(false);
     }
-  }, [loadCommands, loadAvailableAdapters, addToast]);
+  }, [loadCommands, loadAvailableAdapters, refreshMcpStatus, addToast]);
 
   useEffect(() => {
     refresh();
@@ -508,6 +513,8 @@ export function useCommandsState(
     filtered,
     availableAdapters,
     slashStatus,
+    mcpStatus,
+    mcpJustRefreshed,
     isLoading,
     isSaving,
     isTesting,
