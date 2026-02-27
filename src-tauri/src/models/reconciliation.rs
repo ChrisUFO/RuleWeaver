@@ -1,4 +1,8 @@
+use std::str::FromStr;
+
 use serde::{Deserialize, Serialize};
+
+use super::parse_error::ParseEnumError;
 
 /// Type of reconciliation operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -19,15 +23,18 @@ impl ReconcileOperation {
             Self::Check => "check",
         }
     }
+}
 
-    #[allow(clippy::should_implement_trait)]
-    pub fn from_str(s: &str) -> Option<Self> {
+impl FromStr for ReconcileOperation {
+    type Err = ParseEnumError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "create" => Some(Self::Create),
-            "update" => Some(Self::Update),
-            "remove" => Some(Self::Remove),
-            "check" => Some(Self::Check),
-            _ => None,
+            "create" => Ok(Self::Create),
+            "update" => Ok(Self::Update),
+            "remove" => Ok(Self::Remove),
+            "check" => Ok(Self::Check),
+            _ => Err(ParseEnumError),
         }
     }
 }
@@ -49,14 +56,17 @@ impl ReconcileResultType {
             Self::Skipped => "skipped",
         }
     }
+}
 
-    #[allow(clippy::should_implement_trait)]
-    pub fn from_str(s: &str) -> Option<Self> {
+impl FromStr for ReconcileResultType {
+    type Err = ParseEnumError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "success" => Some(Self::Success),
-            "failed" => Some(Self::Failed),
-            "skipped" => Some(Self::Skipped),
-            _ => None,
+            "success" => Ok(Self::Success),
+            "failed" => Ok(Self::Failed),
+            "skipped" => Ok(Self::Skipped),
+            _ => Err(ParseEnumError),
         }
     }
 }

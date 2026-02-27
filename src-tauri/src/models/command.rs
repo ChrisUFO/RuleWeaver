@@ -1,6 +1,10 @@
+use std::str::FromStr;
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+
+use super::parse_error::ParseEnumError;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -79,21 +83,6 @@ impl FailureClass {
         }
     }
 
-    #[allow(dead_code)]
-    #[allow(clippy::should_implement_trait)]
-    pub fn from_str(s: &str) -> Option<Self> {
-        match s {
-            "success" => Some(FailureClass::Success),
-            "validation_error" => Some(FailureClass::ValidationError),
-            "timeout" => Some(FailureClass::Timeout),
-            "permission_denied" => Some(FailureClass::PermissionDenied),
-            "missing_binary" => Some(FailureClass::MissingBinary),
-            "non_zero_exit" => Some(FailureClass::NonZeroExit),
-            "unknown_error" => Some(FailureClass::UnknownError),
-            _ => None,
-        }
-    }
-
     pub fn is_retryable(&self) -> bool {
         !matches!(
             self,
@@ -101,6 +90,23 @@ impl FailureClass {
                 | FailureClass::MissingBinary
                 | FailureClass::PermissionDenied
         )
+    }
+}
+
+impl FromStr for FailureClass {
+    type Err = ParseEnumError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "success" => Ok(FailureClass::Success),
+            "validation_error" => Ok(FailureClass::ValidationError),
+            "timeout" => Ok(FailureClass::Timeout),
+            "permission_denied" => Ok(FailureClass::PermissionDenied),
+            "missing_binary" => Ok(FailureClass::MissingBinary),
+            "non_zero_exit" => Ok(FailureClass::NonZeroExit),
+            "unknown_error" => Ok(FailureClass::UnknownError),
+            _ => Err(ParseEnumError),
+        }
     }
 }
 

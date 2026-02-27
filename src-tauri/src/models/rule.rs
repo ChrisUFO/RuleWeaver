@@ -1,6 +1,10 @@
+use std::str::FromStr;
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+
+use super::parse_error::ParseEnumError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -17,13 +21,16 @@ impl Scope {
             Scope::Local => "local",
         }
     }
+}
 
-    #[allow(clippy::should_implement_trait)]
-    pub fn from_str(s: &str) -> Option<Self> {
+impl FromStr for Scope {
+    type Err = ParseEnumError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            "global" => Some(Scope::Global),
-            "local" => Some(Scope::Local),
-            _ => None,
+            "global" => Ok(Scope::Global),
+            "local" => Ok(Scope::Local),
+            _ => Err(ParseEnumError),
         }
     }
 }
@@ -59,23 +66,6 @@ impl AdapterType {
         }
     }
 
-    #[allow(clippy::should_implement_trait)]
-    pub fn from_str(s: &str) -> Option<Self> {
-        match s {
-            "antigravity" => Some(AdapterType::Antigravity),
-            "gemini" => Some(AdapterType::Gemini),
-            "opencode" => Some(AdapterType::OpenCode),
-            "cline" => Some(AdapterType::Cline),
-            "claude-code" => Some(AdapterType::ClaudeCode),
-            "codex" => Some(AdapterType::Codex),
-            "kilo" => Some(AdapterType::Kilo),
-            "cursor" => Some(AdapterType::Cursor),
-            "windsurf" => Some(AdapterType::Windsurf),
-            "roocode" => Some(AdapterType::RooCode),
-            _ => None,
-        }
-    }
-
     #[allow(dead_code)]
     pub fn all() -> Vec<Self> {
         vec![
@@ -90,6 +80,26 @@ impl AdapterType {
             AdapterType::Windsurf,
             AdapterType::RooCode,
         ]
+    }
+}
+
+impl FromStr for AdapterType {
+    type Err = ParseEnumError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "antigravity" => Ok(AdapterType::Antigravity),
+            "gemini" => Ok(AdapterType::Gemini),
+            "opencode" => Ok(AdapterType::OpenCode),
+            "cline" => Ok(AdapterType::Cline),
+            "claude-code" => Ok(AdapterType::ClaudeCode),
+            "codex" => Ok(AdapterType::Codex),
+            "kilo" => Ok(AdapterType::Kilo),
+            "cursor" => Ok(AdapterType::Cursor),
+            "windsurf" => Ok(AdapterType::Windsurf),
+            "roocode" => Ok(AdapterType::RooCode),
+            _ => Err(ParseEnumError),
+        }
     }
 }
 
@@ -221,10 +231,10 @@ mod tests {
 
     #[test]
     fn test_scope_from_str() {
-        assert!(matches!(Scope::from_str("global"), Some(Scope::Global)));
-        assert!(matches!(Scope::from_str("local"), Some(Scope::Local)));
-        assert!(matches!(Scope::from_str("GLOBAL"), Some(Scope::Global)));
-        assert!(Scope::from_str("invalid").is_none());
+        assert!(matches!(Scope::from_str("global"), Ok(Scope::Global)));
+        assert!(matches!(Scope::from_str("local"), Ok(Scope::Local)));
+        assert!(matches!(Scope::from_str("GLOBAL"), Ok(Scope::Global)));
+        assert!(Scope::from_str("invalid").is_err());
     }
 
     #[test]
@@ -237,29 +247,29 @@ mod tests {
     fn test_adapter_type_from_str() {
         assert!(matches!(
             AdapterType::from_str("antigravity"),
-            Some(AdapterType::Antigravity)
+            Ok(AdapterType::Antigravity)
         ));
         assert!(matches!(
             AdapterType::from_str("gemini"),
-            Some(AdapterType::Gemini)
+            Ok(AdapterType::Gemini)
         ));
         assert!(matches!(
             AdapterType::from_str("opencode"),
-            Some(AdapterType::OpenCode)
+            Ok(AdapterType::OpenCode)
         ));
         assert!(matches!(
             AdapterType::from_str("cline"),
-            Some(AdapterType::Cline)
+            Ok(AdapterType::Cline)
         ));
         assert!(matches!(
             AdapterType::from_str("claude-code"),
-            Some(AdapterType::ClaudeCode)
+            Ok(AdapterType::ClaudeCode)
         ));
         assert!(matches!(
             AdapterType::from_str("codex"),
-            Some(AdapterType::Codex)
+            Ok(AdapterType::Codex)
         ));
-        assert!(AdapterType::from_str("invalid").is_none());
+        assert!(AdapterType::from_str("invalid").is_err());
     }
 
     #[test]

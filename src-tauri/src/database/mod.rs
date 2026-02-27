@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::str::FromStr;
 use tokio::sync::Mutex;
 
 use chrono::{DateTime, TimeZone, Utc};
@@ -148,7 +149,7 @@ impl Database {
                 let created_at: i64 = row.get(8)?;
                 let updated_at: i64 = row.get(9)?;
 
-                let scope = Scope::from_str(&scope_str).ok_or_else(|| {
+                let scope = Scope::from_str(&scope_str).map_err(|_| {
                     rusqlite::Error::FromSqlConversionFailure(
                         4,
                         rusqlite::types::Type::Text,
@@ -218,7 +219,7 @@ impl Database {
                 let created_at: i64 = row.get(8)?;
                 let updated_at: i64 = row.get(9)?;
 
-                let scope = Scope::from_str(&scope_str).ok_or_else(|| {
+                let scope = Scope::from_str(&scope_str).map_err(|_| {
                     rusqlite::Error::FromSqlConversionFailure(
                         4,
                         rusqlite::types::Type::Text,
@@ -632,7 +633,7 @@ impl Database {
                     updated_at: parse_timestamp_or_now(row.get(7)?),
                     directory_path: row.get(8)?,
                     entry_point: row.get(9)?,
-                    scope: Scope::from_str(&row.get::<_, String>(10)?).ok_or_else(|| {
+                    scope: Scope::from_str(&row.get::<_, String>(10)?).map_err(|_| {
                         rusqlite::Error::FromSqlConversionFailure(
                             10,
                             rusqlite::types::Type::Text,
@@ -692,7 +693,7 @@ impl Database {
                     updated_at: parse_timestamp_or_now(row.get(7)?),
                     directory_path: row.get(8)?,
                     entry_point: row.get(9)?,
-                    scope: Scope::from_str(&row.get::<_, String>(10)?).ok_or_else(|| {
+                    scope: Scope::from_str(&row.get::<_, String>(10)?).map_err(|_| {
                         rusqlite::Error::FromSqlConversionFailure(
                             10,
                             rusqlite::types::Type::Text,
@@ -1366,10 +1367,10 @@ impl Database {
                     ReconcileOperation::from_str(&op_str).unwrap_or(ReconcileOperation::Check);
 
                 let adapter_str: Option<String> = row.get(4)?;
-                let adapter = adapter_str.and_then(|s| AdapterType::from_str(&s));
+                let adapter = adapter_str.and_then(|s| AdapterType::from_str(&s).ok());
 
                 let scope_str: Option<String> = row.get(5)?;
-                let scope = scope_str.and_then(|s| Scope::from_str(&s));
+                let scope = scope_str.and_then(|s| Scope::from_str(&s).ok());
 
                 let res_str: String = row.get(7)?;
                 let result =

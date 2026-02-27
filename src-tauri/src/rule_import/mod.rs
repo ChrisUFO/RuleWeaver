@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::net::IpAddr;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::sync::Arc;
 
 use chrono::Utc;
@@ -1363,13 +1364,13 @@ fn extract_rule_payload(
             .unwrap_or(trimmed.clone());
         let scope = payload
             .scope
-            .and_then(|s| Scope::from_str(&s))
+            .and_then(|s| Scope::from_str(&s).ok())
             .unwrap_or(fallback_scope);
         let adapters = payload
             .enabled_adapters
             .unwrap_or_default()
             .iter()
-            .filter_map(|a| AdapterType::from_str(a))
+            .filter_map(|a| AdapterType::from_str(a).ok())
             .collect::<Vec<_>>();
 
         return (

@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 
 use sha2::{Digest, Sha256};
 
@@ -518,7 +519,7 @@ impl<'a> SyncEngine<'a> {
                     Ok(settings_map) => settings_map
                         .into_iter()
                         .filter(|(_, enabled)| !enabled)
-                        .filter_map(|(id, _)| AdapterType::from_str(&id))
+                        .filter_map(|(id, _)| AdapterType::from_str(&id).ok())
                         .collect(),
                     Err(e) => {
                         eprintln!("Warning: Failed to deserialize adapter_settings: {}", e);
