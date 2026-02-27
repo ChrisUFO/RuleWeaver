@@ -5,6 +5,7 @@ import { togglePathInSet, filterByQuery } from "@/lib/collection-utils";
 import { generateDuplicateName } from "@/lib/utils";
 import type { useToast } from "@/components/ui/toast";
 import type { CommandModel, ExecutionLog, McpStatus } from "@/types/command";
+import { listen } from "@tauri-apps/api/event";
 
 export interface AdapterInfo {
   name: string;
@@ -51,6 +52,7 @@ export interface UseCommandsStateReturn {
   availableAdapters: AdapterInfo[];
   slashStatus: Record<string, SlashSyncStatus>;
   mcpStatus: McpStatus | null;
+  mcpJustRefreshed: boolean;
   isLoading: boolean;
   isSaving: boolean;
   isTesting: boolean;
@@ -108,6 +110,7 @@ export function useCommandsState(
   const [availableAdapters, setAvailableAdapters] = useState<AdapterInfo[]>([]);
   const [slashStatus, setSlashStatus] = useState<Record<string, SlashSyncStatus>>({});
   const [mcpStatus, setMcpStatus] = useState<McpStatus | null>(null);
+  const [mcpJustRefreshed, setMcpJustRefreshed] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
@@ -206,8 +209,22 @@ export function useCommandsState(
   useEffect(() => {
     refresh();
     const timer = setInterval(loadMcpStatus, 5000);
-    return () => clearInterval(timer);
-  }, [refresh, loadMcpStatus]);
+
+    let unlisten: (() => void) | undefined;
+    listen("mcp-artifacts-refreshed", () => {
+      loadCommands();
+      loadMcpStatus();
+      setMcpJustRefreshed(true);
+      setTimeout(() => setMcpJustRefreshed(false), 2000);
+    }).then((fn) => {
+      unlisten = fn;
+    });
+
+    return () => {
+      clearInterval(timer);
+      if (unlisten) unlisten();
+    };
+  }, [refresh, loadMcpStatus, loadCommands]);
 
   useEffect(() => {
     if (!selected) {
@@ -522,6 +539,7 @@ export function useCommandsState(
     availableAdapters,
     slashStatus,
     mcpStatus,
+    mcpJustRefreshed,
     isLoading,
     isSaving,
     isTesting,

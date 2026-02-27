@@ -12,10 +12,12 @@ pub async fn get_mcp_status(mcp: State<'_, McpManager>) -> Result<McpStatus> {
 
 #[tauri::command]
 pub async fn start_mcp_server(
+    app: tauri::AppHandle,
     db: State<'_, Arc<Database>>,
     mcp: State<'_, McpManager>,
     status: State<'_, crate::GlobalStatus>,
 ) -> Result<()> {
+    mcp.set_app_handle(app).await;
     match mcp.start(&db).await {
         Ok(_) => {
             status.update_mcp_status(&format!("Running (Port {})", mcp.port()));
@@ -47,11 +49,13 @@ pub async fn stop_mcp_server(
 
 #[tauri::command]
 pub async fn restart_mcp_server(
+    app: tauri::AppHandle,
     db: State<'_, Arc<Database>>,
     mcp: State<'_, McpManager>,
     status: State<'_, crate::GlobalStatus>,
 ) -> Result<()> {
     let _ = mcp.stop().await;
+    mcp.set_app_handle(app).await;
     match mcp.start(&db).await {
         Ok(_) => {
             status.update_mcp_status(&format!("Running (Port {})", mcp.port()));

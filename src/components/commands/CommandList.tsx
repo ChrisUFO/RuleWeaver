@@ -14,6 +14,7 @@ interface CommandListProps {
   isSaving: boolean;
   isSyncing: boolean;
   mcpStatus: McpStatus | null;
+  mcpJustRefreshed?: boolean;
   onSelect: (id: string) => void;
   onDuplicate: (cmd: CommandModel) => void;
   onQueryChange: (q: string) => void;
@@ -29,6 +30,7 @@ export function CommandList({
   isSaving,
   isSyncing,
   mcpStatus,
+  mcpJustRefreshed,
   onSelect,
   onDuplicate,
   onQueryChange,
@@ -121,10 +123,19 @@ export function CommandList({
                 {mcpStatus?.running &&
                   mcpStatus.isWatching &&
                   (cmd.targetPaths?.length || 0) > 0 && (
-                    <span title="MCP is watching this command for changes">
-                      <Eye className="h-3.5 w-3.5 text-blue-500 animate-pulse" />
+                    <span
+                      title={`MCP is watching local paths for this command\n${(cmd.targetPaths || []).join("\n")}`}
+                    >
+                      <Eye
+                        className={cn(
+                          "h-3.5 w-3.5 text-blue-500 transition-all duration-500",
+                          mcpJustRefreshed
+                            ? "text-emerald-400 scale-125 glow-active drop-shadow-md"
+                            : "animate-pulse"
+                        )}
+                      />
                     </span>
-                  )}
+                  )}{" "}
                 {cmd.exposeViaMcp ? (
                   <Badge
                     variant="default"

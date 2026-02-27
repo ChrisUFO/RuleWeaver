@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import {
   Plus,
   Copy,
@@ -55,6 +56,7 @@ export function Skills({ initialSelectedId, onClearInitialId }: SkillsProps) {
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [adapterStatuses, setAdapterStatuses] = useState<Map<string, string>>(new Map());
   const [mcpStatus, setMcpStatus] = useState<McpStatus | null>(null);
+  const [mcpJustRefreshed, setMcpJustRefreshed] = useState(false);
   const { addToast } = useToast();
 
   const selected = useMemo(
@@ -101,7 +103,21 @@ export function Skills({ initialSelectedId, onClearInitialId }: SkillsProps) {
 
     loadMcpStatus();
     const timer = setInterval(loadMcpStatus, 5000);
-    return () => clearInterval(timer);
+
+    let unlisten: (() => void) | undefined;
+    listen("mcp-artifacts-refreshed", () => {
+      loadSkills();
+      loadMcpStatus();
+      setMcpJustRefreshed(true);
+      setTimeout(() => setMcpJustRefreshed(false), 2000);
+    }).then((fn) => {
+      unlisten = fn;
+    });
+
+    return () => {
+      clearInterval(timer);
+      if (unlisten) unlisten();
+    };
   }, [addToast]);
 
   useEffect(() => {
@@ -366,8 +382,15 @@ export function Skills({ initialSelectedId, onClearInitialId }: SkillsProps) {
                     <Copy className="h-3.5 w-3.5" />
                   </Button>
                   {skill.enabled && mcpStatus?.running && mcpStatus.isWatching && (
-                    <span title="MCP is watching this skill for changes">
-                      <Eye className="h-3.5 w-3.5 text-blue-500 animate-pulse" />
+                    <span title={`MCP is watching this skill directory\n${skill.directoryPath}`}>
+                      <Eye
+                        className={cn(
+                          "h-3.5 w-3.5 text-blue-500 transition-all duration-500",
+                          mcpJustRefreshed
+                            ? "text-emerald-400 scale-125 glow-active drop-shadow-md"
+                            : "animate-pulse"
+                        )}
+                      />
                     </span>
                   )}
                   {!skill.enabled && (

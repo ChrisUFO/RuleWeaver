@@ -33,9 +33,21 @@ impl WatcherManager {
         let (tx, mut rx) = mpsc::channel(100);
 
         let mut watcher = RecommendedWatcher::new(
-            move |res| {
+            move |res: std::result::Result<notify::Event, notify::Error>| {
                 if let Ok(event) = res {
-                    let _ = tx.blocking_send(event);
+                    let mut ignored = false;
+                    for path in &event.paths {
+                        if path.components().any(|c| {
+                            let s = c.as_os_str().to_string_lossy();
+                            s == ".git" || s == "node_modules" || s == "target" || s == ".agents"
+                        }) {
+                            ignored = true;
+                            break;
+                        }
+                    }
+                    if !ignored {
+                        let _ = tx.blocking_send(event);
+                    }
                 }
             },
             Config::default(),
@@ -43,8 +55,10 @@ impl WatcherManager {
 
         for path in &paths {
             if path.exists() {
-                let _ = watcher.watch(path, RecursiveMode::Recursive);
-                self.watched_paths.insert(path.clone());
+                let canonical_path = std::fs::canonicalize(path).unwrap_or_else(|_| path.clone());
+                if watcher.watch(&canonical_path, RecursiveMode::Recursive).is_ok() {
+                    self.watched_paths.insert(canonical_path);
+                }
             }
         }
 
