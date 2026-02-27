@@ -5,9 +5,7 @@ use tauri::State;
 
 use crate::database::Database;
 use crate::error::Result;
-use crate::status::{
-    ArtifactStatusEntry, RepairResult, StatusEngine, StatusFilter, StatusSummary,
-};
+use crate::status::{ArtifactStatusEntry, RepairResult, StatusEngine, StatusFilter, StatusSummary};
 
 #[tauri::command]
 pub async fn get_artifact_status(

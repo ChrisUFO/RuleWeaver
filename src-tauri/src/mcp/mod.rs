@@ -10,10 +10,10 @@ use serde_json::json;
 use std::collections::VecDeque;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tauri::Emitter;
 use tokio::sync::{broadcast, Mutex};
 use tokio::task::JoinHandle;
 use tower_http::cors::CorsLayer;
-use tauri::Emitter;
 
 pub mod watcher;
 
@@ -111,7 +111,9 @@ pub struct McpSnapshot {
 
 fn spawn_refresh_task(manager: McpManager, db: Arc<Database>) {
     tokio::spawn(async move {
-        let _ = manager.log("Detected artifact changes, refreshing tools...".to_string()).await;
+        let _ = manager
+            .log("Detected artifact changes, refreshing tools...".to_string())
+            .await;
         let _ = manager.refresh_commands(&db).await;
     });
 }
@@ -145,7 +147,7 @@ impl McpManager {
 
     pub async fn refresh_commands(&self, db: &Database) -> Result<()> {
         let (commands, skills) = db.get_mcp_data().await?;
-        
+
         let app_handle = {
             let mut state = self.inner.lock().await;
             state.commands = commands;
@@ -166,7 +168,7 @@ impl McpManager {
                     }
                 }
                 let paths_vec = paths.into_iter().collect::<Vec<_>>();
-                
+
                 let manager_clone = self.clone();
                 if let Some(db_arc) = state.db.clone() {
                     if let Err(e) = state.watcher.start(paths_vec, move || {
@@ -176,7 +178,7 @@ impl McpManager {
                     }
                 }
             }
-            
+
             state.app_handle.clone()
         };
 
@@ -950,7 +952,11 @@ async fn handle_skill_call(
         skill.entry_point.clone()
     };
 
-    let dir = std::path::PathBuf::from(&skill.directory_path);
+    let resolved_path = crate::path_resolver::resolve_workspace_path(
+        &skill.directory_path,
+        skill.base_path.as_deref(),
+    );
+    let dir = std::path::PathBuf::from(&resolved_path);
     if !dir.exists() || !dir.is_dir() {
         return json!({
             "jsonrpc": "2.0",

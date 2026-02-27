@@ -1,9 +1,9 @@
+use crate::error::Result;
 use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
 use std::collections::HashSet;
 use std::path::PathBuf;
 use tokio::sync::mpsc;
 use tokio::time::sleep;
-use crate::error::Result;
 
 use crate::constants::timing::{WATCHER_DEBOUNCE, WATCHER_POLL_INTERVAL};
 
@@ -21,9 +21,9 @@ impl WatcherManager {
         }
     }
 
-    pub fn start<F>(&mut self, paths: Vec<PathBuf>, mut on_event: F) -> Result<()> 
-    where 
-        F: FnMut() + Send + 'static 
+    pub fn start<F>(&mut self, paths: Vec<PathBuf>, mut on_event: F) -> Result<()>
+    where
+        F: FnMut() + Send + 'static,
     {
         // Stop any existing watcher
         self.stop();
@@ -53,14 +53,21 @@ impl WatcherManager {
                 }
             },
             Config::default(),
-        ).map_err(|e| crate::error::AppError::Watcher { message: format!("Failed to create watcher: {}", e) })?;
+        )
+        .map_err(|e| crate::error::AppError::Watcher {
+            message: format!("Failed to create watcher: {}", e),
+        })?;
 
         for path in &paths {
             if path.exists() {
                 let canonical_path = match std::fs::canonicalize(path) {
                     Ok(p) => p,
                     Err(e) => {
-                        log::warn!("Failed to canonicalize path '{}': {}. Using original path.", path.display(), e);
+                        log::warn!(
+                            "Failed to canonicalize path '{}': {}. Using original path.",
+                            path.display(),
+                            e
+                        );
                         path.clone()
                     }
                 };
@@ -120,10 +127,10 @@ impl WatcherManager {
 mod tests {
     use super::*;
     use std::fs;
-    use tempfile::TempDir;
-    use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
     use std::time::Duration;
+    use tempfile::TempDir;
 
     #[tokio::test]
     async fn test_watcher_lifecycle() {
@@ -131,7 +138,9 @@ mod tests {
         assert!(!manager.is_watching());
 
         let temp_dir = TempDir::new().unwrap();
-        manager.start(vec![temp_dir.path().to_path_buf()], || {}).unwrap();
+        manager
+            .start(vec![temp_dir.path().to_path_buf()], || {})
+            .unwrap();
         assert!(manager.is_watching());
 
         manager.stop();
@@ -145,9 +154,11 @@ mod tests {
         let counter = Arc::new(AtomicUsize::new(0));
         let counter_clone = Arc::clone(&counter);
 
-        manager.start(vec![temp_dir.path().to_path_buf()], move || {
-            counter_clone.fetch_add(1, Ordering::SeqCst);
-        }).unwrap();
+        manager
+            .start(vec![temp_dir.path().to_path_buf()], move || {
+                counter_clone.fetch_add(1, Ordering::SeqCst);
+            })
+            .unwrap();
 
         let file_path = temp_dir.path().join("test.txt");
 
@@ -170,11 +181,18 @@ mod tests {
             sleep(Duration::from_millis(100)).await;
         }
 
-        assert!(triggered, "Should have triggered exactly once due to debounce within timeout");
-        
+        assert!(
+            triggered,
+            "Should have triggered exactly once due to debounce within timeout"
+        );
+
         // Wait a bit more to ensure no additional triggers happen
         sleep(Duration::from_millis(500)).await;
-        assert_eq!(counter.load(Ordering::SeqCst), 1, "Should not have triggered more than once");
+        assert_eq!(
+            counter.load(Ordering::SeqCst),
+            1,
+            "Should not have triggered more than once"
+        );
 
         manager.stop();
     }

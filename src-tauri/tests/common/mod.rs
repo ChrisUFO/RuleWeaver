@@ -8,9 +8,7 @@
 use std::sync::Arc;
 
 use ruleweaver_lib::{
-    database::Database,
-    path_resolver::PathResolver,
-    reconciliation::ReconciliationEngine,
+    database::Database, path_resolver::PathResolver, reconciliation::ReconciliationEngine,
 };
 
 /// Create an isolated in-memory database for integration tests.

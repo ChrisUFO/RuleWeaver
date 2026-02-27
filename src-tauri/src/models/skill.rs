@@ -24,6 +24,8 @@ pub struct Skill {
     /// Repository roots for local-scope syncing.
     #[serde(default)]
     pub target_paths: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub base_path: Option<String>,
     #[serde(with = "crate::models::timestamp")]
     pub created_at: DateTime<Utc>,
     #[serde(with = "crate::models::timestamp")]
@@ -255,6 +257,8 @@ pub struct CreateSkillInput {
     /// Repository roots for local-scope syncing.
     #[serde(default)]
     pub target_paths: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub base_path: Option<String>,
 }
 
 fn default_true() -> bool {
@@ -276,4 +280,5 @@ pub struct UpdateSkillInput {
     pub target_adapters: Option<Vec<String>>,
     /// Repository roots for local-scope syncing.
     pub target_paths: Option<Vec<String>>,
+    pub base_path: Option<String>,
 }

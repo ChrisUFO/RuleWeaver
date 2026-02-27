@@ -53,9 +53,7 @@ async fn test_rule_create_produces_desired_state() {
 
     // All expected paths should reference the rule content
     for (_path, artifact) in &desired.expected_paths {
-        if artifact.artifact_type
-            == ruleweaver_lib::models::registry::ArtifactType::Rule
-        {
+        if artifact.artifact_type == ruleweaver_lib::models::registry::ArtifactType::Rule {
             assert_eq!(artifact.name, "test-rule");
         }
     }
@@ -177,7 +175,10 @@ async fn test_rule_delete_reconcile_removes_orphan() {
 
     // Confirm file exists
     let file_path = home_dir.path().join(".claude").join("CLAUDE.md");
-    assert!(file_path.exists(), "File should exist after initial reconcile");
+    assert!(
+        file_path.exists(),
+        "File should exist after initial reconcile"
+    );
 
     // Delete the rule
     db.delete_rule(&rule.id).await.unwrap();

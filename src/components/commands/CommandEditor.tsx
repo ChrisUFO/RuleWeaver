@@ -8,14 +8,18 @@ import {
   AlertTriangle,
   EyeOff,
   HelpCircle,
+  Globe,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Select } from "@/components/ui/select";
 import { SlashCommandsSection } from "./SlashCommandsSection";
-import { cn } from "@/lib/utils";
+import { cn, resolveWorkspacePathPreview } from "@/lib/utils";
+import { useMemo } from "react";
 import { featureManager, FEATURE_FLAGS } from "@/lib/featureManager";
 import type { CommandModel, ExecutionLog } from "@/types/command";
 import type {
@@ -103,6 +107,11 @@ export function CommandEditor({
   onHistoryFilterChange,
   onHistoryPageChange,
 }: CommandEditorProps) {
+  const sortedRepos = useMemo(
+    () => [...availableRepos].sort((a, b) => a.localeCompare(b)),
+    [availableRepos]
+  );
+
   if (!selected) {
     return (
       <Card className="glass-card premium-shadow border-none overflow-hidden">
@@ -175,23 +184,113 @@ export function CommandEditor({
         </div>
 
         <div className="grid gap-2">
+          <div className="flex items-center justify-between">
+            <label className="text-sm font-medium">Workspace Context (Optional Base Path)</label>
+            {form.basePath && (
+              <Badge
+                variant="outline"
+                className="flex items-center gap-1 bg-primary/10 text-primary border-primary/20 text-[10px] uppercase tracking-wider py-0 px-1.5 h-5 font-bold"
+              >
+                <Globe className="h-2.5 w-2.5" />
+                Portable
+              </Badge>
+            )}
+          </div>
+          <p className="text-xs text-muted-foreground mb-1">
+            Select a repository root to make the command configuration portable (target paths become
+            relative).
+          </p>
+          {sortedRepos.length === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              No configured repositories found. Add them in Settings.
+            </p>
+          ) : (
+            <Select
+              value={sortedRepos.includes(form.basePath || "") ? form.basePath || "" : ""}
+              onChange={(value) => {
+                const newBasePath = value || null;
+                const oldBasePath = form.basePath;
+
+                const updatedTargets = form.targetPaths.map((p) => {
+                  // 1. Resolve current path to an absolute path using the old base path.
+                  const absolutePath = resolveWorkspacePathPreview(p, oldBasePath);
+
+                  // 2. If a new base path is set, convert the absolute path to be relative to it.
+                  if (newBasePath && absolutePath.startsWith(newBasePath)) {
+                    const relativePath = absolutePath
+                      .slice(newBasePath.length)
+                      .replace(/^[\\/]/, "");
+                    return relativePath ? `./${relativePath}` : "./";
+                  }
+
+                  // 3. Otherwise, use the absolute path.
+                  return absolutePath;
+                });
+
+                onUpdateForm({ basePath: newBasePath, targetPaths: updatedTargets });
+              }}
+              options={[
+                { value: "", label: "None (Use Absolute Paths)" },
+                ...sortedRepos.map((repo) => ({ value: repo, label: repo })),
+              ]}
+              aria-label="Select base path workspace"
+            />
+          )}
+        </div>
+
+        <div className="grid gap-2">
           <label className="text-sm font-medium">Target Repositories (Optional)</label>
-          {availableRepos.length === 0 ? (
+          {sortedRepos.length === 0 ? (
             <p className="text-xs text-muted-foreground">
               No repositories configured. Add repository roots in Settings.
             </p>
           ) : (
             <div className="rounded-md border p-3 space-y-2">
-              {availableRepos.map((repo) => (
-                <label key={repo} className="flex items-center gap-2 text-sm">
-                  <Checkbox
-                    checked={form.targetPaths.includes(repo)}
-                    onChange={(checked) => onToggleTargetPath(repo, checked)}
-                    aria-label={`Target repository ${repo}`}
-                  />
-                  <span className="truncate">{repo}</span>
-                </label>
-              ))}
+              {sortedRepos.map((repo) => {
+                const isBase = form.basePath === repo;
+                const targetString = isBase ? "./" : repo;
+                const isChecked =
+                  form.targetPaths.includes(targetString) || form.targetPaths.includes(repo);
+
+                return (
+                  <div key={repo} className="space-y-1">
+                    <label className="flex items-center gap-2 text-sm cursor-pointer">
+                      <Checkbox
+                        checked={isChecked}
+                        onChange={(checked) => {
+                          // If unchecking, remove both relative and absolute forms just in case
+                          if (!checked) {
+                            onToggleTargetPath(targetString, false);
+                            if (isBase) onToggleTargetPath(repo, false);
+                          } else {
+                            onToggleTargetPath(targetString, true);
+                          }
+                        }}
+                        aria-label={`Target repository ${repo}`}
+                      />
+                      <span className="truncate">
+                        {repo}{" "}
+                        {isBase && (
+                          <span className="text-[10px] bg-primary/10 text-primary px-1 rounded font-bold ml-1 uppercase tracking-tighter">
+                            Relative
+                          </span>
+                        )}
+                      </span>
+                    </label>
+                    {isChecked && isBase && (
+                      <p className="text-[10px] text-muted-foreground ml-6 flex items-center gap-1 opacity-70">
+                        <span className="font-semibold">Resolves to:</span>
+                        <span
+                          className="font-mono bg-white/5 px-1 rounded truncate max-w-[300px]"
+                          title={resolveWorkspacePathPreview(targetString, repo)}
+                        >
+                          {resolveWorkspacePathPreview(targetString, repo)}
+                        </span>
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>

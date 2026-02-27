@@ -29,7 +29,10 @@ async fn test_import_from_file_creates_rule_in_db() {
     );
 
     let scan_result = scan_file_to_candidates(&file_path, 1024 * 1024);
-    assert!(!scan_result.candidates.is_empty(), "Should find at least one candidate");
+    assert!(
+        !scan_result.candidates.is_empty(),
+        "Should find at least one candidate"
+    );
 
     let result = execute_import(
         db.clone(),
@@ -54,7 +57,9 @@ async fn test_import_from_file_creates_rule_in_db() {
     // Verify rule exists in DB
     let rules = db.get_all_rules().await.unwrap();
     assert!(
-        rules.iter().any(|r| r.content.contains("Always write tests.")),
+        rules
+            .iter()
+            .any(|r| r.content.contains("Always write tests.")),
         "Imported rule should be in DB"
     );
 }
@@ -83,8 +88,13 @@ async fn test_import_duplicate_content_skipped() {
 
     // First import
     let scan1 = scan_file_to_candidates(&file_path, 1024 * 1024);
-    let result1 = execute_import(db.clone(), scan1, options.clone()).await.unwrap();
-    assert!(!result1.imported_rules.is_empty(), "First import should succeed");
+    let result1 = execute_import(db.clone(), scan1, options.clone())
+        .await
+        .unwrap();
+    assert!(
+        !result1.imported_rules.is_empty(),
+        "First import should succeed"
+    );
 
     // Second import — same content, should be skipped
     let scan2 = scan_file_to_candidates(&file_path, 1024 * 1024);
@@ -104,7 +114,11 @@ async fn test_import_duplicate_content_skipped() {
         .iter()
         .filter(|r| r.content.contains("This content will be imported twice."))
         .collect();
-    assert_eq!(matching.len(), 1, "Only one copy of the rule should exist in DB");
+    assert_eq!(
+        matching.len(),
+        1,
+        "Only one copy of the rule should exist in DB"
+    );
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -140,7 +154,10 @@ async fn test_import_conflict_rename_policy() {
     )
     .await
     .unwrap();
-    assert!(!result1.imported_rules.is_empty(), "First import should succeed");
+    assert!(
+        !result1.imported_rules.is_empty(),
+        "First import should succeed"
+    );
 
     // Second import: DIFFERENT source file so the source_map lookup misses and
     // we reach conflict resolution with the same proposed_name → Rename policy fires.
@@ -170,12 +187,17 @@ async fn test_import_conflict_rename_policy() {
     .unwrap();
 
     // Rename policy must produce no errors
-    assert!(result2.errors.is_empty(), "Rename policy should not produce errors");
+    assert!(
+        result2.errors.is_empty(),
+        "Rename policy should not produce errors"
+    );
 
     // Original rule must still be intact
     let rules = db.get_all_rules().await.unwrap();
     assert!(
-        rules.iter().any(|r| r.content.contains("Conflicting name content.")),
+        rules
+            .iter()
+            .any(|r| r.content.contains("Conflicting name content.")),
         "Original rule must still exist after rename-mode import"
     );
 }

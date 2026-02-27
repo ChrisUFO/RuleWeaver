@@ -23,8 +23,9 @@ async fn test_skill_create_reconcile_writes_skill_md() {
         directory_path: "".into(),
         entry_point: "".into(),
         enabled: true,
-        target_adapters: vec![],  // all supported
+        target_adapters: vec![], // all supported
         target_paths: vec![],
+        base_path: None,
     })
     .await
     .unwrap();
@@ -76,6 +77,7 @@ async fn test_skill_adapter_targeting_limits_distribution() {
         enabled: true,
         target_adapters: vec!["claude-code".into()],
         target_paths: vec![],
+        base_path: None,
     })
     .await
     .unwrap();
@@ -87,9 +89,7 @@ async fn test_skill_adapter_targeting_limits_distribution() {
     let skill_paths: Vec<&String> = desired
         .expected_paths
         .iter()
-        .filter(|(_, a)| {
-            a.artifact_type == ruleweaver_lib::models::registry::ArtifactType::Skill
-        })
+        .filter(|(_, a)| a.artifact_type == ruleweaver_lib::models::registry::ArtifactType::Skill)
         .map(|(p, _)| p)
         .collect();
 
@@ -131,6 +131,7 @@ async fn test_skill_delete_reconcile_removes_skill_md() {
             enabled: true,
             target_adapters: vec!["claude-code".into()],
             target_paths: vec![],
+            base_path: None,
         })
         .await
         .unwrap();
@@ -145,7 +146,10 @@ async fn test_skill_delete_reconcile_removes_skill_md() {
         .join("skills")
         .join("delete-me")
         .join("SKILL.md");
-    assert!(skill_path.exists(), "SKILL.md should exist after first reconcile");
+    assert!(
+        skill_path.exists(),
+        "SKILL.md should exist after first reconcile"
+    );
 
     // Delete the skill
     db.delete_skill(&skill.id).await.unwrap();
@@ -178,6 +182,7 @@ async fn test_skill_update_reconcile_updates_content() {
             enabled: true,
             target_adapters: vec!["claude-code".into()],
             target_paths: vec![],
+            base_path: None,
         })
         .await
         .unwrap();
@@ -236,6 +241,7 @@ async fn test_cursor_gets_no_skill_files() {
         enabled: true,
         target_adapters: vec!["cursor".into()],
         target_paths: vec![],
+        base_path: None,
     })
     .await
     .unwrap();
@@ -247,9 +253,7 @@ async fn test_cursor_gets_no_skill_files() {
     let skill_paths: Vec<&String> = desired
         .expected_paths
         .iter()
-        .filter(|(_, a)| {
-            a.artifact_type == ruleweaver_lib::models::registry::ArtifactType::Skill
-        })
+        .filter(|(_, a)| a.artifact_type == ruleweaver_lib::models::registry::ArtifactType::Skill)
         .map(|(p, _)| p)
         .collect();
 
@@ -280,6 +284,7 @@ async fn test_windsurf_gets_skill_files() {
         enabled: true,
         target_adapters: vec!["windsurf".into()],
         target_paths: vec![],
+        base_path: None,
     })
     .await
     .unwrap();
@@ -290,9 +295,7 @@ async fn test_windsurf_gets_skill_files() {
     let skill_paths: Vec<&String> = desired
         .expected_paths
         .iter()
-        .filter(|(_, a)| {
-            a.artifact_type == ruleweaver_lib::models::registry::ArtifactType::Skill
-        })
+        .filter(|(_, a)| a.artifact_type == ruleweaver_lib::models::registry::ArtifactType::Skill)
         .map(|(p, _)| p)
         .collect();
 
@@ -303,9 +306,7 @@ async fn test_windsurf_gets_skill_files() {
 
     // Verify the path contains windsurf
     assert!(
-        skill_paths
-            .iter()
-            .any(|p| p.contains("windsurf")),
+        skill_paths.iter().any(|p| p.contains("windsurf")),
         "Skill path should be under windsurf directory: {:?}",
         skill_paths
     );

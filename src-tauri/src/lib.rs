@@ -8,8 +8,8 @@ mod file_storage;
 mod mcp;
 pub mod models;
 pub mod path_resolver;
-mod redaction;
 pub mod reconciliation;
+mod redaction;
 pub mod rule_import;
 mod slash_commands;
 mod status;
@@ -168,7 +168,7 @@ pub fn run() {
                         }
                     }
                 }
-                
+
                 Ok::<_, Box<dyn std::error::Error>>(db)
             })?;
 
@@ -184,12 +184,12 @@ pub fn run() {
                     .flatten()
                     .map(|v| v == "true")
                     .unwrap_or(false);
-                
+
                 let min = db.get_setting(MINIMIZE_TO_TRAY_KEY).await.ok().flatten();
                 if min.is_none() {
                     db.set_setting(MINIMIZE_TO_TRAY_KEY, "true").await?;
                 }
-                
+
                 let storage = db.get_storage_mode().await?;
                 Ok::<_, crate::error::AppError>((auto, min, storage))
             })?;
@@ -244,7 +244,7 @@ pub fn run() {
             }
 
             let app_handle = app.handle().clone();
-            TrayIconBuilder::with_id("main")
+            let mut tray_builder = TrayIconBuilder::with_id("main")
                 .menu(&tray_menu)
                 .on_menu_event(move |app, event| match event.id().as_ref() {
                     "sync" => {
@@ -347,20 +347,25 @@ pub fn run() {
                             }
                         }
                     }
-                })
-                .build(app)?;
+                });
+
+            if let Some(icon) = app.default_window_icon() {
+                tray_builder = tray_builder.icon(icon.clone());
+            }
+
+            let _ = tray_builder.build(app)?;
 
             if let Some(window) = app_handle.get_webview_window("main") {
                 let app_for_events = app_handle.clone();
                 window.on_window_event(move |event| {
                     if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                         api.prevent_close();
-                        
+
                         // Need a way to check setting synchronously or fire async check
                         // Since on_window_event is sync, we'll spawn a check.
                         // However, preventing close is immediate.
                         // Standard pattern: Prevent close, check setting, if minimize -> hide, else -> exit.
-                        
+
                         let app = app_for_events.clone();
                         tauri::async_runtime::spawn(async move {
                             let should_minimize = if let Some(db) = app.try_state::<Arc<Database>>() {
@@ -497,11 +502,11 @@ pub fn run() {
 
 pub fn run_mcp_cli(port: u16, token: Option<String>) -> std::result::Result<(), String> {
     let rt = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
-    
+
     rt.block_on(async {
         let db = Arc::new(Database::new_for_cli().await.map_err(|e| e.to_string())?);
         let manager = McpManager::new(port);
-        
+
         if let Some(t) = token {
             manager.set_api_token(t).await;
         }
@@ -654,7 +659,8 @@ async fn handle_external_rule_change(
             target_paths: rule_from_disk.target_paths.clone(),
             enabled_adapters: rule_from_disk.enabled_adapters.clone(),
             enabled: rule_from_disk.enabled,
-        }).await?;
+        })
+        .await?;
     }
 
     // If we reached here, we need to sync other adapters/files affected by this rule

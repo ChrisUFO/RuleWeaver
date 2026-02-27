@@ -366,7 +366,7 @@ impl Database {
     pub async fn get_all_commands(&self) -> Result<Vec<Command>> {
         let conn = self.0.lock().await;
         let mut stmt = conn.prepare(
-            "SELECT id, name, description, script, arguments, expose_via_mcp, is_placeholder, generate_slash_commands, slash_command_adapters, target_paths, created_at, updated_at, timeout_ms, max_retries
+            "SELECT id, name, description, script, arguments, expose_via_mcp, is_placeholder, generate_slash_commands, slash_command_adapters, target_paths, created_at, updated_at, timeout_ms, max_retries, base_path
              FROM commands
              ORDER BY updated_at DESC",
         )?;
@@ -387,6 +387,7 @@ impl Database {
                 let updated_at: i64 = row.get(11)?;
                 let timeout_ms: Option<i64> = row.get(12)?;
                 let max_retries: Option<i32> = row.get(13)?;
+                let base_path: Option<String> = row.get(14)?;
 
                 let arguments: Vec<CommandArgument> = serde_json::from_str(&arguments_json)
                     .map_err(|e| {
@@ -426,6 +427,7 @@ impl Database {
                     generate_slash_commands,
                     slash_command_adapters,
                     target_paths,
+                    base_path,
                     timeout_ms: timeout_ms.map(|t| t as u64),
                     max_retries: max_retries.map(|r| r as u8),
                     created_at: parse_timestamp_or_now(created_at),
@@ -440,7 +442,7 @@ impl Database {
     pub async fn get_command_by_id(&self, id: &str) -> Result<Command> {
         let conn = self.0.lock().await;
         let mut stmt = conn.prepare(
-            "SELECT id, name, description, script, arguments, expose_via_mcp, is_placeholder, generate_slash_commands, slash_command_adapters, target_paths, created_at, updated_at, timeout_ms, max_retries
+            "SELECT id, name, description, script, arguments, expose_via_mcp, is_placeholder, generate_slash_commands, slash_command_adapters, target_paths, created_at, updated_at, timeout_ms, max_retries, base_path
              FROM commands
              WHERE id = ?",
         )?;
@@ -461,6 +463,7 @@ impl Database {
                 let updated_at: i64 = row.get(11)?;
                 let timeout_ms: Option<i64> = row.get(12)?;
                 let max_retries: Option<i32> = row.get(13)?;
+                let base_path: Option<String> = row.get(14)?;
 
                 let arguments: Vec<CommandArgument> = serde_json::from_str(&arguments_json)
                     .map_err(|e| {
@@ -500,6 +503,7 @@ impl Database {
                     generate_slash_commands,
                     slash_command_adapters,
                     target_paths,
+                    base_path,
                     timeout_ms: timeout_ms.map(|t| t as u64),
                     max_retries: max_retries.map(|r| r as u8),
                     created_at: parse_timestamp_or_now(created_at),
@@ -525,8 +529,8 @@ impl Database {
         let target_paths_json = serde_json::to_string(&input.target_paths)?;
 
         conn.execute(
-            "INSERT INTO commands (id, name, description, script, arguments, expose_via_mcp, is_placeholder, generate_slash_commands, slash_command_adapters, target_paths, created_at, updated_at, timeout_ms, max_retries)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO commands (id, name, description, script, arguments, expose_via_mcp, is_placeholder, generate_slash_commands, slash_command_adapters, target_paths, created_at, updated_at, timeout_ms, max_retries, base_path)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             params![
                 id,
                 input.name,
@@ -541,7 +545,8 @@ impl Database {
                 now,
                 now,
                 input.timeout_ms.map(|t| t as i64),
-                input.max_retries.map(|r| r as i32)
+                input.max_retries.map(|r| r as i32),
+                input.base_path
             ],
         )?;
 
@@ -566,6 +571,7 @@ impl Database {
             .slash_command_adapters
             .unwrap_or(existing.slash_command_adapters);
         let target_paths = input.target_paths.unwrap_or(existing.target_paths);
+        let base_path = input.base_path.or(existing.base_path);
         let timeout_ms = input.timeout_ms.or(existing.timeout_ms);
         let max_retries = input.max_retries.or(existing.max_retries);
         let now = chrono::Utc::now().timestamp();
@@ -574,7 +580,7 @@ impl Database {
         let target_paths_json = serde_json::to_string(&target_paths)?;
 
         conn.execute(
-            "UPDATE commands SET name = ?, description = ?, script = ?, arguments = ?, expose_via_mcp = ?, is_placeholder = ?, generate_slash_commands = ?, slash_command_adapters = ?, target_paths = ?, updated_at = ?, timeout_ms = ?, max_retries = ?
+            "UPDATE commands SET name = ?, description = ?, script = ?, arguments = ?, expose_via_mcp = ?, is_placeholder = ?, generate_slash_commands = ?, slash_command_adapters = ?, target_paths = ?, updated_at = ?, timeout_ms = ?, max_retries = ?, base_path = ?
              WHERE id = ?",
             params![
                 name,
@@ -589,6 +595,7 @@ impl Database {
                 now,
                 timeout_ms.map(|t| t as i64),
                 max_retries.map(|r| r as i32),
+                base_path,
                 id
             ],
         )?;
@@ -606,7 +613,7 @@ impl Database {
     pub async fn get_all_skills(&self) -> Result<Vec<Skill>> {
         let conn = self.0.lock().await;
         let mut stmt = conn.prepare(
-            "SELECT id, name, description, instructions, input_schema, enabled, created_at, updated_at, directory_path, entry_point, scope, target_adapters, target_paths
+            "SELECT id, name, description, instructions, input_schema, enabled, created_at, updated_at, directory_path, entry_point, scope, target_adapters, target_paths, base_path
              FROM skills
              ORDER BY updated_at DESC",
         )?;
@@ -657,6 +664,7 @@ impl Database {
                             Vec::new()
                         })
                     },
+                    base_path: row.get(13)?,
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -667,7 +675,7 @@ impl Database {
     pub async fn get_skill_by_id(&self, id: &str) -> Result<Skill> {
         let conn = self.0.lock().await;
         let mut stmt = conn.prepare(
-            "SELECT id, name, description, instructions, input_schema, enabled, created_at, updated_at, directory_path, entry_point, scope, target_adapters, target_paths
+            "SELECT id, name, description, instructions, input_schema, enabled, created_at, updated_at, directory_path, entry_point, scope, target_adapters, target_paths, base_path
              FROM skills WHERE id = ?",
         )?;
 
@@ -717,6 +725,7 @@ impl Database {
                             Vec::new()
                         })
                     },
+                    base_path: row.get(13)?,
                 })
             })
             .map_err(|e| match e {
@@ -738,8 +747,8 @@ impl Database {
         let target_paths_json = serde_json::to_string(&input.target_paths)?;
 
         conn.execute(
-            "INSERT INTO skills (id, name, description, instructions, input_schema, enabled, directory_path, entry_point, scope, target_adapters, target_paths, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO skills (id, name, description, instructions, input_schema, enabled, directory_path, entry_point, scope, target_adapters, target_paths, created_at, updated_at, base_path)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             params![
                 &id,
                 &input.name,
@@ -753,7 +762,8 @@ impl Database {
                 &target_adapters_json,
                 &target_paths_json,
                 &now,
-                &now
+                &now,
+                &input.base_path
             ],
         )?;
 
@@ -775,13 +785,14 @@ impl Database {
         let scope = input.scope.unwrap_or(existing.scope);
         let target_adapters = input.target_adapters.unwrap_or(existing.target_adapters);
         let target_paths = input.target_paths.unwrap_or(existing.target_paths);
+        let base_path = input.base_path.or(existing.base_path);
         let now = chrono::Utc::now().timestamp();
         let input_schema_json = serde_json::to_string(&input_schema)?;
         let target_adapters_json = serde_json::to_string(&target_adapters)?;
         let target_paths_json = serde_json::to_string(&target_paths)?;
 
         conn.execute(
-            "UPDATE skills SET name = ?, description = ?, instructions = ?, input_schema = ?, enabled = ?, directory_path = ?, entry_point = ?, scope = ?, target_adapters = ?, target_paths = ?, updated_at = ? WHERE id = ?",
+            "UPDATE skills SET name = ?, description = ?, instructions = ?, input_schema = ?, enabled = ?, directory_path = ?, entry_point = ?, scope = ?, target_adapters = ?, target_paths = ?, updated_at = ?, base_path = ? WHERE id = ?",
             params![
                 &name,
                 &description,
@@ -794,6 +805,7 @@ impl Database {
                 &target_adapters_json,
                 &target_paths_json,
                 &now,
+                &base_path,
                 &id
             ],
         )?;
@@ -1742,7 +1754,12 @@ fn run_migrations(conn: &mut Connection) -> Result<()> {
         )?;
     }
 
-    transaction.execute("PRAGMA user_version = 15", [])?;
+    if current_version < 16 {
+        add_column_if_missing(&transaction, "commands", "base_path", "TEXT")?;
+        add_column_if_missing(&transaction, "skills", "base_path", "TEXT")?;
+    }
+
+    transaction.execute("PRAGMA user_version = 16", [])?;
     transaction.commit()?;
 
     Ok(())
@@ -1860,6 +1877,7 @@ mod tests {
                 generate_slash_commands: false,
                 slash_command_adapters: vec![],
                 target_paths: vec!["C:/repo-a".to_string()],
+                base_path: None,
                 timeout_ms: None,
                 max_retries: None,
             })

@@ -9,35 +9,36 @@ use crate::path_resolver::path_resolver;
 pub trait SlashCommandAdapter: Send + Sync {
     /// Returns the adapter name (e.g., "opencode", "claude")
     fn name(&self) -> &'static str;
-    
+
     /// Returns the file extension for this adapter (e.g., "md", "toml")
     fn file_extension(&self) -> &'static str;
-    
+
     /// Returns the global directory path for this tool
     fn global_dir(&self) -> &'static str;
-    
+
     /// Returns the local directory path for this tool
     fn local_dir(&self) -> &'static str;
-    
+
     /// Formats a command into the tool-specific format
     fn format_command(&self, command: &Command) -> String;
-    
+
     /// Returns the filename for a command (usually the command name)
     fn get_filename(&self, command_name: &str) -> String {
         format!("{}.{}", command_name, self.file_extension())
     }
-    
+
     /// Returns the full path for a command
     ///
     /// This method now uses the PathResolver for consistent path resolution.
     fn get_command_path(&self, command_name: &str, is_global: bool) -> Result<PathBuf> {
         let resolver = path_resolver();
-        
+
         // Get the adapter type from the adapter name
-        let adapter = crate::models::AdapterType::from_str(self.name())
-            .map_err(|_| AppError::InvalidInput {
+        let adapter = crate::models::AdapterType::from_str(self.name()).map_err(|_| {
+            AppError::InvalidInput {
                 message: format!("Unknown adapter: {}", self.name()),
-            })?;
+            }
+        })?;
 
         if is_global {
             // Use PathResolver for global paths
@@ -55,14 +56,19 @@ pub trait SlashCommandAdapter: Send + Sync {
     /// Returns a local command path rooted at a specific repository path.
     ///
     /// This method now uses the PathResolver for consistent path resolution.
-    fn get_command_path_for_root(&self, command_name: &str, root: &std::path::Path) -> Result<PathBuf> {
+    fn get_command_path_for_root(
+        &self,
+        command_name: &str,
+        root: &std::path::Path,
+    ) -> Result<PathBuf> {
         let resolver = path_resolver();
-        
+
         // Get the adapter type from the adapter name
-        let adapter = crate::models::AdapterType::from_str(self.name())
-            .map_err(|_| AppError::InvalidInput {
+        let adapter = crate::models::AdapterType::from_str(self.name()).map_err(|_| {
+            AppError::InvalidInput {
                 message: format!("Unknown adapter: {}", self.name()),
-            })?;
+            }
+        })?;
 
         // Use PathResolver for local paths with repo root
         let resolved = resolver.local_slash_command_path(adapter, command_name, root)?;

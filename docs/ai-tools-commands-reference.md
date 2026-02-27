@@ -55,6 +55,14 @@ RuleWeaver includes a background file watcher that automatically detects changes
 
 ---
 
+## Portable Configuration
+
+RuleWeaver provides features to make command and skill configurations fully portable:
+
+- **Workspace Context (Base Path):** You can set a base path for local Commands and Skills, making their target repositories or directories portable. When configured this way, RuleWeaver saves the paths as relative (`./`), ensuring the configurations can be safely exported and imported on different developer machines or environments without hardcoding absolute file paths.
+
+---
+
 ## OpenCode
 
 ### Rules

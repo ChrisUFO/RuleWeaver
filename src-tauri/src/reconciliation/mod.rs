@@ -367,10 +367,14 @@ impl ReconciliationEngine {
                 }
 
                 for target_path in &command.target_paths {
+                    let resolved_target = crate::path_resolver::resolve_workspace_path(
+                        target_path,
+                        command.base_path.as_deref(),
+                    );
                     if let Ok(resolved) = self.path_resolver.local_slash_command_path(
                         adapter_type,
                         &safe_name,
-                        Path::new(target_path),
+                        Path::new(&resolved_target),
                     ) {
                         let path_str = resolved.path.to_string_lossy().to_string();
                         desired.expected_paths.insert(
@@ -381,7 +385,7 @@ impl ReconciliationEngine {
                                 adapter: adapter_type,
                                 artifact_type: ArtifactType::SlashCommand,
                                 scope: Scope::Local,
-                                repo_root: Some(PathBuf::from(target_path)),
+                                repo_root: Some(PathBuf::from(resolved_target)),
                                 content_hash: content_hash.clone(),
                                 content: Some(content.clone()),
                             },
@@ -466,7 +470,14 @@ impl ReconciliationEngine {
                             skill
                                 .target_paths
                                 .iter()
-                                .map(std::path::PathBuf::from)
+                                .map(|p| {
+                                    std::path::PathBuf::from(
+                                        crate::path_resolver::resolve_workspace_path(
+                                            p,
+                                            skill.base_path.as_deref(),
+                                        ),
+                                    )
+                                })
                                 .collect()
                         } else {
                             self.path_resolver.repository_roots().to_vec()
@@ -1508,6 +1519,7 @@ mod tests {
             target_paths: vec![],
             timeout_ms: None,
             max_retries: None,
+            base_path: None,
         })
         .await
         .unwrap();
@@ -1542,6 +1554,7 @@ mod tests {
             target_paths: vec![],
             timeout_ms: None,
             max_retries: None,
+            base_path: None,
         })
         .await
         .unwrap();
@@ -2090,6 +2103,7 @@ mod tests {
                 target_paths: vec![],
                 timeout_ms: None,
                 max_retries: None,
+                base_path: None,
             })
             .await
             .unwrap();
@@ -2135,6 +2149,7 @@ mod tests {
                 target_paths: vec!["/test/repo".to_string()],
                 timeout_ms: None,
                 max_retries: None,
+                base_path: None,
             })
             .await
             .unwrap();
@@ -2183,6 +2198,7 @@ mod tests {
                 target_paths: vec![],
                 timeout_ms: None,
                 max_retries: None,
+                base_path: None,
             })
             .await
             .unwrap();
@@ -2228,6 +2244,7 @@ mod tests {
                 target_paths: vec![],
                 timeout_ms: None,
                 max_retries: None,
+                base_path: None,
             })
             .await
             .unwrap();
@@ -2269,6 +2286,7 @@ mod tests {
                 target_paths: vec![],
                 timeout_ms: None,
                 max_retries: None,
+                base_path: None,
             })
             .await
             .unwrap();

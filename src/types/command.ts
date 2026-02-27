@@ -16,6 +16,7 @@ export interface CommandModel {
   generateSlashCommands?: boolean;
   slashCommandAdapters?: string[];
   targetPaths?: string[];
+  basePath?: string | null;
   timeoutMs?: number;
   maxRetries?: number;
   createdAt: number;
@@ -31,6 +32,7 @@ export interface CreateCommandInput {
   arguments?: CommandArgument[];
   exposeViaMcp?: boolean;
   targetPaths?: string[];
+  basePath?: string | null;
   timeoutMs?: number;
   maxRetries?: number;
 }
@@ -45,6 +47,7 @@ export interface UpdateCommandInput {
   generateSlashCommands?: boolean;
   slashCommandAdapters?: string[];
   targetPaths?: string[];
+  basePath?: string | null;
   timeoutMs?: number;
   maxRetries?: number;
 }

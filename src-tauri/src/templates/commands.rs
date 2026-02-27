@@ -30,6 +30,7 @@ pub fn get_bundled_command_templates() -> Vec<TemplateCommand> {
                 target_paths: vec![],
                 timeout_ms: None,
                 max_retries: None,
+                base_path: None,
             },
         },
         TemplateCommand {
@@ -48,6 +49,7 @@ pub fn get_bundled_command_templates() -> Vec<TemplateCommand> {
                 target_paths: vec![],
                 timeout_ms: None,
                 max_retries: None,
+                base_path: None,
             },
         },
         TemplateCommand {
@@ -66,6 +68,7 @@ pub fn get_bundled_command_templates() -> Vec<TemplateCommand> {
                 target_paths: vec![],
                 timeout_ms: None,
                 max_retries: None,
+                base_path: None,
             },
         },
         TemplateCommand {
@@ -84,6 +87,7 @@ pub fn get_bundled_command_templates() -> Vec<TemplateCommand> {
                 target_paths: vec![],
                 timeout_ms: None,
                 max_retries: None,
+                base_path: None,
             },
         },
         TemplateCommand {
@@ -102,6 +106,7 @@ pub fn get_bundled_command_templates() -> Vec<TemplateCommand> {
                 target_paths: vec![],
                 timeout_ms: None,
                 max_retries: None,
+                base_path: None,
             },
         },
         TemplateCommand {
@@ -120,6 +125,7 @@ pub fn get_bundled_command_templates() -> Vec<TemplateCommand> {
                 target_paths: vec![],
                 timeout_ms: None,
                 max_retries: None,
+                base_path: None,
             },
         },
         TemplateCommand {
@@ -138,6 +144,7 @@ pub fn get_bundled_command_templates() -> Vec<TemplateCommand> {
                 target_paths: vec![],
                 timeout_ms: None,
                 max_retries: None,
+                base_path: None,
             },
         },
     ]

@@ -733,7 +733,9 @@ impl PathResolver {
             let mut path = self.home_dir.join(suffix);
             // Apply {repo} substitution if present in the suffix
             if let Some(root) = repo_root {
-                let s = path.to_string_lossy().replace("{repo}", &root.to_string_lossy());
+                let s = path
+                    .to_string_lossy()
+                    .replace("{repo}", &root.to_string_lossy());
                 path = PathBuf::from(s);
             }
             return Ok(path);
@@ -863,6 +865,57 @@ fn normalize_path(path: &Path) -> std::result::Result<PathBuf, AppError> {
     }
 
     Ok(normalized)
+}
+
+/// Resolve a path string using an optional base workspace path.
+///
+/// If the path starts with `./` or contains `${WORKSPACE_ROOT}`,
+/// it will be resolved against the `base_path`.
+/// If the path is already absolute, or no base_path is provided, it returns the original path.
+///
+/// This function prevents directory traversal by ensuring the final path is within
+/// the base_path boundary if a relative path was provided.
+pub fn resolve_workspace_path(path: &str, base_path: Option<&str>) -> String {
+    let mut resolved = path.to_string();
+
+    let base = match base_path {
+        Some(b) if !b.trim().is_empty() => b,
+        _ => return resolved,
+    };
+
+    let contains_traversal = |p: &std::path::Path| {
+        p.components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+    };
+
+    if resolved.starts_with("./") {
+        let relative_part = resolved.trim_start_matches("./");
+        let path_buf = std::path::PathBuf::from(relative_part);
+
+        // Security: Prevent directory traversal (e.g., "./../../etc/passwd")
+        if contains_traversal(&path_buf) {
+            return base.to_string(); // Fallback to safe base
+        }
+        resolved = std::path::PathBuf::from(base)
+            .join(relative_part)
+            .to_string_lossy()
+            .to_string();
+    } else if resolved.contains("${WORKSPACE_ROOT}") {
+        let candidate = resolved.replace("${WORKSPACE_ROOT}", base);
+        // Security: Ensure candidate stays within base boundary
+        let path_buf = std::path::PathBuf::from(&candidate);
+        if contains_traversal(&path_buf) {
+            return base.to_string(); // Fallback to safe base
+        }
+        // Normalize path to ensure consistent separators
+        resolved = path_buf
+            .components()
+            .collect::<std::path::PathBuf>()
+            .to_string_lossy()
+            .to_string();
+    }
+
+    resolved
 }
 
 /// Resolve a registry path string (e.g., "~/path" or "~") to an absolute PathBuf.
@@ -1339,5 +1392,51 @@ mod tests {
 
         let result = resolver.slash_command_path(AdapterType::ClaudeCode, "valid.command", true);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_resolve_workspace_path() {
+        #[cfg(windows)]
+        let base_path = "C:\\Users\\user\\project";
+        #[cfg(not(windows))]
+        let base_path = "/home/user/project";
+
+        let base = Some(base_path);
+
+        // Starts with ./
+        let expected_scripts_path = std::path::Path::new(base_path).join("scripts/test.sh");
+        assert_eq!(
+            resolve_workspace_path("./scripts/test.sh", base),
+            expected_scripts_path.to_string_lossy()
+        );
+
+        // Contains ${WORKSPACE_ROOT}
+        let expected_docs_path = std::path::Path::new(base_path).join("docs");
+        assert_eq!(
+            resolve_workspace_path("${WORKSPACE_ROOT}/docs", base),
+            expected_docs_path.to_string_lossy()
+        );
+
+        // No base path
+        assert_eq!(
+            resolve_workspace_path("./scripts/test.sh", None),
+            "./scripts/test.sh"
+        );
+
+        // Absolute path ignores base if not using variable
+        #[cfg(windows)]
+        let absolute_path = "D:\\absolute\\path";
+        #[cfg(not(windows))]
+        let absolute_path = "/absolute/path";
+        assert_eq!(resolve_workspace_path(absolute_path, base), absolute_path);
+
+        // Traversal prevention
+        assert_eq!(resolve_workspace_path("./../../etc/passwd", base), base_path);
+
+        // Traversal prevention with variable
+        assert_eq!(
+            resolve_workspace_path("${WORKSPACE_ROOT}/../../etc/passwd", base),
+            base_path
+        );
     }
 }

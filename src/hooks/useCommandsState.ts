@@ -20,6 +20,7 @@ export interface CommandFormData {
   generateSlashCommands: boolean;
   slashCommandAdapters: string[];
   targetPaths: string[];
+  basePath: string | null;
   testArgs: Record<string, string>;
   timeoutMs: number | null;
   maxRetries: number | null;
@@ -86,6 +87,7 @@ const initialFormData: CommandFormData = {
   generateSlashCommands: false,
   slashCommandAdapters: [],
   targetPaths: [],
+  basePath: null,
   testArgs: {},
   timeoutMs: null,
   maxRetries: null,
@@ -170,7 +172,8 @@ export function useCommandsState(
   const loadAvailableAdapters = useCallback(async () => {
     try {
       const adapters = await api.slashCommands.getAdapters();
-      setAvailableAdapters(adapters);
+      const sortedAdapters = [...adapters].sort((a, b) => a.name.localeCompare(b.name));
+      setAvailableAdapters(sortedAdapters);
     } catch (error) {
       console.error("Failed to load slash command adapters", { error });
       setAvailableAdapters([]);
@@ -223,6 +226,7 @@ export function useCommandsState(
       generateSlashCommands: Boolean(selected.generateSlashCommands),
       slashCommandAdapters: selected.slashCommandAdapters ?? [],
       targetPaths: selected.targetPaths ?? [],
+      basePath: selected.basePath ?? null,
       testArgs: nextArgs,
       timeoutMs: selected.timeoutMs ?? null,
       maxRetries: selected.maxRetries ?? null,
@@ -291,6 +295,7 @@ export function useCommandsState(
         generateSlashCommands: form.generateSlashCommands,
         slashCommandAdapters: form.slashCommandAdapters,
         targetPaths: form.targetPaths,
+        basePath: form.basePath,
         timeoutMs: form.timeoutMs ?? undefined,
         maxRetries: form.maxRetries ?? undefined,
       });
@@ -331,6 +336,7 @@ export function useCommandsState(
         const script = isSelected ? form.script : base.script;
         const exposeViaMcp = isSelected ? form.exposeViaMcp : base.exposeViaMcp;
         const targetPaths = isSelected ? form.targetPaths : (base.targetPaths ?? []);
+        const basePath = isSelected ? form.basePath : (base.basePath ?? null);
         const timeoutMs = isSelected ? form.timeoutMs : (base.timeoutMs ?? null);
         const maxRetries = isSelected ? form.maxRetries : (base.maxRetries ?? null);
         const generateSlashCommands = isSelected
@@ -351,6 +357,7 @@ export function useCommandsState(
           arguments: base.arguments,
           exposeViaMcp,
           targetPaths,
+          basePath,
           timeoutMs: timeoutMs ?? undefined,
           maxRetries: maxRetries ?? undefined,
         });
