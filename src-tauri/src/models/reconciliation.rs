@@ -20,6 +20,7 @@ impl ReconcileOperation {
         }
     }
 
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
             "create" => Some(Self::Create),
@@ -49,6 +50,7 @@ impl ReconcileResultType {
         }
     }
 
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
             "success" => Some(Self::Success),

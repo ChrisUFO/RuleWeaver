@@ -5,7 +5,7 @@ RuleWeaver is designed as a standalone desktop application. It requires deep fil
 ## Documentation
 
 - **AI Tools Reference:** See [`docs/ai-tools-commands-reference.md`](./docs/ai-tools-commands-reference.md) for comprehensive documentation on how each supported AI tool handles rules, custom commands, and skills.
-- **Implementation Plan:** See [`PLAN.md`](./PLAN.md) for the strategic implementation plan for GitHub issues #45, #47, #57 (Skills Sync, Unified Status, Execution Reliability).
+- **Implementation Plan:** See [`PLAN.md`](./PLAN.md) for the strategic implementation plan for GitHub issues #44, #46 (Integration Test Matrix, Coverage Gates, Docs/Runtime Parity).
 
 ## Versioning Strategy
 
