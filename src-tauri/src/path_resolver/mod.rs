@@ -907,7 +907,12 @@ pub fn resolve_workspace_path(path: &str, base_path: Option<&str>) -> String {
         if contains_traversal(&path_buf) {
             return base.to_string(); // Fallback to safe base
         }
-        resolved = candidate;
+        // Normalize path to ensure consistent separators
+        resolved = path_buf
+            .components()
+            .collect::<std::path::PathBuf>()
+            .to_string_lossy()
+            .to_string();
     }
 
     resolved
@@ -1391,22 +1396,25 @@ mod tests {
 
     #[test]
     fn test_resolve_workspace_path() {
-        let base = Some("/home/user/project");
+        #[cfg(windows)]
+        let base_path = "C:\\Users\\user\\project";
+        #[cfg(not(windows))]
+        let base_path = "/home/user/project";
+
+        let base = Some(base_path);
 
         // Starts with ./
+        let expected_scripts_path = std::path::Path::new(base_path).join("scripts/test.sh");
         assert_eq!(
             resolve_workspace_path("./scripts/test.sh", base),
-            if cfg!(windows) {
-                "/home/user/project\\scripts/test.sh"
-            } else {
-                "/home/user/project/scripts/test.sh"
-            }
+            expected_scripts_path.to_string_lossy()
         );
 
         // Contains ${WORKSPACE_ROOT}
+        let expected_docs_path = std::path::Path::new(base_path).join("docs");
         assert_eq!(
             resolve_workspace_path("${WORKSPACE_ROOT}/docs", base),
-            "/home/user/project/docs"
+            expected_docs_path.to_string_lossy()
         );
 
         // No base path
@@ -1416,21 +1424,19 @@ mod tests {
         );
 
         // Absolute path ignores base if not using variable
-        assert_eq!(
-            resolve_workspace_path("/absolute/path", base),
-            "/absolute/path"
-        );
+        #[cfg(windows)]
+        let absolute_path = "D:\\absolute\\path";
+        #[cfg(not(windows))]
+        let absolute_path = "/absolute/path";
+        assert_eq!(resolve_workspace_path(absolute_path, base), absolute_path);
 
         // Traversal prevention
-        assert_eq!(
-            resolve_workspace_path("./../../etc/passwd", base),
-            "/home/user/project"
-        );
+        assert_eq!(resolve_workspace_path("./../../etc/passwd", base), base_path);
 
         // Traversal prevention with variable
         assert_eq!(
             resolve_workspace_path("${WORKSPACE_ROOT}/../../etc/passwd", base),
-            "/home/user/project"
+            base_path
         );
     }
 }
