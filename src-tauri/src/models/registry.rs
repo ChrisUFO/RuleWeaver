@@ -710,10 +710,14 @@ mod tests {
         let workspace_root = manifest_dir.parent().expect("workspace root must exist");
         let matrix_path = workspace_root.join("docs").join("SUPPORT_MATRIX.md");
 
-        let on_disk = std::fs::read_to_string(&matrix_path).expect(
-            "docs/SUPPORT_MATRIX.md does not exist or is not readable. \
-            Run `cargo run --bin gen_docs` to generate it.",
-        );
+        let on_disk = std::fs::read_to_string(&matrix_path)
+            .expect(
+                "docs/SUPPORT_MATRIX.md does not exist or is not readable. \
+                Run `cargo run --bin gen_docs` to generate it.",
+            )
+            // Normalize CRLF → LF so the test passes on Windows where git
+            // core.autocrlf may convert line endings on checkout.
+            .replace("\r\n", "\n");
 
         assert_eq!(
             generated, on_disk,

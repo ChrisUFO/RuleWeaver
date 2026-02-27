@@ -1,0 +1,3 @@
+# Auto-generated files: keep LF line endings so the gen_docs binary output
+# matches what git checks out, regardless of core.autocrlf settings.
+docs/SUPPORT_MATRIX.md text eol=lf
