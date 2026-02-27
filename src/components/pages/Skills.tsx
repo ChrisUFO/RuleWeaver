@@ -8,6 +8,7 @@ import {
   CheckCircle,
   XCircle,
   AlertCircle,
+  Eye,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -28,6 +29,7 @@ import { useRepositoryRoots } from "@/hooks/useRepositoryRoots";
 import { ImportDialog } from "@/components/import/ImportDialog";
 import { useKeyboardShortcuts, SHORTCUTS } from "@/hooks/useKeyboardShortcuts";
 import type { ArtifactStatusEntry } from "@/types/status";
+import type { McpStatus } from "@/types/command";
 
 interface SkillsProps {
   initialSelectedId?: string | null;
@@ -52,6 +54,7 @@ export function Skills({ initialSelectedId, onClearInitialId }: SkillsProps) {
   const [isSaving, setIsSaving] = useState(false);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [adapterStatuses, setAdapterStatuses] = useState<Map<string, string>>(new Map());
+  const [mcpStatus, setMcpStatus] = useState<McpStatus | null>(null);
   const { addToast } = useToast();
 
   const selected = useMemo(
@@ -74,6 +77,15 @@ export function Skills({ initialSelectedId, onClearInitialId }: SkillsProps) {
     setSkills(data);
   };
 
+  const loadMcpStatus = async () => {
+    try {
+      const status = await api.mcp.getStatus();
+      setMcpStatus(status);
+    } catch {
+      setMcpStatus(null);
+    }
+  };
+
   useEffect(() => {
     loadSkills().catch((error) => {
       addToast({
@@ -86,6 +98,10 @@ export function Skills({ initialSelectedId, onClearInitialId }: SkillsProps) {
       .getSupportedAdapters()
       .then(setSupportedAdapters)
       .catch(() => {});
+
+    loadMcpStatus();
+    const timer = setInterval(loadMcpStatus, 5000);
+    return () => clearInterval(timer);
   }, [addToast]);
 
   useEffect(() => {
@@ -349,6 +365,11 @@ export function Skills({ initialSelectedId, onClearInitialId }: SkillsProps) {
                   >
                     <Copy className="h-3.5 w-3.5" />
                   </Button>
+                  {skill.enabled && mcpStatus?.running && mcpStatus.isWatching && (
+                    <span title="MCP is watching this skill for changes">
+                      <Eye className="h-3.5 w-3.5 text-blue-500 animate-pulse" />
+                    </span>
+                  )}
                   {!skill.enabled && (
                     <Badge
                       variant="secondary"

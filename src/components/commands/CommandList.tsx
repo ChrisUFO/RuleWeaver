@@ -1,11 +1,11 @@
-import { Plus, Search, FolderUp, Copy } from "lucide-react";
+import { Plus, Search, FolderUp, Copy, Eye } from "lucide-react";
 import { CommandTemplateBrowser } from "./CommandTemplateBrowser";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import type { CommandModel } from "@/types/command";
+import type { CommandModel, McpStatus } from "@/types/command";
 
 interface CommandListProps {
   commands: readonly CommandModel[];
@@ -13,6 +13,7 @@ interface CommandListProps {
   query: string;
   isSaving: boolean;
   isSyncing: boolean;
+  mcpStatus: McpStatus | null;
   onSelect: (id: string) => void;
   onDuplicate: (cmd: CommandModel) => void;
   onQueryChange: (q: string) => void;
@@ -27,6 +28,7 @@ export function CommandList({
   query,
   isSaving,
   isSyncing,
+  mcpStatus,
   onSelect,
   onDuplicate,
   onQueryChange,
@@ -116,6 +118,13 @@ export function CommandList({
                 >
                   <Copy className="h-3.5 w-3.5" />
                 </Button>
+                {mcpStatus?.running &&
+                  mcpStatus.isWatching &&
+                  (cmd.targetPaths?.length || 0) > 0 && (
+                    <span title="MCP is watching this command for changes">
+                      <Eye className="h-3.5 w-3.5 text-blue-500 animate-pulse" />
+                    </span>
+                  )}
                 {cmd.exposeViaMcp ? (
                   <Badge
                     variant="default"

@@ -14,6 +14,8 @@ use tokio::sync::{broadcast, Mutex};
 use tokio::task::JoinHandle;
 use tower_http::cors::CorsLayer;
 
+pub mod watcher;
+
 use crate::constants::{
     limits::{LOG_LIMIT, MAX_OUTPUT_SIZE, MCP_RATE_LIMIT_MAX_CALLS, MCP_SERVER_RETRY_COUNT},
     timing::{
@@ -66,6 +68,7 @@ pub struct McpStatus {
     pub port: u16,
     pub uptime_seconds: u64,
     pub api_token: Option<String>,
+    pub is_watching: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -90,6 +93,7 @@ pub struct McpRuntime {
     skills: Vec<Skill>,
     invocation_timestamps: VecDeque<Instant>,
     db: Option<Arc<Database>>,
+    watcher: watcher::WatcherManager,
 }
 
 #[derive(Clone, Debug)]
@@ -119,6 +123,7 @@ impl McpManager {
                 skills: Vec::new(),
                 invocation_timestamps: VecDeque::new(),
                 db: None,
+                watcher: watcher::WatcherManager::new(),
             })),
         }
     }
@@ -148,17 +153,46 @@ impl McpManager {
     pub async fn start(&self, db: &Arc<Database>) -> Result<()> {
         self.refresh_commands(db).await?;
 
-        let port = {
+        let (port, paths_to_watch) = {
             let mut state = self.inner.lock().await;
             if state.running {
                 return Ok(());
             }
+
+            // Collect paths to watch from skills and commands
+            let mut paths = std::collections::HashSet::new();
+            for skill in &state.skills {
+                if skill.enabled {
+                    paths.insert(std::path::PathBuf::from(&skill.directory_path));
+                }
+            }
+            for cmd in &state.commands {
+                for path in &cmd.target_paths {
+                    paths.insert(std::path::PathBuf::from(path));
+                }
+            }
+
             state.running = true;
             state.started_at = Some(Instant::now());
             state.logs.push("Starting MCP server".to_string());
             state.db = Some(Arc::clone(db));
-            state.port
+            (state.port, paths.into_iter().collect::<Vec<_>>())
         };
+
+        // Start watcher
+        {
+            let manager_clone = self.clone();
+            let db_clone = Arc::clone(db);
+            let mut state = self.inner.lock().await;
+            state.watcher.start(paths_to_watch, move || {
+                let m = manager_clone.clone();
+                let d = Arc::clone(&db_clone);
+                tokio::spawn(async move {
+                    let _ = m.log("Detected artifact changes, refreshing tools...".to_string()).await;
+                    let _ = m.refresh_commands(&d).await;
+                });
+            })?;
+        }
 
         let (stop_tx, _) = broadcast::channel(1);
         {
@@ -254,6 +288,7 @@ impl McpManager {
             if !state.running {
                 return Ok(());
             }
+            state.watcher.stop();
             state.stop_tx.take()
         };
 
@@ -291,6 +326,7 @@ impl McpManager {
             port: state.port,
             uptime_seconds,
             api_token: Some(state.api_token.clone()),
+            is_watching: state.watcher.is_watching(),
         })
     }
 
@@ -356,6 +392,7 @@ impl McpManager {
         state.running = false;
         state.stop_tx = None;
         state.started_at = None;
+        state.watcher.stop();
         Ok(())
     }
 

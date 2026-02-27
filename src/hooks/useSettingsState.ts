@@ -7,7 +7,7 @@ import { toast } from "@/lib/toast-helpers";
 import type { useToast } from "@/components/ui/toast";
 import { useRepositoryRoots } from "@/hooks/useRepositoryRoots";
 import type { AdapterType, Rule } from "@/types/rule";
-import type { CommandModel } from "@/types/command";
+import type { CommandModel, McpStatus, McpConnectionInstructions } from "@/types/command";
 import type { Skill } from "@/types/skill";
 
 const ADAPTER_SETTINGS_KEY = "adapter_settings";
@@ -21,18 +21,6 @@ interface MigrationProgress {
   migrated: number;
   current_rule?: string;
   status: "NotStarted" | "InProgress" | "Completed" | "Failed" | "RolledBack";
-}
-
-interface McpStatus {
-  running: boolean;
-  port: number;
-  uptimeSeconds: number;
-}
-
-interface McpInstructions {
-  claudeCodeJson: string;
-  opencodeJson: string;
-  standaloneCommand: string;
 }
 
 interface ImportPreview {
@@ -60,7 +48,7 @@ export interface UseSettingsStateReturn {
   isRollingBack: boolean;
   isVerifyingMigration: boolean;
   mcpStatus: McpStatus | null;
-  mcpInstructions: McpInstructions | null;
+  mcpInstructions: McpConnectionInstructions | null;
   isMcpLoading: boolean;
   mcpAutoStart: boolean;
   minimizeToTray: boolean;
@@ -130,7 +118,7 @@ export function useSettingsState(
   const [isRollingBack, setIsRollingBack] = useState(false);
   const [isVerifyingMigration, setIsVerifyingMigration] = useState(false);
   const [mcpStatus, setMcpStatus] = useState<McpStatus | null>(null);
-  const [mcpInstructions, setMcpInstructions] = useState<McpInstructions | null>(null);
+  const [mcpInstructions, setMcpInstructions] = useState<McpConnectionInstructions | null>(null);
   const [isMcpLoading, setIsMcpLoading] = useState(false);
   const [mcpAutoStart, setMcpAutoStart] = useState(false);
   const [minimizeToTray, setMinimizeToTray] = useState(true);

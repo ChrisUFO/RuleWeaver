@@ -4,7 +4,7 @@ import { toast } from "@/lib/toast-helpers";
 import { togglePathInSet, filterByQuery } from "@/lib/collection-utils";
 import { generateDuplicateName } from "@/lib/utils";
 import type { useToast } from "@/components/ui/toast";
-import type { CommandModel, ExecutionLog } from "@/types/command";
+import type { CommandModel, ExecutionLog, McpStatus } from "@/types/command";
 
 export interface AdapterInfo {
   name: string;
@@ -50,6 +50,7 @@ export interface UseCommandsStateReturn {
   filtered: CommandModel[];
   availableAdapters: AdapterInfo[];
   slashStatus: Record<string, SlashSyncStatus>;
+  mcpStatus: McpStatus | null;
   isLoading: boolean;
   isSaving: boolean;
   isTesting: boolean;
@@ -106,6 +107,7 @@ export function useCommandsState(
   const [query, setQuery] = useState("");
   const [availableAdapters, setAvailableAdapters] = useState<AdapterInfo[]>([]);
   const [slashStatus, setSlashStatus] = useState<Record<string, SlashSyncStatus>>({});
+  const [mcpStatus, setMcpStatus] = useState<McpStatus | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
@@ -135,6 +137,15 @@ export function useCommandsState(
   const loadCommands = useCallback(async () => {
     const result = await api.commands.getAll();
     setCommands(result);
+  }, []);
+
+  const loadMcpStatus = useCallback(async () => {
+    try {
+      const status = await api.mcp.getStatus();
+      setMcpStatus(status);
+    } catch {
+      setMcpStatus(null);
+    }
   }, []);
 
   const loadFilteredHistory = useCallback(
@@ -184,17 +195,19 @@ export function useCommandsState(
   const refresh = useCallback(async () => {
     setIsLoading(true);
     try {
-      await Promise.all([loadCommands(), loadAvailableAdapters()]);
+      await Promise.all([loadCommands(), loadAvailableAdapters(), loadMcpStatus()]);
     } catch (error) {
       toast.error(addToast, { title: "Failed to Load Commands", error });
     } finally {
       setIsLoading(false);
     }
-  }, [loadCommands, loadAvailableAdapters, addToast]);
+  }, [loadCommands, loadAvailableAdapters, loadMcpStatus, addToast]);
 
   useEffect(() => {
     refresh();
-  }, [refresh]);
+    const timer = setInterval(loadMcpStatus, 5000);
+    return () => clearInterval(timer);
+  }, [refresh, loadMcpStatus]);
 
   useEffect(() => {
     if (!selected) {
@@ -508,6 +521,7 @@ export function useCommandsState(
     filtered,
     availableAdapters,
     slashStatus,
+    mcpStatus,
     isLoading,
     isSaving,
     isTesting,

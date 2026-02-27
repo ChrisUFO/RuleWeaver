@@ -1,4 +1,4 @@
-import { Server, RefreshCw } from "lucide-react";
+import { Server, RefreshCw, Eye } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -6,7 +6,7 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 
 interface McpSettingsCardProps {
-  mcpStatus: { running: boolean; port: number; uptimeSeconds: number } | null;
+  mcpStatus: { running: boolean; port: number; uptimeSeconds: number; isWatching: boolean } | null;
   mcpInstructions: {
     claudeCodeJson: string;
     opencodeJson: string;
@@ -68,12 +68,23 @@ export function McpSettingsCard({
               </div>
             </div>
           </div>
-          <Badge
-            variant={mcpStatus?.running ? "default" : "outline"}
-            className={cn(mcpStatus?.running && "glow-active border-primary/20")}
-          >
-            {mcpStatus?.running ? "Running" : "Stopped"}
-          </Badge>
+          <div className="flex items-center gap-2">
+            {mcpStatus?.running && mcpStatus.isWatching && (
+              <Badge
+                variant="outline"
+                className="bg-blue-500/10 text-blue-500 border-blue-500/20 gap-1 animate-pulse"
+              >
+                <Eye className="h-3 w-3" />
+                Watching
+              </Badge>
+            )}
+            <Badge
+              variant={mcpStatus?.running ? "default" : "outline"}
+              className={cn(mcpStatus?.running && "glow-active border-primary/20")}
+            >
+              {mcpStatus?.running ? "Running" : "Stopped"}
+            </Badge>
+          </div>
         </div>
 
         {mcpStatus?.running && (
