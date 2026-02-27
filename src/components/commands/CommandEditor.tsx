@@ -1,5 +1,6 @@
 import {
   Play,
+  Copy,
   Trash2,
   CheckCircle,
   Loader2,
@@ -44,6 +45,7 @@ interface CommandEditorProps {
   onToggleAdapter: (adapter: string) => void;
   onSave: () => void;
   onDelete: () => void;
+  onDuplicate: () => void;
   onTest: () => void;
   onSyncSlashCommands: () => void;
   onRepairSlashCommand: (adapter: string) => void;
@@ -94,6 +96,7 @@ export function CommandEditor({
   onToggleAdapter,
   onSave,
   onDelete,
+  onDuplicate,
   onTest,
   onSyncSlashCommands,
   onRepairSlashCommand,
@@ -338,6 +341,15 @@ export function CommandEditor({
               )}
             </Button>
           )}
+          <Button
+            variant="outline"
+            onClick={onDuplicate}
+            disabled={isSaving}
+            title="Duplicate (Ctrl+D)"
+          >
+            <Copy className="mr-2 h-4 w-4" />
+            Duplicate
+          </Button>
           <Button variant="outline" onClick={onDelete} disabled={isSaving}>
             <Trash2 className="mr-2 h-4 w-4" />
             Delete

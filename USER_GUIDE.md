@@ -226,6 +226,7 @@ Commands are executable scripts that can be triggered via MCP or slash commands.
 
 - Search commands by name
 - Create new commands
+- Duplicate existing commands
 - Sync command files
 
 ### Creating a Command
@@ -297,6 +298,7 @@ Skills are complex multi-step workflows distributed as `SKILL.md` files to your 
 - View all installed skills
 - Browse and install templates
 - Create new skills
+- Duplicate existing skills
 
 ### Creating a Skill
 
@@ -469,6 +471,7 @@ Use synced rule/command files, or configure MCP client to connect to the localho
 | -------------- | ------------------------------ |
 | `Ctrl+N`       | Create new rule                |
 | `Ctrl+Shift+N` | Create new command             |
+| `Ctrl+D`       | Duplicate selected item        |
 | `Ctrl+S`       | Save current item              |
 | `Ctrl+Shift+S` | Sync all rules                 |
 | `Ctrl+F`       | Focus search                   |

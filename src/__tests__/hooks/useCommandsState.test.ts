@@ -149,4 +149,27 @@ describe("useCommandsState", () => {
 
     expect(result.current.form.slashCommandAdapters).not.toContain("gemini");
   });
+
+  it("duplicates a command successfully", async () => {
+    const { result } = renderHook(() => useCommandsState(mockAddToast));
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    });
+
+    act(() => {
+      result.current.handlers.setSelectedId("1");
+    });
+
+    await act(async () => {
+      await result.current.handlers.handleDuplicate();
+    });
+
+    expect(result.current.selectedId).toBe("2");
+    expect(mockAddToast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Command Duplicated",
+      })
+    );
+  });
 });

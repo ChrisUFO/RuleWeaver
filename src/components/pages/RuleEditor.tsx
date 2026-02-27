@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import {
   ArrowLeft,
   Save,
+  Copy,
   Eye,
   Check,
   Loader2,
@@ -26,6 +27,7 @@ import { api } from "@/lib/tauri";
 interface RuleEditorProps {
   rule: Rule | null;
   onBack: () => void;
+  onSelectRule: (rule: Rule) => void;
   isNew?: boolean;
 }
 
@@ -41,8 +43,8 @@ function getCharacterCount(text: string): number {
   return text.length;
 }
 
-export function RuleEditor({ rule, onBack, isNew = false }: RuleEditorProps) {
-  const { createRule, updateRule } = useRulesStore();
+export function RuleEditor({ rule, onBack, onSelectRule, isNew = false }: RuleEditorProps) {
+  const { createRule, updateRule, duplicateRule } = useRulesStore();
   const { tools } = useRegistryStore();
   const { addToast } = useToast();
 
@@ -211,11 +213,63 @@ export function RuleEditor({ rule, onBack, isNew = false }: RuleEditorProps) {
     onBack,
   ]);
 
+  const handleDuplicate = useCallback(async () => {
+    if (!rule) return;
+
+    setSaving(true);
+    try {
+      const newRule = await duplicateRule({
+        ...rule,
+        name: name.trim(),
+        description: description.trim(),
+        content,
+        scope,
+        targetPaths: scope === "local" ? targetPaths : null,
+        enabledAdapters,
+      });
+      addToast({
+        title: "Rule Duplicated",
+        description: `"${name}" has been duplicated`,
+        variant: "success",
+      });
+      onSelectRule(newRule);
+      setHasUnsavedChanges(false);
+    } catch (error) {
+      addToast({
+        title: "Duplicate Failed",
+        description:
+          typeof error === "string"
+            ? error
+            : error instanceof Error
+              ? error.message
+              : "Unknown error",
+        variant: "error",
+      });
+    } finally {
+      setSaving(false);
+    }
+  }, [
+    rule,
+    name,
+    description,
+    content,
+    scope,
+    targetPaths,
+    enabledAdapters,
+    duplicateRule,
+    addToast,
+    onSelectRule,
+  ]);
+
   useKeyboardShortcuts({
     shortcuts: [
       {
         ...SHORTCUTS.SAVE,
         action: handleSave,
+      },
+      {
+        ...SHORTCUTS.DUPLICATE,
+        action: handleDuplicate,
       },
     ],
   });
@@ -324,6 +378,18 @@ export function RuleEditor({ rule, onBack, isNew = false }: RuleEditorProps) {
         </div>
         <div className="flex items-center gap-4">
           {getSaveStatus()}
+          {!isNew && (
+            <Button
+              variant="outline"
+              onClick={handleDuplicate}
+              disabled={saving}
+              title="Duplicate (Ctrl+D)"
+              className="glass border-white/5 hover:bg-white/5"
+            >
+              <Copy className="mr-2 h-4 w-4" />
+              Duplicate
+            </Button>
+          )}
           <Button onClick={handleSave} disabled={saving} className="glow-primary">
             <Save className="mr-2 h-4 w-4" />
             {saving ? "Saving..." : "Save Selection"}
