@@ -50,7 +50,7 @@ const mockMissingEntry: ArtifactStatusEntry = {
   artifactId: "rule-1",
   artifactName: "My Rule",
   artifactType: "rule",
-  adapter: "claude_code",
+  adapter: "claude-code",
   scope: "global",
   status: "missing",
   expectedPath: "/home/.claude/CLAUDE.md",
