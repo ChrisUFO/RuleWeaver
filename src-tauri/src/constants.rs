@@ -8,6 +8,8 @@ pub mod timing {
     pub const MCP_RATE_LIMIT_WINDOW: Duration = Duration::from_secs(10);
     pub const TEST_CMD_RATE_LIMIT_WINDOW: Duration = Duration::from_secs(60);
     pub const MCP_SERVER_BACKOFF_INITIAL_MS: u64 = 100;
+    pub const WATCHER_DEBOUNCE: Duration = Duration::from_millis(500);
+    pub const WATCHER_POLL_INTERVAL: Duration = Duration::from_millis(100);
 }
 
 pub mod limits {

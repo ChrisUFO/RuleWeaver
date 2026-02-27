@@ -2,8 +2,10 @@ use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
 use std::collections::HashSet;
 use std::path::PathBuf;
 use tokio::sync::mpsc;
-use tokio::time::{sleep, Duration};
+use tokio::time::sleep;
 use crate::error::Result;
+
+use crate::constants::timing::{WATCHER_DEBOUNCE, WATCHER_POLL_INTERVAL};
 
 #[derive(Debug)]
 pub struct WatcherManager {
@@ -72,22 +74,24 @@ impl WatcherManager {
 
         // Spawn debouncer task
         tokio::spawn(async move {
-            let debounce_duration = Duration::from_millis(500);
             let mut last_event = None;
 
             loop {
                 tokio::select! {
                     maybe_event = rx.recv() => {
-                        if let Some(_event) = maybe_event {
-                            last_event = Some(tokio::time::Instant::now());
-                        } else {
-                            // Channel closed, the watcher has been dropped.
-                            break;
+                        match maybe_event {
+                            Some(_event) => {
+                                last_event = Some(tokio::time::Instant::now());
+                            }
+                            None => {
+                                // Channel closed, the watcher has been dropped.
+                                break;
+                            }
                         }
                     }
-                    _ = sleep(Duration::from_millis(100)) => {
+                    _ = sleep(WATCHER_POLL_INTERVAL) => {
                         if let Some(instant) = last_event {
-                            if instant.elapsed() >= debounce_duration {
+                            if instant.elapsed() >= WATCHER_DEBOUNCE {
                                 on_event();
                                 last_event = None;
                             }
@@ -150,11 +154,24 @@ mod tests {
             sleep(Duration::from_millis(50)).await;
         }
 
-        // Wait for debounce (500ms + buffer)
-        sleep(Duration::from_millis(1000)).await;
+        // Use a retry loop with timeout to avoid flaky timing assumptions
+        let start = tokio::time::Instant::now();
+        let timeout = Duration::from_secs(5);
+        let mut triggered = false;
 
-        // Should have triggered only once due to debounce
-        assert_eq!(counter.load(Ordering::SeqCst), 1);
+        while start.elapsed() < timeout {
+            if counter.load(Ordering::SeqCst) == 1 {
+                triggered = true;
+                break;
+            }
+            sleep(Duration::from_millis(100)).await;
+        }
+
+        assert!(triggered, "Should have triggered exactly once due to debounce within timeout");
+        
+        // Wait a bit more to ensure no additional triggers happen
+        sleep(Duration::from_millis(500)).await;
+        assert_eq!(counter.load(Ordering::SeqCst), 1, "Should not have triggered more than once");
 
         manager.stop();
     }

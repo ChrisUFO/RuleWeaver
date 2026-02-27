@@ -8,7 +8,6 @@ import {
   CheckCircle,
   XCircle,
   AlertCircle,
-  Eye,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -30,6 +29,7 @@ import { ImportDialog } from "@/components/import/ImportDialog";
 import { useKeyboardShortcuts, SHORTCUTS } from "@/hooks/useKeyboardShortcuts";
 import type { ArtifactStatusEntry } from "@/types/status";
 import { useMcpWatcher } from "@/hooks/useMcpWatcher";
+import { WatchingIndicator } from "@/components/ui/WatchingIndicator";
 
 interface SkillsProps {
   initialSelectedId?: string | null;
@@ -357,16 +357,10 @@ export function Skills({ initialSelectedId, onClearInitialId }: SkillsProps) {
                     mcpStatus?.running &&
                     mcpStatus.isWatching &&
                     skill.directoryPath && (
-                      <span title={`MCP is watching this skill directory\n${skill.directoryPath}`}>
-                        <Eye
-                          className={cn(
-                            "h-3.5 w-3.5 text-blue-500 transition-all duration-500",
-                            mcpJustRefreshed
-                              ? "text-emerald-400 scale-125 glow-active drop-shadow-md"
-                              : "animate-pulse"
-                          )}
-                        />
-                      </span>
+                      <WatchingIndicator
+                        path={skill.directoryPath}
+                        justRefreshed={mcpJustRefreshed}
+                      />
                     )}
                   {!skill.enabled && (
                     <Badge

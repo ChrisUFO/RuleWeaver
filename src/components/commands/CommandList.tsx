@@ -1,4 +1,4 @@
-import { Plus, Search, FolderUp, Copy, Eye } from "lucide-react";
+import { Plus, Search, FolderUp, Copy } from "lucide-react";
 import { CommandTemplateBrowser } from "./CommandTemplateBrowser";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import type { CommandModel, McpStatus } from "@/types/command";
+import { WatchingIndicator } from "@/components/ui/WatchingIndicator";
 
 interface CommandListProps {
   commands: readonly CommandModel[];
@@ -123,18 +124,7 @@ export function CommandList({
                 {mcpStatus?.running &&
                   mcpStatus.isWatching &&
                   (cmd.targetPaths?.length || 0) > 0 && (
-                    <span
-                      title={`MCP is watching local paths for this command\n${(cmd.targetPaths || []).join("\n")}`}
-                    >
-                      <Eye
-                        className={cn(
-                          "h-3.5 w-3.5 text-blue-500 transition-all duration-500",
-                          mcpJustRefreshed
-                            ? "text-emerald-400 scale-125 glow-active drop-shadow-md"
-                            : "animate-pulse"
-                        )}
-                      />
-                    </span>
+                    <WatchingIndicator paths={cmd.targetPaths} justRefreshed={!!mcpJustRefreshed} />
                   )}{" "}
                 {cmd.exposeViaMcp ? (
                   <Badge
