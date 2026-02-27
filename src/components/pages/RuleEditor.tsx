@@ -232,8 +232,8 @@ export function RuleEditor({ rule, onBack, onSelectRule, isNew = false }: RuleEd
         description: `"${name}" has been duplicated`,
         variant: "success",
       });
-      setHasUnsavedChanges(false);
       onSelectRule(newRule);
+      setHasUnsavedChanges(false);
     } catch (error) {
       addToast({
         title: "Duplicate Failed",

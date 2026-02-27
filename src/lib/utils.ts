@@ -19,16 +19,18 @@ export function getToolFileName(tool: ToolEntry): string {
 export function generateDuplicateName(name: string, existingNames: string[]): string {
   const copySuffix = " (Copy)";
   const MAX_NAME_LENGTH = 100;
+  const MAX_ITERATIONS = 10000;
 
   let baseName = name;
   let counter = 1;
 
-  // Check if name already has a (Copy) suffix
-  const copyMatch = name.match(/ \(Copy\)(?: (\d+))?$/);
+  // Improved regex to handle multiple (Copy) or already suffixed copies
+  // It looks for the LAST occurrence of (Copy) followed by optional number
+  const copyMatch = name.match(/(.*) \(Copy\)(?: (\d+))?$/);
   if (copyMatch) {
-    baseName = name.substring(0, copyMatch.index);
-    if (copyMatch[1]) {
-      counter = parseInt(copyMatch[1], 10) + 1;
+    baseName = copyMatch[1];
+    if (copyMatch[2]) {
+      counter = parseInt(copyMatch[2], 10) + 1;
     } else {
       counter = 2;
     }
@@ -37,7 +39,12 @@ export function generateDuplicateName(name: string, existingNames: string[]): st
   let newName = counter === 1 ? `${baseName}${copySuffix}` : `${baseName}${copySuffix} ${counter}`;
 
   // Ensure it doesn't exceed length limit while being unique
-  while (existingNames.includes(newName) || newName.length > MAX_NAME_LENGTH) {
+  let iterations = 0;
+  while (
+    (existingNames.includes(newName) || newName.length > MAX_NAME_LENGTH) &&
+    iterations < MAX_ITERATIONS
+  ) {
+    iterations++;
     if (newName.length > MAX_NAME_LENGTH) {
       // If too long, truncate baseName more
       baseName = baseName.substring(0, baseName.length - 5);

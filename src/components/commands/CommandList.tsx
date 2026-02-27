@@ -76,13 +76,21 @@ export function CommandList({
         {commands.map((cmd) => (
           <div
             key={cmd.id}
+            role="button"
+            tabIndex={0}
             className={cn(
-              "w-full group relative overflow-hidden flex flex-col items-start rounded-xl px-4 py-3 text-left transition-all duration-300 border cursor-pointer",
+              "w-full group relative overflow-hidden flex flex-col items-start rounded-xl px-4 py-3 text-left transition-all duration-300 border cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40",
               selectedId === cmd.id
                 ? "bg-primary/10 border-primary/20 premium-shadow"
                 : "hover:bg-white/5 border-transparent hover:border-white/5"
             )}
             onClick={() => onSelect(cmd.id)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onSelect(cmd.id);
+              }
+            }}
           >
             <div className="flex w-full items-center justify-between gap-2">
               <div
