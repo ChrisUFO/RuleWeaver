@@ -41,7 +41,7 @@ impl WatcherManager {
                     for path in &event.paths {
                         if path.components().any(|c| {
                             let s = c.as_os_str().to_string_lossy();
-                            s == ".git" || s == "node_modules" || s == "target" || s == ".agents"
+                            matches!(s.as_ref(), ".git" | "node_modules" | "target" | ".agents")
                         }) {
                             ignored = true;
                             break;
@@ -64,7 +64,9 @@ impl WatcherManager {
                         path.clone()
                     }
                 };
-                if watcher.watch(&canonical_path, RecursiveMode::Recursive).is_ok() {
+                if let Err(e) = watcher.watch(&canonical_path, RecursiveMode::Recursive) {
+                    log::warn!("Failed to watch path '{}': {}", canonical_path.display(), e);
+                } else {
                     self.watched_paths.insert(canonical_path);
                 }
             }
@@ -121,6 +123,7 @@ mod tests {
     use tempfile::TempDir;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::Duration;
 
     #[tokio::test]
     async fn test_watcher_lifecycle() {
