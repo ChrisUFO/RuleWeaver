@@ -264,7 +264,14 @@ pub async fn import_configuration(
 
     let engine = SyncEngine::new(&db);
     let rules = db.get_all_rules().await?;
-    let _ = engine.sync_all(rules).await;
+    let sync_result = engine.sync_all(rules).await;
+    if !sync_result.errors.is_empty() || !sync_result.conflicts.is_empty() {
+        log::warn!(
+            "Post-import AI tool sync completed with issues. Errors: {:?}, Conflicts: {:?}",
+            sync_result.errors,
+            sync_result.conflicts
+        );
+    }
 
     // Run reconciliation to clean up any orphaned artifacts from the import
     reconcile_after_mutation(db.inner().clone()).await;

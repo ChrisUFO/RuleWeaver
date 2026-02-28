@@ -59,9 +59,13 @@ pub async fn create_command(
     if created.generate_slash_commands && !created.slash_command_adapters.is_empty() {
         let engine = SlashCommandSyncEngine::new(Arc::clone(&db));
         // Sync global and local (per target_paths) slash files; errors are non-fatal.
-        let _ = engine.sync_command(&created, true);
+        if let Err(e) = engine.sync_command(&created, true) {
+            log::warn!("Failed to sync global slash command for '{}': {}", created.name, e);
+        }
         if !created.target_paths.is_empty() {
-            let _ = engine.sync_command(&created, false);
+            if let Err(e) = engine.sync_command(&created, false) {
+                log::warn!("Failed to sync local slash command for '{}': {}", created.name, e);
+            }
         }
     }
 
@@ -111,22 +115,32 @@ pub async fn update_command(
         && !updated.generate_slash_commands
         && !existing.slash_command_adapters.is_empty()
     {
-        let _ = engine.remove_command(
+        if let Err(e) = engine.remove_command(
             &existing.name,
             &existing.slash_command_adapters,
             &existing.target_paths,
-        );
+        ) {
+            log::warn!(
+                "Failed to remove slash command files for '{}': {}",
+                existing.name, e
+            );
+        }
     }
 
     // Orphan prevention: if the command was renamed, remove stale slash files for
     // the old name across all adapters and all target paths.
     let name_changed = existing.name != updated.name;
     if name_changed && !existing.slash_command_adapters.is_empty() {
-        let _ = engine.remove_command(
+        if let Err(e) = engine.remove_command(
             &existing.name,
             &existing.slash_command_adapters,
             &existing.target_paths,
-        );
+        ) {
+            log::warn!(
+                "Failed to remove stale slash files for renamed command '{}': {}",
+                existing.name, e
+            );
+        }
     } else {
         // Orphan prevention: if adapters were deselected, remove files only for
         // the adapters that are no longer in the updated list.
@@ -138,15 +152,24 @@ pub async fn update_command(
             .cloned()
             .collect();
         if !deselected.is_empty() {
-            let _ = engine.remove_command(&existing.name, &deselected, &existing.target_paths);
+            if let Err(e) = engine.remove_command(&existing.name, &deselected, &existing.target_paths) {
+                log::warn!(
+                    "Failed to remove deselected adapter slash files for '{}': {}",
+                    existing.name, e
+                );
+            }
         }
     }
 
     // Autosync slash commands on save when the command opts in to slash generation.
     if updated.generate_slash_commands && !updated.slash_command_adapters.is_empty() {
-        let _ = engine.sync_command(&updated, true);
+        if let Err(e) = engine.sync_command(&updated, true) {
+            log::warn!("Failed to sync global slash command for '{}': {}", updated.name, e);
+        }
         if !updated.target_paths.is_empty() {
-            let _ = engine.sync_command(&updated, false);
+            if let Err(e) = engine.sync_command(&updated, false) {
+                log::warn!("Failed to sync local slash command for '{}': {}", updated.name, e);
+            }
         }
     }
 
@@ -168,11 +191,16 @@ pub async fn delete_command(
     // Remove slash command files for this command across all adapters and repo roots.
     if !command.slash_command_adapters.is_empty() {
         let engine = SlashCommandSyncEngine::new(Arc::clone(&db));
-        let _ = engine.remove_command(
+        if let Err(e) = engine.remove_command(
             &command.name,
             &command.slash_command_adapters,
             &command.target_paths,
-        );
+        ) {
+            log::warn!(
+                "Failed to remove slash command files for deleted command '{}': {}",
+                command.name, e
+            );
+        }
     }
 
     // Run reconciliation to clean up any remaining orphaned artifacts.

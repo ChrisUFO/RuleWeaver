@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use tauri::State;
@@ -9,6 +8,8 @@ use crate::models::{
     ImportExecutionOptions, ImportExecutionResult, ImportHistoryEntry, ImportScanResult,
 };
 use crate::rule_import;
+
+use super::validate_path;
 
 #[tauri::command]
 pub async fn scan_ai_tool_import_candidates(
@@ -65,9 +66,10 @@ pub async fn import_rule_from_file(
     options: Option<ImportExecutionOptions>,
     db: State<'_, Arc<Database>>,
 ) -> Result<ImportExecutionResult> {
+    let validated_path = validate_path(&path)?;
     let opts = options.unwrap_or_default();
     let max_size = rule_import::resolve_max_size(&opts);
-    let scan = rule_import::scan_file_to_candidates(&PathBuf::from(path), max_size);
+    let scan = rule_import::scan_file_to_candidates(&validated_path, max_size);
     rule_import::execute_import(db.inner().clone(), scan, opts).await
 }
 
@@ -75,10 +77,11 @@ pub async fn import_rule_from_file(
 pub fn scan_rule_file_import(
     path: String,
     options: Option<ImportExecutionOptions>,
-) -> ImportScanResult {
+) -> Result<ImportScanResult> {
+    let validated_path = validate_path(&path)?;
     let opts = options.unwrap_or_default();
     let max_size = rule_import::resolve_max_size(&opts);
-    rule_import::scan_file_to_candidates(&PathBuf::from(path), max_size)
+    Ok(rule_import::scan_file_to_candidates(&validated_path, max_size))
 }
 
 #[tauri::command]
@@ -87,10 +90,11 @@ pub async fn import_rules_from_directory(
     options: Option<ImportExecutionOptions>,
     db: State<'_, Arc<Database>>,
 ) -> Result<ImportExecutionResult> {
+    let validated_path = validate_path(&path)?;
     let opts = options.unwrap_or_default();
     let max_size = rule_import::resolve_max_size(&opts);
     let scan = rule_import::scan_directory_to_candidates(
-        &PathBuf::from(path),
+        &validated_path,
         max_size,
         Some(crate::models::ImportArtifactType::Rule),
     );
@@ -101,14 +105,15 @@ pub async fn import_rules_from_directory(
 pub fn scan_rule_directory_import(
     path: String,
     options: Option<ImportExecutionOptions>,
-) -> ImportScanResult {
+) -> Result<ImportScanResult> {
+    let validated_path = validate_path(&path)?;
     let opts = options.unwrap_or_default();
     let max_size = rule_import::resolve_max_size(&opts);
-    rule_import::scan_directory_to_candidates(
-        &PathBuf::from(path),
+    Ok(rule_import::scan_directory_to_candidates(
+        &validated_path,
         max_size,
         Some(crate::models::ImportArtifactType::Rule),
-    )
+    ))
 }
 
 #[tauri::command]
@@ -170,10 +175,11 @@ pub async fn import_commands_from_directory(
     options: Option<ImportExecutionOptions>,
     db: State<'_, Arc<Database>>,
 ) -> Result<ImportExecutionResult> {
+    let validated_path = validate_path(&path)?;
     let opts = options.unwrap_or_default();
     let max_size = rule_import::resolve_max_size(&opts);
     let scan = rule_import::scan_directory_to_candidates(
-        &PathBuf::from(path),
+        &validated_path,
         max_size,
         Some(crate::models::ImportArtifactType::SlashCommand),
     );
@@ -184,14 +190,15 @@ pub async fn import_commands_from_directory(
 pub fn scan_command_directory_import(
     path: String,
     options: Option<ImportExecutionOptions>,
-) -> ImportScanResult {
+) -> Result<ImportScanResult> {
+    let validated_path = validate_path(&path)?;
     let opts = options.unwrap_or_default();
     let max_size = rule_import::resolve_max_size(&opts);
-    rule_import::scan_directory_to_candidates(
-        &PathBuf::from(path),
+    Ok(rule_import::scan_directory_to_candidates(
+        &validated_path,
         max_size,
         Some(crate::models::ImportArtifactType::SlashCommand),
-    )
+    ))
 }
 
 #[tauri::command]
@@ -200,10 +207,11 @@ pub async fn import_skills_from_directory(
     options: Option<ImportExecutionOptions>,
     db: State<'_, Arc<Database>>,
 ) -> Result<ImportExecutionResult> {
+    let validated_path = validate_path(&path)?;
     let opts = options.unwrap_or_default();
     let max_size = rule_import::resolve_max_size(&opts);
     let scan = rule_import::scan_directory_to_candidates(
-        &PathBuf::from(path),
+        &validated_path,
         max_size,
         Some(crate::models::ImportArtifactType::Skill),
     );
@@ -214,14 +222,15 @@ pub async fn import_skills_from_directory(
 pub fn scan_skill_directory_import(
     path: String,
     options: Option<ImportExecutionOptions>,
-) -> ImportScanResult {
+) -> Result<ImportScanResult> {
+    let validated_path = validate_path(&path)?;
     let opts = options.unwrap_or_default();
     let max_size = rule_import::resolve_max_size(&opts);
-    rule_import::scan_directory_to_candidates(
-        &PathBuf::from(path),
+    Ok(rule_import::scan_directory_to_candidates(
+        &validated_path,
         max_size,
         Some(crate::models::ImportArtifactType::Skill),
-    )
+    ))
 }
 
 #[cfg(test)]
@@ -247,6 +256,7 @@ mod tests {
             "C:/definitely/not/found.md".to_string(),
             Some(ImportExecutionOptions::default()),
         );
-        assert!(!result.errors.is_empty());
+        // validate_path will fail for non-existent paths
+        assert!(result.is_err());
     }
 }

@@ -54,7 +54,9 @@ pub async fn restart_mcp_server(
     mcp: State<'_, McpManager>,
     status: State<'_, crate::GlobalStatus>,
 ) -> Result<()> {
-    let _ = mcp.stop().await;
+    if let Err(e) = mcp.stop().await {
+        log::warn!("MCP server stop during restart failed: {}", e);
+    }
     mcp.set_app_handle(app).await;
     match mcp.start(&db).await {
         Ok(_) => {
