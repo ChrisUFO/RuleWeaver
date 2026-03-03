@@ -30,6 +30,18 @@ import {
 
 export type ImportSourceMode = "ai" | "file" | "directory" | "url" | "clipboard";
 
+const DROP_SCAN_CONCURRENCY = 5;
+
+const isAbsolutePath = (path: string): boolean => {
+  if (!path) return false;
+  return /^[A-Za-z]:[\\/]/.test(path) || path.startsWith("/") || path.startsWith("\\\\");
+};
+
+const hasSupportedImportExtension = (path: string): boolean => {
+  const normalized = path.toLowerCase();
+  return [".md", ".txt", ".json", ".yaml", ".yml"].some((ext) => normalized.endsWith(ext));
+};
+
 export interface ImportDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -180,32 +192,70 @@ export function ImportDialog({
         return;
       }
 
+      const uniquePaths = Array.from(new Set(paths.map((path) => path.trim()).filter(Boolean)));
+      const validPaths = uniquePaths.filter(
+        (path) => isAbsolutePath(path) && hasSupportedImportExtension(path)
+      );
+      const rejectedCount = uniquePaths.length - validPaths.length;
+
+      if (validPaths.length === 0) {
+        addToast({
+          title: "No Valid Dropped Files",
+          description: "Drop absolute .md, .txt, .json, .yaml, or .yml file paths to scan.",
+          variant: "error",
+        });
+        return;
+      }
+
+      if (rejectedCount > 0) {
+        addToast({
+          title: "Some Files Skipped",
+          description: `${rejectedCount} dropped file(s) were ignored due to invalid path or extension.`,
+          variant: "warning",
+        });
+      }
+
       setIsScanningImport(true);
       try {
-        const scans = await Promise.all(
-          paths.map(async (path) => {
-            try {
-              const scan = await api.ruleImport.scanFromFile(path);
-              return { path, scan };
-            } catch (error) {
-              return {
-                path,
-                scan: {
-                  candidates: [],
-                  errors: [error instanceof Error ? error.message : String(error)],
-                },
-              };
-            }
-          })
-        );
+        const scans: Array<{
+          path: string;
+          scan: { candidates: ImportCandidate[]; errors: string[] };
+        }> = [];
+
+        for (let i = 0; i < validPaths.length; i += DROP_SCAN_CONCURRENCY) {
+          const batch = validPaths.slice(i, i + DROP_SCAN_CONCURRENCY);
+          const batchScans = await Promise.all(
+            batch.map(async (path) => {
+              try {
+                const scan = await api.ruleImport.scanFromFile(path);
+                return { path, scan };
+              } catch (error) {
+                return {
+                  path,
+                  scan: {
+                    candidates: [],
+                    errors: [error instanceof Error ? error.message : String(error)],
+                  },
+                };
+              }
+            })
+          );
+          scans.push(...batchScans);
+        }
 
         const candidates = scans.flatMap((entry) => entry.scan.candidates);
         const errors = scans.flatMap((entry) =>
           entry.scan.errors.map((error) => `${entry.path}: ${error}`)
         );
 
-        const sourceLabel = paths.length === 1 ? paths[0] : `${paths.length} dropped files`;
+        const sourceLabel =
+          validPaths.length === 1 ? validPaths[0] : `${validPaths.length} dropped files`;
         await openImportPreview("file", sourceLabel, candidates, errors);
+        addToast({
+          title: "Drop Scan Complete",
+          description: `Scanned ${validPaths.length} file(s), found ${candidates.length} candidate(s).`,
+          variant: "success",
+        });
       } catch (error) {
         toast.error(addToast, { title: "Scan Failed", error });
       } finally {

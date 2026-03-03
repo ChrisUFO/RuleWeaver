@@ -79,6 +79,10 @@ export function Dashboard({ onNavigate }: { onNavigate: (view: string, id?: stri
   const [fullHistoryOpen, setFullHistoryOpen] = useState(false);
   const [isLoadingFullHistory, setIsLoadingFullHistory] = useState(false);
   const [fullSyncHistory, setFullSyncHistory] = useState<SyncHistoryEntry[]>([]);
+  const [fullHistoryFilter, setFullHistoryFilter] = useState<
+    "all" | "success" | "partial" | "failed"
+  >("all");
+  const [fullHistoryError, setFullHistoryError] = useState<string | null>(null);
   const [hasDrift, setHasDrift] = useState<boolean | null | "error">(null);
   const [isCheckingDrift, setIsCheckingDrift] = useState(false);
 
@@ -116,20 +120,24 @@ export function Dashboard({ onNavigate }: { onNavigate: (view: string, id?: stri
 
   const handleViewFullLogs = async () => {
     setIsLoadingFullHistory(true);
+    setFullHistoryError(null);
     try {
       const history = await api.sync.getHistory(100);
       setFullSyncHistory(history);
       setFullHistoryOpen(true);
     } catch (error) {
-      addToast({
-        title: "Failed to Load Logs",
-        description: error instanceof Error ? error.message : "Unknown error",
-        variant: "error",
-      });
+      const message = error instanceof Error ? error.message : "Unknown error";
+      setFullHistoryError(message);
+      setFullHistoryOpen(true);
+      addToast({ title: "Failed to Load Logs", description: message, variant: "error" });
     } finally {
       setIsLoadingFullHistory(false);
     }
   };
+
+  const filteredFullHistory = fullSyncHistory.filter((entry) =>
+    fullHistoryFilter === "all" ? true : entry.status === fullHistoryFilter
+  );
 
   const handleSyncClick = async () => {
     setIsPreviewing(true);
@@ -455,6 +463,11 @@ export function Dashboard({ onNavigate }: { onNavigate: (view: string, id?: stri
                     >
                       {isLoadingFullHistory ? "Loading Logs..." : "View Full Logs"}
                     </Button>
+                    {syncHistory.length === 0 && (
+                      <p className="mt-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60 text-center">
+                        Run a sync to generate logs
+                      </p>
+                    )}
                   </div>
                 </Card>
               </motion.div>
@@ -492,11 +505,47 @@ export function Dashboard({ onNavigate }: { onNavigate: (view: string, id?: stri
             <DialogTitle>Sync Logs</DialogTitle>
           </DialogHeader>
 
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              {(
+                [
+                  ["all", "All"],
+                  ["success", "Success"],
+                  ["partial", "Partial"],
+                  ["failed", "Failed"],
+                ] as const
+              ).map(([value, label]) => (
+                <Button
+                  key={value}
+                  size="sm"
+                  variant={fullHistoryFilter === value ? "default" : "outline"}
+                  onClick={() => setFullHistoryFilter(value)}
+                  className="h-7 text-[10px] uppercase font-black tracking-wider"
+                >
+                  {label}
+                </Button>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Showing {filteredFullHistory.length} of {fullSyncHistory.length}
+            </p>
+          </div>
+
           <div className="max-h-[50vh] overflow-auto space-y-2 pr-1">
-            {fullSyncHistory.length === 0 ? (
+            {fullHistoryError ? (
+              <div className="rounded border border-destructive/30 bg-destructive/10 p-4 space-y-3">
+                <p className="text-sm font-semibold">Unable to load sync logs</p>
+                <p className="text-xs text-muted-foreground break-all">{fullHistoryError}</p>
+                <Button size="sm" variant="outline" onClick={handleViewFullLogs}>
+                  Retry
+                </Button>
+              </div>
+            ) : fullSyncHistory.length === 0 ? (
               <p className="text-sm text-muted-foreground">No sync logs available yet.</p>
+            ) : filteredFullHistory.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No logs match this filter.</p>
             ) : (
-              fullSyncHistory.map((entry) => (
+              filteredFullHistory.map((entry) => (
                 <div key={entry.id} className="rounded border border-white/10 p-3">
                   <div className="flex items-center justify-between text-xs">
                     <span className="font-semibold">

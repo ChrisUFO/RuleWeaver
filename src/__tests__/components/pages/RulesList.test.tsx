@@ -402,4 +402,42 @@ describe("RulesList import workflow", () => {
     expect(screen.getByText("Import Rules From File")).toBeInTheDocument();
     expect(screen.getAllByText(/C:\/tmp\/dropped-rule\.md/i).length).toBeGreaterThan(0);
   });
+
+  it("ignores invalid dropped paths and scans only valid files", async () => {
+    const { api } = await import("../../../lib/tauri");
+    renderWithProviders(<RulesList onSelectRule={vi.fn()} onCreateRule={vi.fn()} />);
+
+    vi.mocked(api.ruleImport.scanFromFile).mockResolvedValue({ candidates: [], errors: [] });
+
+    const dropZone = screen.getByText(/Drag and drop a rule file here/i).closest("div");
+    expect(dropZone).toBeTruthy();
+
+    const validFile = new File(["x"], "valid.md", { type: "text/markdown" }) as File & {
+      path?: string;
+    };
+    Object.defineProperty(validFile, "path", {
+      value: "C:/tmp/valid.md",
+      configurable: true,
+    });
+
+    const invalidFile = new File(["x"], "invalid.exe", {
+      type: "application/octet-stream",
+    }) as File & {
+      path?: string;
+    };
+    Object.defineProperty(invalidFile, "path", {
+      value: "C:/tmp/invalid.exe",
+      configurable: true,
+    });
+
+    const dataTransfer = { files: [validFile, invalidFile] } as unknown as DataTransfer;
+    fireEvent.drop(dropZone as Element, { dataTransfer });
+
+    await waitFor(() => {
+      expect(api.ruleImport.scanFromFile).toHaveBeenCalledTimes(1);
+      expect(api.ruleImport.scanFromFile).toHaveBeenCalledWith("C:/tmp/valid.md");
+    });
+
+    expect(screen.getByText(/some files skipped/i)).toBeInTheDocument();
+  });
 });

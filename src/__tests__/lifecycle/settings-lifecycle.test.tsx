@@ -234,6 +234,10 @@ describe("Settings lifecycle", () => {
       ).toBeInTheDocument();
     });
 
+    expect(
+      screen.getByText(/applies when generate slash commands is enabled/i)
+    ).toBeInTheDocument();
+
     expect(screen.queryByText(/coming soon/i)).not.toBeInTheDocument();
   });
 });

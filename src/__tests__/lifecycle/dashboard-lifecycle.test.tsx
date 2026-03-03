@@ -54,6 +54,7 @@ describe("Dashboard lifecycle", () => {
 
     const button = await screen.findByRole("button", { name: /view full logs/i });
     expect(button).toBeDisabled();
+    expect(screen.getByText(/run a sync to generate logs/i)).toBeInTheDocument();
   });
 
   it("opens full logs dialog from dashboard history", async () => {
@@ -86,5 +87,30 @@ describe("Dashboard lifecycle", () => {
     });
 
     expect(await screen.findByText("Sync Logs")).toBeInTheDocument();
+  });
+
+  it("shows retry UI when full log loading fails", async () => {
+    vi.mocked(api.sync.getHistory).mockImplementation(async (limit?: number) => {
+      if (limit === 100) {
+        throw new Error("history unavailable");
+      }
+      return [
+        {
+          id: "sync-1",
+          timestamp: Math.floor(Date.now() / 1000),
+          filesWritten: 1,
+          status: "success" as const,
+          triggeredBy: "manual" as const,
+        },
+      ];
+    });
+
+    renderWithProviders(<Dashboard onNavigate={vi.fn()} />);
+
+    const button = await screen.findByRole("button", { name: /view full logs/i });
+    await userEvent.click(button);
+
+    expect(await screen.findByText(/unable to load sync logs/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /retry/i })).toBeInTheDocument();
   });
 });

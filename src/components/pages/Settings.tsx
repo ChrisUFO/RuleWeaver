@@ -270,6 +270,9 @@ export function Settings() {
                         Enabled automatically for commands with slash generation and adapters
                         selected
                       </div>
+                      <div className="text-[10px] text-muted-foreground/70 mt-1 uppercase tracking-wide">
+                        Applies when Generate Slash Commands is enabled on a command.
+                      </div>
                     </div>
                     <Switch checked={true} disabled={true} />
                   </div>

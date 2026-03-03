@@ -218,6 +218,8 @@ describe("Status lifecycle", () => {
     await waitFor(() => {
       expect(screen.getByText("No Filter Matches")).toBeInTheDocument();
     });
+
+    expect(screen.getByText(/status: missing/i)).toBeInTheDocument();
   });
 
   it("shows no status data yet state when unfiltered result set is empty", async () => {

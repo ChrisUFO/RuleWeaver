@@ -202,6 +202,17 @@ export function Status({ onNavigate }: { onNavigate?: (view: string, id?: string
   ).length;
   const hasActiveFilters =
     artifactTypeFilter !== "all" || adapterFilter !== "all" || statusFilter !== "all";
+  const activeFilters = [
+    artifactTypeFilter !== "all"
+      ? `Type: ${ARTIFACT_TYPE_OPTIONS.find((o) => o.value === artifactTypeFilter)?.label || artifactTypeFilter}`
+      : null,
+    adapterFilter !== "all"
+      ? `Tool: ${adapterOptions.find((o) => o.value === adapterFilter)?.label || adapterFilter}`
+      : null,
+    statusFilter !== "all"
+      ? `Status: ${STATUS_OPTIONS.find((o) => o.value === statusFilter)?.label || statusFilter}`
+      : null,
+  ].filter(Boolean) as string[];
 
   return (
     <motion.div
@@ -379,6 +390,17 @@ export function Status({ onNavigate }: { onNavigate?: (view: string, id?: string
                     <p className="text-sm text-muted-foreground">
                       No artifacts match the current filter selection.
                     </p>
+                    <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+                      {activeFilters.map((filter) => (
+                        <Badge
+                          key={filter}
+                          variant="outline"
+                          className="text-[10px] font-bold uppercase"
+                        >
+                          {filter}
+                        </Badge>
+                      ))}
+                    </div>
                   </>
                 ) : summary && summary.total === 0 ? (
                   <>
