@@ -200,6 +200,19 @@ export function Status({ onNavigate }: { onNavigate?: (view: string, id?: string
   const nonSyncedCount = entries.filter(
     (e) => e.status !== "synced" && e.status !== "unsupported"
   ).length;
+  const hasActiveFilters =
+    artifactTypeFilter !== "all" || adapterFilter !== "all" || statusFilter !== "all";
+  const activeFilters = [
+    artifactTypeFilter !== "all"
+      ? `Type: ${ARTIFACT_TYPE_OPTIONS.find((o) => o.value === artifactTypeFilter)?.label || artifactTypeFilter}`
+      : null,
+    adapterFilter !== "all"
+      ? `Tool: ${adapterOptions.find((o) => o.value === adapterFilter)?.label || adapterFilter}`
+      : null,
+    statusFilter !== "all"
+      ? `Status: ${STATUS_OPTIONS.find((o) => o.value === statusFilter)?.label || statusFilter}`
+      : null,
+  ].filter(Boolean) as string[];
 
   return (
     <motion.div
@@ -370,11 +383,42 @@ export function Status({ onNavigate }: { onNavigate?: (view: string, id?: string
               </div>
             ) : entries.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">
-                <CheckCircle className="h-12 w-12 text-green-500 mb-4" />
-                <h3 className="font-bold text-lg">All Synced</h3>
-                <p className="text-sm text-muted-foreground">
-                  All artifacts are in sync with the expected state.
-                </p>
+                {hasActiveFilters ? (
+                  <>
+                    <Clock className="h-12 w-12 text-muted-foreground mb-4" />
+                    <h3 className="font-bold text-lg">No Filter Matches</h3>
+                    <p className="text-sm text-muted-foreground">
+                      No artifacts match the current filter selection.
+                    </p>
+                    <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+                      {activeFilters.map((filter) => (
+                        <Badge
+                          key={filter}
+                          variant="outline"
+                          className="text-[10px] font-bold uppercase"
+                        >
+                          {filter}
+                        </Badge>
+                      ))}
+                    </div>
+                  </>
+                ) : summary && summary.total === 0 ? (
+                  <>
+                    <AlertCircle className="h-12 w-12 text-muted-foreground mb-4" />
+                    <h3 className="font-bold text-lg">No Status Data Yet</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Create and sync an artifact to populate status entries.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle className="h-12 w-12 text-green-500 mb-4" />
+                    <h3 className="font-bold text-lg">No Issues Detected</h3>
+                    <p className="text-sm text-muted-foreground">
+                      All artifacts are in sync with the expected state.
+                    </p>
+                  </>
+                )}
               </div>
             ) : (
               <div className="overflow-x-auto">

@@ -17,6 +17,13 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useRulesStore } from "@/stores/rulesStore";
 import { useToast } from "@/components/ui/toast";
 import { api } from "@/lib/tauri";
@@ -69,6 +76,13 @@ export function Dashboard({ onNavigate }: { onNavigate: (view: string, id?: stri
   const [resultsOpen, setResultsOpen] = useState(false);
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
   const [syncHistory, setSyncHistory] = useState<SyncHistoryEntry[]>([]);
+  const [fullHistoryOpen, setFullHistoryOpen] = useState(false);
+  const [isLoadingFullHistory, setIsLoadingFullHistory] = useState(false);
+  const [fullSyncHistory, setFullSyncHistory] = useState<SyncHistoryEntry[]>([]);
+  const [fullHistoryFilter, setFullHistoryFilter] = useState<
+    "all" | "success" | "partial" | "failed"
+  >("all");
+  const [fullHistoryError, setFullHistoryError] = useState<string | null>(null);
   const [hasDrift, setHasDrift] = useState<boolean | null | "error">(null);
   const [isCheckingDrift, setIsCheckingDrift] = useState(false);
 
@@ -103,6 +117,27 @@ export function Dashboard({ onNavigate }: { onNavigate: (view: string, id?: stri
       console.error("Failed to fetch sync history");
     }
   };
+
+  const handleViewFullLogs = async () => {
+    setIsLoadingFullHistory(true);
+    setFullHistoryError(null);
+    try {
+      const history = await api.sync.getHistory(100);
+      setFullSyncHistory(history);
+      setFullHistoryOpen(true);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      setFullHistoryError(message);
+      setFullHistoryOpen(true);
+      addToast({ title: "Failed to Load Logs", description: message, variant: "error" });
+    } finally {
+      setIsLoadingFullHistory(false);
+    }
+  };
+
+  const filteredFullHistory = fullSyncHistory.filter((entry) =>
+    fullHistoryFilter === "all" ? true : entry.status === fullHistoryFilter
+  );
 
   const handleSyncClick = async () => {
     setIsPreviewing(true);
@@ -417,10 +452,22 @@ export function Dashboard({ onNavigate }: { onNavigate: (view: string, id?: stri
                   <div className="p-4 bg-white/5 mt-auto">
                     <Button
                       variant="ghost"
+                      onClick={handleViewFullLogs}
+                      disabled={isLoadingFullHistory || syncHistory.length === 0}
+                      title={
+                        syncHistory.length === 0
+                          ? "Run a sync to generate logs"
+                          : "Open full sync log history"
+                      }
                       className="w-full h-8 text-xs font-bold text-primary/60 hover:text-primary hover:bg-transparent"
                     >
-                      View Full Logs
+                      {isLoadingFullHistory ? "Loading Logs..." : "View Full Logs"}
                     </Button>
+                    {syncHistory.length === 0 && (
+                      <p className="mt-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60 text-center">
+                        Run a sync to generate logs
+                      </p>
+                    )}
                   </div>
                 </Card>
               </motion.div>
@@ -451,6 +498,91 @@ export function Dashboard({ onNavigate }: { onNavigate: (view: string, id?: stri
       />
 
       <SyncResultsDialog open={resultsOpen} onOpenChange={setResultsOpen} result={syncResult} />
+
+      <Dialog open={fullHistoryOpen} onOpenChange={setFullHistoryOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Sync Logs</DialogTitle>
+          </DialogHeader>
+
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              {(
+                [
+                  ["all", "All"],
+                  ["success", "Success"],
+                  ["partial", "Partial"],
+                  ["failed", "Failed"],
+                ] as const
+              ).map(([value, label]) => (
+                <Button
+                  key={value}
+                  size="sm"
+                  variant={fullHistoryFilter === value ? "default" : "outline"}
+                  onClick={() => setFullHistoryFilter(value)}
+                  className="h-7 text-[10px] uppercase font-black tracking-wider"
+                >
+                  {label}
+                </Button>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Showing {filteredFullHistory.length} of {fullSyncHistory.length}
+            </p>
+          </div>
+
+          <div className="max-h-[50vh] overflow-auto space-y-2 pr-1">
+            {fullHistoryError ? (
+              <div className="rounded border border-destructive/30 bg-destructive/10 p-4 space-y-3">
+                <p className="text-sm font-semibold">Unable to load sync logs</p>
+                <p className="text-xs text-muted-foreground break-all">{fullHistoryError}</p>
+                <Button size="sm" variant="outline" onClick={handleViewFullLogs}>
+                  Retry
+                </Button>
+              </div>
+            ) : fullSyncHistory.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No sync logs available yet.</p>
+            ) : filteredFullHistory.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No logs match this filter.</p>
+            ) : (
+              filteredFullHistory.map((entry) => (
+                <div key={entry.id} className="rounded border border-white/10 p-3">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-semibold">
+                      {entry.filesWritten} artifact{entry.filesWritten === 1 ? "" : "s"} updated
+                    </span>
+                    <span className="text-muted-foreground">
+                      {new Date(entry.timestamp * 1000).toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="mt-1 flex items-center gap-2">
+                    <Badge
+                      variant={
+                        entry.status === "partial"
+                          ? "warning"
+                          : entry.status === "failed"
+                            ? "destructive"
+                            : "success"
+                      }
+                    >
+                      {entry.status}
+                    </Badge>
+                    <span className="text-xs text-muted-foreground uppercase">
+                      Triggered by {entry.triggeredBy}
+                    </span>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setFullHistoryOpen(false)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

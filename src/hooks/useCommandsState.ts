@@ -42,7 +42,6 @@ export interface UseCommandsStateReturn {
   selected: CommandModel | null;
   form: CommandFormData;
   testOutput: TestOutput | null;
-  history: ExecutionLog[];
   commandHistory: ExecutionLog[];
   historyFilter: string;
   historyPage: number;
@@ -102,7 +101,6 @@ export function useCommandsState(
   const [selectedId, setSelectedId] = useState<string>("");
   const [form, setForm] = useState<CommandFormData>(initialFormData);
   const [testOutput, setTestOutput] = useState<TestOutput | null>(null);
-  const [history, setHistory] = useState<ExecutionLog[]>([]);
   const [commandHistory, setCommandHistory] = useState<ExecutionLog[]>([]);
   const [historyFilter, setHistoryFilter] = useState<string>("all");
   const [historyPage, setHistoryPage] = useState<number>(0);
@@ -156,7 +154,7 @@ export function useCommandsState(
           HISTORY_PAGE_SIZE,
           page * HISTORY_PAGE_SIZE
         );
-        setHistory(logs);
+        setCommandHistory(logs);
         setHistoryHasMore(logs.length === HISTORY_PAGE_SIZE);
       } catch (error) {
         console.error("Failed to load filtered history", { error });
@@ -510,7 +508,6 @@ export function useCommandsState(
     selected,
     form,
     testOutput,
-    history,
     commandHistory,
     historyFilter,
     historyPage,

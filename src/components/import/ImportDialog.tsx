@@ -30,6 +30,18 @@ import {
 
 export type ImportSourceMode = "ai" | "file" | "directory" | "url" | "clipboard";
 
+const DROP_SCAN_CONCURRENCY = 5;
+
+const isAbsolutePath = (path: string): boolean => {
+  if (!path) return false;
+  return /^[A-Za-z]:[\\/]/.test(path) || path.startsWith("/") || path.startsWith("\\\\");
+};
+
+const hasSupportedImportExtension = (path: string): boolean => {
+  const normalized = path.toLowerCase();
+  return [".md", ".txt", ".json", ".yaml", ".yml"].some((ext) => normalized.endsWith(ext));
+};
+
 export interface ImportDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -37,6 +49,7 @@ export interface ImportDialogProps {
   artifactType: ImportArtifactType;
   title?: string;
   initialSourceMode?: ImportSourceMode | null;
+  initialFilePaths?: string[] | null;
 }
 
 export function ImportDialog({
@@ -46,6 +59,7 @@ export function ImportDialog({
   artifactType,
   title: titleProp,
   initialSourceMode,
+  initialFilePaths,
 }: ImportDialogProps) {
   const { tools } = useRegistryStore();
   const { addToast } = useToast();
@@ -172,6 +186,100 @@ export function ImportDialog({
     }
   }, [addToast, openImportPreview]);
 
+  const scanImportFromFilePaths = useCallback(
+    async (paths: string[]) => {
+      if (paths.length === 0) {
+        return;
+      }
+
+      const uniquePaths = Array.from(new Set(paths.map((path) => path.trim()).filter(Boolean)));
+      const validPaths = uniquePaths.filter(
+        (path) => isAbsolutePath(path) && hasSupportedImportExtension(path)
+      );
+      const rejectedCount = uniquePaths.length - validPaths.length;
+
+      if (validPaths.length === 0) {
+        addToast({
+          title: "No Valid Dropped Files",
+          description: "Drop absolute .md, .txt, .json, .yaml, or .yml file paths to scan.",
+          variant: "error",
+        });
+        return;
+      }
+
+      if (rejectedCount > 0) {
+        addToast({
+          title: "Some Files Skipped",
+          description: `${rejectedCount} dropped file(s) were ignored due to invalid path or extension.`,
+          variant: "warning",
+        });
+      }
+
+      setIsScanningImport(true);
+      try {
+        const scanPath = async (path: string) => {
+          try {
+            const scan = await api.ruleImport.scanFromFile(path);
+            return { path, scan };
+          } catch (error) {
+            return {
+              path,
+              scan: {
+                candidates: [],
+                errors: [error instanceof Error ? error.message : String(error)],
+              },
+            };
+          }
+        };
+
+        const queue = [...validPaths];
+        const workerCount = Math.min(DROP_SCAN_CONCURRENCY, queue.length);
+        const runWorker = async () => {
+          const results: Array<{
+            path: string;
+            scan: { candidates: ImportCandidate[]; errors: string[] };
+          }> = [];
+          while (true) {
+            const path = queue.shift();
+            if (!path) {
+              break;
+            }
+            results.push(await scanPath(path));
+          }
+          return results;
+        };
+
+        const workerResults = await Promise.all(
+          Array.from({ length: workerCount }, () => runWorker())
+        );
+
+        const scans: Array<{
+          path: string;
+          scan: { candidates: ImportCandidate[]; errors: string[] };
+        }> = workerResults.flat();
+
+        const candidates = scans.flatMap((entry) => entry.scan.candidates);
+        const errors = scans.flatMap((entry) =>
+          entry.scan.errors.map((error) => `${entry.path}: ${error}`)
+        );
+
+        const sourceLabel =
+          validPaths.length === 1 ? validPaths[0] : `${validPaths.length} dropped files`;
+        await openImportPreview("file", sourceLabel, candidates, errors);
+        addToast({
+          title: "Drop Scan Complete",
+          description: `Scanned ${validPaths.length} file(s), found ${candidates.length} candidate(s).`,
+          variant: "success",
+        });
+      } catch (error) {
+        toast.error(addToast, { title: "Scan Failed", error });
+      } finally {
+        setIsScanningImport(false);
+      }
+    },
+    [addToast, openImportPreview]
+  );
+
   const scanImportFromDirectory = useCallback(async () => {
     const selected = await open({ directory: true, multiple: false });
     if (!selected || Array.isArray(selected)) return;
@@ -260,14 +368,26 @@ export function ImportDialog({
       if (initialSourceMode === "ai") {
         void scanAiToolArtifacts();
       } else if (initialSourceMode === "file") {
-        void scanImportFromFile();
+        if (initialFilePaths && initialFilePaths.length > 0) {
+          void scanImportFromFilePaths(initialFilePaths);
+        } else {
+          void scanImportFromFile();
+        }
       } else if (initialSourceMode === "directory") {
         void scanImportFromDirectory();
       } else if (initialSourceMode === "url") {
         setUrlImportDialogOpen(true);
       }
     }
-  }, [initialSourceMode, isOpen, scanAiToolArtifacts, scanImportFromFile, scanImportFromDirectory]);
+  }, [
+    initialSourceMode,
+    initialFilePaths,
+    isOpen,
+    scanAiToolArtifacts,
+    scanImportFromFile,
+    scanImportFromFilePaths,
+    scanImportFromDirectory,
+  ]);
 
   const toggleImportCandidate = (id: string, checked: boolean) => {
     setSelectedImportIds((prev) => {

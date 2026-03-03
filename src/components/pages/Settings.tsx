@@ -267,20 +267,14 @@ export function Settings() {
                     <div>
                       <div className="font-bold">Auto-sync on Save</div>
                       <div className="text-xs text-muted-foreground">
-                        Automatically sync slash commands when saving a command
+                        Enabled automatically for commands with slash generation and adapters
+                        selected
+                      </div>
+                      <div className="text-[10px] text-muted-foreground/70 mt-1 uppercase tracking-wide">
+                        Applies when Generate Slash Commands is enabled on a command.
                       </div>
                     </div>
-                    <Switch
-                      checked={false}
-                      onCheckedChange={() => {
-                        addToast({
-                          title: "Coming Soon",
-                          description: "This feature will be available in a future update",
-                          variant: "info",
-                        });
-                      }}
-                      disabled={isLoading}
-                    />
+                    <Switch checked={true} disabled={true} />
                   </div>
 
                   <div className="pt-2">

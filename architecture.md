@@ -5,7 +5,7 @@ RuleWeaver is designed as a standalone desktop application. It requires deep fil
 ## Documentation
 
 - **AI Tools Reference:** See [`docs/ai-tools-commands-reference.md`](./docs/ai-tools-commands-reference.md) for comprehensive documentation on how each supported AI tool handles rules, custom commands, and skills.
-- **Implementation Plan:** See [`PLAN.md`](./PLAN.md) for the strategic implementation plan for GitHub issues #44, #46 (Integration Test Matrix, Coverage Gates, Docs/Runtime Parity).
+- **Implementation Plan:** See [`PLAN.md`](./PLAN.md) for the active strategic implementation plan (currently focused on execution trust and core UX reliability for issues #74-#78).
 
 ## Versioning Strategy
 
@@ -85,9 +85,10 @@ This layer handles all OS-level operations.
   - Available in two modes:
     - **Embedded mode:** runs inside RuleWeaver desktop app.
     - **Standalone mode:** runs via `ruleweaver-mcp --port <PORT>`.
-- **Skills Engine (Phase 3 Foundation):**
+- **Skills Engine:**
   - Stores and manages Skills metadata/instructions in database.
-  - Exposes CRUD in UI with MCP execution expansion planned for full Phase 3.
+  - Exposes full CRUD in UI and participates in reconciliation/status projections.
+  - Supports adapter-targeted native skill distribution via Skills Sync.
 - **Reconciliation Engine:**
   - Computes desired state from all database artifacts (rules, commands, skills).
   - Scans actual filesystem state across all adapter paths.

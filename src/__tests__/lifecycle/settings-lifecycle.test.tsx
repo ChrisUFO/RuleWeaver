@@ -219,4 +219,25 @@ describe("Settings lifecycle", () => {
 
     expect(handlers.toggleAdapter).toHaveBeenCalledWith("claude_code");
   });
+
+  it("shows slash command auto-sync as enabled behavior (not coming soon)", async () => {
+    const user = userEvent.setup();
+
+    renderWithProviders(<Settings />);
+
+    const capabilitiesTab = screen.getByRole("button", { name: /capabilities/i });
+    await user.click(capabilitiesTab);
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/enabled automatically for commands with slash generation/i)
+      ).toBeInTheDocument();
+    });
+
+    expect(
+      screen.getByText(/applies when generate slash commands is enabled/i)
+    ).toBeInTheDocument();
+
+    expect(screen.queryByText(/coming soon/i)).not.toBeInTheDocument();
+  });
 });

@@ -408,7 +408,7 @@ Enable/disable individual AI tool adapters:
 
 ### Slash Commands
 
-- Auto-sync on save (coming soon)
+- Auto-sync on save (enabled when slash generation is configured on a command)
 - Sync all slash commands manually
 
 ### Data Management
