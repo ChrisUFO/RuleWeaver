@@ -354,4 +354,52 @@ describe("RulesList import workflow", () => {
 
     expect(screen.getByText(/Drop Not Supported/i)).toBeInTheDocument();
   });
+
+  it("opens import dialog and scans dropped file path", async () => {
+    const { api } = await import("../../../lib/tauri");
+    renderWithProviders(<RulesList onSelectRule={vi.fn()} onCreateRule={vi.fn()} />);
+
+    vi.mocked(api.ruleImport.scanFromFile).mockResolvedValue({
+      candidates: [
+        {
+          id: "drop-1",
+          sourceType: "file",
+          sourceLabel: "File",
+          sourcePath: "C:/tmp/dropped-rule.md",
+          sourceTool: undefined,
+          name: "dropped-rule",
+          proposedName: "dropped-rule",
+          content: "rule content",
+          scope: "global",
+          targetPaths: null,
+          enabledAdapters: ["gemini"],
+          artifactType: "rule",
+          contentHash: "hash",
+          fileSize: 12,
+        },
+      ],
+      errors: [],
+    });
+
+    const dropZone = screen.getByText(/Drag and drop a rule file here/i).closest("div");
+    expect(dropZone).toBeTruthy();
+
+    const droppedFile = new File(["x"], "dropped-rule.md", { type: "text/markdown" }) as File & {
+      path?: string;
+    };
+    Object.defineProperty(droppedFile, "path", {
+      value: "C:/tmp/dropped-rule.md",
+      configurable: true,
+    });
+
+    const dataTransfer = { files: [droppedFile] } as unknown as DataTransfer;
+    fireEvent.drop(dropZone as Element, { dataTransfer });
+
+    await waitFor(() => {
+      expect(api.ruleImport.scanFromFile).toHaveBeenCalledWith("C:/tmp/dropped-rule.md");
+    });
+
+    expect(screen.getByText("Import Rules From File")).toBeInTheDocument();
+    expect(screen.getAllByText(/C:\/tmp\/dropped-rule\.md/i).length).toBeGreaterThan(0);
+  });
 });

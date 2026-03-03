@@ -17,6 +17,13 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useRulesStore } from "@/stores/rulesStore";
 import { useToast } from "@/components/ui/toast";
 import { api } from "@/lib/tauri";
@@ -69,6 +76,9 @@ export function Dashboard({ onNavigate }: { onNavigate: (view: string, id?: stri
   const [resultsOpen, setResultsOpen] = useState(false);
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
   const [syncHistory, setSyncHistory] = useState<SyncHistoryEntry[]>([]);
+  const [fullHistoryOpen, setFullHistoryOpen] = useState(false);
+  const [isLoadingFullHistory, setIsLoadingFullHistory] = useState(false);
+  const [fullSyncHistory, setFullSyncHistory] = useState<SyncHistoryEntry[]>([]);
   const [hasDrift, setHasDrift] = useState<boolean | null | "error">(null);
   const [isCheckingDrift, setIsCheckingDrift] = useState(false);
 
@@ -101,6 +111,23 @@ export function Dashboard({ onNavigate }: { onNavigate: (view: string, id?: stri
       }
     } catch {
       console.error("Failed to fetch sync history");
+    }
+  };
+
+  const handleViewFullLogs = async () => {
+    setIsLoadingFullHistory(true);
+    try {
+      const history = await api.sync.getHistory(100);
+      setFullSyncHistory(history);
+      setFullHistoryOpen(true);
+    } catch (error) {
+      addToast({
+        title: "Failed to Load Logs",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "error",
+      });
+    } finally {
+      setIsLoadingFullHistory(false);
     }
   };
 
@@ -417,9 +444,16 @@ export function Dashboard({ onNavigate }: { onNavigate: (view: string, id?: stri
                   <div className="p-4 bg-white/5 mt-auto">
                     <Button
                       variant="ghost"
+                      onClick={handleViewFullLogs}
+                      disabled={isLoadingFullHistory || syncHistory.length === 0}
+                      title={
+                        syncHistory.length === 0
+                          ? "Run a sync to generate logs"
+                          : "Open full sync log history"
+                      }
                       className="w-full h-8 text-xs font-bold text-primary/60 hover:text-primary hover:bg-transparent"
                     >
-                      View Full Logs
+                      {isLoadingFullHistory ? "Loading Logs..." : "View Full Logs"}
                     </Button>
                   </div>
                 </Card>
@@ -451,6 +485,55 @@ export function Dashboard({ onNavigate }: { onNavigate: (view: string, id?: stri
       />
 
       <SyncResultsDialog open={resultsOpen} onOpenChange={setResultsOpen} result={syncResult} />
+
+      <Dialog open={fullHistoryOpen} onOpenChange={setFullHistoryOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Sync Logs</DialogTitle>
+          </DialogHeader>
+
+          <div className="max-h-[50vh] overflow-auto space-y-2 pr-1">
+            {fullSyncHistory.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No sync logs available yet.</p>
+            ) : (
+              fullSyncHistory.map((entry) => (
+                <div key={entry.id} className="rounded border border-white/10 p-3">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-semibold">
+                      {entry.filesWritten} artifact{entry.filesWritten === 1 ? "" : "s"} updated
+                    </span>
+                    <span className="text-muted-foreground">
+                      {new Date(entry.timestamp * 1000).toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="mt-1 flex items-center gap-2">
+                    <Badge
+                      variant={
+                        entry.status === "partial"
+                          ? "warning"
+                          : entry.status === "failed"
+                            ? "destructive"
+                            : "success"
+                      }
+                    >
+                      {entry.status}
+                    </Badge>
+                    <span className="text-xs text-muted-foreground uppercase">
+                      Triggered by {entry.triggeredBy}
+                    </span>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setFullHistoryOpen(false)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

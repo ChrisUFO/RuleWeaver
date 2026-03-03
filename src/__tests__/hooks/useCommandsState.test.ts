@@ -172,4 +172,39 @@ describe("useCommandsState", () => {
       })
     );
   });
+
+  it("loads filtered history into rendered commandHistory state", async () => {
+    const { api } = await import("@/lib/tauri");
+    vi.mocked(api.execution.getHistoryFiltered).mockResolvedValue([
+      {
+        id: "hist-1",
+        commandId: "1",
+        commandName: "Test Command",
+        arguments: "{}",
+        stdout: "ok",
+        stderr: "",
+        exitCode: 0,
+        durationMs: 40,
+        executedAt: Date.now(),
+        triggeredBy: "test",
+      },
+    ]);
+
+    const { result } = renderHook(() => useCommandsState(mockAddToast));
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    });
+
+    act(() => {
+      result.current.handlers.setSelectedId("1");
+    });
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    expect(result.current.commandHistory).toHaveLength(1);
+    expect(result.current.commandHistory[0].id).toBe("hist-1");
+  });
 });

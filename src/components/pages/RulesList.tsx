@@ -53,6 +53,7 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
   const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [initialImportMode, setInitialImportMode] = useState<ImportSourceMode | null>(null);
+  const [initialImportFilePaths, setInitialImportFilePaths] = useState<string[] | null>(null);
   const [isDragImportActive, setIsDragImportActive] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -242,6 +243,7 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
 
   const openImport = (mode: ImportSourceMode) => {
     setInitialImportMode(mode);
+    setInitialImportFilePaths(null);
     setImportDialogOpen(true);
   };
 
@@ -264,9 +266,11 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
       return;
     }
 
-    const fileWithPath = droppedFiles[0] as File & { path?: string };
-    const filePath = fileWithPath.path;
-    if (!filePath) {
+    const filePaths = Array.from(droppedFiles)
+      .map((file) => (file as File & { path?: string }).path)
+      .filter((path): path is string => Boolean(path));
+
+    if (filePaths.length === 0) {
       addToast({
         title: "Drop Not Supported",
         description: "Use Import File if your platform does not expose drop file paths.",
@@ -276,10 +280,8 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
     }
 
     setInitialImportMode("file");
+    setInitialImportFilePaths(filePaths);
     setImportDialogOpen(true);
-    // Note: The new ImportDialog doesn't currently auto-scan specific files passed from parent,
-    // but the user can then just select the file again or we can enhance ImportDialog later.
-    // For now, it's enough to open the dialog.
   };
 
   const hasActiveFilters = searchQuery || scopeFilter !== "all" || adapterFilter !== "all";
@@ -463,6 +465,7 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
         onOpenChange={setImportDialogOpen}
         artifactType="rule"
         initialSourceMode={initialImportMode}
+        initialFilePaths={initialImportFilePaths}
         onImportComplete={async () => {
           await fetchRules();
         }}

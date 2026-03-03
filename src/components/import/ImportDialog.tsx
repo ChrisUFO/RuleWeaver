@@ -37,6 +37,7 @@ export interface ImportDialogProps {
   artifactType: ImportArtifactType;
   title?: string;
   initialSourceMode?: ImportSourceMode | null;
+  initialFilePaths?: string[] | null;
 }
 
 export function ImportDialog({
@@ -46,6 +47,7 @@ export function ImportDialog({
   artifactType,
   title: titleProp,
   initialSourceMode,
+  initialFilePaths,
 }: ImportDialogProps) {
   const { tools } = useRegistryStore();
   const { addToast } = useToast();
@@ -172,6 +174,47 @@ export function ImportDialog({
     }
   }, [addToast, openImportPreview]);
 
+  const scanImportFromFilePaths = useCallback(
+    async (paths: string[]) => {
+      if (paths.length === 0) {
+        return;
+      }
+
+      setIsScanningImport(true);
+      try {
+        const scans = await Promise.all(
+          paths.map(async (path) => {
+            try {
+              const scan = await api.ruleImport.scanFromFile(path);
+              return { path, scan };
+            } catch (error) {
+              return {
+                path,
+                scan: {
+                  candidates: [],
+                  errors: [error instanceof Error ? error.message : String(error)],
+                },
+              };
+            }
+          })
+        );
+
+        const candidates = scans.flatMap((entry) => entry.scan.candidates);
+        const errors = scans.flatMap((entry) =>
+          entry.scan.errors.map((error) => `${entry.path}: ${error}`)
+        );
+
+        const sourceLabel = paths.length === 1 ? paths[0] : `${paths.length} dropped files`;
+        await openImportPreview("file", sourceLabel, candidates, errors);
+      } catch (error) {
+        toast.error(addToast, { title: "Scan Failed", error });
+      } finally {
+        setIsScanningImport(false);
+      }
+    },
+    [addToast, openImportPreview]
+  );
+
   const scanImportFromDirectory = useCallback(async () => {
     const selected = await open({ directory: true, multiple: false });
     if (!selected || Array.isArray(selected)) return;
@@ -260,14 +303,26 @@ export function ImportDialog({
       if (initialSourceMode === "ai") {
         void scanAiToolArtifacts();
       } else if (initialSourceMode === "file") {
-        void scanImportFromFile();
+        if (initialFilePaths && initialFilePaths.length > 0) {
+          void scanImportFromFilePaths(initialFilePaths);
+        } else {
+          void scanImportFromFile();
+        }
       } else if (initialSourceMode === "directory") {
         void scanImportFromDirectory();
       } else if (initialSourceMode === "url") {
         setUrlImportDialogOpen(true);
       }
     }
-  }, [initialSourceMode, isOpen, scanAiToolArtifacts, scanImportFromFile, scanImportFromDirectory]);
+  }, [
+    initialSourceMode,
+    initialFilePaths,
+    isOpen,
+    scanAiToolArtifacts,
+    scanImportFromFile,
+    scanImportFromFilePaths,
+    scanImportFromDirectory,
+  ]);
 
   const toggleImportCandidate = (id: string, checked: boolean) => {
     setSelectedImportIds((prev) => {

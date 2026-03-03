@@ -196,4 +196,46 @@ describe("Status lifecycle", () => {
       expect(api.status.getArtifactStatus).toHaveBeenCalledTimes(2);
     });
   });
+
+  it("shows no filter matches state when filtered results are empty", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.status.getArtifactStatus).mockResolvedValue([]);
+    vi.mocked(api.status.getSummary).mockResolvedValue({
+      total: 0,
+      synced: 0,
+      outOfDate: 0,
+      missing: 0,
+      conflicted: 0,
+      unsupported: 0,
+      error: 0,
+    });
+
+    renderWithProviders(<Status />);
+
+    const selects = await screen.findAllByRole("combobox");
+    await user.selectOptions(selects[2], "missing");
+
+    await waitFor(() => {
+      expect(screen.getByText("No Filter Matches")).toBeInTheDocument();
+    });
+  });
+
+  it("shows no status data yet state when unfiltered result set is empty", async () => {
+    vi.mocked(api.status.getArtifactStatus).mockResolvedValue([]);
+    vi.mocked(api.status.getSummary).mockResolvedValue({
+      total: 0,
+      synced: 0,
+      outOfDate: 0,
+      missing: 0,
+      conflicted: 0,
+      unsupported: 0,
+      error: 0,
+    });
+
+    renderWithProviders(<Status />);
+
+    await waitFor(() => {
+      expect(screen.getByText("No Status Data Yet")).toBeInTheDocument();
+    });
+  });
 });
