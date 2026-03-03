@@ -217,31 +217,46 @@ export function ImportDialog({
 
       setIsScanningImport(true);
       try {
+        const scanPath = async (path: string) => {
+          try {
+            const scan = await api.ruleImport.scanFromFile(path);
+            return { path, scan };
+          } catch (error) {
+            return {
+              path,
+              scan: {
+                candidates: [],
+                errors: [error instanceof Error ? error.message : String(error)],
+              },
+            };
+          }
+        };
+
+        const queue = [...validPaths];
+        const workerCount = Math.min(DROP_SCAN_CONCURRENCY, queue.length);
+        const runWorker = async () => {
+          const results: Array<{
+            path: string;
+            scan: { candidates: ImportCandidate[]; errors: string[] };
+          }> = [];
+          while (true) {
+            const path = queue.shift();
+            if (!path) {
+              break;
+            }
+            results.push(await scanPath(path));
+          }
+          return results;
+        };
+
+        const workerResults = await Promise.all(
+          Array.from({ length: workerCount }, () => runWorker())
+        );
+
         const scans: Array<{
           path: string;
           scan: { candidates: ImportCandidate[]; errors: string[] };
-        }> = [];
-
-        for (let i = 0; i < validPaths.length; i += DROP_SCAN_CONCURRENCY) {
-          const batch = validPaths.slice(i, i + DROP_SCAN_CONCURRENCY);
-          const batchScans = await Promise.all(
-            batch.map(async (path) => {
-              try {
-                const scan = await api.ruleImport.scanFromFile(path);
-                return { path, scan };
-              } catch (error) {
-                return {
-                  path,
-                  scan: {
-                    candidates: [],
-                    errors: [error instanceof Error ? error.message : String(error)],
-                  },
-                };
-              }
-            })
-          );
-          scans.push(...batchScans);
-        }
+        }> = workerResults.flat();
 
         const candidates = scans.flatMap((entry) => entry.scan.candidates);
         const errors = scans.flatMap((entry) =>
