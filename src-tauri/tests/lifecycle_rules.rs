@@ -253,3 +253,171 @@ async fn test_global_rule_writes_to_global_path_only() {
         }
     }
 }
+
+#[tokio::test]
+async fn test_rule_file_model_matrix_single_file_global_and_local() {
+    let (db, home_dir) = make_env().await;
+    let repo_root = TempDir::new().unwrap();
+    let repo_path = repo_root.path().to_string_lossy().to_string();
+
+    db.create_rule(CreateRuleInput {
+        id: None,
+        name: "Global Claude".into(),
+        description: "single-file global".into(),
+        content: "Global Claude content".into(),
+        scope: Scope::Global,
+        target_paths: None,
+        enabled_adapters: vec![AdapterType::ClaudeCode],
+        enabled: true,
+    })
+    .await
+    .unwrap();
+
+    db.create_rule(CreateRuleInput {
+        id: None,
+        name: "Local Claude".into(),
+        description: "single-file local".into(),
+        content: "Local Claude content".into(),
+        scope: Scope::Local,
+        target_paths: Some(vec![repo_path.clone()]),
+        enabled_adapters: vec![AdapterType::ClaudeCode],
+        enabled: true,
+    })
+    .await
+    .unwrap();
+
+    let resolver = PathResolver::new_with_home(
+        home_dir.path().to_path_buf(),
+        vec![repo_root.path().to_path_buf()],
+    );
+    let engine = ReconciliationEngine::new_with_resolver(db, resolver);
+    let result = engine.reconcile(false, None).await.unwrap();
+    assert!(result.success);
+
+    let global_file = home_dir.path().join(".claude").join("CLAUDE.md");
+    let local_file = repo_root.path().join(".claude").join("CLAUDE.md");
+
+    assert!(global_file.exists(), "Expected global single-file output");
+    assert!(local_file.exists(), "Expected local single-file output");
+
+    let global_content = std::fs::read_to_string(global_file).unwrap();
+    let local_content = std::fs::read_to_string(local_file).unwrap();
+
+    assert!(global_content.contains("Global Claude content"));
+    assert!(local_content.contains("Local Claude content"));
+}
+
+#[tokio::test]
+async fn test_rule_file_model_matrix_per_rule_global_and_local() {
+    let (db, home_dir) = make_env().await;
+    let repo_root = TempDir::new().unwrap();
+    let repo_path = repo_root.path().to_string_lossy().to_string();
+
+    db.create_rule(CreateRuleInput {
+        id: None,
+        name: "Global OpenCode".into(),
+        description: "per-rule global".into(),
+        content: "Global OpenCode content".into(),
+        scope: Scope::Global,
+        target_paths: None,
+        enabled_adapters: vec![AdapterType::OpenCode],
+        enabled: true,
+    })
+    .await
+    .unwrap();
+
+    db.create_rule(CreateRuleInput {
+        id: None,
+        name: "Local OpenCode".into(),
+        description: "per-rule local".into(),
+        content: "Local OpenCode content".into(),
+        scope: Scope::Local,
+        target_paths: Some(vec![repo_path]),
+        enabled_adapters: vec![AdapterType::OpenCode],
+        enabled: true,
+    })
+    .await
+    .unwrap();
+
+    let resolver = PathResolver::new_with_home(
+        home_dir.path().to_path_buf(),
+        vec![repo_root.path().to_path_buf()],
+    );
+    let engine = ReconciliationEngine::new_with_resolver(db, resolver);
+    let result = engine.reconcile(false, None).await.unwrap();
+    assert!(result.success);
+
+    let global_file = home_dir
+        .path()
+        .join(".config")
+        .join("opencode")
+        .join("rules")
+        .join("global-opencode.md");
+    let local_file = repo_root
+        .path()
+        .join(".opencode")
+        .join("rules")
+        .join("local-opencode.md");
+
+    assert!(global_file.exists(), "Expected global per-rule output");
+    assert!(local_file.exists(), "Expected local per-rule output");
+
+    let global_content = std::fs::read_to_string(global_file).unwrap();
+    let local_content = std::fs::read_to_string(local_file).unwrap();
+    assert!(global_content.contains("Global OpenCode content"));
+    assert!(local_content.contains("Local OpenCode content"));
+}
+
+#[tokio::test]
+async fn test_rule_file_model_matrix_windsurf_mixed_scope_behavior() {
+    let (db, home_dir) = make_env().await;
+    let repo_root = TempDir::new().unwrap();
+    let repo_path = repo_root.path().to_string_lossy().to_string();
+
+    db.create_rule(CreateRuleInput {
+        id: None,
+        name: "Windsurf Global".into(),
+        description: "global should be per-rule".into(),
+        content: "Windsurf global content".into(),
+        scope: Scope::Global,
+        target_paths: None,
+        enabled_adapters: vec![AdapterType::Windsurf],
+        enabled: true,
+    })
+    .await
+    .unwrap();
+
+    db.create_rule(CreateRuleInput {
+        id: None,
+        name: "Windsurf Local".into(),
+        description: "local should be single-file".into(),
+        content: "Windsurf local content".into(),
+        scope: Scope::Local,
+        target_paths: Some(vec![repo_path]),
+        enabled_adapters: vec![AdapterType::Windsurf],
+        enabled: true,
+    })
+    .await
+    .unwrap();
+
+    let resolver = PathResolver::new_with_home(
+        home_dir.path().to_path_buf(),
+        vec![repo_root.path().to_path_buf()],
+    );
+    let engine = ReconciliationEngine::new_with_resolver(db, resolver);
+    let result = engine.reconcile(false, None).await.unwrap();
+    assert!(result.success);
+
+    let global_file = home_dir
+        .path()
+        .join(".windsurf")
+        .join("rules")
+        .join("windsurf-global.md");
+    let local_file = repo_root.path().join(".windsurfrules");
+
+    assert!(global_file.exists(), "Expected windsurf global per-rule output");
+    assert!(local_file.exists(), "Expected windsurf local single-file output");
+
+    let local_content = std::fs::read_to_string(local_file).unwrap();
+    assert!(local_content.contains("Windsurf local content"));
+}
