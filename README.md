@@ -91,6 +91,13 @@ If **Minimize to tray on close** is enabled (Settings -> MCP Server), closing th
 - `npm run test:rust` - Run Rust tests
 - `npm run gen:docs` - Regenerate `docs/SUPPORT_MATRIX.md` from the canonical tool registry
 
+### Pre-push Troubleshooting
+
+- Pre-push output is logged to `.git/hooks-logs/pre-push.log` by default.
+- If a step fails, the hook prints the failing command and exit code in the final lines.
+- You can override the log path for one run: `HOOK_LOG_PATH=/tmp/ruleweaver-pre-push.log git push`.
+- To inspect recent output quickly: `tail -n 200 .git/hooks-logs/pre-push.log`.
+
 ## Recommended IDE Setup
 
 - [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)

@@ -1,4 +1,4 @@
-#!/usr/bin/env sh
+#!/usr/bin/env bash
 
 # Check if this is a documentation-only change
 is_doc_only() {
@@ -35,35 +35,66 @@ if is_doc_only; then
   exit 0
 fi
 
-set -e
+set -euo pipefail
 
-echo "🔍 Running TypeScript type check..."
-npm run typecheck
+log_dir="$(git rev-parse --git-path hooks-logs)"
+mkdir -p "$log_dir"
+default_log_path="$log_dir/pre-push.log"
+log_path="${HOOK_LOG_PATH:-$default_log_path}"
 
-echo ""
-echo "🦀 Running Rust lint (clippy)..."
-npm run lint:rust
+: > "$log_path"
 
-echo ""
-echo "🧪 Running frontend tests..."
-npm run test
+print_line() {
+  printf "%s\n" "$1" | tee -a "$log_path"
+}
 
-echo ""
-echo "🧪 Running Rust tests (unit + integration)..."
-npm run test:rust
+run_step() {
+  local label="$1"
+  shift
+  local cmd="$*"
 
-echo ""
-echo "📄 Checking docs/SUPPORT_MATRIX.md is current..."
-npm run gen:docs
+  print_line ""
+  print_line "══════════════════════════════════════════════════"
+  print_line "▶ ${label}"
+  print_line "Command: ${cmd}"
+  print_line "══════════════════════════════════════════════════"
+
+  set +e
+  "$@" 2>&1 | tee -a "$log_path"
+  local status=${PIPESTATUS[0]}
+  set -e
+
+  if [ "$status" -ne 0 ]; then
+    print_line ""
+    print_line "✗ FAILED: ${label}"
+    print_line "Failing command: ${cmd}"
+    print_line "Exit code: ${status}"
+    print_line "Full log: ${log_path}"
+    return "$status"
+  fi
+
+  print_line "✓ PASSED: ${label}"
+}
+
+run_step "TypeScript type check" npm run typecheck
+run_step "Rust lint (clippy)" npm run lint:rust
+run_step "Frontend tests" npm run test
+run_step "Rust tests (unit + integration)" npm run test:rust
+
+run_step "Generate SUPPORT_MATRIX.md" npm run gen:docs
+
 if ! git diff --exit-code docs/SUPPORT_MATRIX.md > /dev/null 2>&1; then
-  echo ""
-  echo "══════════════════════════════════════════════════"
-  echo "  docs/SUPPORT_MATRIX.md is STALE."
-  echo "  Run: npm run gen:docs"
-  echo "  Then commit the updated file before pushing."
-  echo "══════════════════════════════════════════════════"
+  print_line ""
+  print_line "✗ FAILED: SUPPORT_MATRIX freshness check"
+  print_line "Failing command: git diff --exit-code docs/SUPPORT_MATRIX.md"
+  print_line "Exit code: 1"
+  print_line "docs/SUPPORT_MATRIX.md is STALE."
+  print_line "Run: npm run gen:docs"
+  print_line "Then commit the updated file before pushing."
+  print_line "Full log: ${log_path}"
   exit 1
 fi
 
-echo ""
-echo "✅ All pre-push checks passed"
+print_line ""
+print_line "✅ All pre-push checks passed"
+print_line "Log file: ${log_path}"

@@ -100,6 +100,18 @@ Run: npm run gen:docs
 Then commit the updated file before pushing.
 ```
 
+For easier diagnosis of any pre-push failure, full hook output is written to:
+
+```bash
+.git/hooks-logs/pre-push.log
+```
+
+You can override this location for a single push:
+
+```bash
+HOOK_LOG_PATH=/tmp/ruleweaver-pre-push.log git push
+```
+
 ---
 
 ## Earlier Milestones

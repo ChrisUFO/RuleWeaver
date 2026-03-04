@@ -4,7 +4,9 @@ mod common;
 use tempfile::TempDir;
 
 use ruleweaver_lib::{
-    models::{ImportConflictMode, ImportExecutionOptions, Scope},
+    models::{AdapterType, ImportConflictMode, ImportExecutionOptions, Scope},
+    path_resolver::PathResolver,
+    reconciliation::ReconciliationEngine,
     rule_import::{execute_import, scan_file_to_candidates},
 };
 
@@ -277,5 +279,63 @@ async fn test_import_conflict_replace_policy() {
     assert!(
         has_new_content || !has_old_content,
         "After replace: new version should exist or old should be gone"
+    );
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Test 5: Import + reconcile uses new per-rule path model (no legacy AGENTS.md)
+// ──────────────────────────────────────────────────────────────────────────────
+#[tokio::test]
+async fn test_import_reconcile_avoids_legacy_opencode_single_file_path() {
+    let db = common::make_db().await;
+    let import_dir = TempDir::new().unwrap();
+    let home_dir = TempDir::new().unwrap();
+
+    let file_path = write_temp_rule(
+        &import_dir,
+        "opencode-import.md",
+        "# OpenCode Imported\n\nImported for per-rule path verification.",
+    );
+
+    let scan = scan_file_to_candidates(&file_path, 1024 * 1024);
+    let result = execute_import(
+        db.clone(),
+        scan,
+        ImportExecutionOptions {
+            conflict_mode: ImportConflictMode::Skip,
+            default_scope: Some(Scope::Global),
+            default_adapters: Some(vec![AdapterType::OpenCode]),
+            selected_candidate_ids: None,
+            max_file_size_bytes: None,
+        },
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(result.errors.len(), 0, "Import should not report errors");
+    assert!(!result.imported_rules.is_empty(), "Expected imported rule");
+
+    let resolver = PathResolver::new_with_home(home_dir.path().to_path_buf(), vec![]);
+    let engine = ReconciliationEngine::new_with_resolver(db, resolver);
+    let reconcile_result = engine.reconcile(false, None).await.unwrap();
+    assert!(reconcile_result.success);
+
+    let new_path = home_dir
+        .path()
+        .join(".config")
+        .join("opencode")
+        .join("rules")
+        .join("opencode-import.md");
+    let legacy_path = home_dir.path().join(".config").join("opencode").join("AGENTS.md");
+
+    assert!(
+        new_path.exists(),
+        "Expected per-rule file to exist at {:?}",
+        new_path
+    );
+    assert!(
+        !legacy_path.exists(),
+        "Legacy single-file path should not be created: {:?}",
+        legacy_path
     );
 }
