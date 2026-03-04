@@ -1,10 +1,12 @@
 use std::sync::Arc;
-use tauri::State;
+use tauri::{Emitter, State};
 
 use crate::database::Database;
 use crate::error::{AppError, Result};
 use crate::file_storage;
-use crate::models::{CreateRuleInput, Rule, SyncResult, UpdateRuleInput};
+use crate::models::{
+    CreateRuleInput, Rule, SyncError, SyncProgressEvent, SyncResult, UpdateRuleInput,
+};
 
 use crate::sync::SyncEngine;
 use crate::templates::rules::{get_bundled_rule_templates, TemplateRule};
@@ -203,10 +205,77 @@ pub async fn toggle_rule(id: String, enabled: bool, db: State<'_, Arc<Database>>
 }
 
 #[tauri::command]
-pub async fn sync_rules(db: State<'_, Arc<Database>>) -> Result<SyncResult> {
+pub async fn sync_rules(db: State<'_, Arc<Database>>, app: tauri::AppHandle) -> Result<SyncResult> {
     let rules = db.get_all_rules().await?;
     let engine = SyncEngine::new(&db);
-    Ok(engine.sync_all(rules).await)
+    let preview = engine.preview(rules.clone()).await;
+    let total_files = preview.files_written.len();
+
+    let _ = app.emit("sync-progress", SyncProgressEvent::start(total_files));
+
+    let mut files_written = Vec::new();
+    let mut errors = Vec::new();
+
+    for (index, file_path) in preview.files_written.iter().enumerate() {
+        let current_index = index + 1;
+        let result = engine.sync_file_by_path(&rules, file_path).await;
+
+        match result {
+            Ok(()) => {
+                files_written.push(file_path.clone());
+                let _ = app.emit(
+                    "sync-progress",
+                    SyncProgressEvent::progress(
+                        file_path.clone(),
+                        current_index,
+                        total_files,
+                        true,
+                    ),
+                );
+            }
+            Err(error) => {
+                errors.push(SyncError {
+                    file_path: file_path.clone(),
+                    adapter_name: "Rule Sync".to_string(),
+                    message: error.to_string(),
+                });
+                let _ = app.emit(
+                    "sync-progress",
+                    SyncProgressEvent::progress(
+                        file_path.clone(),
+                        current_index,
+                        total_files,
+                        false,
+                    ),
+                );
+            }
+        }
+    }
+
+    let success = errors.is_empty();
+    let status = if errors.is_empty() {
+        "success"
+    } else if !files_written.is_empty() {
+        "partial"
+    } else {
+        "failed"
+    };
+
+    let _ = db
+        .add_sync_log(files_written.len() as u32, status, "manual")
+        .await;
+
+    let _ = app.emit(
+        "sync-progress",
+        SyncProgressEvent::complete(total_files, success),
+    );
+
+    Ok(SyncResult {
+        success,
+        files_written,
+        errors,
+        conflicts: vec![],
+    })
 }
 
 #[tauri::command]

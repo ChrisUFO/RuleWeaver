@@ -9,6 +9,11 @@ interface SyncProgressProps {
   completedFiles: { path: string; success: boolean }[];
 }
 
+function toDisplayName(path: string) {
+  const segments = path.split(/[\\/]/).filter(Boolean);
+  return segments.length > 0 ? segments[segments.length - 1] : path;
+}
+
 export function SyncProgress({
   isSyncing,
   currentFile,
@@ -25,7 +30,7 @@ export function SyncProgress({
       <div className="bg-card rounded-lg shadow-lg p-6 w-full max-w-md mx-4">
         <div className="flex items-center gap-3 mb-4">
           <Loader2 className="h-5 w-5 animate-spin text-primary" />
-          <h3 className="font-semibold">Syncing Rules...</h3>
+          <h3 className="font-semibold">Syncing Artifacts...</h3>
         </div>
 
         <div className="space-y-4">
@@ -33,7 +38,9 @@ export function SyncProgress({
             <div className="flex justify-between text-sm mb-2">
               <span className="text-muted-foreground">Progress</span>
               <span className="font-medium">
-                {currentFileIndex} of {totalFiles} files
+                {totalFiles > 0
+                  ? `${currentFileIndex} of ${totalFiles} files`
+                  : "Preparing file list"}
               </span>
             </div>
             <div className="h-2 bg-muted rounded-full overflow-hidden">
@@ -48,9 +55,13 @@ export function SyncProgress({
             <div className="text-sm">
               <span className="text-muted-foreground">Current: </span>
               <span className="font-mono text-xs bg-muted px-2 py-0.5 rounded">
-                {currentFile.split("/").pop()}
+                {toDisplayName(currentFile)}
               </span>
             </div>
+          )}
+
+          {!currentFile && (
+            <p className="text-xs text-muted-foreground">Waiting for sync step details...</p>
           )}
 
           {completedFiles.length > 0 && (
@@ -68,7 +79,7 @@ export function SyncProgress({
                   ) : (
                     <XCircle className="h-3 w-3" />
                   )}
-                  <span className="truncate">{file.path.split("/").pop()}</span>
+                  <span className="truncate">{toDisplayName(file.path)}</span>
                 </div>
               ))}
             </div>

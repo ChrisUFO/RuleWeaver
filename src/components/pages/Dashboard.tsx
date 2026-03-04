@@ -1,13 +1,13 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { motion, AnimatePresence, type Variants } from "framer-motion";
 import { cn } from "@/lib/utils";
 import {
   Plus,
   RefreshCw,
   FileText,
-  Globe,
-  FolderOpen,
-  Clock,
+  Terminal,
+  Brain,
   CheckCircle,
   History,
   Activity,
@@ -31,7 +31,9 @@ import { SyncPreviewDialog } from "@/components/sync/SyncPreviewDialog";
 import { SyncProgress } from "@/components/sync/SyncProgress";
 import { SyncResultsDialog } from "@/components/sync/SyncResultsDialog";
 import { DashboardSkeleton } from "@/components/ui/skeleton";
-import type { SyncResult, SyncHistoryEntry } from "@/types/rule";
+import { buildDashboardMetrics, emptyDashboardMetrics } from "@/lib/dashboard-metrics";
+import { applySyncProgressEvent, EMPTY_SYNC_PROGRESS_STATE } from "@/lib/sync-progress";
+import type { SyncResult, SyncHistoryEntry, SyncProgressEvent } from "@/types/rule";
 
 const container: Variants = {
   hidden: { opacity: 0 },
@@ -60,18 +62,16 @@ export function Dashboard({ onNavigate }: { onNavigate: (view: string, id?: stri
   const { rules, fetchRules, isLoading } = useRulesStore();
   const { addToast } = useToast();
   const [lastSync, setLastSync] = useState<string | null>(null);
+  const [metrics, setMetrics] = useState(emptyDashboardMetrics());
+  const [isLoadingMetrics, setIsLoadingMetrics] = useState(true);
+  const [metricsError, setMetricsError] = useState<string | null>(null);
 
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewResult, setPreviewResult] = useState<SyncResult | null>(null);
   const [isPreviewing, setIsPreviewing] = useState(false);
 
   const [isSyncing, setIsSyncing] = useState(false);
-  const [syncProgress, setSyncProgress] = useState({
-    currentFile: "",
-    currentFileIndex: 0,
-    totalFiles: 0,
-    completedFiles: [] as { path: string; success: boolean }[],
-  });
+  const [syncProgress, setSyncProgress] = useState(EMPTY_SYNC_PROGRESS_STATE);
 
   const [resultsOpen, setResultsOpen] = useState(false);
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
@@ -83,27 +83,66 @@ export function Dashboard({ onNavigate }: { onNavigate: (view: string, id?: stri
     "all" | "success" | "partial" | "failed"
   >("all");
   const [fullHistoryError, setFullHistoryError] = useState<string | null>(null);
-  const [hasDrift, setHasDrift] = useState<boolean | null | "error">(null);
-  const [isCheckingDrift, setIsCheckingDrift] = useState(false);
+
+  const refreshDashboardMetrics = useCallback(async () => {
+    setIsLoadingMetrics(true);
+    setMetricsError(null);
+    try {
+      const [rulesData, commands, skills, statusEntries] = await Promise.all([
+        api.rules.getAll(),
+        api.commands.getAll(),
+        api.skills.getAll(),
+        api.status.getArtifactStatus(),
+      ]);
+
+      setMetrics(
+        buildDashboardMetrics({
+          rules: rulesData,
+          commands,
+          skills,
+          statusEntries,
+        })
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to load dashboard metrics";
+      setMetricsError(message);
+      addToast({ title: "Dashboard Metrics Unavailable", description: message, variant: "error" });
+    } finally {
+      setIsLoadingMetrics(false);
+    }
+  }, [addToast]);
 
   useEffect(() => {
     fetchRules();
     fetchSyncHistory();
-    checkDrift();
-  }, [fetchRules]);
+    refreshDashboardMetrics();
+  }, [fetchRules, refreshDashboardMetrics]);
 
-  const checkDrift = async () => {
-    setIsCheckingDrift(true);
-    try {
-      const preview = await api.sync.previewSync();
-      setHasDrift(preview.filesWritten.length > 0 || preview.conflicts.length > 0);
-    } catch (error) {
-      console.error("Drift check failed:", error);
-      setHasDrift("error");
-    } finally {
-      setIsCheckingDrift(false);
-    }
-  };
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+
+    const bindSyncProgressListener = async () => {
+      unlisten = await listen<SyncProgressEvent>("sync-progress", (event) => {
+        if (event.payload.phase === "start") {
+          setIsSyncing(true);
+        }
+        if (event.payload.phase === "complete" || event.payload.phase === "error") {
+          setIsSyncing(false);
+        }
+        setSyncProgress((previous) => applySyncProgressEvent(previous, event.payload));
+      });
+    };
+
+    bindSyncProgressListener().catch((error) => {
+      console.error("Failed to bind sync progress listener", error);
+    });
+
+    return () => {
+      if (unlisten) {
+        unlisten();
+      }
+    };
+  }, []);
 
   const fetchSyncHistory = async () => {
     try {
@@ -161,12 +200,7 @@ export function Dashboard({ onNavigate }: { onNavigate: (view: string, id?: stri
     setIsSyncing(true);
 
     const totalFiles = previewResult?.filesWritten.length || 0;
-    setSyncProgress({
-      currentFile: "",
-      currentFileIndex: 0,
-      totalFiles,
-      completedFiles: [],
-    });
+    setSyncProgress({ ...EMPTY_SYNC_PROGRESS_STATE, totalFiles });
 
     try {
       const result = await api.sync.syncRules();
@@ -175,13 +209,14 @@ export function Dashboard({ onNavigate }: { onNavigate: (view: string, id?: stri
 
       if (result.success) {
         setLastSync(new Date().toLocaleTimeString());
-        fetchSyncHistory();
+        await Promise.all([fetchSyncHistory(), refreshDashboardMetrics()]);
         addToast({
           title: "Sync Complete",
           description: `${(result.filesWritten || []).length} files updated`,
           variant: "success",
         });
       } else {
+        await refreshDashboardMetrics();
         addToast({
           title: "Sync Completed with Issues",
           description: `${(result.errors || []).length} errors occurred`,
@@ -196,19 +231,70 @@ export function Dashboard({ onNavigate }: { onNavigate: (view: string, id?: stri
       });
     } finally {
       setIsSyncing(false);
-      setSyncProgress({
-        currentFile: "",
-        currentFileIndex: 0,
-        totalFiles: 0,
-        completedFiles: [],
-      });
+      setSyncProgress(EMPTY_SYNC_PROGRESS_STATE);
     }
   };
+
+  const healthState = useMemo<"loading" | "error" | "attention" | "synced">(() => {
+    if (isLoadingMetrics) {
+      return "loading";
+    }
+    if (metricsError) {
+      return "error";
+    }
+    return metrics.overallAttention > 0 ? "attention" : "synced";
+  }, [isLoadingMetrics, metricsError, metrics.overallAttention]);
+
+  const metricCards = [
+    {
+      label: "Total Artifacts",
+      value: metrics.totalArtifacts,
+      sub: `${metrics.activeArtifacts} Active`,
+      icon: FileText,
+      color: "text-blue-500",
+    },
+    {
+      label: "Rules",
+      value: metrics.rules.count,
+      sub:
+        metrics.rules.health.tracked > 0
+          ? metrics.rules.health.attention > 0
+            ? `${metrics.rules.health.attention} Need Attention`
+            : "All Synchronized"
+          : "No Status Data",
+      icon: FileText,
+      color: "text-emerald-500",
+    },
+    {
+      label: "Commands",
+      value: metrics.commands.count,
+      sub:
+        metrics.commands.health.tracked > 0
+          ? metrics.commands.health.attention > 0
+            ? `${metrics.commands.health.attention} Need Attention`
+            : "All Synchronized"
+          : "No Status Data",
+      icon: Terminal,
+      color: "text-amber-500",
+    },
+    {
+      label: "Skills",
+      value: metrics.skills.count,
+      sub:
+        metrics.skills.health.tracked > 0
+          ? metrics.skills.health.attention > 0
+            ? `${metrics.skills.health.attention} Need Attention`
+            : "All Synchronized"
+          : "No Status Data",
+      icon: Brain,
+      color: "text-cyan-500",
+    },
+  ];
 
   return (
     <>
       <AnimatePresence mode="wait">
-        {isLoading ? (
+        {isLoading || isLoadingMetrics ? (
           <motion.div
             key="skeleton"
             initial={{ opacity: 0 }}
@@ -235,7 +321,7 @@ export function Dashboard({ onNavigate }: { onNavigate: (view: string, id?: stri
                 </h1>
                 <p className="text-muted-foreground font-medium flex items-center gap-2">
                   <Activity className="h-3 w-3 text-primary animate-pulse" />
-                  System operational. {rules.length} artifacts monitored.
+                  System operational. {metrics.totalArtifacts} artifacts monitored.
                 </p>
               </div>
               <div className="flex gap-3">
@@ -262,36 +348,7 @@ export function Dashboard({ onNavigate }: { onNavigate: (view: string, id?: stri
 
             {/* Vital Stats Grid */}
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-              {[
-                {
-                  label: "Total Artifacts",
-                  value: rules.length,
-                  sub: `${rules.filter((r) => r.enabled).length} Active`,
-                  icon: FileText,
-                  color: "text-blue-500",
-                },
-                {
-                  label: "Global Scope",
-                  value: rules.filter((r) => r.scope === "global").length,
-                  sub: "Cross-repo sync",
-                  icon: Globe,
-                  color: "text-purple-500",
-                },
-                {
-                  label: "Local Scope",
-                  value: rules.filter((r) => r.scope === "local").length,
-                  sub: "Project-specific",
-                  icon: FolderOpen,
-                  color: "text-emerald-500",
-                },
-                {
-                  label: "Last Sync",
-                  value: lastSync || "N/A",
-                  sub: "Last successful audit",
-                  icon: Clock,
-                  color: "text-amber-500",
-                },
-              ].map((stat) => (
+              {metricCards.map((stat) => (
                 <motion.div key={stat.label} variants={item}>
                   <Card className="glass-card border-none overflow-hidden group hover:shadow-glow-primary transition-all duration-500">
                     <div className="absolute top-0 left-0 w-1 h-full bg-primary/20 group-hover:bg-primary transition-colors" />
@@ -318,7 +375,7 @@ export function Dashboard({ onNavigate }: { onNavigate: (view: string, id?: stri
 
             {/* Main Content Area */}
             <div className="grid gap-6 lg:grid-cols-3">
-              {/* Health Monitor / Drift Status */}
+              {/* Health Monitor */}
               <motion.div variants={item} className="lg:col-span-2">
                 <Card className="glass-card h-full bg-card/20 group overflow-hidden flex flex-col">
                   <CardHeader className="flex flex-row items-center justify-between">
@@ -326,9 +383,9 @@ export function Dashboard({ onNavigate }: { onNavigate: (view: string, id?: stri
                       <ShieldAlert
                         className={cn(
                           "h-5 w-5",
-                          hasDrift === "error"
+                          healthState === "error"
                             ? "text-destructive"
-                            : hasDrift
+                            : healthState === "attention"
                               ? "text-amber-500"
                               : "text-primary"
                         )}
@@ -336,7 +393,7 @@ export function Dashboard({ onNavigate }: { onNavigate: (view: string, id?: stri
                       Health Monitor
                     </CardTitle>
                     <div className="flex items-center gap-2">
-                      {isCheckingDrift && (
+                      {isLoadingMetrics && (
                         <Activity className="h-3 w-3 text-primary animate-pulse" />
                       )}
                       <Badge
@@ -352,18 +409,20 @@ export function Dashboard({ onNavigate }: { onNavigate: (view: string, id?: stri
                       <div
                         className={cn(
                           "h-32 w-32 rounded-full border-4 flex items-center justify-center relative transition-colors duration-500",
-                          hasDrift ? "border-amber-500/20" : "border-primary/20"
+                          healthState === "attention" ? "border-amber-500/20" : "border-primary/20"
                         )}
                       >
                         <div
                           className={cn(
                             "h-24 w-24 rounded-full border-4 flex items-center justify-center animate-pulse transition-colors duration-500",
-                            hasDrift ? "border-amber-500/10" : "border-primary/10"
+                            healthState === "attention"
+                              ? "border-amber-500/10"
+                              : "border-primary/10"
                           )}
                         >
-                          {hasDrift === "error" ? (
+                          {healthState === "error" ? (
                             <AlertTriangle className="h-12 w-12 text-destructive/80" />
-                          ) : hasDrift ? (
+                          ) : healthState === "attention" ? (
                             <ShieldAlert className="h-12 w-12 text-amber-500/80" />
                           ) : (
                             <CheckCircle className="h-12 w-12 text-primary/80" />
@@ -373,22 +432,25 @@ export function Dashboard({ onNavigate }: { onNavigate: (view: string, id?: stri
                     </div>
                     <div>
                       <h3 className="font-bold text-lg">
-                        {hasDrift === null
-                          ? "Initializing Audit..."
-                          : hasDrift === "error"
-                            ? "Audit Failure"
-                            : hasDrift
-                              ? "Drift Detected"
+                        {healthState === "loading"
+                          ? "Initializing Health View..."
+                          : healthState === "error"
+                            ? "Health Data Unavailable"
+                            : healthState === "attention"
+                              ? "Attention Required"
                               : "System Synchronized"}
                       </h3>
                       <p className="text-sm text-muted-foreground max-w-sm mx-auto">
-                        {hasDrift === null
-                          ? "Analyzing local artifacts and tool configurations..."
-                          : hasDrift === "error"
-                            ? "An error occurred while analyzing tool configurations. Check console for details."
-                            : hasDrift
-                              ? "Some local files have drifted from the master rules. Audit suggested."
-                              : "All tool configurations are in alignment with the master rules metadata."}
+                        {healthState === "loading"
+                          ? "Collecting artifact status across rules, commands, and skills..."
+                          : healthState === "error"
+                            ? "Unable to load artifact health right now. Sync history and actions remain available."
+                            : healthState === "attention"
+                              ? `${metrics.overallAttention} managed artifacts need attention.`
+                              : `All ${metrics.overallTrackedStatus} tracked artifacts are synchronized.`}
+                      </p>
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/50 mt-3">
+                        Last sync: {lastSync || "N/A"}
                       </p>
                     </div>
                   </CardContent>

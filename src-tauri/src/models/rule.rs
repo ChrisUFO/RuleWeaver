@@ -198,6 +198,66 @@ pub struct SyncError {
     pub message: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum SyncProgressPhase {
+    Start,
+    Progress,
+    Complete,
+    Error,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncProgressEvent {
+    pub phase: SyncProgressPhase,
+    pub current_file: Option<String>,
+    pub current_file_index: usize,
+    pub total_files: usize,
+    pub item_success: Option<bool>,
+}
+
+impl SyncProgressEvent {
+    pub fn start(total_files: usize) -> Self {
+        Self {
+            phase: SyncProgressPhase::Start,
+            current_file: None,
+            current_file_index: 0,
+            total_files,
+            item_success: None,
+        }
+    }
+
+    pub fn progress(
+        current_file: String,
+        current_file_index: usize,
+        total_files: usize,
+        item_success: bool,
+    ) -> Self {
+        Self {
+            phase: SyncProgressPhase::Progress,
+            current_file: Some(current_file),
+            current_file_index,
+            total_files,
+            item_success: Some(item_success),
+        }
+    }
+
+    pub fn complete(total_files: usize, success: bool) -> Self {
+        Self {
+            phase: if success {
+                SyncProgressPhase::Complete
+            } else {
+                SyncProgressPhase::Error
+            },
+            current_file: None,
+            current_file_index: total_files,
+            total_files,
+            item_success: None,
+        }
+    }
+}
+
 /// Summary of line-level differences between two versions of a file.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -404,5 +464,28 @@ mod tests {
         // Should NOT contain snake_case
         assert!(!json.contains("\"enabled_adapters\""));
         assert!(!json.contains("\"target_paths\""));
+    }
+
+    #[test]
+    fn test_sync_progress_event_start_defaults() {
+        let event = SyncProgressEvent::start(4);
+
+        assert_eq!(event.phase, SyncProgressPhase::Start);
+        assert_eq!(event.current_file, None);
+        assert_eq!(event.current_file_index, 0);
+        assert_eq!(event.total_files, 4);
+        assert_eq!(event.item_success, None);
+    }
+
+    #[test]
+    fn test_sync_progress_event_progress_serialization() {
+        let event = SyncProgressEvent::progress("/tmp/file.md".to_string(), 2, 5, true);
+        let json = serde_json::to_string(&event).unwrap();
+
+        assert!(json.contains("\"phase\":\"progress\""));
+        assert!(json.contains("\"currentFile\":\"/tmp/file.md\""));
+        assert!(json.contains("\"currentFileIndex\":2"));
+        assert!(json.contains("\"totalFiles\":5"));
+        assert!(json.contains("\"itemSuccess\":true"));
     }
 }
