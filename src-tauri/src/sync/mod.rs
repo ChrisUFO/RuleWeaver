@@ -38,6 +38,26 @@ fn validate_target_path(base_path: &str) -> Result<PathBuf> {
     crate::path_resolver::validate_target_path(base_path)
 }
 
+fn normalize_path_for_compare(path: &Path) -> String {
+    let normalized = path.to_string_lossy().replace('\\', "/");
+    let trimmed = normalized.trim_end_matches('/').to_string();
+    if cfg!(windows) {
+        trimmed.to_lowercase()
+    } else {
+        trimmed
+    }
+}
+
+fn normalize_path_string_for_compare(path: &str) -> String {
+    let normalized = path.replace('\\', "/");
+    let trimmed = normalized.trim_end_matches('/').to_string();
+    if cfg!(windows) {
+        trimmed.to_lowercase()
+    } else {
+        trimmed
+    }
+}
+
 pub trait SyncAdapter: Send + Sync {
     fn id(&self) -> AdapterType;
     fn name(&self) -> &str;
@@ -1000,11 +1020,12 @@ impl<'a> SyncEngine<'a> {
         }
 
         let path = PathBuf::from(file_path);
+        let normalized_path = normalize_path_for_compare(&path);
         let adapters = get_all_adapters();
 
         for adapter in &adapters {
             if let Ok(adapter_path) = adapter.global_path() {
-                if adapter_path == path {
+                if normalize_path_for_compare(&adapter_path) == normalized_path {
                     let has_global_rules = rules.iter().any(|r| {
                         r.enabled_adapters.contains(&adapter.id()) && r.scope == Scope::Global
                     });
@@ -1017,13 +1038,17 @@ impl<'a> SyncEngine<'a> {
             let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
             if file_name == adapter.file_name() {
                 if let Some(parent) = path.parent() {
-                    let parent_str = parent.to_string_lossy().to_string();
+                    let parent_str = normalize_path_for_compare(parent);
                     let has_local_rules = rules.iter().any(|r| {
                         r.enabled_adapters.contains(&adapter.id())
                             && r.scope == Scope::Local
                             && r.target_paths
                                 .as_ref()
-                                .map(|paths| paths.contains(&parent_str))
+                                .map(|paths| {
+                                    paths.iter().any(|path| {
+                                        normalize_path_string_for_compare(path) == parent_str
+                                    })
+                                })
                                 .unwrap_or(false)
                     });
                     if has_local_rules {

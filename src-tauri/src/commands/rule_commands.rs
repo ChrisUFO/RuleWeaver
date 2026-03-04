@@ -211,7 +211,9 @@ pub async fn sync_rules(db: State<'_, Arc<Database>>, app: tauri::AppHandle) -> 
     let preview = engine.preview(rules.clone()).await;
     let total_files = preview.files_written.len();
 
-    let _ = app.emit("sync-progress", SyncProgressEvent::start(total_files));
+    if let Err(error) = app.emit("sync-progress", SyncProgressEvent::start(total_files)) {
+        log::warn!("sync-progress start emit failed: {}", error);
+    }
 
     let mut files_written = Vec::new();
     let mut errors = Vec::new();
@@ -223,7 +225,7 @@ pub async fn sync_rules(db: State<'_, Arc<Database>>, app: tauri::AppHandle) -> 
         match result {
             Ok(()) => {
                 files_written.push(file_path.clone());
-                let _ = app.emit(
+                if let Err(error) = app.emit(
                     "sync-progress",
                     SyncProgressEvent::progress(
                         file_path.clone(),
@@ -231,7 +233,9 @@ pub async fn sync_rules(db: State<'_, Arc<Database>>, app: tauri::AppHandle) -> 
                         total_files,
                         true,
                     ),
-                );
+                ) {
+                    log::warn!("sync-progress progress emit failed: {}", error);
+                }
             }
             Err(error) => {
                 let adapter_name = engine
@@ -242,7 +246,7 @@ pub async fn sync_rules(db: State<'_, Arc<Database>>, app: tauri::AppHandle) -> 
                     adapter_name,
                     message: error.to_string(),
                 });
-                let _ = app.emit(
+                if let Err(error) = app.emit(
                     "sync-progress",
                     SyncProgressEvent::progress(
                         file_path.clone(),
@@ -250,7 +254,9 @@ pub async fn sync_rules(db: State<'_, Arc<Database>>, app: tauri::AppHandle) -> 
                         total_files,
                         false,
                     ),
-                );
+                ) {
+                    log::warn!("sync-progress progress emit failed: {}", error);
+                }
             }
         }
     }
@@ -268,10 +274,12 @@ pub async fn sync_rules(db: State<'_, Arc<Database>>, app: tauri::AppHandle) -> 
         .add_sync_log(files_written.len() as u32, status, "manual")
         .await;
 
-    let _ = app.emit(
+    if let Err(error) = app.emit(
         "sync-progress",
         SyncProgressEvent::complete(total_files, success),
-    );
+    ) {
+        log::warn!("sync-progress completion emit failed: {}", error);
+    }
 
     Ok(SyncResult {
         success,

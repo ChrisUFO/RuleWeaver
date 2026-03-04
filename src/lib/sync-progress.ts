@@ -23,6 +23,18 @@ function appendCompletedFile(
   if (last && last.path === path && last.success === success) {
     return completedFiles;
   }
+
+  const existingIndex = completedFiles.findIndex((file) => file.path === path);
+  if (existingIndex >= 0) {
+    if (completedFiles[existingIndex].success === success) {
+      return completedFiles;
+    }
+
+    const next = [...completedFiles];
+    next[existingIndex] = { path, success };
+    return next;
+  }
+
   return [...completedFiles, { path, success }];
 }
 

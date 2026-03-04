@@ -120,9 +120,10 @@ export function Dashboard({ onNavigate }: { onNavigate: (view: string, id?: stri
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
+    let cancelled = false;
 
     const bindSyncProgressListener = async () => {
-      unlisten = await listen<SyncProgressEvent>("sync-progress", (event) => {
+      const listener = await listen<SyncProgressEvent>("sync-progress", (event) => {
         if (event.payload.phase === "start") {
           setIsSyncing(true);
         }
@@ -131,6 +132,13 @@ export function Dashboard({ onNavigate }: { onNavigate: (view: string, id?: stri
         }
         setSyncProgress((previous) => applySyncProgressEvent(previous, event.payload));
       });
+
+      if (cancelled) {
+        listener();
+        return;
+      }
+
+      unlisten = listener;
     };
 
     bindSyncProgressListener().catch((error) => {
@@ -138,9 +146,8 @@ export function Dashboard({ onNavigate }: { onNavigate: (view: string, id?: stri
     });
 
     return () => {
-      if (unlisten) {
-        unlisten();
-      }
+      cancelled = true;
+      unlisten?.();
     };
   }, []);
 

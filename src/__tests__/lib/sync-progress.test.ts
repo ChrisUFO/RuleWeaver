@@ -55,4 +55,48 @@ describe("sync progress mapping", () => {
     expect(next.currentFile).toBe(previous.currentFile);
     expect(next.completedFiles).toEqual(previous.completedFiles);
   });
+
+  it("deduplicates repeated files and keeps latest success state", () => {
+    const previous = {
+      currentFile: "/tmp/a.md",
+      currentFileIndex: 1,
+      totalFiles: 2,
+      completedFiles: [
+        { path: "/tmp/a.md", success: false },
+        { path: "/tmp/b.md", success: true },
+      ],
+    };
+
+    const next = applySyncProgressEvent(previous, {
+      phase: "progress",
+      currentFile: "/tmp/a.md",
+      currentFileIndex: 2,
+      totalFiles: 2,
+      itemSuccess: true,
+    });
+
+    expect(next.completedFiles).toEqual([
+      { path: "/tmp/a.md", success: true },
+      { path: "/tmp/b.md", success: true },
+    ]);
+  });
+
+  it("preserves completion list on complete phase", () => {
+    const previous = {
+      currentFile: "/tmp/a.md",
+      currentFileIndex: 1,
+      totalFiles: 2,
+      completedFiles: [{ path: "/tmp/a.md", success: true }],
+    };
+
+    const next = applySyncProgressEvent(previous, {
+      phase: "complete",
+      currentFileIndex: 2,
+      totalFiles: 2,
+    });
+
+    expect(next.currentFileIndex).toBe(2);
+    expect(next.totalFiles).toBe(2);
+    expect(next.completedFiles).toEqual(previous.completedFiles);
+  });
 });
