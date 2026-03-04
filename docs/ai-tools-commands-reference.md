@@ -8,7 +8,7 @@ A comprehensive guide to how each AI coding tool handles **rules**, **custom com
 | ----------- | ----------------- | ------------------- | ----------------- | ----------------- | ----------------- | -------------------------------------- |
 | OpenCode    | ✅ Global + Local | ✅ Global + Local   | ✅ Global + Local | ✅ Global + Local | ✅ Global + Local | `~/.config/opencode/`, `.opencode/`    |
 | Claude Code | ✅ Global + Local | ✅ Global + Local   | ✅ Global + Local | ✅ Global + Local | ✅ Global + Local | `~/.claude/`, `.claude/`               |
-| Cline       | ✅ Global + Local | ✅ Global + Local   | ✅ Global + Local | ✅ Global + Local | ✅ Global + Local | `~/.clinerules`, `.clinerules/`        |
+| Cline       | ✅ Global + Local | ✅ Global + Local   | ✅ Global + Local | ✅ Global + Local | ✅ Global + Local | `~/Documents/Cline/`, `.clinerules/`   |
 | Gemini CLI  | ✅ Global + Local | ✅ Global + Local   | ✅ Global + Local | ✅ Global + Local | ✅ Global + Local | `~/.gemini/`, `.gemini/`               |
 | Cursor      | ✅ Global + Local | ✅ Global + Local   | ✅ Global + Local | ❌ No             | ❌ No             | `~/.cursor/`, `.cursor/`               |
 | Roo Code    | ✅ Global + Local | ✅ Global + Local   | ✅ Global + Local | ✅ Global + Local | ✅ Global + Local | `~/.roo/`, `.roo/`                     |

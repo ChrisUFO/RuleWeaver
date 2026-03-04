@@ -68,6 +68,7 @@ This layer handles all OS-level operations.
 - **File Storage Engine:** Reads/writes rule markdown files with YAML frontmatter, supports migration/rollback, and handles local+global rule roots.
 - **File Sync Engine (The "Adapters"):**
   - Because every AI tool expects a different filename (`GEMINI.md`, `AGENTS.md`, `.clinerules`) or specific frontmatter, the Sync Engine acts as a collection of **Tool-Specific Adapters (Post-Processors)**.
+  - Rule synchronization supports two models per adapter/scope: `single_file` (all rules aggregated into one file) and `per_rule_dir` (one `<slug>.md` file per rule inside a rules directory).
   - When a sync is triggered, the engine takes the master Rule and runs it through each active adapter. The adapter handles tool-specific formatting (e.g., prepending XML tags for Claude, or formatting TOML headers) and determines the exact target directory based on the "Scope".
   - Writes file outputs directly to the filesystem.
 - **Rule Import Engine (Bidirectional Sync):**

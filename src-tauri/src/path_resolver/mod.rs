@@ -23,7 +23,7 @@ use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
 use crate::error::{AppError, Result};
-use crate::models::registry::{ArtifactType, REGISTRY};
+use crate::models::registry::{ArtifactType, RuleFileModel, REGISTRY};
 use crate::models::{AdapterType, Scope};
 
 /// Validate a command name for path safety.
@@ -86,6 +86,31 @@ pub fn sanitize_skill_name(skill_name: &str) -> String {
         "unnamed-skill".to_string()
     } else {
         sanitized
+    }
+}
+
+/// Convert a rule display name into a safe filename slug.
+pub fn slug_rule_name(rule_name: &str) -> String {
+    let mut slug = String::with_capacity(rule_name.len());
+    let mut last_dash = false;
+
+    for ch in rule_name.chars() {
+        let c = ch.to_ascii_lowercase();
+        if c.is_ascii_alphanumeric() {
+            slug.push(c);
+            last_dash = false;
+        } else if !last_dash {
+            slug.push('-');
+            last_dash = true;
+        }
+    }
+
+    let slug = slug.trim_matches('-').to_string();
+    const MAX_SLUG_LEN: usize = 200;
+    if slug.len() > MAX_SLUG_LEN {
+        slug[..MAX_SLUG_LEN].trim_matches('-').to_string()
+    } else {
+        slug
     }
 }
 
@@ -347,6 +372,123 @@ impl PathResolver {
             scope: Scope::Local,
             exists,
             repo_root: Some(repo_root.to_path_buf()),
+        })
+    }
+
+    /// Resolve the rules directory for an adapter and scope.
+    pub fn rules_dir(
+        &self,
+        adapter: AdapterType,
+        scope: Scope,
+        repo_root: Option<&Path>,
+    ) -> Result<ResolvedPath> {
+        REGISTRY
+            .validate_support(&adapter, &scope, ArtifactType::Rule)
+            .map_err(|e| AppError::InvalidInput { message: e })?;
+
+        let entry = REGISTRY
+            .get(&adapter)
+            .ok_or_else(|| AppError::InvalidInput {
+                message: format!("Unknown adapter: {}", adapter.as_str()),
+            })?;
+
+        let path = match scope {
+            Scope::Global => {
+                if entry.rule_file_model(Scope::Global) == RuleFileModel::PerRuleDir {
+                    let dir =
+                        entry
+                            .paths
+                            .global_rules_dir
+                            .ok_or_else(|| AppError::InvalidInput {
+                                message: format!(
+                                    "Adapter {} is missing global_rules_dir for per-rule model",
+                                    adapter.as_str()
+                                ),
+                            })?;
+                    self.resolve_template(dir, None)?
+                } else {
+                    self.global_path(adapter, ArtifactType::Rule)?.path
+                }
+            }
+            Scope::Local => {
+                let root = repo_root.ok_or_else(|| AppError::InvalidInput {
+                    message: "Local rules_dir requires repo_root".to_string(),
+                })?;
+
+                if entry.rule_file_model(Scope::Local) == RuleFileModel::PerRuleDir {
+                    let dir = entry.paths.local_rules_dir_template.ok_or_else(|| {
+                        AppError::InvalidInput {
+                            message: format!(
+                                "Adapter {} is missing local_rules_dir_template for per-rule model",
+                                adapter.as_str()
+                            ),
+                        }
+                    })?;
+                    let mut resolved = self.resolve_template(dir, Some(root))?;
+                    if resolved.is_relative() {
+                        resolved = root.join(resolved);
+                    }
+                    resolved
+                } else {
+                    self.local_path(adapter, ArtifactType::Rule, root)?.path
+                }
+            }
+        };
+
+        Ok(ResolvedPath {
+            exists: path.exists(),
+            path,
+            adapter,
+            artifact: ArtifactType::Rule,
+            scope,
+            repo_root: repo_root.map(Path::to_path_buf),
+        })
+    }
+
+    /// Resolve a specific rule file path for an adapter and scope.
+    pub fn rule_file_path(
+        &self,
+        adapter: AdapterType,
+        rule_name: &str,
+        rule_id: Option<&str>,
+        scope: Scope,
+        repo_root: Option<&Path>,
+    ) -> Result<ResolvedPath> {
+        let entry = REGISTRY
+            .get(&adapter)
+            .ok_or_else(|| AppError::InvalidInput {
+                message: format!("Unknown adapter: {}", adapter.as_str()),
+            })?;
+
+        if entry.rule_file_model(scope) == RuleFileModel::SingleFile {
+            return match scope {
+                Scope::Global => self.global_path(adapter, ArtifactType::Rule),
+                Scope::Local => {
+                    let root = repo_root.ok_or_else(|| AppError::InvalidInput {
+                        message: "Local rule_file_path requires repo_root".to_string(),
+                    })?;
+                    self.local_path(adapter, ArtifactType::Rule, root)
+                }
+            };
+        }
+
+        let mut slug = slug_rule_name(rule_name);
+        if slug.is_empty() {
+            slug = match rule_id {
+                Some(id) => format!("rule-{}", id),
+                None => "rule".to_string(),
+            };
+        }
+
+        let dir = self.rules_dir(adapter, scope, repo_root)?;
+        let path = dir.path.join(format!("{}.md", slug));
+        Ok(ResolvedPath {
+            exists: path.exists(),
+            path,
+            adapter,
+            artifact: ArtifactType::Rule,
+            scope,
+            repo_root: repo_root.map(Path::to_path_buf),
         })
     }
 
@@ -1431,12 +1573,85 @@ mod tests {
         assert_eq!(resolve_workspace_path(absolute_path, base), absolute_path);
 
         // Traversal prevention
-        assert_eq!(resolve_workspace_path("./../../etc/passwd", base), base_path);
+        assert_eq!(
+            resolve_workspace_path("./../../etc/passwd", base),
+            base_path
+        );
 
         // Traversal prevention with variable
         assert_eq!(
             resolve_workspace_path("${WORKSPACE_ROOT}/../../etc/passwd", base),
             base_path
         );
+    }
+
+    #[test]
+    fn test_slug_rule_name_handles_edge_cases() {
+        assert_eq!(slug_rule_name("My Rule Name"), "my-rule-name");
+        assert_eq!(slug_rule_name("###"), "");
+        assert_eq!(slug_rule_name("rule_with spaces"), "rule-with-spaces");
+        assert_eq!(slug_rule_name("unicode-Rule-你好"), "unicode-rule");
+    }
+
+    #[test]
+    fn test_rule_file_path_uses_model_by_scope() {
+        let resolver = PathResolver::new().unwrap();
+        let repo_root = PathBuf::from("/tmp/repo");
+
+        let claude_global = resolver
+            .rule_file_path(
+                AdapterType::ClaudeCode,
+                "My Rule",
+                Some("r1"),
+                Scope::Global,
+                None,
+            )
+            .unwrap();
+        assert!(claude_global.path.to_string_lossy().ends_with("CLAUDE.md"));
+
+        let opencode_global = resolver
+            .rule_file_path(
+                AdapterType::OpenCode,
+                "My Rule",
+                Some("r1"),
+                Scope::Global,
+                None,
+            )
+            .unwrap();
+        assert!(opencode_global
+            .path
+            .to_string_lossy()
+            .ends_with("my-rule.md"));
+
+        let windsurf_local = resolver
+            .rule_file_path(
+                AdapterType::Windsurf,
+                "My Rule",
+                Some("r1"),
+                Scope::Local,
+                Some(&repo_root),
+            )
+            .unwrap();
+        assert!(windsurf_local
+            .path
+            .to_string_lossy()
+            .ends_with(".windsurfrules"));
+    }
+
+    #[test]
+    fn test_rules_dir_for_per_rule_adapters() {
+        let resolver = PathResolver::new().unwrap();
+        let repo_root = PathBuf::from("/tmp/repo");
+
+        let global_dir = resolver
+            .rules_dir(AdapterType::OpenCode, Scope::Global, None)
+            .unwrap();
+        assert!(global_dir.path.to_string_lossy().contains("opencode"));
+
+        let local_dir = resolver
+            .rules_dir(AdapterType::OpenCode, Scope::Local, Some(&repo_root))
+            .unwrap();
+        assert!(local_dir.path.to_string_lossy().contains(".opencode"));
+        assert!(local_dir.path.to_string_lossy().contains("rules"));
     }
 }

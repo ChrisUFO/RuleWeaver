@@ -22,6 +22,13 @@ pub enum ArtifactType {
     Skill,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RuleFileModel {
+    SingleFile,
+    PerRuleDir,
+}
+
 impl ArtifactType {
     pub fn as_str(&self) -> &'static str {
         match self {
@@ -49,6 +56,10 @@ pub struct ToolCapabilities {
 pub struct PathTemplates {
     pub global_path: &'static str,
     pub local_path_template: &'static str,
+    pub global_rules_dir: Option<&'static str>,
+    pub local_rules_dir_template: Option<&'static str>,
+    pub global_rule_file_model: RuleFileModel,
+    pub local_rule_file_model: RuleFileModel,
     pub global_commands_dir: Option<&'static str>,
     pub local_commands_dir: Option<&'static str>,
     pub command_stub_filename: &'static str,
@@ -69,6 +80,15 @@ pub struct ToolEntry {
     pub file_format: &'static str,
     pub slash_command_extension: Option<&'static str>,
     pub slash_command_argument_pattern: Option<&'static str>,
+}
+
+impl ToolEntry {
+    pub fn rule_file_model(&self, scope: Scope) -> RuleFileModel {
+        match scope {
+            Scope::Global => self.paths.global_rule_file_model,
+            Scope::Local => self.paths.local_rule_file_model,
+        }
+    }
 }
 
 pub struct ToolRegistry {
@@ -99,8 +119,12 @@ impl ToolRegistry {
                 icon: "antigravity",
                 capabilities: full_support.clone(),
                 paths: PathTemplates {
-                    global_path: "~/.gemini/GEMINI.md",
-                    local_path_template: ".gemini/GEMINI.md",
+                    global_path: "~/.gemini/antigravity/rules",
+                    local_path_template: ".agents/rules",
+                    global_rules_dir: Some("~/.gemini/antigravity/rules"),
+                    local_rules_dir_template: Some(".agents/rules"),
+                    global_rule_file_model: RuleFileModel::PerRuleDir,
+                    local_rule_file_model: RuleFileModel::PerRuleDir,
                     global_commands_dir: Some(".gemini/antigravity/global_workflows"),
                     local_commands_dir: Some(".agents/workflows"),
                     command_stub_filename: "COMMANDS.md",
@@ -126,6 +150,10 @@ impl ToolRegistry {
                 paths: PathTemplates {
                     global_path: "~/.gemini/GEMINI.md",
                     local_path_template: ".gemini/GEMINI.md",
+                    global_rules_dir: None,
+                    local_rules_dir_template: None,
+                    global_rule_file_model: RuleFileModel::SingleFile,
+                    local_rule_file_model: RuleFileModel::SingleFile,
                     global_commands_dir: Some(".gemini/commands"),
                     local_commands_dir: Some(".gemini/commands"),
                     command_stub_filename: "COMMANDS.md",
@@ -149,8 +177,12 @@ impl ToolRegistry {
                 icon: "opencode",
                 capabilities: full_support.clone(),
                 paths: PathTemplates {
-                    global_path: "~/.config/opencode/AGENTS.md",
-                    local_path_template: ".config/opencode/AGENTS.md",
+                    global_path: "~/.config/opencode/rules",
+                    local_path_template: ".opencode/rules",
+                    global_rules_dir: Some("~/.config/opencode/rules"),
+                    local_rules_dir_template: Some(".opencode/rules"),
+                    global_rule_file_model: RuleFileModel::PerRuleDir,
+                    local_rule_file_model: RuleFileModel::PerRuleDir,
                     global_commands_dir: Some(".config/opencode/commands"),
                     local_commands_dir: Some(".opencode/commands"),
                     command_stub_filename: "COMMANDS.md",
@@ -174,8 +206,12 @@ impl ToolRegistry {
                 icon: "cline",
                 capabilities: full_support.clone(),
                 paths: PathTemplates {
-                    global_path: "~/.clinerules",
+                    global_path: "~/Documents/Cline/Rules",
                     local_path_template: ".clinerules",
+                    global_rules_dir: Some("~/Documents/Cline/Rules"),
+                    local_rules_dir_template: Some(".clinerules"),
+                    global_rule_file_model: RuleFileModel::PerRuleDir,
+                    local_rule_file_model: RuleFileModel::PerRuleDir,
                     global_commands_dir: Some("Documents/Cline/Workflows"),
                     local_commands_dir: Some(".clinerules/workflows"),
                     command_stub_filename: "COMMANDS.md",
@@ -201,6 +237,10 @@ impl ToolRegistry {
                 paths: PathTemplates {
                     global_path: "~/.claude/CLAUDE.md",
                     local_path_template: ".claude/CLAUDE.md",
+                    global_rules_dir: None,
+                    local_rules_dir_template: None,
+                    global_rule_file_model: RuleFileModel::SingleFile,
+                    local_rule_file_model: RuleFileModel::SingleFile,
                     global_commands_dir: Some(".claude/commands"),
                     local_commands_dir: Some(".claude/commands"),
                     command_stub_filename: "COMMANDS.md",
@@ -224,8 +264,12 @@ impl ToolRegistry {
                 icon: "codex",
                 capabilities: full_support.clone(),
                 paths: PathTemplates {
-                    global_path: "~/.codex/AGENTS.md",
-                    local_path_template: ".codex/AGENTS.md",
+                    global_path: "~/.codex/rules",
+                    local_path_template: ".codex/rules",
+                    global_rules_dir: Some("~/.codex/rules"),
+                    local_rules_dir_template: Some(".codex/rules"),
+                    global_rule_file_model: RuleFileModel::PerRuleDir,
+                    local_rule_file_model: RuleFileModel::PerRuleDir,
                     global_commands_dir: Some(".agents/skills"),
                     local_commands_dir: Some(".agents/skills"),
                     command_stub_filename: "COMMANDS.md",
@@ -258,8 +302,12 @@ impl ToolRegistry {
                     supports_local_scope: true,
                 },
                 paths: PathTemplates {
-                    global_path: "~/.kilocode/rules/AGENTS.md",
-                    local_path_template: ".kilocode/rules/AGENTS.md",
+                    global_path: "~/.kilocode/rules",
+                    local_path_template: ".kilocode/rules",
+                    global_rules_dir: Some("~/.kilocode/rules"),
+                    local_rules_dir_template: Some(".kilocode/rules"),
+                    global_rule_file_model: RuleFileModel::PerRuleDir,
+                    local_rule_file_model: RuleFileModel::PerRuleDir,
                     global_commands_dir: None,
                     local_commands_dir: None,
                     command_stub_filename: "COMMANDS.md",
@@ -292,6 +340,10 @@ impl ToolRegistry {
                 paths: PathTemplates {
                     global_path: "~/.cursorrules",
                     local_path_template: ".cursorrules",
+                    global_rules_dir: None,
+                    local_rules_dir_template: None,
+                    global_rule_file_model: RuleFileModel::SingleFile,
+                    local_rule_file_model: RuleFileModel::SingleFile,
                     global_commands_dir: Some(".cursor/commands"),
                     local_commands_dir: Some(".cursor/commands"),
                     command_stub_filename: "COMMANDS.md",
@@ -324,8 +376,12 @@ impl ToolRegistry {
                     supports_local_scope: true,
                 },
                 paths: PathTemplates {
-                    global_path: "~/.windsurf/rules/rules.md",
-                    local_path_template: ".windsurf/rules/rules.md",
+                    global_path: "~/.windsurf/rules",
+                    local_path_template: ".windsurfrules",
+                    global_rules_dir: Some("~/.windsurf/rules"),
+                    local_rules_dir_template: None,
+                    global_rule_file_model: RuleFileModel::PerRuleDir,
+                    local_rule_file_model: RuleFileModel::SingleFile,
                     global_commands_dir: None,
                     local_commands_dir: None,
                     command_stub_filename: "COMMANDS.md",
@@ -349,8 +405,12 @@ impl ToolRegistry {
                 icon: "roocode",
                 capabilities: full_support.clone(),
                 paths: PathTemplates {
-                    global_path: "~/.roo/rules/rules.md",
-                    local_path_template: ".roo/rules/rules.md",
+                    global_path: "~/.roo/rules",
+                    local_path_template: ".roo/rules",
+                    global_rules_dir: Some("~/.roo/rules"),
+                    local_rules_dir_template: Some(".roo/rules"),
+                    global_rule_file_model: RuleFileModel::PerRuleDir,
+                    local_rule_file_model: RuleFileModel::PerRuleDir,
                     global_commands_dir: Some(".roo/commands"),
                     local_commands_dir: Some(".roo/commands"),
                     command_stub_filename: "COMMANDS.md",
@@ -469,16 +529,26 @@ fn path_configuration_table(
     let mut out = String::new();
     out.push_str("## Path Configuration\n\n");
     out.push_str("Paths prefixed with `~/` expand to the user home directory at runtime.\n\n");
-    out.push_str("| Tool | Rules (Global) | Rules (Local) | Commands Dir (Global) | Commands Dir (Local) | Skills Dir (Global) | Skills Dir (Local) |\n");
-    out.push_str("| ---- | -------------- | ------------- | --------------------- | -------------------- | ------------------- | ------------------ |\n");
+    out.push_str("| Tool | Rules (Global) | Rules (Local) | Rule Model (Global) | Rule Model (Local) | Rules Dir (Global) | Rules Dir (Local) | Commands Dir (Global) | Commands Dir (Local) | Skills Dir (Global) | Skills Dir (Local) |\n");
+    out.push_str("| ---- | -------------- | ------------- | ------------------- | ------------------ | ------------------ | ----------------- | --------------------- | -------------------- | ------------------- | ------------------ |\n");
     for adapter in sorted_adapters {
         if let Some(entry) = registry.get(adapter) {
             let p = &entry.paths;
             out.push_str(&format!(
-                "| {} | `{}` | `{}` | {} | {} | {} | {} |\n",
+                "| {} | `{}` | `{}` | {} | {} | {} | {} | {} | {} | {} | {} |\n",
                 entry.name,
                 p.global_path,
                 p.local_path_template,
+                match p.global_rule_file_model {
+                    RuleFileModel::SingleFile => "`single_file`",
+                    RuleFileModel::PerRuleDir => "`per_rule_dir`",
+                },
+                match p.local_rule_file_model {
+                    RuleFileModel::SingleFile => "`single_file`",
+                    RuleFileModel::PerRuleDir => "`per_rule_dir`",
+                },
+                opt(p.global_rules_dir).replace('|', "\\|"),
+                opt(p.local_rules_dir_template).replace('|', "\\|"),
                 opt(p.global_commands_dir).replace('|', "\\|"),
                 opt(p.local_commands_dir).replace('|', "\\|"),
                 opt(p.global_skills_dir).replace('|', "\\|"),
@@ -646,10 +716,61 @@ mod tests {
     fn test_path_templates_resolution() {
         let registry = get_registry();
         let opencode = registry.get(&AdapterType::OpenCode).unwrap();
-        assert_eq!(opencode.paths.global_path, "~/.config/opencode/AGENTS.md");
+        assert_eq!(opencode.paths.global_path, "~/.config/opencode/rules");
+        assert_eq!(opencode.paths.local_path_template, ".opencode/rules");
+    }
+
+    #[test]
+    fn test_rule_file_models_match_expected_adapters() {
+        let registry = get_registry();
+
+        let single_file = [
+            AdapterType::ClaudeCode,
+            AdapterType::Gemini,
+            AdapterType::Cursor,
+        ];
+        for adapter in single_file {
+            let entry = registry.get(&adapter).unwrap();
+            assert_eq!(
+                entry.rule_file_model(Scope::Global),
+                RuleFileModel::SingleFile
+            );
+            assert_eq!(entry.paths.global_rules_dir, None);
+        }
+
+        let per_rule_global = [
+            AdapterType::Antigravity,
+            AdapterType::OpenCode,
+            AdapterType::Cline,
+            AdapterType::Codex,
+            AdapterType::Kilo,
+            AdapterType::Windsurf,
+            AdapterType::RooCode,
+        ];
+        for adapter in per_rule_global {
+            let entry = registry.get(&adapter).unwrap();
+            assert_eq!(
+                entry.rule_file_model(Scope::Global),
+                RuleFileModel::PerRuleDir
+            );
+            assert!(entry.paths.global_rules_dir.is_some());
+        }
+
+        let windsurf = registry.get(&AdapterType::Windsurf).unwrap();
         assert_eq!(
-            opencode.paths.local_path_template,
-            ".config/opencode/AGENTS.md"
+            windsurf.rule_file_model(Scope::Local),
+            RuleFileModel::SingleFile
+        );
+    }
+
+    #[test]
+    fn test_antigravity_rules_path_regression_guard() {
+        let registry = get_registry();
+        let antigravity = registry.get(&AdapterType::Antigravity).unwrap();
+        assert_ne!(antigravity.paths.global_path, "~/.gemini/GEMINI.md");
+        assert_eq!(
+            antigravity.paths.global_rules_dir,
+            Some("~/.gemini/antigravity/rules")
         );
     }
 

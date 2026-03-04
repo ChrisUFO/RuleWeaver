@@ -159,7 +159,13 @@ export interface ToolCapabilities {
 export interface PathTemplates {
   globalPath: string;
   localPathTemplate: string;
+  globalRulesDir?: string | null;
+  localRulesDirTemplate?: string | null;
+  globalRuleFileModel?: RuleFileModel;
+  localRuleFileModel?: RuleFileModel;
 }
+
+export type RuleFileModel = "single_file" | "per_rule_dir";
 
 export interface ToolEntry {
   id: AdapterType;
@@ -168,6 +174,7 @@ export interface ToolEntry {
   icon: string;
   capabilities: ToolCapabilities;
   paths: PathTemplates;
+  ruleFileModel?: RuleFileModel;
   fileFormat: string;
 }
 

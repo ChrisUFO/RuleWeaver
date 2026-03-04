@@ -30,7 +30,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::database::Database;
 use crate::error::Result;
-use crate::models::registry::{ArtifactType, REGISTRY};
+use crate::models::registry::{ArtifactType, RuleFileModel, REGISTRY};
 use crate::models::{AdapterType, ReconcileOperation, ReconcileResultType, Scope};
 use crate::path_resolver::PathResolver;
 use crate::slash_commands::adapters::get_adapter;
@@ -197,11 +197,13 @@ impl ReconciliationEngine {
     async fn compute_desired_state_rules(&self, desired: &mut DesiredState) -> Result<()> {
         let rules = self.db.get_all_rules().await?;
 
-        for rule in rules {
-            if !rule.enabled {
-                continue;
-            }
+        let mut single_file_groups: HashMap<
+            (String, AdapterType, String, Option<PathBuf>),
+            Vec<(String, String)>,
+        > = HashMap::new();
+        let mut per_dir_slug_counts: HashMap<(String, String), usize> = HashMap::new();
 
+        for rule in rules.into_iter().filter(|r| r.enabled) {
             for adapter in &rule.enabled_adapters {
                 if REGISTRY
                     .validate_support(adapter, &rule.scope, ArtifactType::Rule)
@@ -210,50 +212,144 @@ impl ReconciliationEngine {
                     continue;
                 }
 
-                let formatted = formatter::format_rule_content(&rule.name, &rule.content);
-                let content_hash = compute_content_hash(&formatted);
+                let Some(entry) = REGISTRY.get(adapter) else {
+                    continue;
+                };
+                let model = entry.rule_file_model(rule.scope);
 
                 match rule.scope {
                     Scope::Global => {
-                        if let Ok(resolved) =
-                            self.path_resolver.global_path(*adapter, ArtifactType::Rule)
-                        {
-                            let path_str = resolved.path.to_string_lossy().to_string();
-                            desired.expected_paths.insert(
-                                path_str.clone(),
-                                ExpectedArtifact {
-                                    id: rule.id.clone(),
-                                    name: rule.name.clone(),
-                                    adapter: *adapter,
-                                    artifact_type: ArtifactType::Rule,
-                                    scope: Scope::Global,
-                                    repo_root: None,
-                                    content_hash: content_hash.clone(),
-                                    content: Some(formatted.clone()),
-                                },
-                            );
+                        match model {
+                            RuleFileModel::SingleFile => {
+                                if let Ok(resolved) =
+                                    self.path_resolver.global_path(*adapter, ArtifactType::Rule)
+                                {
+                                    let key = (
+                                        resolved.path.to_string_lossy().to_string(),
+                                        *adapter,
+                                        Scope::Global.as_str().to_string(),
+                                        None,
+                                    );
+                                    single_file_groups
+                                        .entry(key)
+                                        .or_default()
+                                        .push((rule.name.clone(), rule.content.clone()));
+                                }
+                            }
+                            RuleFileModel::PerRuleDir => {
+                                let Ok(dir) = self
+                                    .path_resolver
+                                    .rules_dir(*adapter, Scope::Global, None)
+                                else {
+                                    continue;
+                                };
+
+                                let mut base_slug = crate::path_resolver::slug_rule_name(&rule.name);
+                                if base_slug.is_empty() {
+                                    base_slug = format!("rule-{}", rule.id);
+                                }
+                                let collision_key =
+                                    (dir.path.to_string_lossy().to_string(), base_slug.clone());
+                                let next_idx = {
+                                    let count = per_dir_slug_counts.entry(collision_key).or_insert(0);
+                                    *count += 1;
+                                    *count
+                                };
+                                let final_slug = if next_idx == 1 {
+                                    base_slug
+                                } else {
+                                    format!("{}-{}", base_slug, next_idx)
+                                };
+                                let path = dir.path.join(format!("{}.md", final_slug));
+                                let content =
+                                    formatter::format_rule_content_standalone(&rule.name, &rule.content);
+                                let path_str = path.to_string_lossy().to_string();
+                                desired.expected_paths.insert(
+                                    path_str,
+                                    ExpectedArtifact {
+                                        id: rule.id.clone(),
+                                        name: rule.name.clone(),
+                                        adapter: *adapter,
+                                        artifact_type: ArtifactType::Rule,
+                                        scope: Scope::Global,
+                                        repo_root: None,
+                                        content_hash: compute_content_hash(&content),
+                                        content: Some(content),
+                                    },
+                                );
+                            }
                         }
                     }
                     Scope::Local => {
-                        if let Some(target_paths) = &rule.target_paths {
-                            for target_path in target_paths {
-                                if let Ok(resolved) = self.path_resolver.local_path(
-                                    *adapter,
-                                    ArtifactType::Rule,
-                                    Path::new(target_path),
-                                ) {
-                                    let path_str = resolved.path.to_string_lossy().to_string();
+                        let Some(target_paths) = &rule.target_paths else {
+                            continue;
+                        };
+
+                        for target_path in target_paths {
+                            let repo_root = PathBuf::from(target_path);
+                            match model {
+                                RuleFileModel::SingleFile => {
+                                    if let Ok(resolved) = self.path_resolver.local_path(
+                                        *adapter,
+                                        ArtifactType::Rule,
+                                        &repo_root,
+                                    ) {
+                                        let key = (
+                                            resolved.path.to_string_lossy().to_string(),
+                                            *adapter,
+                                            Scope::Local.as_str().to_string(),
+                                            Some(repo_root.clone()),
+                                        );
+                                        single_file_groups
+                                            .entry(key)
+                                            .or_default()
+                                            .push((rule.name.clone(), rule.content.clone()));
+                                    }
+                                }
+                                RuleFileModel::PerRuleDir => {
+                                    let Ok(dir) = self.path_resolver.rules_dir(
+                                        *adapter,
+                                        Scope::Local,
+                                        Some(&repo_root),
+                                    ) else {
+                                        continue;
+                                    };
+
+                                    let mut base_slug = crate::path_resolver::slug_rule_name(&rule.name);
+                                    if base_slug.is_empty() {
+                                        base_slug = format!("rule-{}", rule.id);
+                                    }
+                                    let collision_key =
+                                        (dir.path.to_string_lossy().to_string(), base_slug.clone());
+                                    let next_idx = {
+                                        let count =
+                                            per_dir_slug_counts.entry(collision_key).or_insert(0);
+                                        *count += 1;
+                                        *count
+                                    };
+                                    let final_slug = if next_idx == 1 {
+                                        base_slug
+                                    } else {
+                                        format!("{}-{}", base_slug, next_idx)
+                                    };
+
+                                    let path = dir.path.join(format!("{}.md", final_slug));
+                                    let content = formatter::format_rule_content_standalone(
+                                        &rule.name,
+                                        &rule.content,
+                                    );
+                                    let path_str = path.to_string_lossy().to_string();
                                     desired.expected_paths.insert(
-                                        path_str.clone(),
+                                        path_str,
                                         ExpectedArtifact {
                                             id: rule.id.clone(),
                                             name: rule.name.clone(),
                                             adapter: *adapter,
                                             artifact_type: ArtifactType::Rule,
                                             scope: Scope::Local,
-                                            repo_root: Some(PathBuf::from(target_path)),
-                                            content_hash: content_hash.clone(),
-                                            content: Some(formatted.clone()),
+                                            repo_root: Some(repo_root.clone()),
+                                            content_hash: compute_content_hash(&content),
+                                            content: Some(content),
                                         },
                                     );
                                 }
@@ -262,6 +358,33 @@ impl ReconciliationEngine {
                     }
                 }
             }
+        }
+
+        for ((path_str, adapter, scope_str, repo_root), grouped_rules) in single_file_groups {
+            let scope = if scope_str == Scope::Local.as_str() {
+                Scope::Local
+            } else {
+                Scope::Global
+            };
+            let pairs = grouped_rules
+                .iter()
+                .map(|(n, c)| (n.as_str(), c.as_str()))
+                .collect::<Vec<_>>();
+            let content = formatter::format_rule_content_aggregate(&pairs);
+            let entry_name = REGISTRY.get(&adapter).map(|e| e.name).unwrap_or("Rules");
+            desired.expected_paths.insert(
+                path_str,
+                ExpectedArtifact {
+                    id: format!("rules-{}-{}", adapter.as_str(), scope.as_str()),
+                    name: format!("{} Rules", entry_name),
+                    adapter,
+                    artifact_type: ArtifactType::Rule,
+                    scope,
+                    repo_root,
+                    content_hash: compute_content_hash(&content),
+                    content: Some(content),
+                },
+            );
         }
 
         Ok(())
@@ -529,16 +652,35 @@ impl ReconciliationEngine {
     /// Scan for rule artifacts.
     fn scan_actual_state_rules(&self, actual: &mut ActualState) -> Result<()> {
         for adapter in AdapterType::all() {
-            if let Ok(resolved) = self.path_resolver.global_path(adapter, ArtifactType::Rule) {
-                if let Some(found) = self.scan_artifact_file(
-                    &resolved.path,
-                    Some(adapter),
-                    Some(ArtifactType::Rule),
-                    Scope::Global,
-                )? {
-                    actual
-                        .found_paths
-                        .insert(resolved.path.to_string_lossy().to_string(), found);
+            if let Some(entry) = REGISTRY.get(&adapter) {
+                match entry.rule_file_model(Scope::Global) {
+                    RuleFileModel::SingleFile => {
+                        if let Ok(resolved) = self.path_resolver.global_path(adapter, ArtifactType::Rule)
+                        {
+                            if let Some(found) = self.scan_artifact_file(
+                                &resolved.path,
+                                Some(adapter),
+                                Some(ArtifactType::Rule),
+                                Scope::Global,
+                            )? {
+                                actual
+                                    .found_paths
+                                    .insert(resolved.path.to_string_lossy().to_string(), found);
+                            }
+                        }
+                    }
+                    RuleFileModel::PerRuleDir => {
+                        if let Ok(resolved_dir) =
+                            self.path_resolver.rules_dir(adapter, Scope::Global, None)
+                        {
+                            self.scan_rule_directory(
+                                &resolved_dir.path,
+                                adapter,
+                                Scope::Global,
+                                actual,
+                            )?;
+                        }
+                    }
                 }
             }
         }
@@ -546,21 +688,75 @@ impl ReconciliationEngine {
         let repo_roots = self.path_resolver.repository_roots();
         for repo_root in repo_roots {
             for adapter in AdapterType::all() {
-                if let Ok(resolved) =
-                    self.path_resolver
-                        .local_path(adapter, ArtifactType::Rule, repo_root)
-                {
-                    if let Some(found) = self.scan_artifact_file(
-                        &resolved.path,
-                        Some(adapter),
-                        Some(ArtifactType::Rule),
-                        Scope::Local,
-                    )? {
-                        actual
-                            .found_paths
-                            .insert(resolved.path.to_string_lossy().to_string(), found);
+                if let Some(entry) = REGISTRY.get(&adapter) {
+                    match entry.rule_file_model(Scope::Local) {
+                        RuleFileModel::SingleFile => {
+                            if let Ok(resolved) =
+                                self.path_resolver.local_path(adapter, ArtifactType::Rule, repo_root)
+                            {
+                                if let Some(found) = self.scan_artifact_file(
+                                    &resolved.path,
+                                    Some(adapter),
+                                    Some(ArtifactType::Rule),
+                                    Scope::Local,
+                                )? {
+                                    actual
+                                        .found_paths
+                                        .insert(resolved.path.to_string_lossy().to_string(), found);
+                                }
+                            }
+                        }
+                        RuleFileModel::PerRuleDir => {
+                            if let Ok(resolved_dir) =
+                                self.path_resolver
+                                    .rules_dir(adapter, Scope::Local, Some(repo_root))
+                            {
+                                self.scan_rule_directory(
+                                    &resolved_dir.path,
+                                    adapter,
+                                    Scope::Local,
+                                    actual,
+                                )?;
+                            }
+                        }
                     }
                 }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Scan a rules directory for managed `.md` files.
+    fn scan_rule_directory(
+        &self,
+        dir: &Path,
+        adapter: AdapterType,
+        scope: Scope,
+        actual: &mut ActualState,
+    ) -> Result<()> {
+        if !dir.exists() {
+            return Ok(());
+        }
+
+        let entries = match fs::read_dir(dir) {
+            Ok(e) => e,
+            Err(_) => return Ok(()),
+        };
+
+        for entry in entries {
+            let entry = entry?;
+            let path = entry.path();
+            if !path.is_file() || path.extension().map(|e| e != "md").unwrap_or(true) {
+                continue;
+            }
+
+            if let Some(found) =
+                self.scan_artifact_file(&path, Some(adapter), Some(ArtifactType::Rule), scope)?
+            {
+                actual
+                    .found_paths
+                    .insert(path.to_string_lossy().to_string(), found);
             }
         }
 
@@ -2078,6 +2274,131 @@ mod tests {
             rule_entries.is_empty(),
             "Disabled rules should not be in desired state"
         );
+    }
+
+    #[test]
+    fn test_single_file_rules_are_aggregated_per_adapter_path() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let db = rt.block_on(async {
+            let db = std::sync::Arc::new(crate::database::Database::new_in_memory().await.unwrap());
+
+            for idx in 1..=3 {
+                db.create_rule(crate::models::CreateRuleInput {
+                    id: None,
+                    name: format!("Claude Rule {}", idx),
+                    description: "aggregated".to_string(),
+                    content: format!("content {}", idx),
+                    scope: Scope::Global,
+                    enabled_adapters: vec![AdapterType::ClaudeCode],
+                    target_paths: None,
+                    enabled: true,
+                })
+                .await
+                .unwrap();
+            }
+            db
+        });
+
+        let engine = ReconciliationEngine::new(db).unwrap();
+        let desired = rt.block_on(async { engine.compute_desired_state().await.unwrap() });
+
+        let claude_rules: Vec<_> = desired
+            .expected_paths
+            .values()
+            .filter(|a| a.artifact_type == ArtifactType::Rule && a.adapter == AdapterType::ClaudeCode)
+            .collect();
+        assert_eq!(claude_rules.len(), 1, "Single-file adapter should emit one artifact");
+
+        let content = claude_rules[0].content.clone().unwrap_or_default();
+        assert!(content.contains("## Claude Rule 1"));
+        assert!(content.contains("## Claude Rule 2"));
+        assert!(content.contains("## Claude Rule 3"));
+    }
+
+    #[test]
+    fn test_per_rule_adapter_emits_one_file_per_rule() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let db = rt.block_on(async {
+            let db = std::sync::Arc::new(crate::database::Database::new_in_memory().await.unwrap());
+
+            for idx in 1..=3 {
+                db.create_rule(crate::models::CreateRuleInput {
+                    id: None,
+                    name: format!("OpenCode Rule {}", idx),
+                    description: "per-rule".to_string(),
+                    content: format!("body {}", idx),
+                    scope: Scope::Global,
+                    enabled_adapters: vec![AdapterType::OpenCode],
+                    target_paths: None,
+                    enabled: true,
+                })
+                .await
+                .unwrap();
+            }
+            db
+        });
+
+        let engine = ReconciliationEngine::new(db).unwrap();
+        let desired = rt.block_on(async { engine.compute_desired_state().await.unwrap() });
+
+        let opencode_rules: Vec<_> = desired
+            .expected_paths
+            .iter()
+            .filter(|(_, a)| a.artifact_type == ArtifactType::Rule && a.adapter == AdapterType::OpenCode)
+            .collect();
+        assert_eq!(opencode_rules.len(), 3);
+        for (path, _) in opencode_rules {
+            assert!(path.ends_with(".md"));
+        }
+    }
+
+    #[test]
+    fn test_per_rule_slug_collisions_get_numeric_suffixes() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let db = rt.block_on(async {
+            let db = std::sync::Arc::new(crate::database::Database::new_in_memory().await.unwrap());
+
+            db.create_rule(crate::models::CreateRuleInput {
+                id: None,
+                name: "Same Name".to_string(),
+                description: "dup-1".to_string(),
+                content: "first".to_string(),
+                scope: Scope::Global,
+                enabled_adapters: vec![AdapterType::OpenCode],
+                target_paths: None,
+                enabled: true,
+            })
+            .await
+            .unwrap();
+
+            db.create_rule(crate::models::CreateRuleInput {
+                id: None,
+                name: "Same Name".to_string(),
+                description: "dup-2".to_string(),
+                content: "second".to_string(),
+                scope: Scope::Global,
+                enabled_adapters: vec![AdapterType::OpenCode],
+                target_paths: None,
+                enabled: true,
+            })
+            .await
+            .unwrap();
+
+            db
+        });
+
+        let engine = ReconciliationEngine::new(db).unwrap();
+        let desired = rt.block_on(async { engine.compute_desired_state().await.unwrap() });
+
+        let paths: Vec<_> = desired
+            .expected_paths
+            .iter()
+            .filter(|(_, a)| a.artifact_type == ArtifactType::Rule && a.adapter == AdapterType::OpenCode)
+            .map(|(path, _)| path.clone())
+            .collect();
+
+        assert!(paths.iter().any(|p| p.ends_with("same-name.md")));
+        assert!(paths.iter().any(|p| p.ends_with("same-name-2.md")));
     }
 
     // =====================================
