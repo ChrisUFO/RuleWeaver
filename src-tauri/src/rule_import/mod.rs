@@ -24,7 +24,6 @@ use crate::models::{
     ImportSkip, Rule, Scope, Skill, UpdateCommandInput, UpdateRuleInput, UpdateSkillInput,
 };
 use crate::models::registry::{ArtifactType, RuleFileModel, REGISTRY};
-use crate::sync::SyncEngine;
 
 const DEFAULT_IMPORT_FILE_LIMIT: u64 = 10 * 1024 * 1024;
 const MAX_IMPORT_CANDIDATES: usize = 1000;
@@ -846,17 +845,9 @@ pub async fn execute_import(
     )
     .await?;
 
-    let engine = SyncEngine::new(&db);
-    let all_rules = db.get_all_rules().await?;
-    let sync_res = engine.sync_all(all_rules);
-    for err in sync_res.await.errors {
-        result.errors.push(format!(
-            "Sync error for {}: {}",
-            err.adapter_name, err.message
-        ));
-    }
-
-    // Comprehensive reconciliation to ensure all artifact types are synced to disk
+    // Comprehensive reconciliation ensures all artifact types are synced to disk.
+    // This supersedes legacy direct rule sync in import flow and avoids duplicate
+    // writes / stale path assumptions.
     reconcile_after_mutation(db.clone()).await;
 
     for err in scan_errors {
