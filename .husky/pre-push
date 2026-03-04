@@ -50,7 +50,8 @@ print_line() {
 
 run_step() {
   local label="$1"
-  local cmd="$2"
+  shift
+  local cmd="$*"
 
   print_line ""
   print_line "══════════════════════════════════════════════════"
@@ -59,7 +60,7 @@ run_step() {
   print_line "══════════════════════════════════════════════════"
 
   set +e
-  eval "$cmd" 2>&1 | tee -a "$log_path"
+  "$@" 2>&1 | tee -a "$log_path"
   local status=${PIPESTATUS[0]}
   set -e
 
@@ -75,12 +76,12 @@ run_step() {
   print_line "✓ PASSED: ${label}"
 }
 
-run_step "TypeScript type check" "npm run typecheck"
-run_step "Rust lint (clippy)" "npm run lint:rust"
-run_step "Frontend tests" "npm run test"
-run_step "Rust tests (unit + integration)" "npm run test:rust"
+run_step "TypeScript type check" npm run typecheck
+run_step "Rust lint (clippy)" npm run lint:rust
+run_step "Frontend tests" npm run test
+run_step "Rust tests (unit + integration)" npm run test:rust
 
-run_step "Generate SUPPORT_MATRIX.md" "npm run gen:docs"
+run_step "Generate SUPPORT_MATRIX.md" npm run gen:docs
 
 if ! git diff --exit-code docs/SUPPORT_MATRIX.md > /dev/null 2>&1; then
   print_line ""
