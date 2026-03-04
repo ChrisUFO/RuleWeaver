@@ -51,12 +51,31 @@ async fn test_rule_create_produces_desired_state() {
         desired.expected_paths.len()
     );
 
-    // All expected paths should reference the rule content
+    // All expected rule artifacts should include the created rule content.
+    // Per-rule adapters keep the rule name; single-file adapters use an aggregate name.
+    let mut saw_rule_artifact = false;
+    let mut saw_per_rule_name = false;
     for (_path, artifact) in &desired.expected_paths {
         if artifact.artifact_type == ruleweaver_lib::models::registry::ArtifactType::Rule {
-            assert_eq!(artifact.name, "test-rule");
+            saw_rule_artifact = true;
+            assert!(
+                artifact
+                    .content
+                    .as_deref()
+                    .unwrap_or_default()
+                    .contains("Always use TypeScript."),
+                "Rule artifact should contain rule content"
+            );
+            if artifact.name == "test-rule" {
+                saw_per_rule_name = true;
+            }
         }
     }
+    assert!(saw_rule_artifact, "Expected at least one rule artifact");
+    assert!(
+        saw_per_rule_name,
+        "Expected a per-rule artifact named 'test-rule'"
+    );
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
