@@ -163,6 +163,9 @@ pub struct ReconciliationEngine {
     path_resolver: PathResolver,
 }
 
+type RuleAggregateKey = (String, AdapterType, String, Option<PathBuf>);
+type RuleAggregateEntries = Vec<(String, String)>;
+
 impl ReconciliationEngine {
     /// Create a new ReconciliationEngine.
     pub fn new(db: Arc<Database>) -> Result<Self> {
@@ -197,10 +200,8 @@ impl ReconciliationEngine {
     async fn compute_desired_state_rules(&self, desired: &mut DesiredState) -> Result<()> {
         let rules = self.db.get_all_rules().await?;
 
-        let mut single_file_groups: HashMap<
-            (String, AdapterType, String, Option<PathBuf>),
-            Vec<(String, String)>,
-        > = HashMap::new();
+        let mut single_file_groups: HashMap<RuleAggregateKey, RuleAggregateEntries> =
+            HashMap::new();
         let mut per_dir_slug_counts: HashMap<(String, String), usize> = HashMap::new();
 
         for rule in rules.into_iter().filter(|r| r.enabled) {
