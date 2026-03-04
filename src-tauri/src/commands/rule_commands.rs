@@ -234,9 +234,12 @@ pub async fn sync_rules(db: State<'_, Arc<Database>>, app: tauri::AppHandle) -> 
                 );
             }
             Err(error) => {
+                let adapter_name = engine
+                    .adapter_name_for_path(&rules, file_path)
+                    .unwrap_or_else(|| "Rule Sync".to_string());
                 errors.push(SyncError {
                     file_path: file_path.clone(),
-                    adapter_name: "Rule Sync".to_string(),
+                    adapter_name,
                     message: error.to_string(),
                 });
                 let _ = app.emit(

@@ -993,6 +993,48 @@ impl<'a> SyncEngine<'a> {
             message: format!("No adapter found for path: {}", file_path),
         })
     }
+
+    pub fn adapter_name_for_path(&self, rules: &[Rule], file_path: &str) -> Option<String> {
+        if validate_target_path(file_path).is_err() {
+            return None;
+        }
+
+        let path = PathBuf::from(file_path);
+        let adapters = get_all_adapters();
+
+        for adapter in &adapters {
+            if let Ok(adapter_path) = adapter.global_path() {
+                if adapter_path == path {
+                    let has_global_rules = rules.iter().any(|r| {
+                        r.enabled_adapters.contains(&adapter.id()) && r.scope == Scope::Global
+                    });
+                    if has_global_rules {
+                        return Some(adapter.name().to_string());
+                    }
+                }
+            }
+
+            let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            if file_name == adapter.file_name() {
+                if let Some(parent) = path.parent() {
+                    let parent_str = parent.to_string_lossy().to_string();
+                    let has_local_rules = rules.iter().any(|r| {
+                        r.enabled_adapters.contains(&adapter.id())
+                            && r.scope == Scope::Local
+                            && r.target_paths
+                                .as_ref()
+                                .map(|paths| paths.contains(&parent_str))
+                                .unwrap_or(false)
+                    });
+                    if has_local_rules {
+                        return Some(adapter.name().to_string());
+                    }
+                }
+            }
+        }
+
+        None
+    }
 }
 
 /// Computes a simple line-level diff summary between two content strings.
