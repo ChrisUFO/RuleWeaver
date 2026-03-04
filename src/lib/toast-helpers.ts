@@ -4,10 +4,16 @@ type ToastFunction = ReturnType<typeof useToast>["addToast"];
 
 type ToastVariant = "success" | "error" | "warning" | "info";
 
+export interface ToastAction {
+  label: string;
+  onClick: () => void;
+}
+
 interface ToastOptions {
   title: string;
   description: string;
   duration?: number;
+  action?: ToastAction;
 }
 
 function createToast(addToast: ToastFunction, variant: ToastVariant) {
@@ -17,6 +23,7 @@ function createToast(addToast: ToastFunction, variant: ToastVariant) {
       description: options.description,
       variant,
       duration: options.duration,
+      action: options.action,
     });
   };
 }
@@ -25,16 +32,28 @@ export const toast = {
   success: (addToast: ToastFunction, options: ToastOptions) =>
     createToast(addToast, "success")(options),
 
-  error: (addToast: ToastFunction, options: ToastOptions | { title: string; error: unknown }) => {
+  error: (
+    addToast: ToastFunction,
+    options:
+      | (ToastOptions & { error?: unknown })
+      | { title: string; error: unknown; action?: ToastAction }
+  ) => {
     const description =
-      "error" in options
+      "error" in options && options.error !== undefined
         ? options.error instanceof Error
           ? options.error.message
           : typeof options.error === "string"
             ? options.error
             : "Unknown error"
-        : options.description;
-    createToast(addToast, "error")({ ...options, description });
+        : (options as ToastOptions).description;
+    createToast(
+      addToast,
+      "error"
+    )({
+      ...options,
+      description,
+      action: options.action,
+    });
   },
 
   warning: (addToast: ToastFunction, options: ToastOptions) =>

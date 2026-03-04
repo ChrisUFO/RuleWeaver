@@ -1,13 +1,9 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 import { X, CheckCircle, AlertCircle, AlertTriangle, Info } from "lucide-react";
+import type { ToastAction } from "@/lib/toast-helpers";
 
 type ToastVariant = "default" | "success" | "error" | "warning" | "info";
-
-interface ToastAction {
-  label: string;
-  onClick: () => void;
-}
 
 interface Toast {
   id: string;
@@ -40,13 +36,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 
   const addToast = React.useCallback((toast: Omit<Toast, "id">) => {
     const id = crypto.randomUUID();
-    const duration = toast.duration ?? 5000;
-
     setToasts((prev) => [...prev, { ...toast, id }]);
-
-    setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, duration);
   }, []);
 
   const removeToast = React.useCallback((id: string) => {
@@ -77,44 +67,96 @@ const variantIcons: Record<ToastVariant, React.ReactNode> = {
   info: <Info className="h-4 w-4" />,
 };
 
+// Default durations: toasts with actions get more time since the user must read and click.
+const DEFAULT_DURATION = 5000;
+const ACTION_DURATION = 12000;
+
+interface ToastItemProps {
+  toast: Toast;
+  onRemove: () => void;
+}
+
+/**
+ * Individual toast with hover-to-pause auto-dismiss.
+ * Hovering over the toast freezes the countdown; leaving resumes it
+ * with the remaining time.
+ */
+function ToastItem({ toast, onRemove }: ToastItemProps) {
+  const duration = toast.duration ?? (toast.action ? ACTION_DURATION : DEFAULT_DURATION);
+  const timerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const remainingRef = React.useRef(duration);
+  const startTimeRef = React.useRef<number>(Date.now());
+
+  const startTimer = React.useCallback(() => {
+    startTimeRef.current = Date.now();
+    timerRef.current = setTimeout(onRemove, remainingRef.current);
+  }, [onRemove]);
+
+  React.useEffect(() => {
+    startTimer();
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, [startTimer]);
+
+  const handleMouseEnter = () => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      remainingRef.current = Math.max(
+        remainingRef.current - (Date.now() - startTimeRef.current),
+        0
+      );
+    }
+  };
+
+  const handleMouseLeave = () => {
+    startTimer();
+  };
+
+  return (
+    <div
+      className={cn(
+        "group pointer-events-auto relative flex w-full items-center justify-between space-x-2 overflow-hidden rounded-xl border p-4 pr-6 premium-shadow shadow-2xl transition-all data-[swipe=cancel]:translate-x-0 data-[swipe=end]:translate-x-[var(--radix-toast-swipe-end-x)] data-[swipe=move]:translate-x-[var(--radix-toast-swipe-move-x)] data-[swipe=move]:transition-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[swipe=end]:animate-out data-[state=closed]:fade-out-80 data-[state=closed]:slide-out-to-right-full data-[state=open]:slide-in-from-bottom-full mb-2",
+        variantStyles[toast.variant ?? "default"]
+      )}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+    >
+      <div className="grid gap-1 flex-1">
+        <div className="flex items-center gap-2">
+          {variantIcons[toast.variant ?? "default"]}
+          <div className="text-sm font-semibold">{toast.title}</div>
+        </div>
+        {toast.description && <div className="text-sm opacity-90">{toast.description}</div>}
+      </div>
+      {toast.action && (
+        <button
+          className="shrink-0 rounded-md px-2 py-1 text-sm font-medium underline-offset-4 hover:underline focus:outline-none focus:ring-2 focus:ring-ring"
+          onClick={() => {
+            toast.action!.onClick();
+            onRemove();
+          }}
+        >
+          {toast.action.label}
+        </button>
+      )}
+      <button
+        className="absolute right-1 top-1 rounded-md p-1 text-foreground/50 opacity-0 transition-opacity hover:text-foreground focus:opacity-100 focus:outline-none focus:ring-1 group-hover:opacity-100"
+        onClick={onRemove}
+      >
+        <X className="h-4 w-4" />
+      </button>
+    </div>
+  );
+}
+
 function Toaster() {
   const { toasts, removeToast } = useToast();
 
   return (
     <div className="fixed bottom-0 right-0 z-[100] flex max-h-screen w-full flex-col-reverse p-4 sm:bottom-0 sm:right-0 sm:top-auto sm:flex-col md:max-w-[420px]">
       {toasts.map((toast) => (
-        <div
-          key={toast.id}
-          className={cn(
-            "group pointer-events-auto relative flex w-full items-center justify-between space-x-2 overflow-hidden rounded-xl border p-4 pr-6 premium-shadow shadow-2xl transition-all data-[swipe=cancel]:translate-x-0 data-[swipe=end]:translate-x-[var(--radix-toast-swipe-end-x)] data-[swipe=move]:translate-x-[var(--radix-toast-swipe-move-x)] data-[swipe=move]:transition-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[swipe=end]:animate-out data-[state=closed]:fade-out-80 data-[state=closed]:slide-out-to-right-full data-[state=open]:slide-in-from-bottom-full mb-2",
-            variantStyles[toast.variant ?? "default"]
-          )}
-        >
-          <div className="grid gap-1 flex-1">
-            <div className="flex items-center gap-2">
-              {variantIcons[toast.variant ?? "default"]}
-              <div className="text-sm font-semibold">{toast.title}</div>
-            </div>
-            {toast.description && <div className="text-sm opacity-90">{toast.description}</div>}
-          </div>
-          {toast.action && (
-            <button
-              className="shrink-0 rounded-md px-2 py-1 text-sm font-medium underline-offset-4 hover:underline focus:outline-none focus:ring-2 focus:ring-ring"
-              onClick={() => {
-                toast.action!.onClick();
-                removeToast(toast.id);
-              }}
-            >
-              {toast.action.label}
-            </button>
-          )}
-          <button
-            className="absolute right-1 top-1 rounded-md p-1 text-foreground/50 opacity-0 transition-opacity hover:text-foreground focus:opacity-100 focus:outline-none focus:ring-1 group-hover:opacity-100"
-            onClick={() => removeToast(toast.id)}
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
+        <ToastItem key={toast.id} toast={toast} onRemove={() => removeToast(toast.id)} />
       ))}
     </div>
   );

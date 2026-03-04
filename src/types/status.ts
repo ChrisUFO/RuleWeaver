@@ -57,6 +57,16 @@ export const ARTIFACT_TYPE_LABELS: Record<ArtifactType, string> = {
   skill: "Skill",
 };
 
+/** Anchors user-facing repair action labels. Tests assert these strings match actual UI button text. */
+export const REPAIR_ACTION_LABELS = {
+  repairOne: "Repair",
+  repairAll: "Repair All",
+  repairSuccess: "Repair successful",
+  repairFailed: "Repair failed",
+  bulkRepairComplete: "Bulk repair complete",
+  bulkRepairFailed: "Bulk repair failed",
+} as const;
+
 export const SYNC_STATUS_CONFIG: Record<
   ArtifactSyncStatus,
   { label: string; color: string; bgColor: string }

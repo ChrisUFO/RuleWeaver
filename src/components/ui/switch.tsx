@@ -7,10 +7,14 @@ interface SwitchProps {
   className?: string;
   disabled?: boolean;
   id?: string;
+  "aria-label"?: string;
 }
 
 const Switch = React.forwardRef<HTMLButtonElement, SwitchProps>(
-  ({ className, onCheckedChange, checked = false, disabled, id }, _ref) => {
+  (
+    { className, onCheckedChange, checked = false, disabled, id, "aria-label": ariaLabel },
+    _ref
+  ) => {
     const handleToggle = (e: React.MouseEvent) => {
       e.stopPropagation();
       if (!disabled) {
@@ -24,6 +28,7 @@ const Switch = React.forwardRef<HTMLButtonElement, SwitchProps>(
         role="switch"
         id={id}
         aria-checked={checked}
+        aria-label={ariaLabel}
         disabled={disabled}
         onClick={handleToggle}
         className={cn(

@@ -24,7 +24,7 @@ import type {
   StatusFilter,
   StatusSummary,
 } from "@/types/status";
-import { ARTIFACT_TYPE_LABELS, SYNC_STATUS_CONFIG } from "@/types/status";
+import { ARTIFACT_TYPE_LABELS, SYNC_STATUS_CONFIG, REPAIR_ACTION_LABELS } from "@/types/status";
 import { useRegistryStore } from "@/stores/registryStore";
 import type { SelectOption } from "@/components/ui/select";
 import type { AdapterType } from "@/types/rule";
@@ -44,10 +44,10 @@ const item = {
 
 const ARTIFACT_TYPE_OPTIONS: SelectOption[] = [
   { value: "all", label: "All Types" },
-  { value: "rule", label: "Rules" },
-  { value: "command_stub", label: "Command Stubs" },
-  { value: "slash_command", label: "Slash Commands" },
-  { value: "skill", label: "Skills" },
+  ...(Object.entries(ARTIFACT_TYPE_LABELS) as [ArtifactType, string][]).map(([value, label]) => ({
+    value,
+    label: `${label}s`,
+  })),
 ];
 
 const STATUS_OPTIONS: SelectOption[] = [
@@ -123,21 +123,21 @@ export function Status({ onNavigate }: { onNavigate?: (view: string, id?: string
       const result = await api.status.repairArtifact(entryId);
       if (result.success) {
         addToast({
-          title: "Repair successful",
+          title: REPAIR_ACTION_LABELS.repairSuccess,
           description: "Artifact has been repaired",
           variant: "success",
         });
         await fetchStatus();
       } else {
         addToast({
-          title: "Repair failed",
+          title: REPAIR_ACTION_LABELS.repairFailed,
           description: result.error || "Unknown error",
           variant: "error",
         });
       }
     } catch (error) {
       addToast({
-        title: "Repair failed",
+        title: REPAIR_ACTION_LABELS.repairFailed,
         description: error instanceof Error ? error.message : "Unknown error",
         variant: "error",
       });
@@ -165,14 +165,14 @@ export function Status({ onNavigate }: { onNavigate?: (view: string, id?: string
       );
       const successCount = results.filter((r) => r.success).length;
       addToast({
-        title: "Bulk repair complete",
+        title: REPAIR_ACTION_LABELS.bulkRepairComplete,
         description: `${successCount} of ${results.length} artifacts repaired`,
         variant: successCount === results.length ? "success" : "warning",
       });
       await fetchStatus();
     } catch (error) {
       addToast({
-        title: "Bulk repair failed",
+        title: REPAIR_ACTION_LABELS.bulkRepairFailed,
         description: error instanceof Error ? error.message : "Unknown error",
         variant: "error",
       });
@@ -245,7 +245,7 @@ export function Status({ onNavigate }: { onNavigate?: (view: string, id?: string
             className="shadow-luminescent glow-primary"
           >
             <Wrench className={cn("mr-2 h-4 w-4", isBulkRepairing && "animate-spin")} />
-            Repair All ({nonSyncedCount})
+            {REPAIR_ACTION_LABELS.repairAll} ({nonSyncedCount})
           </Button>
         </div>
       </motion.div>
@@ -519,7 +519,7 @@ export function Status({ onNavigate }: { onNavigate?: (view: string, id?: string
                                 ) : (
                                   <Wrench className="h-3 w-3 mr-1" />
                                 )}
-                                Repair
+                                {REPAIR_ACTION_LABELS.repairOne}
                               </Button>
                             )}
                           </td>
