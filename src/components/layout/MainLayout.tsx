@@ -1,8 +1,7 @@
 import * as React from "react";
 import { Sidebar } from "./Sidebar";
 import { Header } from "./Header";
-
-type Theme = "light" | "dark" | "system";
+import { useThemePersistence } from "@/hooks/useThemePersistence";
 
 interface MainLayoutProps {
   children: React.ReactNode;
@@ -12,7 +11,7 @@ interface MainLayoutProps {
 
 export function MainLayout({ children, activeView, onViewChange }: MainLayoutProps) {
   const [sidebarCollapsed, setSidebarCollapsed] = React.useState(false);
-  const [theme, setTheme] = React.useState<Theme>("system");
+  const { theme, setTheme } = useThemePersistence();
 
   React.useEffect(() => {
     const root = window.document.documentElement;

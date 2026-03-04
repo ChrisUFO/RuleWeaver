@@ -6,6 +6,7 @@ import { api } from "@/lib/tauri";
 import { toast } from "@/lib/toast-helpers";
 import type { useToast } from "@/components/ui/toast";
 import { useRepositoryRoots } from "@/hooks/useRepositoryRoots";
+import { featureManager, FEATURE_FLAGS } from "@/lib/featureManager";
 import type { AdapterType, Rule } from "@/types/rule";
 import type { CommandModel, McpStatus, McpConnectionInstructions } from "@/types/command";
 import type { Skill } from "@/types/skill";
@@ -92,7 +93,8 @@ export interface UseSettingsStateReturn {
 }
 
 export function useSettingsState(
-  addToast: ReturnType<typeof useToast>["addToast"]
+  addToast: ReturnType<typeof useToast>["addToast"],
+  onNavigate?: (view: string) => void
 ): UseSettingsStateReturn {
   const [appDataPath, setAppDataPath] = useState<string>("");
   const [appVersion, setAppVersion] = useState<string>("");
@@ -205,12 +207,21 @@ export function useSettingsState(
         setAdapterSettings(initialSettings);
       } catch (error) {
         console.error("Failed to load settings:", error);
+        if (featureManager.isEnabled(FEATURE_FLAGS.ENHANCED_ERROR_UX)) {
+          toast.error(addToast, {
+            title: "Failed to Load Settings",
+            error,
+            action: onNavigate
+              ? { label: "Open Settings", onClick: () => onNavigate("settings") }
+              : undefined,
+          });
+        }
       } finally {
         setIsLoading(false);
       }
     };
     loadData();
-  }, [refreshRepositoryRoots]);
+  }, [refreshRepositoryRoots, addToast, onNavigate]);
 
   const handleOpenAppData = useCallback(async () => {
     try {
@@ -241,7 +252,13 @@ export function useSettingsState(
         description: "Adapter settings have been updated",
       });
     } catch (error) {
-      toast.error(addToast, { title: "Save Failed", error });
+      toast.error(addToast, {
+        title: "Save Failed",
+        error,
+        action: featureManager.isEnabled(FEATURE_FLAGS.ENHANCED_ERROR_UX)
+          ? { label: "Retry", onClick: () => void saveSettings() }
+          : undefined,
+      });
     } finally {
       setIsSaving(false);
     }
@@ -314,7 +331,13 @@ export function useSettingsState(
         description: "Repository roots updated for local artifact discovery",
       });
     } catch (error) {
-      toast.error(addToast, { title: "Save Failed", error });
+      toast.error(addToast, {
+        title: "Save Failed",
+        error,
+        action: featureManager.isEnabled(FEATURE_FLAGS.ENHANCED_ERROR_UX)
+          ? { label: "Retry", onClick: () => void saveRepositoryRoots() }
+          : undefined,
+      });
     } finally {
       setIsSavingRepos(false);
     }
@@ -437,11 +460,18 @@ export function useSettingsState(
         description: `Server running on port ${status.port}`,
       });
     } catch (error) {
-      toast.error(addToast, { title: "MCP Start Failed", error });
+      toast.error(addToast, {
+        title: "MCP Start Failed",
+        error,
+        action:
+          featureManager.isEnabled(FEATURE_FLAGS.ENHANCED_ERROR_UX) && onNavigate
+            ? { label: "View Logs", onClick: () => onNavigate("settings") }
+            : undefined,
+      });
     } finally {
       setIsMcpLoading(false);
     }
-  }, [addToast]);
+  }, [addToast, onNavigate]);
 
   const stopMcp = useCallback(async () => {
     setIsMcpLoading(true);
