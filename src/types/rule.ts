@@ -78,6 +78,16 @@ export interface SyncHistoryEntry {
   triggeredBy: "manual" | "auto";
 }
 
+export type SyncProgressPhase = "start" | "progress" | "complete" | "error";
+
+export interface SyncProgressEvent {
+  phase: SyncProgressPhase;
+  currentFile?: string;
+  currentFileIndex: number;
+  totalFiles: number;
+  itemSuccess?: boolean;
+}
+
 export type ImportSourceType = "ai_tool" | "file" | "directory" | "url" | "clipboard";
 export type ImportArtifactType = "rule" | "command" | "skill" | "other" | "unknown";
 export type ImportConflictMode = "skip" | "rename" | "replace";
