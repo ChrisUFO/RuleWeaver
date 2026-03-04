@@ -81,6 +81,7 @@ export function useRuleEditorState({
     rule?.enabledAdapters || []
   );
   const [saving, setSaving] = useState(false);
+  const [isOpeningFolder, setIsOpeningFolder] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [previewAdapter, setPreviewAdapter] = useState<AdapterType>("gemini");
@@ -331,10 +332,14 @@ export function useRuleEditorState({
 
   const handleOpenFolder = useCallback(
     async (adapter: AdapterType) => {
+      if (isOpeningFolder) return;
+
       const path = getAdapterPath(adapter);
       if (!path) return;
       const lastSeparatorIndex = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
       const dirPath = lastSeparatorIndex >= 0 ? path.substring(0, lastSeparatorIndex) : path;
+
+      setIsOpeningFolder(true);
       try {
         await api.app.openInExplorer(dirPath);
       } catch (error) {
@@ -344,12 +349,14 @@ export function useRuleEditorState({
           description: "Could not open folder",
           variant: "error",
           action: featureManager.isEnabled(FEATURE_FLAGS.ENHANCED_ERROR_UX)
-            ? { label: "Retry", onClick: () => void handleOpenFolder(adapter) }
+            ? { label: "Retry", onClick: () => handleOpenFolder(adapter) }
             : undefined,
         });
+      } finally {
+        setIsOpeningFolder(false);
       }
     },
-    [getAdapterPath, addToast]
+    [getAdapterPath, addToast, isOpeningFolder]
   );
 
   const getSaveStatus = useCallback((): React.ReactNode => {

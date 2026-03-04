@@ -162,8 +162,8 @@ describe("Dialog Component — accessibility (flag enabled)", () => {
 
     // Tab from last should cycle back to first
     fireEvent.keyDown(document, { key: "Tab", shiftKey: false });
-    // Focus should wrap — we verify the handler didn't throw and focus stayed in dialog
-    expect(document.activeElement).not.toBeNull();
+    // Focus should wrap to the first button
+    expect(document.activeElement).toBe(buttons[0]);
   });
 
   it("traps Shift+Tab focus within the dialog", () => {
@@ -183,7 +183,8 @@ describe("Dialog Component — accessibility (flag enabled)", () => {
 
     // Shift+Tab from first should cycle to last
     fireEvent.keyDown(document, { key: "Tab", shiftKey: true });
-    expect(document.activeElement).not.toBeNull();
+    const closeButton = screen.getByRole("button", { name: /close/i });
+    expect(document.activeElement).toBe(closeButton);
   });
 
   it("restores focus to the trigger element after dialog closes", () => {

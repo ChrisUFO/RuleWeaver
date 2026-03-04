@@ -256,7 +256,7 @@ export function useSettingsState(
         title: "Save Failed",
         error,
         action: featureManager.isEnabled(FEATURE_FLAGS.ENHANCED_ERROR_UX)
-          ? { label: "Retry", onClick: () => void saveSettings() }
+          ? { label: "Retry", onClick: () => saveSettings() }
           : undefined,
       });
     } finally {
@@ -335,7 +335,7 @@ export function useSettingsState(
         title: "Save Failed",
         error,
         action: featureManager.isEnabled(FEATURE_FLAGS.ENHANCED_ERROR_UX)
-          ? { label: "Retry", onClick: () => void saveRepositoryRoots() }
+          ? { label: "Retry", onClick: () => saveRepositoryRoots() }
           : undefined,
       });
     } finally {
