@@ -27,10 +27,16 @@ const Dialog: React.FC<DialogProps> = ({ open, onOpenChange, children }) => {
   );
 };
 
-// Context used to pass generated ids from DialogContent down to DialogTitle/DialogDescription
-const DialogIdContext = React.createContext<{ titleId: string; descriptionId: string } | null>(
-  null
-);
+// Context propagates generated ids AND tracks whether a DialogDescription is present,
+// so aria-describedby is only set when a description element actually renders.
+interface DialogIdContextValue {
+  titleId: string;
+  descriptionId: string;
+  registerDescription: () => void;
+  unregisterDescription: () => void;
+}
+
+const DialogIdContext = React.createContext<DialogIdContextValue | null>(null);
 
 const DialogContent = React.forwardRef<
   HTMLDivElement,
@@ -38,6 +44,7 @@ const DialogContent = React.forwardRef<
 >(({ className, children, onClose, ...props }, forwardedRef) => {
   const accessibilityEnabled = featureManager.isEnabled(FEATURE_FLAGS.DIALOG_ACCESSIBILITY);
   const innerRef = React.useRef<HTMLDivElement>(null);
+  const [hasDescription, setHasDescription] = React.useState(false);
 
   // Merge the forwarded ref with the local ref so focus-trap can access the DOM node
   const setRef = React.useCallback(
@@ -55,9 +62,12 @@ const DialogContent = React.forwardRef<
   const titleId = React.useId();
   const descriptionId = React.useId();
 
+  const registerDescription = React.useCallback(() => setHasDescription(true), []);
+  const unregisterDescription = React.useCallback(() => setHasDescription(false), []);
+
   useFocusTrap(innerRef, accessibilityEnabled);
 
-  // Escape key handler
+  // Escape key handler — only fires when the flag is on and the dialog is dismissible
   React.useEffect(() => {
     if (!accessibilityEnabled || !onClose) return;
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -75,12 +85,19 @@ const DialogContent = React.forwardRef<
         role: "dialog" as const,
         "aria-modal": true,
         "aria-labelledby": titleId,
-        "aria-describedby": descriptionId,
+        // Only include aria-describedby when a DialogDescription actually rendered;
+        // a dangling reference confuses screen readers.
+        ...(hasDescription && { "aria-describedby": descriptionId }),
+        // tabIndex allows the container to receive focus as a fallback
+        // when no focusable children exist inside the dialog.
+        tabIndex: -1,
       }
     : {};
 
   return (
-    <DialogIdContext.Provider value={{ titleId, descriptionId }}>
+    <DialogIdContext.Provider
+      value={{ titleId, descriptionId, registerDescription, unregisterDescription }}
+    >
       <div
         ref={setRef}
         className={cn(
@@ -91,13 +108,17 @@ const DialogContent = React.forwardRef<
         {...props}
       >
         {children}
-        <button
-          className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none"
-          onClick={onClose}
-        >
-          <X className="h-4 w-4" />
-          <span className="sr-only">Close</span>
-        </button>
+        {/* Only render the close button when the dialog is dismissible */}
+        {onClose && (
+          <button
+            className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none"
+            onClick={onClose}
+            aria-label="Close"
+          >
+            <X className="h-4 w-4" />
+            <span className="sr-only">Close</span>
+          </button>
+        )}
       </div>
     </DialogIdContext.Provider>
   );
@@ -137,6 +158,14 @@ const DialogDescription = React.forwardRef<
   React.HTMLAttributes<HTMLParagraphElement>
 >(({ className, id, ...props }, ref) => {
   const ctx = React.useContext(DialogIdContext);
+
+  // Notify DialogContent that a description is present so it can set aria-describedby
+  React.useEffect(() => {
+    ctx?.registerDescription();
+    return () => ctx?.unregisterDescription();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <p
       ref={ref}

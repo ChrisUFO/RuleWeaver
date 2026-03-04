@@ -44,10 +44,10 @@ const item = {
 
 const ARTIFACT_TYPE_OPTIONS: SelectOption[] = [
   { value: "all", label: "All Types" },
-  { value: "rule", label: "Rules" },
-  { value: "command_stub", label: "Command Stubs" },
-  { value: "slash_command", label: "Slash Commands" },
-  { value: "skill", label: "Skills" },
+  ...(Object.entries(ARTIFACT_TYPE_LABELS) as [ArtifactType, string][]).map(([value, label]) => ({
+    value,
+    label: `${label}s`,
+  })),
 ];
 
 const STATUS_OPTIONS: SelectOption[] = [

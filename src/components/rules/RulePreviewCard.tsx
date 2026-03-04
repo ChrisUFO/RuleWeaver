@@ -46,7 +46,7 @@ export function RulePreviewCard({
                   previewAdapter === adapter ? "glow-active shadow-sm" : "text-muted-foreground"
                 )}
               >
-                {tools.find((a) => a.id === adapter)?.name}
+                {tools.find((a) => a.id === adapter)?.name ?? adapter}
               </Button>
             ))}
           </div>

@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { RuleEditor } from "../../../components/pages/RuleEditor";
 import { ToastProvider } from "../../../components/ui/toast";
 import type { AdapterType } from "../../../types/rule";
+import { useKeyboardShortcuts } from "../../../hooks/useKeyboardShortcuts";
 
 // --- Mocks ---
 vi.mock("../../../lib/featureManager", () => ({
@@ -257,6 +258,26 @@ describe("RuleEditor", () => {
 
     await waitFor(() => {
       expect(screen.queryByRole("button", { name: "Gemini" })).not.toBeInTheDocument();
+    });
+  });
+
+  it("registers Ctrl+S keyboard shortcut that triggers save", async () => {
+    mockUpdateRule.mockResolvedValue(baseRule);
+    renderWithProviders(<RuleEditor rule={baseRule} onBack={vi.fn()} onSelectRule={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(vi.mocked(useKeyboardShortcuts)).toHaveBeenCalled();
+    });
+
+    const calls = vi.mocked(useKeyboardShortcuts).mock.calls;
+    const lastCall = calls[calls.length - 1];
+    const saveShortcut = lastCall[0].shortcuts.find((s) => s.key === "s");
+
+    expect(saveShortcut).toBeDefined();
+    await saveShortcut!.action();
+
+    await waitFor(() => {
+      expect(mockUpdateRule).toHaveBeenCalled();
     });
   });
 });

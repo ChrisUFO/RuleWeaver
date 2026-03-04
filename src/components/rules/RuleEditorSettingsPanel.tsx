@@ -100,7 +100,11 @@ export function RuleEditorSettingsPanel({
                 <div
                   key={adapter.id}
                   className="flex items-center justify-between p-2 rounded-md hover:bg-accent cursor-pointer transition-colors"
-                  onClick={() => onToggleAdapter(adapter.id)}
+                  onClick={(e) => {
+                    if (!(e.target as HTMLElement).closest('[role="switch"]')) {
+                      onToggleAdapter(adapter.id);
+                    }
+                  }}
                 >
                   <div className="flex items-center gap-2">
                     <Switch

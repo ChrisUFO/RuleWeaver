@@ -49,6 +49,18 @@ describe("SYNC_STATUS_CONFIG parity", () => {
     }
   });
 
+  it("every SYNC_STATUS_CONFIG entry has a non-empty color", () => {
+    for (const [status, config] of Object.entries(SYNC_STATUS_CONFIG)) {
+      expect(config.color, `Empty color for status "${status}"`).toBeTruthy();
+    }
+  });
+
+  it("every SYNC_STATUS_CONFIG entry has a non-empty bgColor", () => {
+    for (const [status, config] of Object.entries(SYNC_STATUS_CONFIG)) {
+      expect(config.bgColor, `Empty bgColor for status "${status}"`).toBeTruthy();
+    }
+  });
+
   it("SYNC_STATUS_CONFIG does not have undeclared status keys", () => {
     const configKeys = Object.keys(SYNC_STATUS_CONFIG) as ArtifactSyncStatus[];
     for (const key of configKeys) {

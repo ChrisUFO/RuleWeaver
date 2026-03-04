@@ -6,7 +6,6 @@ export type Theme = "light" | "dark" | "system";
 
 const THEME_SETTING_KEY = "ui_theme";
 const VALID_THEMES: Theme[] = ["light", "dark", "system"];
-const THEMES_CYCLE: Theme[] = ["light", "dark", "system"];
 
 function isValidTheme(value: string | null | undefined): value is Theme {
   return VALID_THEMES.includes(value as Theme);
@@ -53,8 +52,8 @@ export function useThemePersistence() {
 
   const cycleTheme = useCallback(() => {
     setThemeState((prev) => {
-      const idx = THEMES_CYCLE.indexOf(prev);
-      const next = THEMES_CYCLE[(idx + 1) % THEMES_CYCLE.length];
+      const idx = VALID_THEMES.indexOf(prev);
+      const next = VALID_THEMES[(idx + 1) % VALID_THEMES.length];
       if (persistenceEnabled) {
         api.settings.set(THEME_SETTING_KEY, next).catch((err) => {
           console.error("Failed to persist theme setting", err);

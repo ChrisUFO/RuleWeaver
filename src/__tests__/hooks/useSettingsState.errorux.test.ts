@@ -24,6 +24,8 @@ const mockStorageGetInfo = vi.fn().mockResolvedValue({});
 const mockStorageGetMigrationProgress = vi.fn().mockResolvedValue(null);
 const mockMcpGetStatus = vi.fn().mockResolvedValue({ running: false, port: 0 });
 const mockMcpGetLogs = vi.fn().mockResolvedValue([]);
+const mockMcpStart = vi.fn().mockResolvedValue(undefined);
+const mockMcpGetInstructions = vi.fn().mockResolvedValue("");
 const mockAppGetAppDataPath = vi.fn().mockResolvedValue("/data");
 const mockAppGetVersion = vi.fn().mockResolvedValue("1.0.0");
 const mockRegistryGetTools = vi.fn().mockResolvedValue([]);
@@ -36,7 +38,13 @@ vi.mock("@/lib/tauri", () => ({
       getInfo: mockStorageGetInfo,
       getMigrationProgress: mockStorageGetMigrationProgress,
     },
-    mcp: { getStatus: mockMcpGetStatus, getLogs: mockMcpGetLogs },
+    mcp: {
+      getStatus: mockMcpGetStatus,
+      getLogs: mockMcpGetLogs,
+      start: mockMcpStart,
+      stop: vi.fn().mockResolvedValue(undefined),
+      getInstructions: mockMcpGetInstructions,
+    },
     app: { getAppDataPath: mockAppGetAppDataPath, getVersion: mockAppGetVersion },
     registry: { getTools: mockRegistryGetTools },
   },
@@ -48,12 +56,14 @@ vi.mock("@tauri-apps/plugin-autostart", () => ({
   disable: vi.fn().mockResolvedValue(undefined),
 }));
 
+const mockRepoSave = vi.fn().mockResolvedValue(undefined);
+
 vi.mock("@/hooks/useRepositoryRoots", () => ({
   useRepositoryRoots: () => ({
     roots: [],
     setRoots: vi.fn(),
     refresh: vi.fn().mockResolvedValue(undefined),
-    save: vi.fn().mockResolvedValue(undefined),
+    save: mockRepoSave,
   }),
 }));
 
@@ -70,6 +80,9 @@ describe("useSettingsState — error UX (flag enabled)", () => {
     mockStorageGetMigrationProgress.mockResolvedValue(null);
     mockMcpGetStatus.mockResolvedValue({ running: false, port: 0 });
     mockMcpGetLogs.mockResolvedValue([]);
+    mockMcpStart.mockResolvedValue(undefined);
+    mockMcpGetInstructions.mockResolvedValue("");
+    mockRepoSave.mockResolvedValue(undefined);
     mockAppGetAppDataPath.mockResolvedValue("/data");
     mockAppGetVersion.mockResolvedValue("1.0.0");
     mockRegistryGetTools.mockResolvedValue([]);
@@ -138,6 +151,9 @@ describe("useSettingsState — error UX (flag disabled)", () => {
     mockStorageGetMigrationProgress.mockResolvedValue(null);
     mockMcpGetStatus.mockResolvedValue({ running: false, port: 0 });
     mockMcpGetLogs.mockResolvedValue([]);
+    mockMcpStart.mockResolvedValue(undefined);
+    mockMcpGetInstructions.mockResolvedValue("");
+    mockRepoSave.mockResolvedValue(undefined);
     mockAppGetAppDataPath.mockResolvedValue("/data");
     mockAppGetVersion.mockResolvedValue("1.0.0");
     mockRegistryGetTools.mockResolvedValue([]);
@@ -169,6 +185,137 @@ describe("useSettingsState — error UX (flag disabled)", () => {
       const errorCall = mockAddToast.mock.calls.find((c) => c[0]?.variant === "error");
       expect(errorCall).toBeDefined();
       // action should be undefined when flag is off
+      expect(errorCall![0].action).toBeUndefined();
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Repository roots save failure — retry action
+// ---------------------------------------------------------------------------
+describe("useSettingsState — repo roots save failure (flag enabled)", () => {
+  beforeEach(() => {
+    enhancedErrorUxEnabled = true;
+    vi.clearAllMocks();
+    mockSettingsGet.mockResolvedValue(null);
+    mockStorageGetMode.mockResolvedValue("sqlite");
+    mockStorageGetInfo.mockResolvedValue({});
+    mockStorageGetMigrationProgress.mockResolvedValue(null);
+    mockMcpGetStatus.mockResolvedValue({ running: false, port: 0 });
+    mockMcpGetLogs.mockResolvedValue([]);
+    mockMcpStart.mockResolvedValue(undefined);
+    mockMcpGetInstructions.mockResolvedValue("");
+    mockRepoSave.mockResolvedValue(undefined);
+    mockAppGetAppDataPath.mockResolvedValue("/data");
+    mockAppGetVersion.mockResolvedValue("1.0.0");
+    mockRegistryGetTools.mockResolvedValue([]);
+  });
+
+  it("shows Retry action on repository roots save failure", async () => {
+    mockRepoSave.mockRejectedValue(new Error("Disk write error"));
+    const mockAddToast = vi.fn();
+
+    const { result } = renderHook(() => useSettingsState(mockAddToast));
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    await result.current.handlers.saveRepositoryRoots();
+
+    await waitFor(() => {
+      const errorCall = mockAddToast.mock.calls.find((c) => c[0]?.variant === "error");
+      expect(errorCall).toBeDefined();
+      expect(errorCall![0].action).toBeDefined();
+      expect(errorCall![0].action.label).toBe("Retry");
+    });
+  });
+
+  it("does not show Retry action on repo roots save failure when flag is disabled", async () => {
+    enhancedErrorUxEnabled = false;
+    mockRepoSave.mockRejectedValue(new Error("Disk write error"));
+    const mockAddToast = vi.fn();
+
+    const { result } = renderHook(() => useSettingsState(mockAddToast));
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    await result.current.handlers.saveRepositoryRoots();
+
+    await waitFor(() => {
+      const errorCall = mockAddToast.mock.calls.find((c) => c[0]?.variant === "error");
+      expect(errorCall).toBeDefined();
+      expect(errorCall![0].action).toBeUndefined();
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// MCP start failure — "View Logs" action
+// ---------------------------------------------------------------------------
+describe("useSettingsState — MCP start failure (flag enabled)", () => {
+  beforeEach(() => {
+    enhancedErrorUxEnabled = true;
+    vi.clearAllMocks();
+    mockSettingsGet.mockResolvedValue(null);
+    mockStorageGetMode.mockResolvedValue("sqlite");
+    mockStorageGetInfo.mockResolvedValue({});
+    mockStorageGetMigrationProgress.mockResolvedValue(null);
+    mockMcpGetStatus.mockResolvedValue({ running: false, port: 0 });
+    mockMcpGetLogs.mockResolvedValue([]);
+    mockMcpStart.mockResolvedValue(undefined);
+    mockMcpGetInstructions.mockResolvedValue("");
+    mockRepoSave.mockResolvedValue(undefined);
+    mockAppGetAppDataPath.mockResolvedValue("/data");
+    mockAppGetVersion.mockResolvedValue("1.0.0");
+    mockRegistryGetTools.mockResolvedValue([]);
+  });
+
+  it("shows 'View Logs' action when MCP start fails and onNavigate is provided", async () => {
+    mockMcpStart.mockRejectedValue(new Error("Connection refused"));
+    const mockAddToast = vi.fn();
+    const mockNavigate = vi.fn();
+
+    const { result } = renderHook(() => useSettingsState(mockAddToast, mockNavigate));
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    await result.current.handlers.startMcp();
+
+    await waitFor(() => {
+      const errorCall = mockAddToast.mock.calls.find((c) => c[0]?.variant === "error");
+      expect(errorCall).toBeDefined();
+      expect(errorCall![0].title).toBe("MCP Start Failed");
+      expect(errorCall![0].action).toBeDefined();
+      expect(errorCall![0].action.label).toBe("View Logs");
+    });
+  });
+
+  it("does not show 'View Logs' action when MCP start fails without onNavigate", async () => {
+    mockMcpStart.mockRejectedValue(new Error("Connection refused"));
+    const mockAddToast = vi.fn();
+
+    const { result } = renderHook(() => useSettingsState(mockAddToast));
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    await result.current.handlers.startMcp();
+
+    await waitFor(() => {
+      const errorCall = mockAddToast.mock.calls.find((c) => c[0]?.variant === "error");
+      expect(errorCall).toBeDefined();
+      expect(errorCall![0].action).toBeUndefined();
+    });
+  });
+
+  it("does not show 'View Logs' action when flag is disabled", async () => {
+    enhancedErrorUxEnabled = false;
+    mockMcpStart.mockRejectedValue(new Error("Connection refused"));
+    const mockAddToast = vi.fn();
+    const mockNavigate = vi.fn();
+
+    const { result } = renderHook(() => useSettingsState(mockAddToast, mockNavigate));
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    await result.current.handlers.startMcp();
+
+    await waitFor(() => {
+      const errorCall = mockAddToast.mock.calls.find((c) => c[0]?.variant === "error");
+      expect(errorCall).toBeDefined();
       expect(errorCall![0].action).toBeUndefined();
     });
   });
