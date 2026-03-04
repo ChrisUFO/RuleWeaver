@@ -5,7 +5,7 @@ RuleWeaver is designed as a standalone desktop application. It requires deep fil
 ## Documentation
 
 - **AI Tools Reference:** See [`docs/ai-tools-commands-reference.md`](./docs/ai-tools-commands-reference.md) for comprehensive documentation on how each supported AI tool handles rules, custom commands, and skills.
-- **Implementation Plan:** See [`PLAN.md`](./PLAN.md) for the active strategic implementation plan (currently focused on execution trust and core UX reliability for issues #74-#78).
+- **Implementation Plan:** See [`PLAN.md`](./PLAN.md) for the active strategic implementation plan (currently focused on dashboard artifact health and sync progress clarity for issues #79, #80 - completed).
 
 ## Versioning Strategy
 
@@ -13,12 +13,13 @@ RuleWeaver uses an **auto-incrementing timestamp-based versioning scheme** to av
 
 **Format:** `MAJOR.MINOR.PATCH-DDMM`
 
-- **Example:** `0.0.1-2302` (first build on Feb 23)
+- **Example:** `0.0.1-232` (first build on Feb 23)
+- **Note:** DD and MM are not zero-padded to comply with semver pre-release rules (leading zeros not allowed)
 
 **Version Components:**
 
 - `MAJOR.MINOR.PATCH`: Auto-incremented on each build (e.g., 0.0.1, 0.0.2, ...)
-- `DDMM`: Day and month as prerelease identifier (max 3112, fits MSI bundler limit of 65535)
+- `DDMM`: Day and month as prerelease identifier (no leading zeros, max 3112, fits MSI bundler limit of 65535)
 - **Rollover:** When PATCH reaches 255, it resets to 0 and increments MINOR (0.0.255 → 0.1.0). Same for MINOR → MAJOR.
 
 **Why this format?**

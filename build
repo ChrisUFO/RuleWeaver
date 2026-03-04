@@ -39,7 +39,11 @@ fi
 
 # Generate timestamps
 FULL_TIMESTAMP=$(date +"%y%m%d%H%M")  # For filename: YYMMDDHHMM
-PRERELEASE=$(date +"%d%m")               # For version: DDMM (max 3112, fits in 65535)
+
+# Prerelease for version: DDMM without leading zeros (semver compliant)
+DAY=$(date +"%d" | sed 's/^0//')
+MONTH=$(date +"%m" | sed 's/^0//')
+PRERELEASE="${DAY}${MONTH}"
 
 # Final version with prerelease: 0.0.X-DDMM
 VERSION="$MAJOR.$MINOR.$PATCH-$PRERELEASE"

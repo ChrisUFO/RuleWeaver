@@ -95,7 +95,7 @@ export function Skills({ initialSelectedId, onClearInitialId }: SkillsProps) {
         setSupportedAdapters(sorted);
       })
       .catch(() => {});
-  }, [addToast]);
+  }, [addToast, loadSkills]);
 
   useEffect(() => {
     if (!selected) {

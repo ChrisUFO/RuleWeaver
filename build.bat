@@ -53,8 +53,10 @@ set year=!year:~2,2!
 REM Full timestamp for filename: YYMMDDHHMM
 set FULL_TIMESTAMP=!year!!month!!day!!hour!!minute!
 
-REM Prerelease for version: DDMM (max 3112, fits in 65535)
-set PRERELEASE=!day!!month!
+REM Prerelease for version: DDMM without leading zeros (semver compliant)
+set /a DAY=!day!+0
+set /a MONTH=!month!+0
+set PRERELEASE=!DAY!!MONTH!
 
 REM Final version: MAJOR.MINOR.PATCH-DDMM
 set VERSION=!MAJOR!.!MINOR!.!PATCH!-!PRERELEASE!
@@ -64,15 +66,15 @@ echo 📅 New version: !VERSION!
 echo.
 
 REM Update package.json version
-powershell -Command "(Get-Content package.json) -replace '\"version\": \"[^\"]+\"', '\"version\": \"!VERSION!\"' | Set-Content package.json"
+call :run_command "npm pkg set version=!VERSION!"
 echo ✓ Updated package.json
 
 REM Update Cargo.toml version
-powershell -Command "(Get-Content src-tauri\Cargo.toml) -replace '^version = \"[^\"]+\"', 'version = \"!VERSION!\"' | Set-Content src-tauri\Cargo.toml"
+powershell -NoProfile -Command "$content = Get-Content 'src-tauri\Cargo.toml'; $content = $content -replace '^version = \"[^\"]+\"', 'version = \"!VERSION!\"'; Set-Content 'src-tauri\Cargo.toml' $content"
 echo ✓ Updated Cargo.toml
 
 REM Update tauri.conf.json version
-powershell -Command "(Get-Content src-tauri\tauri.conf.json) -replace '\"version\": \"[^\"]+\"', '\"version\": \"!VERSION!\"' | Set-Content src-tauri\tauri.conf.json"
+powershell -NoProfile -Command "$content = Get-Content 'src-tauri\tauri.conf.json'; $content = $content -replace '\"version\": \"[^\"]+\"', '\"version\": \"!VERSION!\"'; Set-Content 'src-tauri\tauri.conf.json' $content"
 echo ✓ Updated tauri.conf.json
 
 REM Create/update version.json for frontend access
