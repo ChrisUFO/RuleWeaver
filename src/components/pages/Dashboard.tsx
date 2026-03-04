@@ -267,7 +267,9 @@ export function Dashboard({ onNavigate }: { onNavigate: (view: string, id?: stri
         metrics.rules.health.tracked > 0
           ? metrics.rules.health.attention > 0
             ? `${metrics.rules.health.attention} Need Attention`
-            : "All Synchronized"
+            : metrics.rules.health.unsupported > 0
+              ? `${metrics.rules.health.unsupported} Unsupported`
+              : "All Synchronized"
           : "No Status Data",
       icon: FileText,
       color: "text-emerald-500",
@@ -279,7 +281,9 @@ export function Dashboard({ onNavigate }: { onNavigate: (view: string, id?: stri
         metrics.commands.health.tracked > 0
           ? metrics.commands.health.attention > 0
             ? `${metrics.commands.health.attention} Need Attention`
-            : "All Synchronized"
+            : metrics.commands.health.unsupported > 0
+              ? `${metrics.commands.health.unsupported} Unsupported`
+              : "All Synchronized"
           : "No Status Data",
       icon: Terminal,
       color: "text-amber-500",
@@ -291,7 +295,9 @@ export function Dashboard({ onNavigate }: { onNavigate: (view: string, id?: stri
         metrics.skills.health.tracked > 0
           ? metrics.skills.health.attention > 0
             ? `${metrics.skills.health.attention} Need Attention`
-            : "All Synchronized"
+            : metrics.skills.health.unsupported > 0
+              ? `${metrics.skills.health.unsupported} Unsupported`
+              : "All Synchronized"
           : "No Status Data",
       icon: Brain,
       color: "text-cyan-500",

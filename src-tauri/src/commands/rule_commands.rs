@@ -222,42 +222,31 @@ pub async fn sync_rules(db: State<'_, Arc<Database>>, app: tauri::AppHandle) -> 
         let current_index = index + 1;
         let result = engine.sync_file_by_path(&rules, file_path).await;
 
-        match result {
-            Ok(()) => {
-                files_written.push(file_path.clone());
-                if let Err(error) = app.emit(
-                    "sync-progress",
-                    SyncProgressEvent::progress(
-                        file_path.clone(),
-                        current_index,
-                        total_files,
-                        true,
-                    ),
-                ) {
-                    log::warn!("sync-progress progress emit failed: {}", error);
-                }
-            }
-            Err(error) => {
-                let adapter_name = engine
-                    .adapter_name_for_path(&rules, file_path)
-                    .unwrap_or_else(|| "Rule Sync".to_string());
-                errors.push(SyncError {
-                    file_path: file_path.clone(),
-                    adapter_name,
-                    message: error.to_string(),
-                });
-                if let Err(error) = app.emit(
-                    "sync-progress",
-                    SyncProgressEvent::progress(
-                        file_path.clone(),
-                        current_index,
-                        total_files,
-                        false,
-                    ),
-                ) {
-                    log::warn!("sync-progress progress emit failed: {}", error);
-                }
-            }
+        let item_success = result.is_ok();
+
+        if item_success {
+            files_written.push(file_path.clone());
+        } else if let Err(error) = result {
+            let adapter_name = engine
+                .adapter_name_for_path(&rules, file_path)
+                .unwrap_or_else(|| "Rule Sync".to_string());
+            errors.push(SyncError {
+                file_path: file_path.clone(),
+                adapter_name,
+                message: error.to_string(),
+            });
+        }
+
+        if let Err(error) = app.emit(
+            "sync-progress",
+            SyncProgressEvent::progress(
+                file_path.clone(),
+                current_index,
+                total_files,
+                item_success,
+            ),
+        ) {
+            log::warn!("sync-progress progress emit failed: {}", error);
         }
     }
 

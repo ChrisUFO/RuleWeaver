@@ -127,4 +127,40 @@ describe("dashboard metrics", () => {
     expect(metrics.overallAttention).toBe(0);
     expect(metrics.overallTrackedStatus).toBe(0);
   });
+
+  it("does not mask unsupported status when another adapter is synced", () => {
+    const statusEntries: ArtifactStatusEntry[] = [
+      {
+        id: "1",
+        artifactId: "rule-1",
+        artifactName: "Rule 1",
+        artifactType: "rule",
+        adapter: "opencode",
+        scope: "global",
+        status: "unsupported",
+        expectedPath: "/path/one",
+      },
+      {
+        id: "2",
+        artifactId: "rule-1",
+        artifactName: "Rule 1",
+        artifactType: "rule",
+        adapter: "claude-code",
+        scope: "global",
+        status: "synced",
+        expectedPath: "/path/two",
+      },
+    ];
+
+    const metrics = buildDashboardMetrics({
+      rules: [],
+      commands: [],
+      skills: [],
+      statusEntries,
+    });
+
+    expect(metrics.rules.health.tracked).toBe(1);
+    expect(metrics.rules.health.unsupported).toBe(1);
+    expect(metrics.rules.health.synced).toBe(0);
+  });
 });

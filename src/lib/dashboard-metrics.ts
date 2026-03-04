@@ -43,11 +43,11 @@ export interface DashboardMetricsInput {
 
 const STATUS_SEVERITY: Record<ArtifactSyncStatus, number> = {
   synced: 0,
-  unsupported: 0,
-  out_of_date: 1,
-  missing: 2,
-  conflicted: 3,
-  error: 4,
+  unsupported: 1,
+  out_of_date: 2,
+  missing: 3,
+  conflicted: 4,
+  error: 5,
 };
 
 function metricGroupForStatus(entry: ArtifactStatusEntry): MetricGroup | null {
@@ -73,9 +73,6 @@ function chooseHigherSeverity(
   const currentSeverity = STATUS_SEVERITY[current];
   const nextSeverity = STATUS_SEVERITY[next];
   if (nextSeverity > currentSeverity) {
-    return next;
-  }
-  if (nextSeverity === currentSeverity && current === "unsupported" && next === "synced") {
     return next;
   }
   return current;
