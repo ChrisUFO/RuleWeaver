@@ -424,6 +424,42 @@ impl ToolRegistry {
             },
         );
 
+        // 11. Augment
+        entries.insert(
+            AdapterType::Augment,
+            ToolEntry {
+                id: AdapterType::Augment,
+                name: "Augment Code / Auggie",
+                description: "Augment Code's Auggie CLI assistant",
+                icon: "augment",
+                capabilities: ToolCapabilities {
+                    supports_rules: true,
+                    supports_command_stubs: false,
+                    supports_slash_commands: true,
+                    supports_skills: true,
+                    supports_global_scope: true,
+                    supports_local_scope: true,
+                },
+                paths: PathTemplates {
+                    global_path: "~/.augment/rules",
+                    local_path_template: ".augment/rules",
+                    global_rules_dir: Some("~/.augment/rules"),
+                    local_rules_dir_template: Some(".augment/rules"),
+                    global_rule_file_model: RuleFileModel::PerRuleDir,
+                    local_rule_file_model: RuleFileModel::PerRuleDir,
+                    global_commands_dir: Some(".augment/commands"),
+                    local_commands_dir: Some(".augment/commands"),
+                    command_stub_filename: "COMMANDS.md",
+                    global_skills_dir: Some(".augment/skills"),
+                    local_skills_dir: Some(".augment/skills"),
+                    skill_filename: "SKILL.md",
+                },
+                file_format: "markdown",
+                slash_command_extension: Some("md"),
+                slash_command_argument_pattern: None,
+            },
+        );
+
         Self { entries }
     }
 
@@ -635,13 +671,14 @@ mod tests {
         assert!(registry.get(&AdapterType::Cursor).is_some());
         assert!(registry.get(&AdapterType::Windsurf).is_some());
         assert!(registry.get(&AdapterType::RooCode).is_some());
+        assert!(registry.get(&AdapterType::Augment).is_some());
     }
 
     #[test]
-    fn test_registry_returns_all_ten_adapters() {
+    fn test_registry_returns_all_eleven_adapters() {
         let registry = get_registry();
         let all = registry.all();
-        assert_eq!(all.len(), 10);
+        assert_eq!(all.len(), 11);
     }
 
     #[test]
@@ -664,6 +701,16 @@ mod tests {
         assert!(!cursor.capabilities.supports_command_stubs);
         assert!(cursor.capabilities.supports_slash_commands);
         assert!(!cursor.capabilities.supports_skills);
+    }
+
+    #[test]
+    fn test_augment_capabilities_match_documented_support() {
+        let registry = get_registry();
+        let augment = registry.get(&AdapterType::Augment).unwrap();
+        assert!(augment.capabilities.supports_rules);
+        assert!(!augment.capabilities.supports_command_stubs);
+        assert!(augment.capabilities.supports_slash_commands);
+        assert!(augment.capabilities.supports_skills);
     }
 
     #[test]
@@ -713,6 +760,17 @@ mod tests {
     }
 
     #[test]
+    fn test_validate_support_rejects_augment_command_stubs() {
+        let registry = get_registry();
+        let result = registry.validate_support(
+            &AdapterType::Augment,
+            &Scope::Global,
+            ArtifactType::CommandStub,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
     fn test_path_templates_resolution() {
         let registry = get_registry();
         let opencode = registry.get(&AdapterType::OpenCode).unwrap();
@@ -746,6 +804,7 @@ mod tests {
             AdapterType::Kilo,
             AdapterType::Windsurf,
             AdapterType::RooCode,
+            AdapterType::Augment,
         ];
         for adapter in per_rule_global {
             let entry = registry.get(&adapter).unwrap();
@@ -807,6 +866,11 @@ mod tests {
         let opencode = registry.get(&AdapterType::OpenCode).unwrap();
         assert!(opencode.capabilities.supports_skills);
         assert!(opencode.paths.global_skills_dir.is_some());
+
+        let augment = registry.get(&AdapterType::Augment).unwrap();
+        assert!(augment.capabilities.supports_skills);
+        assert!(augment.paths.global_skills_dir.is_some());
+        assert!(augment.paths.local_skills_dir.is_some());
     }
 
     #[test]

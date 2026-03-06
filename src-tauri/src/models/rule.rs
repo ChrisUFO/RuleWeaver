@@ -48,6 +48,7 @@ pub enum AdapterType {
     Cursor,
     Windsurf,
     RooCode,
+    Augment,
 }
 
 impl AdapterType {
@@ -63,6 +64,7 @@ impl AdapterType {
             AdapterType::Cursor => "cursor",
             AdapterType::Windsurf => "windsurf",
             AdapterType::RooCode => "roocode",
+            AdapterType::Augment => "augment",
         }
     }
 
@@ -79,6 +81,7 @@ impl AdapterType {
             AdapterType::Cursor,
             AdapterType::Windsurf,
             AdapterType::RooCode,
+            AdapterType::Augment,
         ]
     }
 }
@@ -98,6 +101,7 @@ impl FromStr for AdapterType {
             "cursor" => Ok(AdapterType::Cursor),
             "windsurf" => Ok(AdapterType::Windsurf),
             "roocode" => Ok(AdapterType::RooCode),
+            "augment" => Ok(AdapterType::Augment),
             _ => Err(ParseEnumError),
         }
     }
@@ -329,13 +333,17 @@ mod tests {
             AdapterType::from_str("codex"),
             Ok(AdapterType::Codex)
         ));
+        assert!(matches!(
+            AdapterType::from_str("augment"),
+            Ok(AdapterType::Augment)
+        ));
         assert!(AdapterType::from_str("invalid").is_err());
     }
 
     #[test]
     fn test_adapter_type_all() {
         let all = AdapterType::all();
-        assert_eq!(all.len(), 10);
+        assert_eq!(all.len(), 11);
         assert!(all.contains(&AdapterType::Antigravity));
         assert!(all.contains(&AdapterType::Gemini));
         assert!(all.contains(&AdapterType::OpenCode));
@@ -346,6 +354,7 @@ mod tests {
         assert!(all.contains(&AdapterType::Cursor));
         assert!(all.contains(&AdapterType::Windsurf));
         assert!(all.contains(&AdapterType::RooCode));
+        assert!(all.contains(&AdapterType::Augment));
     }
 
     #[test]

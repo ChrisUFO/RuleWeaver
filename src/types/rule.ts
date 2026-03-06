@@ -12,7 +12,8 @@ export type AdapterType =
   | "kilo"
   | "cursor"
   | "windsurf"
-  | "roocode";
+  | "roocode"
+  | "augment";
 
 export interface Rule {
   id: string;
