@@ -93,9 +93,25 @@ If **Minimize to tray on close** is enabled (Settings -> MCP Server), closing th
 
 ### Pre-push Troubleshooting
 
+- Hooks are path-aware:
+  - `pre-commit` runs only fast staged-file checks
+  - `pre-push` runs heavier validation only for changed frontend / Rust / support-matrix areas
+  - frontend pushes use changed-file ESLint plus direct matching test-file selection when safe, and fall back to the full frontend suite when a changed source file has no obvious matching test
+  - Rust pushes run targeted integration-test validation when only `src-tauri/tests/*.rs` changed
+  - a small allowlist of self-contained Rust source modules (`feature_flags`, `redaction`, `single_instance`, `status`) uses `cargo clippy --lib --bins` plus filtered `cargo test --lib <module>::`
+  - other Rust source changes still fall back to the full Rust suite
+- Git runs these hooks as shell scripts, so normal `git commit` / `git push` works from
+  both Git Bash and PowerShell. On Windows, the hook files are pinned to LF endings so
+  Bash execution stays reliable even with `core.autocrlf=true`.
 - Pre-push output is logged to `.git/hooks-logs/pre-push.log` by default.
 - If a step fails, the hook prints the failing command and exit code in the final lines.
 - You can override the log path for one run: `HOOK_LOG_PATH=/tmp/ruleweaver-pre-push.log git push`.
+- You can dry-run hook routing without executing commands:
+  - `HOOK_DRY_RUN=1 HOOK_PUSH_FILES_OVERRIDE=$'src/App.tsx' bash .husky/pre-push </dev/null`
+  - `HOOK_DRY_RUN=1 HOOK_STAGED_FILES_OVERRIDE=$'src-tauri/src/lib.rs' bash .husky/pre-commit`
+- PowerShell equivalents:
+  - `$env:HOOK_DRY_RUN='1'; $env:HOOK_PUSH_FILES_OVERRIDE="src/App.tsx"; bash .husky/pre-push`
+  - `$env:HOOK_DRY_RUN='1'; $env:HOOK_STAGED_FILES_OVERRIDE="src-tauri/src/lib.rs"; bash .husky/pre-commit`
 - To inspect recent output quickly: `tail -n 200 .git/hooks-logs/pre-push.log`.
 
 ## Recommended IDE Setup
