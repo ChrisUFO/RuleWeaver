@@ -33,7 +33,7 @@ is_rust_path() {
 
 is_hook_path() {
   case "$1" in
-    .husky/*|scripts/git-hooks/*) return 0 ;;
+    .gitattributes|.husky/*|scripts/git-hooks/*) return 0 ;;
     *) return 1 ;;
   esac
 }

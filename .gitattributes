@@ -1,3 +1,8 @@
 # Auto-generated files: keep LF line endings so the gen_docs binary output
 # matches what git checks out, regardless of core.autocrlf settings.
 docs/SUPPORT_MATRIX.md text eol=lf
+
+# Git hook shell scripts must stay LF on Windows so Git Bash can execute them
+# reliably even when core.autocrlf=true and git is launched from PowerShell.
+.husky/* text eol=lf
+scripts/git-hooks/* text eol=lf
