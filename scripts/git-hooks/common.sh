@@ -170,13 +170,25 @@ describe_detected_scopes() {
 }
 
 hook_shell_files_from_paths() {
+  local include_all_hooks=0
+  local files=()
+
   while IFS= read -r file; do
     case "$file" in
+      .gitattributes)
+        include_all_hooks=1
+        ;;
       .husky/*|scripts/git-hooks/*)
-        [ -f "$file" ] && printf "%s\n" "$file"
+        [ -f "$file" ] && files+=("$file")
         ;;
     esac
-  done | sort -u
+  done
+
+  if [ "$include_all_hooks" -eq 1 ]; then
+    files+=(.husky/pre-commit .husky/pre-push scripts/git-hooks/common.sh)
+  fi
+
+  printf "%s\n" "${files[@]}" | sed '/^$/d' | sort -u
 }
 
 rust_files_from_paths() {
