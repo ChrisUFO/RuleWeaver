@@ -11,6 +11,7 @@ pub mod path_resolver;
 pub mod reconciliation;
 mod redaction;
 pub mod rule_import;
+mod single_instance;
 mod slash_commands;
 mod status;
 mod sync;
@@ -25,6 +26,8 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}
 use tauri::{Emitter, Manager};
 
 const MINIMIZE_TO_TRAY_KEY: &str = "minimize_to_tray";
+const MAIN_WINDOW_TITLE: &str = "RuleWeaver";
+const SINGLE_INSTANCE_NAME: &str = "Local\\com.ruleweaver.desktop.gui";
 
 pub struct WatcherState(pub RuleFileWatcher);
 
@@ -69,9 +72,33 @@ impl GlobalStatus {
     }
 }
 
+fn show_main_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     log::info!("RuleWeaver application initializing");
+
+    let _single_instance_guard = match single_instance::try_acquire(SINGLE_INSTANCE_NAME) {
+        Ok(Some(guard)) => Some(guard),
+        Ok(None) => {
+            log::info!("RuleWeaver is already running; reusing existing instance");
+            single_instance::show_existing_window(MAIN_WINDOW_TITLE);
+            return;
+        }
+        Err(error) => {
+            log::warn!(
+                "Failed to acquire single-instance guard, continuing startup: {}",
+                error
+            );
+            None
+        }
+    };
 
     tauri::Builder::default()
         .plugin(tauri_plugin_autostart::Builder::new().build())
@@ -304,11 +331,7 @@ pub fn run() {
                     }
 
                     "show" => {
-                        if let Some(window) = app.get_webview_window("main") {
-                            let _ = window.show();
-                            let _ = window.unminimize();
-                            let _ = window.set_focus();
-                        }
+                        show_main_window(app);
                     }
                     "hide" => {
                         if let Some(window) = app.get_webview_window("main") {
@@ -341,9 +364,7 @@ pub fn run() {
                             if window.is_visible().unwrap_or(true) {
                                 let _ = window.hide();
                             } else {
-                                let _ = window.show();
-                                let _ = window.unminimize();
-                                let _ = window.set_focus();
+                                show_main_window(app);
                             }
                         }
                     }
