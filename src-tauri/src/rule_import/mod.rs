@@ -17,13 +17,13 @@ use crate::commands::{
 use crate::database::Database;
 use crate::error::{AppError, Result};
 use crate::file_storage;
+use crate::models::registry::{ArtifactType, RuleFileModel, REGISTRY};
 use crate::models::{
     AdapterType, Command, CreateCommandInput, CreateRuleInput, CreateSkillInput,
     ImportArtifactType, ImportCandidate, ImportConflict, ImportConflictMode,
     ImportExecutionOptions, ImportExecutionResult, ImportHistoryEntry, ImportScanResult,
     ImportSkip, Rule, Scope, Skill, UpdateCommandInput, UpdateRuleInput, UpdateSkillInput,
 };
-use crate::models::registry::{ArtifactType, RuleFileModel, REGISTRY};
 
 const DEFAULT_IMPORT_FILE_LIMIT: u64 = 10 * 1024 * 1024;
 const MAX_IMPORT_CANDIDATES: usize = 1000;
@@ -248,7 +248,10 @@ pub async fn scan_ai_tool_candidates(db: Arc<Database>, max_size: u64) -> Result
                 Err(e) => scan.errors.push(e.to_string()),
             }
         } else if tool_path.path.is_dir()
-            && matches!(tool_path.kind, ToolPathKind::RulesDir | ToolPathKind::Directory)
+            && matches!(
+                tool_path.kind,
+                ToolPathKind::RulesDir | ToolPathKind::Directory
+            )
         {
             let inner_scan = scan_directory_for_artifact_type(
                 &tool_path.path,
@@ -299,7 +302,10 @@ pub async fn scan_ai_tool_candidates(db: Arc<Database>, max_size: u64) -> Result
                     Err(e) => scan.errors.push(e.to_string()),
                 }
             } else if path.is_dir()
-                && matches!(local_path.kind, ToolPathKind::RulesDir | ToolPathKind::Directory)
+                && matches!(
+                    local_path.kind,
+                    ToolPathKind::RulesDir | ToolPathKind::Directory
+                )
             {
                 let inner_scan = scan_directory_for_artifact_type(
                     &path,
@@ -1062,6 +1068,12 @@ fn global_tool_paths(home: &Path) -> Vec<ToolPath> {
             artifact_type: ImportArtifactType::SlashCommand,
             kind: ToolPathKind::Directory,
         },
+        ToolPath {
+            adapter: AdapterType::Augment,
+            path: home.join(".augment").join("commands"),
+            artifact_type: ImportArtifactType::SlashCommand,
+            kind: ToolPathKind::Directory,
+        },
         // Skill Paths
         ToolPath {
             adapter: AdapterType::Cline,
@@ -1072,6 +1084,12 @@ fn global_tool_paths(home: &Path) -> Vec<ToolPath> {
         ToolPath {
             adapter: AdapterType::RooCode,
             path: home.join(".roo").join("skills"),
+            artifact_type: ImportArtifactType::Skill,
+            kind: ToolPathKind::Directory,
+        },
+        ToolPath {
+            adapter: AdapterType::Augment,
+            path: home.join(".augment").join("skills"),
             artifact_type: ImportArtifactType::Skill,
             kind: ToolPathKind::Directory,
         },
@@ -1095,9 +1113,10 @@ fn local_tool_paths() -> Vec<LocalToolPath> {
         };
 
         let (relative_path, kind) = match entry.rule_file_model(Scope::Local) {
-            RuleFileModel::SingleFile => {
-                (entry.paths.local_path_template.to_string(), ToolPathKind::SingleFile)
-            }
+            RuleFileModel::SingleFile => (
+                entry.paths.local_path_template.to_string(),
+                ToolPathKind::SingleFile,
+            ),
             RuleFileModel::PerRuleDir => {
                 let Some(dir) = entry.paths.local_rules_dir_template else {
                     continue;
@@ -1128,10 +1147,22 @@ fn local_tool_paths() -> Vec<LocalToolPath> {
             artifact_type: ImportArtifactType::SlashCommand,
             kind: ToolPathKind::Directory,
         },
+        LocalToolPath {
+            adapter: AdapterType::Augment,
+            relative_path: ".augment/commands".to_string(),
+            artifact_type: ImportArtifactType::SlashCommand,
+            kind: ToolPathKind::Directory,
+        },
         // Local Skills
         LocalToolPath {
             adapter: AdapterType::Gemini,
             relative_path: ".agents/skills".to_string(),
+            artifact_type: ImportArtifactType::Skill,
+            kind: ToolPathKind::Directory,
+        },
+        LocalToolPath {
+            adapter: AdapterType::Augment,
+            relative_path: ".augment/skills".to_string(),
             artifact_type: ImportArtifactType::Skill,
             kind: ToolPathKind::Directory,
         },
@@ -1152,6 +1183,7 @@ fn adapter_label(adapter: AdapterType) -> &'static str {
         AdapterType::Cursor => "Cursor",
         AdapterType::Windsurf => "Windsurf",
         AdapterType::RooCode => "Roo Code",
+        AdapterType::Augment => "Augment Code / Auggie",
     }
 }
 
@@ -1855,8 +1887,12 @@ enabledAdapters:
         assert!(global
             .iter()
             .any(|p| p.contains(".windsurf") && p.contains("rules")));
-        assert!(global.iter().any(|p| p.contains(".roo") && p.contains("rules")));
-        assert!(global.iter().any(|p| p.contains(".kilocode") && p.contains("rules")));
+        assert!(global
+            .iter()
+            .any(|p| p.contains(".roo") && p.contains("rules")));
+        assert!(global
+            .iter()
+            .any(|p| p.contains(".kilocode") && p.contains("rules")));
 
         // Verify no slash command or skill directories are included in rule paths
         assert!(!global.iter().any(|p| p.contains("/commands/")));

@@ -1,8 +1,21 @@
+# Normalize text files in the repo and prefer LF by default so Git stops
+# emitting noisy LF/CRLF conversion warnings on mixed Windows setups.
+* text=auto eol=lf
+
 # Auto-generated files: keep LF line endings so the gen_docs binary output
 # matches what git checks out, regardless of core.autocrlf settings.
 docs/SUPPORT_MATRIX.md text eol=lf
+
+# Windows-native scripts should retain CRLF for the best cmd/PowerShell
+# compatibility on Windows hosts.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
 
 # Git hook shell scripts must stay LF on Windows so Git Bash can execute them
 # reliably even when core.autocrlf=true and git is launched from PowerShell.
 .husky/* text eol=lf
 scripts/git-hooks/* text eol=lf
+
+# POSIX shell scripts should always stay LF.
+*.sh text eol=lf

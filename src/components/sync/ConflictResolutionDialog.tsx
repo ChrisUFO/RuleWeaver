@@ -18,6 +18,10 @@ const DIFF_PREVIEW_LINES = 50;
 
 const ADAPTER_NAME_TO_ID: Record<string, AdapterType> = {
   antigravity: "antigravity",
+  augment: "augment",
+  "augment code": "augment",
+  auggie: "augment",
+  ".augment": "augment",
   "gemini cli": "gemini",
   gemini: "gemini",
   opencode: "opencode",

@@ -492,6 +492,43 @@ impl SyncAdapter for RooCodeAdapter {
     }
 }
 
+pub struct AugmentAdapter;
+
+impl SyncAdapter for AugmentAdapter {
+    fn id(&self) -> AdapterType {
+        AdapterType::Augment
+    }
+
+    fn name(&self) -> &str {
+        registry_entry(&self.id()).name
+    }
+
+    fn file_name(&self) -> &str {
+        let entry = registry_entry(&self.id());
+        Path::new(entry.paths.local_path_template)
+            .file_name()
+            .and_then(|s| s.to_str())
+            .expect("local_path_template in registry must have a valid file name")
+    }
+
+    fn description(&self) -> &str {
+        registry_entry(&self.id()).description
+    }
+
+    fn global_path(&self) -> Result<PathBuf> {
+        let entry = registry_entry(&self.id());
+        resolve_registry_path(entry.paths.global_path)
+    }
+
+    fn format_content(&self, rules: &[Rule], _enabled_rules_only: bool) -> String {
+        format_markdown_sync_helper(rules, 2, true, false)
+    }
+
+    fn format_rule(&self, rule: &Rule) -> String {
+        format!("## {}\n{}", rule.name, rule.content)
+    }
+}
+
 pub fn get_all_adapters() -> Vec<Box<dyn SyncAdapter>> {
     vec![
         Box::new(AntigravityAdapter),
@@ -504,6 +541,7 @@ pub fn get_all_adapters() -> Vec<Box<dyn SyncAdapter>> {
         Box::new(CursorAdapter),
         Box::new(WindsurfAdapter),
         Box::new(RooCodeAdapter),
+        Box::new(AugmentAdapter),
     ]
 }
 
@@ -520,6 +558,7 @@ pub fn get_adapter(adapter_type: AdapterType) -> Option<Box<dyn SyncAdapter>> {
         AdapterType::Cursor => Some(Box::new(CursorAdapter)),
         AdapterType::Windsurf => Some(Box::new(WindsurfAdapter)),
         AdapterType::RooCode => Some(Box::new(RooCodeAdapter)),
+        AdapterType::Augment => Some(Box::new(AugmentAdapter)),
     }
 }
 
