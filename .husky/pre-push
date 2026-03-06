@@ -1,41 +1,23 @@
 #!/usr/bin/env bash
 
-# Check if this is a documentation-only change
-is_doc_only() {
-  # Get list of files changed compared to the base branch
-  # For pushes, compare against the remote tracking branch
-  base=$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null || echo "origin/main")
-  changed=$(git diff --name-only "$base"...HEAD 2>/dev/null || git diff --name-only HEAD~1 HEAD)
-  
-  # If no changed files, not doc-only
-  if [ -z "$changed" ]; then
-    return 1
-  fi
-  
-  # Check if any file is NOT a documentation file
-  for file in $changed; do
-    case "$file" in
-      *.md|*.txt|LICENSE|*.rst|docs/*|.husky/*)
-        # Documentation file, continue checking
-        ;;
-      *)
-        # Non-documentation file found
-        return 1
-        ;;
-    esac
-  done
-  
-  # All files are documentation
-  return 0
-}
+set -euo pipefail
 
-# Skip hooks for documentation-only changes
-if is_doc_only; then
-  echo "📝 Documentation-only change, skipping tests and type checks"
+repo_root="$(git rev-parse --show-toplevel)"
+source "$repo_root/scripts/git-hooks/common.sh"
+
+changed_files="$(collect_push_files)"
+
+if [ -z "$changed_files" ]; then
+  echo "ℹ️ No files detected in push range, skipping pre-push"
   exit 0
 fi
 
-set -euo pipefail
+classify_paths <<< "$changed_files"
+
+if [ "$HAS_DOCS_ONLY" -eq 1 ] && [ "$HAS_SUPPORT_MATRIX" -eq 0 ]; then
+  echo "📝 Documentation-only change, skipping tests and type checks"
+  exit 0
+fi
 
 log_dir="$(git rev-parse --git-path hooks-logs)"
 mkdir -p "$log_dir"
@@ -59,6 +41,12 @@ run_step() {
   print_line "Command: ${cmd}"
   print_line "══════════════════════════════════════════════════"
 
+  if is_dry_run; then
+    print_line "◌ DRY RUN: ${label}"
+    print_line "✓ SKIPPED (dry run): ${label}"
+    return 0
+  fi
+
   set +e
   "$@" 2>&1 | tee -a "$log_path"
   local status=${PIPESTATUS[0]}
@@ -76,23 +64,41 @@ run_step() {
   print_line "✓ PASSED: ${label}"
 }
 
-run_step "TypeScript type check" npm run typecheck
-run_step "Rust lint (clippy)" npm run lint:rust
-run_step "Frontend tests" npm run test
-run_step "Rust tests (unit + integration)" npm run test:rust
+print_line "📦 Push scopes: $(describe_detected_scopes)"
+print_line "Changed files:"
+while IFS= read -r file; do
+  print_line "  - ${file}"
+done <<< "$changed_files"
 
-run_step "Generate SUPPORT_MATRIX.md" npm run gen:docs
+mapfile -t hook_files < <(hook_shell_files_from_paths <<< "$changed_files")
+if [ "${#hook_files[@]}" -gt 0 ]; then
+  run_step "Hook shell syntax" bash -n "${hook_files[@]}"
+fi
 
-if ! git diff --exit-code docs/SUPPORT_MATRIX.md > /dev/null 2>&1; then
-  print_line ""
-  print_line "✗ FAILED: SUPPORT_MATRIX freshness check"
-  print_line "Failing command: git diff --exit-code docs/SUPPORT_MATRIX.md"
-  print_line "Exit code: 1"
-  print_line "docs/SUPPORT_MATRIX.md is STALE."
-  print_line "Run: npm run gen:docs"
-  print_line "Then commit the updated file before pushing."
-  print_line "Full log: ${log_path}"
-  exit 1
+if [ "$HAS_FRONTEND" -eq 1 ]; then
+  run_step "TypeScript type check" npm run typecheck
+  run_step "Frontend tests" npm run test
+fi
+
+if [ "$HAS_RUST" -eq 1 ]; then
+  run_step "Rust lint (clippy)" npm run lint:rust
+  run_step "Rust tests (unit + integration)" npm run test:rust
+fi
+
+if [ "$HAS_SUPPORT_MATRIX" -eq 1 ]; then
+  run_step "Generate SUPPORT_MATRIX.md" npm run gen:docs
+
+  if ! is_dry_run && ! git diff --exit-code docs/SUPPORT_MATRIX.md > /dev/null 2>&1; then
+    print_line ""
+    print_line "✗ FAILED: SUPPORT_MATRIX freshness check"
+    print_line "Failing command: git diff --exit-code docs/SUPPORT_MATRIX.md"
+    print_line "Exit code: 1"
+    print_line "docs/SUPPORT_MATRIX.md is STALE."
+    print_line "Run: npm run gen:docs"
+    print_line "Then commit the updated file before pushing."
+    print_line "Full log: ${log_path}"
+    exit 1
+  fi
 fi
 
 print_line ""

@@ -1,41 +1,58 @@
-#!/usr/bin/env sh
-set -e
+#!/usr/bin/env bash
+set -euo pipefail
 
-# Check if this is a documentation-only change
-is_doc_only() {
-  # Get list of staged files
-  staged=$(git diff --cached --name-only --diff-filter=ACM)
-  
-  # If no staged files, not doc-only
-  if [ -z "$staged" ]; then
-    return 1
-  fi
-  
-  # Check if any file is NOT a documentation file
-  for file in $staged; do
-    case "$file" in
-      *.md|*.txt|LICENSE|*.rst|docs/*)
-        # Documentation file, continue checking
-        ;;
-      *)
-        # Non-documentation file found
-        return 1
-        ;;
-    esac
-  done
-  
-  # All files are documentation
-  return 0
-}
+repo_root="$(git rev-parse --show-toplevel)"
+source "$repo_root/scripts/git-hooks/common.sh"
 
-# Skip hooks for documentation-only changes
-if is_doc_only; then
+changed_files="$(collect_staged_files)"
+
+if [ -z "$changed_files" ]; then
+  echo "ℹ️ No staged files, skipping pre-commit"
+  exit 0
+fi
+
+classify_paths <<< "$changed_files"
+
+echo "📦 Staged scopes: $(describe_detected_scopes)"
+
+if [ "$HAS_DOCS_ONLY" -eq 1 ]; then
   echo "📝 Documentation-only change, skipping lint and format checks"
   exit 0
 fi
 
-echo "🔍 Running lint-staged..."
-npx lint-staged
+if [ "$HAS_LINT_STAGED" -eq 1 ]; then
+  echo "🔍 Running lint-staged..."
+  if ! is_dry_run; then
+    npx lint-staged
+  else
+    echo "DRY RUN: npx lint-staged"
+  fi
+else
+  echo "ℹ️ No staged JS/TS/CSS/JSON/Markdown files, skipping lint-staged"
+fi
+
+mapfile -t rust_files < <(rust_files_from_paths <<< "$changed_files")
+if [ "${#rust_files[@]}" -gt 0 ]; then
+  echo "🦀 Formatting staged Rust files..."
+  if ! is_dry_run; then
+    rustfmt --edition 2021 "${rust_files[@]}"
+    for file in "${rust_files[@]}"; do
+      git add "$file"
+    done
+  else
+    echo "DRY RUN: rustfmt --edition 2021 ${rust_files[*]}"
+  fi
+fi
+
+mapfile -t hook_files < <(hook_shell_files_from_paths <<< "$changed_files")
+if [ "${#hook_files[@]}" -gt 0 ]; then
+  echo "🪝 Validating hook shell syntax..."
+  if ! is_dry_run; then
+    bash -n "${hook_files[@]}"
+  else
+    echo "DRY RUN: bash -n ${hook_files[*]}"
+  fi
+fi
 
 echo ""
 echo "✅ Pre-commit checks passed"
