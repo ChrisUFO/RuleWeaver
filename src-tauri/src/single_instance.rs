@@ -3,6 +3,9 @@ use std::io;
 pub struct SingleInstanceGuard {
     #[cfg(target_os = "windows")]
     handle: *mut std::ffi::c_void,
+
+    #[cfg(unix)]
+    _file: std::fs::File,
 }
 
 pub fn try_acquire(name: &str) -> io::Result<Option<SingleInstanceGuard>> {
@@ -120,7 +123,84 @@ mod imp {
     }
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(unix)]
+mod imp {
+    use super::SingleInstanceGuard;
+    use std::fs::OpenOptions;
+    use std::io;
+    use std::os::fd::AsRawFd;
+
+    type CInt = std::ffi::c_int;
+
+    const LOCK_EX: CInt = 2;
+    const LOCK_NB: CInt = 4;
+
+    unsafe extern "C" {
+        fn flock(fd: CInt, operation: CInt) -> CInt;
+    }
+
+    pub(super) fn try_acquire(name: &str) -> io::Result<Option<SingleInstanceGuard>> {
+        let lock_path =
+            std::env::temp_dir().join(format!("ruleweaver-{}.lock", sanitize_name(name)));
+        let file = OpenOptions::new()
+            .create(true)
+            .read(true)
+            .write(true)
+            .open(lock_path)?;
+
+        let result = unsafe { flock(file.as_raw_fd(), LOCK_EX | LOCK_NB) };
+        if result == 0 {
+            return Ok(Some(SingleInstanceGuard { _file: file }));
+        }
+
+        let error = io::Error::last_os_error();
+        if error.kind() == io::ErrorKind::WouldBlock {
+            return Ok(None);
+        }
+
+        Err(error)
+    }
+
+    pub(super) fn show_existing_window(_title: &str) {}
+
+    fn sanitize_name(name: &str) -> String {
+        name.chars()
+            .map(|ch| if ch.is_ascii_alphanumeric() { ch } else { '_' })
+            .collect()
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::try_acquire;
+
+        #[test]
+        fn prevents_duplicate_acquisition_for_same_name() {
+            let name = format!("ruleweaver-test-{}", uuid::Uuid::new_v4());
+
+            let first = try_acquire(&name).expect("first acquisition should succeed");
+            assert!(
+                first.is_some(),
+                "first acquisition should own the file lock"
+            );
+
+            let second = try_acquire(&name).expect("second acquisition should succeed");
+            assert!(
+                second.is_none(),
+                "second acquisition should detect an existing instance"
+            );
+
+            drop(first);
+
+            let third = try_acquire(&name).expect("third acquisition should succeed");
+            assert!(
+                third.is_some(),
+                "lock should be available again after guard drop"
+            );
+        }
+    }
+}
+
+#[cfg(not(any(target_os = "windows", unix)))]
 mod imp {
     use super::SingleInstanceGuard;
     use std::io;
