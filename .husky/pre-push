@@ -76,13 +76,49 @@ if [ "${#hook_files[@]}" -gt 0 ]; then
 fi
 
 if [ "$HAS_FRONTEND" -eq 1 ]; then
-  run_step "TypeScript type check" npm run typecheck
-  run_step "Frontend tests" npm run test
+  mapfile -t frontend_eslint_files < <(frontend_eslint_files_from_paths <<< "$changed_files")
+  mapfile -t frontend_test_files < <(frontend_test_files_from_paths <<< "$changed_files")
+  mapfile -t frontend_source_files < <(frontend_source_files_from_paths <<< "$changed_files")
+  mapfile -t frontend_named_test_files < <(frontend_named_test_files_from_source_paths <<< "$(printf "%s\n" "${frontend_source_files[@]}")")
+
+  if has_frontend_config_changes <<< "$changed_files"; then
+    run_step "Frontend lint" npm run lint
+    run_step "TypeScript type check" npm run typecheck
+    run_step "Frontend tests" npm run test
+  else
+    if [ "${#frontend_eslint_files[@]}" -gt 0 ]; then
+      run_step "Frontend lint (changed files)" npx eslint "${frontend_eslint_files[@]}"
+    fi
+
+    run_step "TypeScript type check" npm run typecheck
+
+    if [ "${#frontend_test_files[@]}" -gt 0 ]; then
+      run_step "Frontend tests (changed test files)" npx vitest run --passWithNoTests "${frontend_test_files[@]}"
+    fi
+
+    if [ "${#frontend_named_test_files[@]}" -gt 0 ]; then
+      run_step "Frontend tests (named matches)" npx vitest run --passWithNoTests "${frontend_named_test_files[@]}"
+    fi
+
+    if { [ "${#frontend_source_files[@]}" -gt 0 ] && has_frontend_source_without_named_tests <<< "$(printf "%s\n" "${frontend_source_files[@]}")"; } \
+      || { [ "${#frontend_test_files[@]}" -eq 0 ] && [ "${#frontend_named_test_files[@]}" -eq 0 ]; }; then
+      run_step "Frontend tests" npm run test
+    fi
+  fi
 fi
 
 if [ "$HAS_RUST" -eq 1 ]; then
-  run_step "Rust lint (clippy)" npm run lint:rust
-  run_step "Rust tests (unit + integration)" npm run test:rust
+  mapfile -t rust_integration_targets < <(rust_integration_test_targets_from_paths <<< "$changed_files")
+
+  if [ "${#rust_integration_targets[@]}" -gt 0 ] && ! has_rust_non_integration_changes <<< "$changed_files"; then
+    for target in "${rust_integration_targets[@]}"; do
+      run_step "Rust lint target: ${target}" cargo clippy --manifest-path src-tauri/Cargo.toml --test "$target" --features test-helpers -- -D warnings
+      run_step "Rust test target: ${target}" cargo test --manifest-path src-tauri/Cargo.toml --features test-helpers --test "$target"
+    done
+  else
+    run_step "Rust lint (clippy)" npm run lint:rust
+    run_step "Rust tests (unit + integration)" npm run test:rust
+  fi
 fi
 
 if [ "$HAS_SUPPORT_MATRIX" -eq 1 ]; then

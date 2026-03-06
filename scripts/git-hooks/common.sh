@@ -31,6 +31,42 @@ is_rust_path() {
   esac
 }
 
+is_frontend_test_path() {
+  case "$1" in
+    src/*.test.ts|src/*.test.tsx|src/*.test.js|src/*.test.jsx|src/*.spec.ts|src/*.spec.tsx|src/*.spec.js|src/*.spec.jsx|src/__tests__/*)
+      return 0
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+is_frontend_config_path() {
+  case "$1" in
+    package.json|package-lock.json|bun.lock|vite.config.ts|tsconfig.json|tsconfig.node.json|eslint.config.js|src/test/*)
+      return 0
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+is_rust_integration_test_path() {
+  case "$1" in
+    src-tauri/tests/*.rs)
+      return 0
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+is_rust_shared_test_path() {
+  case "$1" in
+    src-tauri/tests/common/*)
+      return 0
+      ;;
+    *) return 1 ;;
+  esac
+}
+
 is_hook_path() {
   case "$1" in
     .gitattributes|.husky/*|scripts/git-hooks/*) return 0 ;;
@@ -199,4 +235,125 @@ rust_files_from_paths() {
         ;;
     esac
   done | sort -u
+}
+
+frontend_eslint_files_from_paths() {
+  while IFS= read -r file; do
+    case "$file" in
+      *.ts|*.tsx)
+        if is_frontend_path "$file" && [ -f "$file" ]; then
+          printf "%s\n" "$file"
+        fi
+        ;;
+    esac
+  done | sort -u
+}
+
+frontend_test_files_from_paths() {
+  while IFS= read -r file; do
+    if is_frontend_test_path "$file" && [ -f "$file" ]; then
+      printf "%s\n" "$file"
+    fi
+  done | sort -u
+}
+
+frontend_source_files_from_paths() {
+  while IFS= read -r file; do
+    case "$file" in
+      *.ts|*.tsx|*.js|*.jsx)
+        if is_frontend_path "$file" && ! is_frontend_test_path "$file" && ! is_frontend_config_path "$file" && [ -f "$file" ]; then
+          printf "%s\n" "$file"
+        fi
+        ;;
+    esac
+  done | sort -u
+}
+
+frontend_named_test_files_from_source_paths() {
+  while IFS= read -r file; do
+    local relative_dir base_name extension
+    relative_dir="${file#src/}"
+    relative_dir="$(dirname "$relative_dir")"
+    [ "$relative_dir" = "." ] && relative_dir=""
+
+    base_name="$(basename "$file")"
+    extension="${base_name##*.}"
+    base_name="${base_name%.*}"
+
+    for candidate in \
+      "src/__tests__/${relative_dir:+$relative_dir/}${base_name}.test.${extension}" \
+      "src/__tests__/${relative_dir:+$relative_dir/}${base_name}.spec.${extension}" \
+      "src/${relative_dir:+$relative_dir/}${base_name}.test.${extension}" \
+      "src/${relative_dir:+$relative_dir/}${base_name}.spec.${extension}"
+    do
+      if [ -f "$candidate" ]; then
+        printf "%s\n" "$candidate"
+      fi
+    done
+  done | sort -u
+}
+
+has_frontend_source_without_named_tests() {
+  while IFS= read -r file; do
+    [ -z "$file" ] && continue
+
+    local relative_dir base_name extension found_match=0
+    relative_dir="${file#src/}"
+    relative_dir="$(dirname "$relative_dir")"
+    [ "$relative_dir" = "." ] && relative_dir=""
+
+    base_name="$(basename "$file")"
+    extension="${base_name##*.}"
+    base_name="${base_name%.*}"
+
+    for candidate in \
+      "src/__tests__/${relative_dir:+$relative_dir/}${base_name}.test.${extension}" \
+      "src/__tests__/${relative_dir:+$relative_dir/}${base_name}.spec.${extension}" \
+      "src/${relative_dir:+$relative_dir/}${base_name}.test.${extension}" \
+      "src/${relative_dir:+$relative_dir/}${base_name}.spec.${extension}"
+    do
+      if [ -f "$candidate" ]; then
+        found_match=1
+        break
+      fi
+    done
+
+    if [ "$found_match" -eq 0 ]; then
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+has_frontend_config_changes() {
+  while IFS= read -r file; do
+    if is_frontend_config_path "$file"; then
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+rust_integration_test_targets_from_paths() {
+  while IFS= read -r file; do
+    if is_rust_integration_test_path "$file" && ! is_rust_shared_test_path "$file"; then
+      basename "$file" .rs
+    fi
+  done | sort -u
+}
+
+has_rust_non_integration_changes() {
+  while IFS= read -r file; do
+    if is_rust_path "$file" && ! is_rust_integration_test_path "$file"; then
+      return 0
+    fi
+
+    if is_rust_shared_test_path "$file"; then
+      return 0
+    fi
+  done
+
+  return 1
 }
