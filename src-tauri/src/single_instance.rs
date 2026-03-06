@@ -128,22 +128,26 @@ mod imp {
 #[cfg(unix)]
 mod imp {
     use super::SingleInstanceGuard;
-    use std::fs::OpenOptions;
+    use std::fs::{self, DirBuilder, OpenOptions};
     use std::io;
     use std::os::fd::AsRawFd;
+    use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
+    use std::path::{Path, PathBuf};
 
     type CInt = std::ffi::c_int;
+    type Uid = std::ffi::c_uint;
 
     const LOCK_EX: CInt = 2;
     const LOCK_NB: CInt = 4;
+    const PRIVATE_DIR_MODE: u32 = 0o700;
 
     unsafe extern "C" {
         fn flock(fd: CInt, operation: CInt) -> CInt;
+        fn geteuid() -> Uid;
     }
 
     pub(super) fn try_acquire(name: &str) -> io::Result<Option<SingleInstanceGuard>> {
-        let lock_path =
-            std::env::temp_dir().join(format!("ruleweaver-{}.lock", sanitize_name(name)));
+        let lock_path = lock_dir()?.join(format!("ruleweaver-{}.lock", sanitize_name(name)));
         let file = OpenOptions::new()
             .create(true)
             .read(true)
@@ -167,10 +171,106 @@ mod imp {
         log::debug!("Single-instance handoff on Unix is not implemented yet");
     }
 
+    fn lock_dir() -> io::Result<PathBuf> {
+        if let Some(runtime_dir) = std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from) {
+            if is_secure_directory(&runtime_dir)? {
+                return Ok(runtime_dir);
+            }
+
+            log::warn!(
+                "Ignoring insecure XDG_RUNTIME_DIR for single-instance lock: {}",
+                runtime_dir.display()
+            );
+        }
+
+        let home_dir = std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "HOME is not set"))?;
+
+        let state_dir = home_dir.join(".local").join("state").join("ruleweaver");
+        ensure_private_directory(&state_dir)?;
+        Ok(state_dir)
+    }
+
+    fn is_secure_directory(path: &Path) -> io::Result<bool> {
+        let metadata = match fs::symlink_metadata(path) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
+            Err(error) => return Err(error),
+        };
+
+        if metadata.file_type().is_symlink() || !metadata.is_dir() {
+            return Ok(false);
+        }
+
+        if metadata.uid() != current_euid() {
+            return Ok(false);
+        }
+
+        Ok((metadata.mode() & 0o777) == PRIVATE_DIR_MODE)
+    }
+
+    fn ensure_private_directory(path: &Path) -> io::Result<()> {
+        if let Ok(metadata) = fs::symlink_metadata(path) {
+            return ensure_private_directory_metadata(path, &metadata);
+        }
+
+        let mut builder = DirBuilder::new();
+        builder.recursive(true);
+        builder.mode(PRIVATE_DIR_MODE);
+        builder.create(path)?;
+
+        let metadata = fs::symlink_metadata(path)?;
+        ensure_private_directory_metadata(path, &metadata)
+    }
+
+    fn ensure_private_directory_metadata(path: &Path, metadata: &fs::Metadata) -> io::Result<()> {
+        if metadata.file_type().is_symlink() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!(
+                    "single-instance lock directory is a symlink: {}",
+                    path.display()
+                ),
+            ));
+        }
+
+        if !metadata.is_dir() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!(
+                    "single-instance lock directory is not a directory: {}",
+                    path.display()
+                ),
+            ));
+        }
+
+        if metadata.uid() != current_euid() {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                format!(
+                    "single-instance lock directory is not owned by the current user: {}",
+                    path.display()
+                ),
+            ));
+        }
+
+        let mode = metadata.mode() & 0o777;
+        if mode != PRIVATE_DIR_MODE {
+            fs::set_permissions(path, fs::Permissions::from_mode(PRIVATE_DIR_MODE))?;
+        }
+
+        Ok(())
+    }
+
     fn sanitize_name(name: &str) -> String {
         name.chars()
             .map(|ch| if ch.is_ascii_alphanumeric() { ch } else { '_' })
             .collect()
+    }
+
+    fn current_euid() -> u32 {
+        unsafe { geteuid() }
     }
 
     #[cfg(test)]
