@@ -97,7 +97,9 @@ If **Minimize to tray on close** is enabled (Settings -> MCP Server), closing th
   - `pre-commit` runs only fast staged-file checks
   - `pre-push` runs heavier validation only for changed frontend / Rust / support-matrix areas
   - frontend pushes use changed-file ESLint plus direct matching test-file selection when safe, and fall back to the full frontend suite when a changed source file has no obvious matching test
-  - Rust pushes run targeted integration-test validation when only `src-tauri/tests/*.rs` changed; otherwise they fall back to the full Rust suite
+  - Rust pushes run targeted integration-test validation when only `src-tauri/tests/*.rs` changed
+  - a small allowlist of self-contained Rust source modules (`feature_flags`, `redaction`, `single_instance`, `status`) uses `cargo clippy --lib --bins` plus filtered `cargo test --lib <module>::`
+  - other Rust source changes still fall back to the full Rust suite
 - Git runs these hooks as shell scripts, so normal `git commit` / `git push` works from
   both Git Bash and PowerShell. On Windows, the hook files are pinned to LF endings so
   Bash execution stays reliable even with `core.autocrlf=true`.

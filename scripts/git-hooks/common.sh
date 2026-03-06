@@ -67,6 +67,23 @@ is_rust_shared_test_path() {
   esac
 }
 
+rust_safe_unit_test_filter_for_path() {
+  case "$1" in
+    src-tauri/src/feature_flags.rs)
+      printf "%s\n" "feature_flags::"
+      ;;
+    src-tauri/src/redaction.rs)
+      printf "%s\n" "redaction::"
+      ;;
+    src-tauri/src/single_instance.rs)
+      printf "%s\n" "single_instance::"
+      ;;
+    src-tauri/src/status/mod.rs)
+      printf "%s\n" "status::"
+      ;;
+  esac
+}
+
 is_hook_path() {
   case "$1" in
     .gitattributes|.husky/*|scripts/git-hooks/*) return 0 ;;
@@ -344,15 +361,39 @@ rust_integration_test_targets_from_paths() {
   done | sort -u
 }
 
-has_rust_non_integration_changes() {
+rust_safe_unit_test_filters_from_paths() {
   while IFS= read -r file; do
-    if is_rust_path "$file" && ! is_rust_integration_test_path "$file"; then
-      return 0
+    [ -z "$file" ] && continue
+
+    local filter
+    filter="$(rust_safe_unit_test_filter_for_path "$file")"
+    if [ -n "$filter" ]; then
+      printf "%s\n" "$filter"
+    fi
+  done | sort -u
+}
+
+has_rust_non_narrowable_changes() {
+  while IFS= read -r file; do
+    [ -z "$file" ] && continue
+
+    if ! is_rust_path "$file"; then
+      continue
     fi
 
     if is_rust_shared_test_path "$file"; then
       return 0
     fi
+
+    if is_rust_integration_test_path "$file"; then
+      continue
+    fi
+
+    if [ -n "$(rust_safe_unit_test_filter_for_path "$file")" ]; then
+      continue
+    fi
+
+    return 0
   done
 
   return 1

@@ -109,8 +109,18 @@ fi
 
 if [ "$HAS_RUST" -eq 1 ]; then
   mapfile -t rust_integration_targets < <(rust_integration_test_targets_from_paths <<< "$changed_files")
+  mapfile -t rust_safe_unit_filters < <(rust_safe_unit_test_filters_from_paths <<< "$changed_files")
 
-  if [ "${#rust_integration_targets[@]}" -gt 0 ] && ! has_rust_non_integration_changes <<< "$changed_files"; then
+  if { [ "${#rust_integration_targets[@]}" -gt 0 ] || [ "${#rust_safe_unit_filters[@]}" -gt 0 ]; } \
+    && ! has_rust_non_narrowable_changes <<< "$changed_files"; then
+    if [ "${#rust_safe_unit_filters[@]}" -gt 0 ]; then
+      run_step "Rust lint (lib + bins)" cargo clippy --manifest-path src-tauri/Cargo.toml --lib --bins --features test-helpers -- -D warnings
+
+      for filter in "${rust_safe_unit_filters[@]}"; do
+        run_step "Rust unit tests filter: ${filter}" cargo test --manifest-path src-tauri/Cargo.toml --lib "$filter"
+      done
+    fi
+
     for target in "${rust_integration_targets[@]}"; do
       run_step "Rust lint target: ${target}" cargo clippy --manifest-path src-tauri/Cargo.toml --test "$target" --features test-helpers -- -D warnings
       run_step "Rust test target: ${target}" cargo test --manifest-path src-tauri/Cargo.toml --features test-helpers --test "$target"
