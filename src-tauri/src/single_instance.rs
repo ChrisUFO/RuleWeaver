@@ -8,6 +8,8 @@ pub struct SingleInstanceGuard {
     _file: std::fs::File,
 }
 
+// `io::Result` is already `#[must_use]`, so callers get compiler help if they
+// ignore the acquisition outcome.
 pub fn try_acquire(name: &str) -> io::Result<Option<SingleInstanceGuard>> {
     imp::try_acquire(name)
 }
@@ -161,7 +163,9 @@ mod imp {
         Err(error)
     }
 
-    pub(super) fn show_existing_window(_title: &str) {}
+    pub(super) fn show_existing_window(_title: &str) {
+        log::debug!("Single-instance handoff on Unix is not implemented yet");
+    }
 
     fn sanitize_name(name: &str) -> String {
         name.chars()
@@ -205,6 +209,8 @@ mod imp {
     use super::SingleInstanceGuard;
     use std::io;
 
+    // Intentionally permissive on unsupported platforms until we add a native
+    // single-instance primitive there.
     pub(super) fn try_acquire(_name: &str) -> io::Result<Option<SingleInstanceGuard>> {
         Ok(Some(SingleInstanceGuard {}))
     }
