@@ -26,6 +26,7 @@ export interface ObservabilityEvent {
   failureClass?: string | null;
   attemptNumber?: number | null;
   isRedacted: boolean;
+  workspacePath?: string | null;
 }
 
 export interface ObservabilityEventFilter {
