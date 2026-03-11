@@ -12,6 +12,7 @@ pub mod reconciliation;
 mod redaction;
 pub mod rule_import;
 mod secrets;
+mod secure_storage;
 mod single_instance;
 mod slash_commands;
 mod status;

@@ -2,13 +2,15 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use crate::constants::skills::SKILL_SECRET_PREFIX;
-use crate::database::Database;
+use crate::database::{Database, ScopedSecretRecord};
 use crate::error::{AppError, Result};
 use crate::models::{
     Command, DeleteScopedSecretInput, EffectiveSecret, ResolveScopedSecretsInput, ScopedSecret,
     SecretScope, Skill, UpsertScopedSecretInput,
 };
 use crate::path_resolver::PathResolver;
+use crate::secure_storage::SecretStorage;
+use sha2::{Digest, Sha256};
 
 const MASKED_SECRET_VALUE: &str = "••••••••";
 
@@ -49,6 +51,15 @@ fn validate_secret_key_for_write(key: &str) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn normalize_secret_value_for_write(value: &str) -> Result<String> {
+    if value.trim().is_empty() {
+        return Err(AppError::Validation(
+            "Secret value cannot be empty".to_string(),
+        ));
+    }
+    Ok(value.to_string())
 }
 
 pub fn secret_env_var_name(key: &str) -> String {
@@ -150,6 +161,137 @@ fn mask_scoped_secret(mut secret: ScopedSecret) -> ScopedSecret {
     secret
 }
 
+fn scoped_secret_storage_key(
+    namespace: &str,
+    scope: &SecretScope,
+    key: &str,
+    workspace_path: Option<&str>,
+    artifact_id: Option<&str>,
+) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(namespace.as_bytes());
+    hasher.update(b"|");
+    hasher.update(scope.as_str().as_bytes());
+    hasher.update(b"|");
+    hasher.update(key.to_lowercase().as_bytes());
+    hasher.update(b"|");
+    hasher.update(workspace_path.unwrap_or_default().as_bytes());
+    hasher.update(b"|");
+    hasher.update(artifact_id.unwrap_or_default().as_bytes());
+    format!("scoped-secret-{:x}", hasher.finalize())
+}
+
+fn scoped_secret_storage_key_for_record(namespace: &str, secret: &ScopedSecretRecord) -> String {
+    scoped_secret_storage_key(
+        namespace,
+        &secret.scope,
+        &secret.key,
+        secret.workspace_path.as_deref(),
+        secret.artifact_id.as_deref(),
+    )
+}
+
+async fn persist_secret_value(
+    storage: &SecretStorage,
+    namespace: &str,
+    input: &UpsertScopedSecretInput,
+) -> Result<()> {
+    let storage_key = scoped_secret_storage_key(
+        namespace,
+        &input.scope,
+        &input.key,
+        input.workspace_path.as_deref(),
+        input.artifact_id.as_deref(),
+    );
+    storage.set_secret(&storage_key, &input.value).await
+}
+
+async fn migrate_plaintext_scoped_secrets(db: &Database, storage: &SecretStorage) -> Result<()> {
+    let namespace = db.secret_namespace();
+    for secret in db.list_scoped_secret_records().await? {
+        if secret.value.is_empty() {
+            continue;
+        }
+
+        let storage_key = scoped_secret_storage_key_for_record(namespace, &secret);
+        storage.set_secret(&storage_key, &secret.value).await?;
+        db.clear_scoped_secret_plaintext_value(&secret.id).await?;
+    }
+
+    Ok(())
+}
+
+async fn migrate_legacy_allowlisted_settings(db: &Database, storage: &SecretStorage) -> Result<()> {
+    let namespace = db.secret_namespace();
+    let Some(allowlist_raw) = db.get_setting("mcp_secrets_allowlist").await? else {
+        return Ok(());
+    };
+
+    for key in allowlist_raw
+        .split(',')
+        .map(str::trim)
+        .filter(|entry| !entry.is_empty())
+    {
+        let Some(value) = db.get_setting(key).await? else {
+            continue;
+        };
+
+        if value.trim().is_empty() {
+            db.delete_setting(key).await?;
+            continue;
+        }
+
+        let input = normalize_upsert_input(UpsertScopedSecretInput {
+            key: key.to_string(),
+            value,
+            scope: SecretScope::Global,
+            workspace_path: None,
+            artifact_id: None,
+        })?;
+        persist_secret_value(storage, namespace, &input).await?;
+        db.upsert_scoped_secret(input).await?;
+        db.delete_setting(key).await?;
+    }
+
+    Ok(())
+}
+
+async fn ensure_secure_secret_storage(db: &Database) -> Result<SecretStorage> {
+    let storage = SecretStorage::global();
+    migrate_plaintext_scoped_secrets(db, &storage).await?;
+    migrate_legacy_allowlisted_settings(db, &storage).await?;
+    Ok(storage)
+}
+
+async fn resolve_secret_record(
+    storage: &SecretStorage,
+    namespace: &str,
+    secret: ScopedSecretRecord,
+) -> Result<ScopedSecret> {
+    let storage_key = scoped_secret_storage_key_for_record(namespace, &secret);
+    let value = storage
+        .get_secret(&storage_key)
+        .await?
+        .ok_or_else(|| AppError::SecureStorage {
+            message: format!(
+                "Secure secret '{}' could not be resolved from {}",
+                secret.key,
+                storage.backend_name()
+            ),
+        })?;
+
+    Ok(ScopedSecret {
+        id: secret.id,
+        key: secret.key,
+        value,
+        scope: secret.scope,
+        workspace_path: secret.workspace_path,
+        artifact_id: secret.artifact_id,
+        created_at: secret.created_at,
+        updated_at: secret.updated_at,
+    })
+}
+
 fn normalize_resolve_input(
     mut input: ResolveScopedSecretsInput,
 ) -> Result<ResolveScopedSecretsInput> {
@@ -176,7 +318,10 @@ fn normalize_resolve_input(
     Ok(input)
 }
 
-fn matches_resolution_context(secret: &ScopedSecret, input: &ResolveScopedSecretsInput) -> bool {
+fn matches_resolution_context(
+    secret: &ScopedSecretRecord,
+    input: &ResolveScopedSecretsInput,
+) -> bool {
     match secret.scope {
         SecretScope::Global => true,
         SecretScope::Workspace => secret.workspace_path == input.workspace_path,
@@ -255,6 +400,7 @@ pub fn infer_skill_workspace(skill: &Skill) -> Result<Option<String>> {
 }
 
 pub async fn list_scoped_secrets(db: &Database) -> Result<Vec<ScopedSecret>> {
+    ensure_secure_secret_storage(db).await?;
     Ok(db
         .list_scoped_secrets()
         .await?
@@ -267,15 +413,27 @@ pub async fn upsert_scoped_secret(
     db: &Database,
     input: UpsertScopedSecretInput,
 ) -> Result<ScopedSecret> {
+    let mut normalized = normalize_upsert_input(input)?;
+    normalized.value = normalize_secret_value_for_write(&normalized.value)?;
+    let storage = ensure_secure_secret_storage(db).await?;
+    persist_secret_value(&storage, db.secret_namespace(), &normalized).await?;
     Ok(mask_scoped_secret(
-        db.upsert_scoped_secret(normalize_upsert_input(input)?)
-            .await?,
+        db.upsert_scoped_secret(normalized).await?,
     ))
 }
 
 pub async fn delete_scoped_secret(db: &Database, input: DeleteScopedSecretInput) -> Result<()> {
-    db.delete_scoped_secret(normalize_delete_input(input)?)
-        .await
+    let normalized = normalize_delete_input(input)?;
+    let storage = ensure_secure_secret_storage(db).await?;
+    let storage_key = scoped_secret_storage_key(
+        db.secret_namespace(),
+        &normalized.scope,
+        &normalized.key,
+        normalized.workspace_path.as_deref(),
+        normalized.artifact_id.as_deref(),
+    );
+    db.delete_scoped_secret(normalized).await?;
+    storage.delete_secret(&storage_key).await
 }
 
 pub async fn resolve_scoped_secrets(
@@ -283,12 +441,15 @@ pub async fn resolve_scoped_secrets(
     input: ResolveScopedSecretsInput,
 ) -> Result<Vec<EffectiveSecret>> {
     let normalized = normalize_resolve_input(input)?;
-    let all = db.list_scoped_secrets().await?;
-    Ok(merge_effective_secrets(
-        all.into_iter()
-            .filter(|secret| matches_resolution_context(secret, &normalized))
-            .collect(),
-    ))
+    let storage = ensure_secure_secret_storage(db).await?;
+    let namespace = db.secret_namespace();
+    let mut all = Vec::new();
+    for secret in db.list_scoped_secret_records().await? {
+        if matches_resolution_context(&secret, &normalized) {
+            all.push(resolve_secret_record(&storage, namespace, secret).await?);
+        }
+    }
+    Ok(merge_effective_secrets(all))
 }
 
 pub async fn resolve_command_secret_envs(
@@ -340,18 +501,6 @@ pub async fn resolve_skill_secret_envs(
         if seen.insert(env_name.clone()) {
             envs.push((env_name.clone(), secret.value.clone()));
             envs.push((format!("{}{}", SKILL_SECRET_PREFIX, env_name), secret.value));
-        }
-    }
-
-    let settings = db.get_all_settings().await?;
-    for (key, value) in settings {
-        if !allowed_keys.contains(&key.to_lowercase()) {
-            continue;
-        }
-        let env_name = secret_env_var_name(&key);
-        if seen.insert(env_name.clone()) {
-            envs.push((env_name.clone(), value.clone()));
-            envs.push((format!("{}{}", SKILL_SECRET_PREFIX, env_name), value));
         }
     }
 
@@ -496,7 +645,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn skill_secret_envs_support_scoped_and_legacy_values() {
+    async fn skill_secret_envs_migrate_legacy_allowlisted_settings() {
         let db = Database::new_in_memory().await.unwrap();
         let skill = db
             .create_skill(CreateSkillInput {
@@ -528,6 +677,9 @@ mod tests {
         )
         .await
         .unwrap();
+        db.set_setting("mcp_secrets_allowlist", "PROJECT_API_KEY,LEGACY_TOKEN")
+            .await
+            .unwrap();
         db.set_setting("LEGACY_TOKEN", "legacy-value")
             .await
             .unwrap();
@@ -546,6 +698,7 @@ mod tests {
         assert!(envs
             .iter()
             .any(|(key, value)| key == "LEGACY_TOKEN" && value == "legacy-value"));
+        assert_eq!(db.get_setting("LEGACY_TOKEN").await.unwrap(), None);
     }
 
     #[tokio::test]
@@ -615,10 +768,41 @@ mod tests {
         assert_eq!(listed.len(), 1);
         assert_eq!(listed[0].value, MASKED_SECRET_VALUE);
 
+        let stored = db.list_scoped_secret_records().await.unwrap();
+        assert_eq!(stored.len(), 1);
+        assert_eq!(stored[0].value, "");
+
         let resolved = resolve_scoped_secrets(&db, ResolveScopedSecretsInput::default())
             .await
             .unwrap();
         assert_eq!(resolved[0].value, "super-secret");
+    }
+
+    #[tokio::test]
+    async fn resolves_existing_plaintext_secret_after_secure_storage_migration() {
+        let db = Database::new_in_memory().await.unwrap();
+
+        db.upsert_scoped_secret(UpsertScopedSecretInput {
+            key: "LEGACY_SECRET".into(),
+            value: "legacy-plaintext".into(),
+            scope: SecretScope::Global,
+            workspace_path: None,
+            artifact_id: None,
+        })
+        .await
+        .unwrap();
+        db.force_set_scoped_secret_plaintext_value("LEGACY_SECRET", "legacy-plaintext")
+            .await
+            .unwrap();
+
+        let resolved = resolve_scoped_secrets(&db, ResolveScopedSecretsInput::default())
+            .await
+            .unwrap();
+
+        assert!(resolved
+            .iter()
+            .any(|secret| secret.key == "LEGACY_SECRET" && secret.value == "legacy-plaintext"));
+        assert_eq!(db.list_scoped_secret_records().await.unwrap()[0].value, "");
     }
 
     #[test]

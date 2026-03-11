@@ -22,7 +22,7 @@ fn parse_timestamp_or_now(timestamp: i64) -> DateTime<Utc> {
         .unwrap_or_else(chrono::Utc::now)
 }
 
-pub struct Database(Mutex<Connection>);
+pub struct Database(Mutex<Connection>, String);
 
 impl std::fmt::Debug for Database {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -60,8 +60,21 @@ pub struct ReconciliationLogEntry {
     pub error_message: Option<String>,
 }
 
+#[derive(Debug, Clone)]
+pub struct ScopedSecretRecord {
+    pub id: String,
+    pub key: String,
+    pub value: String,
+    pub scope: SecretScope,
+    pub workspace_path: Option<String>,
+    pub artifact_id: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
 impl Database {
     async fn new_with_db_path(db_path: PathBuf) -> Result<Self> {
+        let secret_namespace = db_path.to_string_lossy().to_string();
         if let Some(parent) = db_path.parent() {
             std::fs::create_dir_all(parent)?;
         }
@@ -75,7 +88,7 @@ impl Database {
         .await
         .map_err(|e| AppError::Database(rusqlite::Error::ToSqlConversionFailure(Box::new(e))))??;
 
-        Ok(Self(Mutex::new(conn)))
+        Ok(Self(Mutex::new(conn), secret_namespace))
     }
 
     pub async fn new(app_handle: &tauri::AppHandle) -> Result<Self> {
@@ -95,6 +108,8 @@ impl Database {
 
     #[cfg(any(test, feature = "test-helpers"))]
     pub async fn new_in_memory() -> Result<Self> {
+        crate::secure_storage::reset_test_store();
+        let secret_namespace = format!("memory:{}", uuid::Uuid::new_v4());
         let conn = tokio::task::spawn_blocking(move || -> Result<Connection> {
             let mut conn = Connection::open_in_memory()?;
             run_migrations(&mut conn)?;
@@ -103,7 +118,11 @@ impl Database {
         .await
         .map_err(|e| AppError::Database(rusqlite::Error::ToSqlConversionFailure(Box::new(e))))??;
 
-        Ok(Self(Mutex::new(conn)))
+        Ok(Self(Mutex::new(conn), secret_namespace))
+    }
+
+    pub fn secret_namespace(&self) -> &str {
+        &self.1
     }
 
     /// Re-establishes the database connection and runs migrations.
@@ -1080,6 +1099,12 @@ impl Database {
         Ok(())
     }
 
+    pub async fn delete_setting(&self, key: &str) -> Result<()> {
+        let conn = self.0.lock().await;
+        conn.execute("DELETE FROM settings WHERE key = ?", params![key])?;
+        Ok(())
+    }
+
     pub async fn merge_setting_string_array_unique(
         &self,
         key: &str,
@@ -1130,7 +1155,7 @@ impl Database {
         Ok(settings)
     }
 
-    pub async fn list_scoped_secrets(&self) -> Result<Vec<ScopedSecret>> {
+    pub async fn list_scoped_secret_records(&self) -> Result<Vec<ScopedSecretRecord>> {
         let conn = self.0.lock().await;
         let mut stmt = conn.prepare(
             "SELECT id, key, value, scope, workspace_path, artifact_id, created_at, updated_at
@@ -1152,7 +1177,7 @@ impl Database {
                     )
                 })?;
 
-                Ok(ScopedSecret {
+                Ok(ScopedSecretRecord {
                     id: row.get(0)?,
                     key: row.get(1)?,
                     value: row.get(2)?,
@@ -1166,6 +1191,24 @@ impl Database {
             .collect::<std::result::Result<Vec<_>, _>>()?;
 
         Ok(secrets)
+    }
+
+    pub async fn list_scoped_secrets(&self) -> Result<Vec<ScopedSecret>> {
+        Ok(self
+            .list_scoped_secret_records()
+            .await?
+            .into_iter()
+            .map(|secret| ScopedSecret {
+                id: secret.id,
+                key: secret.key,
+                value: secret.value,
+                scope: secret.scope,
+                workspace_path: secret.workspace_path,
+                artifact_id: secret.artifact_id,
+                created_at: secret.created_at,
+                updated_at: secret.updated_at,
+            })
+            .collect())
     }
 
     pub async fn upsert_scoped_secret(
@@ -1198,9 +1241,9 @@ impl Database {
         let (id, created_at) = if let Some((id, created_at)) = existing {
             conn.execute(
                 "UPDATE scoped_secrets
-                 SET key = ?, value = ?, updated_at = ?
+                 SET key = ?, value = '', updated_at = ?
                  WHERE id = ?",
-                params![input.key, input.value, now, id],
+                params![input.key, now, id],
             )?;
             (id, created_at)
         } else {
@@ -1211,7 +1254,7 @@ impl Database {
                 params![
                     id,
                     input.key,
-                    input.value,
+                    "",
                     input.scope.as_str(),
                     input.workspace_path.as_deref(),
                     input.artifact_id.as_deref(),
@@ -1225,13 +1268,36 @@ impl Database {
         Ok(ScopedSecret {
             id,
             key: input.key,
-            value: input.value,
+            value: String::new(),
             scope: input.scope,
             workspace_path: input.workspace_path,
             artifact_id: input.artifact_id,
             created_at: parse_timestamp_or_now(created_at),
             updated_at: parse_timestamp_or_now(now),
         })
+    }
+
+    pub async fn clear_scoped_secret_plaintext_value(&self, id: &str) -> Result<()> {
+        let conn = self.0.lock().await;
+        conn.execute(
+            "UPDATE scoped_secrets SET value = '', updated_at = ? WHERE id = ?",
+            params![chrono::Utc::now().timestamp(), id],
+        )?;
+        Ok(())
+    }
+
+    #[cfg(test)]
+    pub async fn force_set_scoped_secret_plaintext_value(
+        &self,
+        key: &str,
+        value: &str,
+    ) -> Result<()> {
+        let conn = self.0.lock().await;
+        conn.execute(
+            "UPDATE scoped_secrets SET value = ?, updated_at = ? WHERE key = ?",
+            params![value, chrono::Utc::now().timestamp(), key],
+        )?;
+        Ok(())
     }
 
     pub async fn delete_scoped_secret(&self, input: DeleteScopedSecretInput) -> Result<()> {
@@ -1910,7 +1976,7 @@ fn run_migrations(conn: &mut Connection) -> Result<()> {
         )?;
     }
 
-    transaction.execute("PRAGMA user_version = 17", [])?;
+    transaction.execute("PRAGMA user_version = 18", [])?;
     transaction.commit()?;
 
     Ok(())
