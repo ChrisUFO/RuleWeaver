@@ -1208,9 +1208,7 @@ async fn handle_skill_call(
 
         match secrets::resolve_skill_secret_envs(db.as_ref(), skill, &allowed_keys).await {
             Ok(secret_envs) => {
-                for env in secret_envs {
-                    final_envs.push(env);
-                }
+                final_envs.extend(secret_envs);
             }
             Err(e) => {
                 log::warn!(
