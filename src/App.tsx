@@ -7,6 +7,7 @@ import { Commands } from "./components/pages/Commands";
 import { Skills } from "./components/pages/Skills";
 import { Status } from "./components/pages/Status";
 import { Settings } from "./components/pages/Settings";
+import { Logs } from "./components/pages/Logs";
 import { ToastProvider } from "./components/ui/toast";
 import { ErrorBoundary } from "./components/ui/error-boundary";
 import { KeyboardShortcutsDialog } from "./components/ui/keyboard-shortcuts-dialog";
@@ -114,6 +115,7 @@ function App() {
       ),
       skills: <Skills initialSelectedId={pendingId} onClearInitialId={() => setPendingId(null)} />,
       status: <Status onNavigate={handleNavigate} />,
+      logs: <Logs />,
       settings: <Settings />,
     };
 

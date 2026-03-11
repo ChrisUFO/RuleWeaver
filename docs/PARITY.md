@@ -2,7 +2,7 @@
 
 This document is the source of truth for capability divergence between AI tool adapters supported by RuleWeaver. It is updated per release and reflects the registry definitions in `src-tauri/src/models/registry.rs`.
 
-Last updated: 2026-03-11 (release: feat/15-mcp-onboarding-product-trust)
+Last updated: 2026-03-11 (release: feat/17-secrets-observability-foundations)
 
 ---
 

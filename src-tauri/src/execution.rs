@@ -290,22 +290,22 @@ pub async fn execute_and_log(input: ExecuteAndLogInput<'_>) -> Result<(i32, Stri
                 last_duration_ms = duration_ms;
 
                 if let Some(db) = input.db {
-                    let _ = db
-                        .add_execution_log(&ExecutionLogInput {
-                            command_id: input.command_id,
-                            command_name: input.command_name,
-                            arguments_json: input.arguments_json,
-                            stdout: &stdout_redacted,
-                            stderr: &stderr_redacted,
-                            exit_code,
-                            duration_ms,
-                            triggered_by: input.triggered_by,
-                            failure_class: Some(failure_class.as_str()),
-                            adapter_context: input.adapter_context,
-                            is_redacted,
-                            attempt_number: attempt as u8,
-                        })
-                        .await;
+                    let log_input = ExecutionLogInput {
+                        command_id: input.command_id,
+                        command_name: input.command_name,
+                        arguments_json: input.arguments_json,
+                        stdout: &stdout_redacted,
+                        stderr: &stderr_redacted,
+                        exit_code,
+                        duration_ms,
+                        triggered_by: input.triggered_by,
+                        failure_class: Some(failure_class.as_str()),
+                        adapter_context: input.adapter_context,
+                        is_redacted,
+                        attempt_number: attempt as u8,
+                    };
+                    let _ = db.add_execution_log(&log_input).await;
+                    let _ = crate::observability::record_command_execution(db, &log_input).await;
                 }
 
                 if exit_code == 0 {
@@ -327,22 +327,22 @@ pub async fn execute_and_log(input: ExecuteAndLogInput<'_>) -> Result<(i32, Stri
                 last_duration_ms = duration_ms;
 
                 if let Some(db) = input.db {
-                    let _ = db
-                        .add_execution_log(&ExecutionLogInput {
-                            command_id: input.command_id,
-                            command_name: input.command_name,
-                            arguments_json: input.arguments_json,
-                            stdout: "",
-                            stderr: &message,
-                            exit_code: -1,
-                            duration_ms,
-                            triggered_by: input.triggered_by,
-                            failure_class: Some(failure_class.as_str()),
-                            adapter_context: input.adapter_context,
-                            is_redacted: false,
-                            attempt_number: attempt as u8,
-                        })
-                        .await;
+                    let log_input = ExecutionLogInput {
+                        command_id: input.command_id,
+                        command_name: input.command_name,
+                        arguments_json: input.arguments_json,
+                        stdout: "",
+                        stderr: &message,
+                        exit_code: -1,
+                        duration_ms,
+                        triggered_by: input.triggered_by,
+                        failure_class: Some(failure_class.as_str()),
+                        adapter_context: input.adapter_context,
+                        is_redacted: false,
+                        attempt_number: attempt as u8,
+                    };
+                    let _ = db.add_execution_log(&log_input).await;
+                    let _ = crate::observability::record_command_execution(db, &log_input).await;
                 }
 
                 let should_retry = attempt < max_attempts && failure_class.is_retryable();
@@ -362,6 +362,8 @@ pub async fn execute_and_log(input: ExecuteAndLogInput<'_>) -> Result<(i32, Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::database::Database;
+    use crate::models::ObservabilityEventType;
 
     #[cfg(target_os = "windows")]
     #[test]
@@ -442,5 +444,38 @@ mod tests {
         assert!(!FailureClass::PermissionDenied.is_retryable());
         assert!(!FailureClass::ValidationError.is_retryable());
         assert!(!FailureClass::MissingBinary.is_retryable());
+    }
+
+    #[tokio::test]
+    async fn test_execute_and_log_persists_observability_event() {
+        let db = Database::new_in_memory().await.unwrap();
+        let envs: Vec<(String, String)> = Vec::new();
+
+        let result = execute_and_log(ExecuteAndLogInput {
+            db: Some(&db),
+            command_id: "cmd-1",
+            command_name: "Echo",
+            script: "echo hello-observability",
+            timeout_dur: Duration::from_secs(2),
+            envs: &envs,
+            arguments_json: "{}",
+            triggered_by: "test",
+            max_retries: Some(0),
+            adapter_context: Some("unit-test"),
+        })
+        .await
+        .unwrap();
+
+        assert_eq!(result.0, 0);
+
+        let events = db
+            .list_observability_events(&Default::default())
+            .await
+            .unwrap();
+        assert!(events.iter().any(|event| {
+            event.event_type == ObservabilityEventType::CommandRun
+                && event.entity_name.as_deref() == Some("Echo")
+                && event.source == "test"
+        }));
     }
 }

@@ -3,16 +3,17 @@ use std::str::FromStr;
 use tokio::sync::Mutex;
 
 use chrono::{DateTime, TimeZone, Utc};
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, params_from_iter, Connection, OptionalExtension};
 use tauri::Manager;
 
 use crate::error::{AppError, Result};
 use crate::file_storage::StorageLocation;
 use crate::models::{
     AdapterType, Command, CommandArgument, CreateCommandInput, CreateRuleInput, CreateSkillInput,
-    DeleteScopedSecretInput, ExecutionLog, ReconcileOperation, ReconcileResultType, Rule, Scope,
-    ScopedSecret, SecretScope, Skill, SyncHistoryEntry, UpdateCommandInput, UpdateRuleInput,
-    UpdateSkillInput, UpsertScopedSecretInput,
+    DeleteScopedSecretInput, ExecutionLog, ObservabilityEvent, ObservabilityEventFilter,
+    ObservabilityEventStatus, ObservabilityEventType, ReconcileOperation, ReconcileResultType,
+    Rule, Scope, ScopedSecret, SecretScope, Skill, SyncHistoryEntry, UpdateCommandInput,
+    UpdateRuleInput, UpdateSkillInput, UpsertScopedSecretInput,
 };
 
 fn parse_timestamp_or_now(timestamp: i64) -> DateTime<Utc> {
@@ -20,6 +21,43 @@ fn parse_timestamp_or_now(timestamp: i64) -> DateTime<Utc> {
         .timestamp_opt(timestamp, 0)
         .single()
         .unwrap_or_else(chrono::Utc::now)
+}
+
+fn parse_observability_event_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ObservabilityEvent> {
+    let timestamp: i64 = row.get(1)?;
+    let event_type_raw: String = row.get(2)?;
+    let status_raw: String = row.get(3)?;
+    Ok(ObservabilityEvent {
+        id: row.get(0)?,
+        timestamp: parse_timestamp_or_now(timestamp),
+        event_type: event_type_raw.parse().map_err(|error: AppError| {
+            rusqlite::Error::FromSqlConversionFailure(
+                2,
+                rusqlite::types::Type::Text,
+                Box::new(error),
+            )
+        })?,
+        status: status_raw.parse().map_err(|error: AppError| {
+            rusqlite::Error::FromSqlConversionFailure(
+                3,
+                rusqlite::types::Type::Text,
+                Box::new(error),
+            )
+        })?,
+        source: row.get(4)?,
+        entity_kind: row.get(5)?,
+        entity_id: row.get(6)?,
+        entity_name: row.get(7)?,
+        summary: row.get(8)?,
+        metadata: row.get(9)?,
+        stdout_excerpt: row.get(10)?,
+        stderr_excerpt: row.get(11)?,
+        duration_ms: row.get::<_, Option<i64>>(12)?.map(|value| value as u64),
+        exit_code: row.get(13)?,
+        failure_class: row.get(14)?,
+        attempt_number: row.get::<_, Option<i64>>(15)?.map(|value| value as u8),
+        is_redacted: row.get::<_, i32>(16)? != 0,
+    })
 }
 
 pub struct Database(Mutex<Connection>, String);
@@ -43,6 +81,24 @@ pub struct ExecutionLogInput<'a> {
     pub adapter_context: Option<&'a str>,
     pub is_redacted: bool,
     pub attempt_number: u8,
+}
+
+pub struct ObservabilityEventInput<'a> {
+    pub event_type: ObservabilityEventType,
+    pub status: ObservabilityEventStatus,
+    pub source: &'a str,
+    pub entity_kind: Option<&'a str>,
+    pub entity_id: Option<&'a str>,
+    pub entity_name: Option<&'a str>,
+    pub summary: &'a str,
+    pub metadata: Option<&'a str>,
+    pub stdout_excerpt: Option<&'a str>,
+    pub stderr_excerpt: Option<&'a str>,
+    pub duration_ms: Option<u64>,
+    pub exit_code: Option<i32>,
+    pub failure_class: Option<&'a str>,
+    pub attempt_number: Option<u8>,
+    pub is_redacted: bool,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -903,6 +959,144 @@ impl Database {
         )?;
 
         Ok(())
+    }
+
+    pub async fn add_observability_event(&self, input: &ObservabilityEventInput<'_>) -> Result<()> {
+        let conn = self.0.lock().await;
+        let id = uuid::Uuid::new_v4().to_string();
+        let now = chrono::Utc::now().timestamp();
+
+        conn.execute(
+            "INSERT INTO observability_events (
+                id, timestamp, event_type, status, source, entity_kind, entity_id, entity_name,
+                summary, metadata, stdout_excerpt, stderr_excerpt, duration_ms, exit_code,
+                failure_class, attempt_number, is_redacted
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            params![
+                id,
+                now,
+                input.event_type.as_str(),
+                input.status.as_str(),
+                input.source,
+                input.entity_kind,
+                input.entity_id,
+                input.entity_name,
+                input.summary,
+                input.metadata,
+                input.stdout_excerpt,
+                input.stderr_excerpt,
+                input.duration_ms.map(|value| value as i64),
+                input.exit_code,
+                input.failure_class,
+                input.attempt_number.map(|value| value as i64),
+                input.is_redacted as i32,
+            ],
+        )?;
+
+        Ok(())
+    }
+
+    pub async fn list_observability_events(
+        &self,
+        filter: &ObservabilityEventFilter,
+    ) -> Result<Vec<ObservabilityEvent>> {
+        let conn = self.0.lock().await;
+
+        let mut where_clauses = Vec::new();
+        let mut sql_params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+
+        if let Some(event_type) = &filter.event_type {
+            where_clauses.push("event_type = ?".to_string());
+            sql_params.push(Box::new(event_type.as_str().to_string()));
+        }
+
+        if let Some(status) = &filter.status {
+            where_clauses.push("status = ?".to_string());
+            sql_params.push(Box::new(status.as_str().to_string()));
+        }
+
+        if let Some(source) = filter
+            .source
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+        {
+            where_clauses.push("LOWER(source) LIKE ?".to_string());
+            sql_params.push(Box::new(format!("%{}%", source.trim().to_lowercase())));
+        }
+
+        if let Some(entity_name) = filter
+            .entity_name
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+        {
+            where_clauses.push("LOWER(COALESCE(entity_name, '')) LIKE ?".to_string());
+            sql_params.push(Box::new(format!("%{}%", entity_name.trim().to_lowercase())));
+        }
+
+        if let Some(query) = filter
+            .query
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+        {
+            let pattern = format!("%{}%", query.trim().to_lowercase());
+            where_clauses.push(
+                "(LOWER(summary) LIKE ? OR LOWER(source) LIKE ? OR LOWER(COALESCE(entity_name, '')) LIKE ? OR LOWER(COALESCE(metadata, '')) LIKE ? OR LOWER(COALESCE(stdout_excerpt, '')) LIKE ? OR LOWER(COALESCE(stderr_excerpt, '')) LIKE ?)"
+                    .to_string(),
+            );
+            for _ in 0..6 {
+                sql_params.push(Box::new(pattern.clone()));
+            }
+        }
+
+        if let Some(from_timestamp) = filter.from_timestamp {
+            where_clauses.push("timestamp >= ?".to_string());
+            sql_params.push(Box::new(from_timestamp.timestamp()));
+        }
+
+        if let Some(to_timestamp) = filter.to_timestamp {
+            where_clauses.push("timestamp <= ?".to_string());
+            sql_params.push(Box::new(to_timestamp.timestamp()));
+        }
+
+        let mut sql = "SELECT id, timestamp, event_type, status, source, entity_kind, entity_id, entity_name, summary, metadata, stdout_excerpt, stderr_excerpt, duration_ms, exit_code, failure_class, attempt_number, is_redacted FROM observability_events".to_string();
+        if !where_clauses.is_empty() {
+            sql.push_str(" WHERE ");
+            sql.push_str(&where_clauses.join(" AND "));
+        }
+        sql.push_str(" ORDER BY timestamp DESC, id DESC LIMIT ?");
+        sql_params.push(Box::new(filter.limit.unwrap_or(250).min(1000) as i64));
+
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt
+            .query_map(
+                params_from_iter(sql_params.iter()),
+                parse_observability_event_row,
+            )?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    pub async fn get_observability_events_by_ids(
+        &self,
+        ids: &[String],
+    ) -> Result<Vec<ObservabilityEvent>> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let conn = self.0.lock().await;
+        let placeholders = std::iter::repeat_n("?", ids.len())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let sql = format!(
+            "SELECT id, timestamp, event_type, status, source, entity_kind, entity_id, entity_name, summary, metadata, stdout_excerpt, stderr_excerpt, duration_ms, exit_code, failure_class, attempt_number, is_redacted FROM observability_events WHERE id IN ({placeholders}) ORDER BY timestamp DESC, id DESC"
+        );
+
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt
+            .query_map(params_from_iter(ids.iter()), parse_observability_event_row)?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
     }
 
     pub async fn get_execution_history(&self, limit: u32) -> Result<Vec<ExecutionLog>> {
@@ -1976,7 +2170,47 @@ fn run_migrations(conn: &mut Connection) -> Result<()> {
         )?;
     }
 
-    transaction.execute("PRAGMA user_version = 18", [])?;
+    if current_version < 19 {
+        transaction.execute(
+            "CREATE TABLE IF NOT EXISTS observability_events (
+                id TEXT PRIMARY KEY NOT NULL,
+                timestamp INTEGER NOT NULL,
+                event_type TEXT NOT NULL,
+                status TEXT NOT NULL,
+                source TEXT NOT NULL,
+                entity_kind TEXT,
+                entity_id TEXT,
+                entity_name TEXT,
+                summary TEXT NOT NULL,
+                metadata TEXT,
+                stdout_excerpt TEXT,
+                stderr_excerpt TEXT,
+                duration_ms INTEGER,
+                exit_code INTEGER,
+                failure_class TEXT,
+                attempt_number INTEGER,
+                is_redacted INTEGER NOT NULL DEFAULT 0
+            )",
+            [],
+        )?;
+        transaction.execute(
+            "CREATE INDEX IF NOT EXISTS idx_observability_events_timestamp
+             ON observability_events(timestamp DESC)",
+            [],
+        )?;
+        transaction.execute(
+            "CREATE INDEX IF NOT EXISTS idx_observability_events_type_status
+             ON observability_events(event_type, status, timestamp DESC)",
+            [],
+        )?;
+        transaction.execute(
+            "CREATE INDEX IF NOT EXISTS idx_observability_events_entity_name
+             ON observability_events(entity_name)",
+            [],
+        )?;
+    }
+
+    transaction.execute("PRAGMA user_version = 19", [])?;
     transaction.commit()?;
 
     Ok(())
@@ -2020,8 +2254,8 @@ pub fn default_app_data_dir() -> Result<PathBuf> {
 mod tests {
     use super::*;
     use crate::models::{
-        CreateCommandInput, CreateSkillInput, SkillParameter, SkillParameterType,
-        UpdateCommandInput, UpdateSkillInput,
+        CreateCommandInput, CreateSkillInput, ObservabilityEventStatus, ObservabilityEventType,
+        SkillParameter, SkillParameterType, UpdateCommandInput, UpdateSkillInput,
     };
 
     #[tokio::test]
@@ -2138,7 +2372,8 @@ mod tests {
 
         let all = db.list_scoped_secrets().await.unwrap();
         assert_eq!(all.len(), 1);
-        assert_eq!(all[0].value, "repo-a");
+        assert_eq!(all[0].value, "");
+        assert_eq!(all[0].workspace_path.as_deref(), Some("c:/repo-a"));
 
         let updated = db
             .upsert_scoped_secret(UpsertScopedSecretInput {
@@ -2151,7 +2386,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(updated.id, created.id);
-        assert_eq!(updated.value, "repo-b");
+        assert_eq!(updated.value, "");
 
         db.delete_scoped_secret(DeleteScopedSecretInput {
             key: "PROJECT_API_KEY".to_string(),
@@ -2163,5 +2398,123 @@ mod tests {
         .unwrap();
 
         assert!(db.list_scoped_secrets().await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_observability_events_filtering_and_lookup() {
+        let db = Database::new_in_memory().await.unwrap();
+
+        db.add_observability_event(&ObservabilityEventInput {
+            event_type: ObservabilityEventType::CommandRun,
+            status: ObservabilityEventStatus::Error,
+            source: "mcp",
+            entity_kind: Some("command"),
+            entity_id: Some("cmd-1"),
+            entity_name: Some("Deploy docs"),
+            summary: "Command execution failed",
+            metadata: Some("{\"toolName\":\"Deploy docs\"}"),
+            stdout_excerpt: None,
+            stderr_excerpt: Some("timeout"),
+            duration_ms: Some(500),
+            exit_code: Some(1),
+            failure_class: Some("timeout"),
+            attempt_number: Some(1),
+            is_redacted: true,
+        })
+        .await
+        .unwrap();
+
+        db.add_observability_event(&ObservabilityEventInput {
+            event_type: ObservabilityEventType::McpLifecycle,
+            status: ObservabilityEventStatus::Success,
+            source: "mcp",
+            entity_kind: Some("mcp"),
+            entity_id: None,
+            entity_name: Some("server"),
+            summary: "MCP server is ready",
+            metadata: None,
+            stdout_excerpt: None,
+            stderr_excerpt: None,
+            duration_ms: None,
+            exit_code: None,
+            failure_class: None,
+            attempt_number: None,
+            is_redacted: true,
+        })
+        .await
+        .unwrap();
+
+        let filtered = db
+            .list_observability_events(&ObservabilityEventFilter {
+                event_type: Some(ObservabilityEventType::CommandRun),
+                status: Some(ObservabilityEventStatus::Error),
+                entity_name: Some("deploy".to_string()),
+                query: Some("timeout".to_string()),
+                limit: Some(25),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].entity_name.as_deref(), Some("Deploy docs"));
+        assert!(filtered[0].is_redacted);
+
+        let looked_up = db
+            .get_observability_events_by_ids(&[filtered[0].id.clone()])
+            .await
+            .unwrap();
+        assert_eq!(looked_up.len(), 1);
+        assert_eq!(looked_up[0].summary, "Command execution failed");
+    }
+
+    #[tokio::test]
+    async fn test_observability_export_writes_redacted_entries() {
+        let db = Database::new_in_memory().await.unwrap();
+
+        db.add_observability_event(&ObservabilityEventInput {
+            event_type: ObservabilityEventType::SkillRun,
+            status: ObservabilityEventStatus::Success,
+            source: "mcp-skill",
+            entity_kind: Some("skill"),
+            entity_id: Some("skill-1"),
+            entity_name: Some("Summarize Repo"),
+            summary: "Skill execution succeeded",
+            metadata: Some("{\"triggeredBy\":\"mcp-skill\"}"),
+            stdout_excerpt: Some("token=***REDACTED***"),
+            stderr_excerpt: None,
+            duration_ms: Some(220),
+            exit_code: Some(0),
+            failure_class: None,
+            attempt_number: Some(1),
+            is_redacted: true,
+        })
+        .await
+        .unwrap();
+
+        let export_path = std::env::temp_dir().join(format!(
+            "ruleweaver-observability-{}.json",
+            uuid::Uuid::new_v4()
+        ));
+
+        crate::observability::export_events(
+            &db,
+            &export_path,
+            None,
+            &ObservabilityEventFilter {
+                event_type: Some(ObservabilityEventType::SkillRun),
+                limit: Some(25),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let export_body = std::fs::read_to_string(&export_path).unwrap();
+        std::fs::remove_file(&export_path).unwrap();
+
+        assert!(export_body.contains("***REDACTED***"));
+        assert!(export_body.contains("\"eventCount\": 1"));
+        assert!(export_body.contains("\"isRedacted\": true"));
     }
 }

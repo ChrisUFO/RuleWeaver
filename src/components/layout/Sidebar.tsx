@@ -10,6 +10,7 @@ import {
   Terminal,
   Brain,
   Activity,
+  ScrollText,
 } from "lucide-react";
 import { featureManager, FEATURE_FLAGS } from "@/lib/featureManager";
 
@@ -25,6 +26,7 @@ const buildNavItems = () => [
   { id: "rules", label: "Rules", icon: FileText },
   { id: "commands", label: "Commands", icon: Terminal },
   { id: "skills", label: "Skills", icon: Brain },
+  { id: "logs", label: "Logs", icon: ScrollText },
   ...(featureManager.isEnabled(FEATURE_FLAGS.UNIFIED_ARTIFACT_STATUS)
     ? [{ id: "status", label: "Status", icon: Activity }]
     : []),

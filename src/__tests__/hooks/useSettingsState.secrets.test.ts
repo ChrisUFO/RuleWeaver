@@ -6,6 +6,12 @@ const mockSettingsSet = vi.fn().mockResolvedValue(undefined);
 const mockListScopedSecrets = vi.fn().mockResolvedValue([]);
 const mockUpsertScopedSecret = vi.fn().mockResolvedValue(undefined);
 const mockDeleteScopedSecret = vi.fn().mockResolvedValue(undefined);
+const mockGetSecretStorageStatus = vi.fn().mockResolvedValue({
+  backend: "os-credential-manager",
+  storesSecretsInOsCredentialManager: true,
+  exportsIncludeSecrets: false,
+  importsIncludeSecrets: false,
+});
 const mockRepoSetRoots = vi.fn();
 const mockRepoRefresh = vi.fn().mockResolvedValue(undefined);
 
@@ -47,6 +53,7 @@ vi.mock("@/lib/tauri", () => ({
       listScopedSecrets: mockListScopedSecrets,
       upsertScopedSecret: mockUpsertScopedSecret,
       deleteScopedSecret: mockDeleteScopedSecret,
+      getSecretStorageStatus: mockGetSecretStorageStatus,
     },
     storage: {
       getMode: vi.fn().mockResolvedValue("sqlite"),
@@ -98,7 +105,7 @@ describe("useSettingsState scoped secrets", () => {
       {
         id: "secret-1",
         key: "PROJECT_API_KEY",
-        value: "global",
+        value: "",
         scope: "global",
         createdAt: 1,
         updatedAt: 1,

@@ -401,6 +401,14 @@ Configure the Model Context Protocol server:
 - **Diagnostics** — Surface port conflicts, missing exposed tools, watcher problems, and stale client config hints
 - **Connection snippets** — Copy endpoint URL, API token, standalone command, and Claude Code / OpenCode JSON
 
+### Logs
+
+Use the dedicated **Logs** page to inspect unified diagnostics across MCP lifecycle events, MCP client calls, command runs, and skill runs.
+
+- Filter by event type, status, source, tool/skill name, date range, or free-text search
+- Expand metadata and redacted stdout/stderr excerpts for troubleshooting
+- Select specific rows or export the current filtered result set as JSON for support/debugging
+
 ### Storage
 
 Manage rule storage:
@@ -475,6 +483,8 @@ Add the generated JSON to your OpenCode configuration, then restart OpenCode aft
 **Other tools:**
 Use synced rule/command files, or configure the MCP client to connect to the localhost endpoint and send the current API token header shown in Settings.
 
+For deeper troubleshooting after the server starts, use the **Logs** page to inspect MCP lifecycle/client events and export a redacted trace.
+
 ---
 
 ## 8) Keyboard Shortcuts
@@ -518,6 +528,7 @@ Use synced rule/command files, or configure the MCP client to connect to the loc
 - **Tools not appearing** — Confirm at least one command has **Expose via MCP** enabled, then click **Refresh**
 - **Client connects but calls fail** — Re-copy the endpoint/token from Settings and fully restart the client to clear stale protocol state
 - **App closed unexpectedly** — Enable "Minimize to tray on close" to keep embedded MCP alive
+- **Need to share diagnostics** — Open **Logs**, filter to the affected events, and export the redacted JSON trace
 
 ### Storage Issues
 

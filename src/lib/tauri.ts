@@ -37,6 +37,7 @@ import type {
   SecretStorageStatus,
   UpsertScopedSecretInput,
 } from "@/types/secret";
+import type { ObservabilityEvent, ObservabilityEventFilter } from "@/types/observability";
 
 export const api = {
   rules: {
@@ -212,6 +213,13 @@ export const api = {
         limit: limit ?? 50,
         offset: offset ?? 0,
       }),
+  },
+
+  observability: {
+    list: (filter?: ObservabilityEventFilter) =>
+      invoke<ObservabilityEvent[]>("list_observability_events", { filter }),
+    export: (path: string, filter?: ObservabilityEventFilter, selectedIds?: string[]) =>
+      invoke<number>("export_observability_events", { path, filter, selectedIds }),
   },
 
   slashCommands: {

@@ -58,14 +58,14 @@ The system is composed of three main layers:
 
 The React/TypeScript application running in the Tauri webview.
 
-- **State Management:** Holds the UI state for editing Rules, Commands, and Skills.
-- **Communication:** Communicates with the Rust backend via Tauri IPC (Inter-Process Communication) to save rules, trigger syncs, and start/stop the MCP server.
+- **State Management:** Holds the UI state for editing Rules, Commands, Skills, and operator diagnostics such as the Logs screen.
+- **Communication:** Communicates with the Rust backend via Tauri IPC (Inter-Process Communication) to save rules, trigger syncs, start/stop the MCP server, and query/export observability events.
 
 ### 2. The Core Logic Layer (Rust Backend)
 
 This layer handles all OS-level operations.
 
-- **Database Manager:** Stores indexed metadata, command definitions, execution logs, settings, and scoped secret records used by commands and MCP execution.
+- **Database Manager:** Stores indexed metadata, command definitions, execution logs, structured observability events, settings, and scoped secret metadata. Raw secret values remain in OS secure storage and are referenced by opaque keys.
 - **File Storage Engine:** Reads/writes rule markdown files with YAML frontmatter, supports migration/rollback, and handles local+global rule roots.
 - **File Sync Engine (The "Adapters"):**
   - Because every AI tool expects a different filename (`GEMINI.md`, `AGENTS.md`, `.clinerules`) or specific frontmatter, the Sync Engine acts as a collection of **Tool-Specific Adapters (Post-Processors)**.
@@ -84,7 +84,7 @@ This layer handles all OS-level operations.
   - Runs a local MCP-compatible HTTP JSON-RPC server on localhost.
   - Reads commands from database and exposes them as `tools/list`.
   - Handles `tools/call` execution and returns stdout/stderr payloads.
-  - Publishes structured readiness/degraded/error status, actionable diagnostics, recent logs, and connection instructions for standalone onboarding.
+  - Publishes structured readiness/degraded/error status, actionable diagnostics, recent logs, connection instructions for standalone onboarding, and structured MCP lifecycle/client observability events.
   - Available in two modes:
     - **Embedded mode:** runs inside RuleWeaver desktop app.
     - **Standalone mode:** runs via `ruleweaver-mcp --port <PORT>`.
@@ -118,6 +118,7 @@ This layer handles all OS-level operations.
   - Resolves secrets with precedence across global, workspace, and artifact-specific scopes before command or MCP execution.
   - Secret redaction pipeline scans stdout/stderr for API keys, tokens, and credentials.
   - Structured failure classification (`Timeout`, `PermissionDenied`, `MissingBinary`, `NonZeroExit`).
+  - Emits redaction-safe observability records for command and skill runs so the Logs page can filter and export operational history without exposing raw secrets.
   - Only retryable failures (transient errors) trigger retries; validation/binary errors fail fast.
   - Logs all execution attempts with metadata (failure class, redaction flag, attempt number).
 

@@ -7,6 +7,7 @@ mod feature_flags;
 mod file_storage;
 mod mcp;
 pub mod models;
+mod observability;
 pub mod path_resolver;
 pub mod reconciliation;
 mod redaction;
@@ -502,6 +503,8 @@ pub fn run() {
             commands::get_mcp_logs,
             commands::get_execution_history,
             commands::get_execution_history_filtered,
+            commands::list_observability_events,
+            commands::export_observability_events,
             slash_commands::commands::sync_slash_command,
             slash_commands::commands::sync_all_slash_commands,
             slash_commands::commands::get_slash_command_status,
