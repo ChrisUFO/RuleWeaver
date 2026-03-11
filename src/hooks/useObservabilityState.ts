@@ -40,6 +40,13 @@ export interface UseObservabilityStateReturn {
     exportLogs: () => Promise<void>;
     loadMore: () => void;
   };
+  query: string;
+  source: string;
+  entityName: string;
+  eventType: ObservabilityEventType | "";
+  status: ObservabilityEventStatus | "";
+  fromTimestamp: string;
+  toTimestamp: string;
 }
 
 export function useObservabilityState(
