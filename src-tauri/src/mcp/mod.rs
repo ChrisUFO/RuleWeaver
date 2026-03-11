@@ -156,6 +156,17 @@ pub struct McpRuntime {
     app_handle: Option<tauri::AppHandle>,
 }
 
+impl McpRuntime {
+    fn transition_to_stopped(&mut self) {
+        self.running = false;
+        self.health_state = McpHealthState::Stopped;
+        self.status_message = "MCP server is stopped".to_string();
+        self.stop_tx = None;
+        self.started_at = None;
+        self.watcher.stop();
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct McpManager {
     pub inner: Arc<Mutex<McpRuntime>>,
@@ -750,12 +761,7 @@ impl McpManager {
         let had_db = {
             let mut state = self.inner.lock().await;
             let had_db = state.db.is_some();
-            state.running = false;
-            state.health_state = McpHealthState::Stopped;
-            state.status_message = "MCP server is stopped".to_string();
-            state.stop_tx = None;
-            state.started_at = None;
-            state.watcher.stop();
+            state.transition_to_stopped();
             had_db
         };
         if had_db {
@@ -780,12 +786,7 @@ impl McpManager {
             }
 
             let had_db = state.db.is_some();
-            state.running = false;
-            state.health_state = McpHealthState::Stopped;
-            state.status_message = "MCP server is stopped".to_string();
-            state.stop_tx = None;
-            state.started_at = None;
-            state.watcher.stop();
+            state.transition_to_stopped();
             had_db
         };
         if had_db {
