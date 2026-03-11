@@ -2,7 +2,7 @@
 
 This document is the source of truth for capability divergence between AI tool adapters supported by RuleWeaver. It is updated per release and reflects the registry definitions in `src-tauri/src/models/registry.rs`.
 
-Last updated: 2026-03-03 (release: feat/ux-polish-81-85)
+Last updated: 2026-03-11 (release: feat/15-mcp-onboarding-product-trust)
 
 ---
 
@@ -35,6 +35,7 @@ Cursor does not expose a markdown command stub format or a skills directory conv
 - Rules are written to `~/.cursorrules` (global) or `.cursorrules` (local).
 - No command stub file (`COMMANDS.md`) is written.
 - MCP fallback applies for commands that have Cursor in their adapter list (command is exposed via MCP only).
+- MCP fallback execution uses the same scoped-secret resolution path as standalone MCP commands in the desktop app.
 
 ### Kilo Code — Skills Capability Flag Set but Paths Not Configured
 

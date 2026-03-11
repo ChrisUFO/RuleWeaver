@@ -19,7 +19,9 @@ Different types of AI configurations require different management strategies:
 
 - **Standalone GUI:** A fast, native desktop application (built with Tauri).
 - **Scope Management:** Clearly define if a Configuration is "Global" (applied everywhere) or "Local" (applied only when the AI is operating within specific defined repository paths).
+- **Workspace-Scoped Secrets:** Store shared credentials globally, override them per repository root, and reuse the resolved values in command tests, MCP tools, and skills without leaking raw secrets into logs.
 - **Dual MCP Runtime:** Embedded MCP in app process or standalone `ruleweaver-mcp` process.
+- **MCP Trust Surface:** Settings now exposes readiness/degraded/error status, actionable diagnostics, endpoint/token copy actions, and ready-to-paste Claude Code / OpenCode snippets.
 - **Command Manager:** CRUD commands, test runs, MCP exposure toggles, and execution history.
 - **Command Stub Sync:** Generates command files for supported tools (`COMMANDS.toml` / `COMMANDS.md`).
 - **Native Slash Commands:** Generate native `/commandname` triggers for 8 AI tools with automatic file generation and incremental sync.
@@ -42,6 +44,7 @@ _(Installation instructions will be added as the MVP is developed)_
 - See `USER_GUIDE.md` for:
   - rules and skills management
   - MCP setup and runtime modes
+  - workspace-scoped secret management
   - agent connection guidance
 
 ### Prerequisites
@@ -67,6 +70,8 @@ cargo run --manifest-path src-tauri/Cargo.toml --bin ruleweaver-mcp -- --port 80
 ```
 
 Use the connection snippets shown in Settings to configure Claude Code/OpenCode.
+
+The MCP Settings card also shows endpoint + token copy actions, recent logs, and diagnostics for common failure modes such as port conflicts, missing exposed tools, and stale client configuration.
 
 If **Minimize to tray on close** is enabled (Settings -> MCP Server), closing the window keeps RuleWeaver and embedded MCP running in the background.
 
