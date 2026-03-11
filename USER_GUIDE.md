@@ -386,7 +386,8 @@ Manage credentials without hardcoding them into commands or skills:
 - Add **workspace overrides** for any configured repository root
 - RuleWeaver resolves secrets with precedence: **artifact override → workspace override → global value**
 - Secret values are reused during command test runs and MCP execution, while logs stay redacted
-- Secret values are masked in the UI and API responses, but the local RuleWeaver database does **not** encrypt them at rest yet; use OS-level disk encryption for high-sensitivity credentials
+- Secret values are masked in the UI and API responses and stored in your OS credential manager / secure keychain instead of plaintext app persistence
+- Configuration export/import does **not** include secret values; re-enter them locally after moving to a new machine or importing a backup
 
 ### MCP Server
 
@@ -424,8 +425,8 @@ Enable/disable individual AI tool adapters:
 
 ### Data Management
 
-- **Export Configuration** — Save rules, commands, and skills to JSON/YAML
-- **Import Configuration** — Load from a backup file
+- **Export Configuration** — Save rules, commands, and skills metadata to JSON/YAML (secret values are excluded)
+- **Import Configuration** — Load from a backup file and then re-enter any required local secrets
 
 ### About
 

@@ -19,7 +19,7 @@ Different types of AI configurations require different management strategies:
 
 - **Standalone GUI:** A fast, native desktop application (built with Tauri).
 - **Scope Management:** Clearly define if a Configuration is "Global" (applied everywhere) or "Local" (applied only when the AI is operating within specific defined repository paths).
-- **Workspace-Scoped Secrets:** Store shared credentials globally, override them per repository root, and reuse the resolved values in command tests, MCP tools, and skills without leaking raw secrets into logs.
+- **Workspace-Scoped Secrets:** Store shared credentials globally, override them per repository root, and reuse the resolved values in command tests, MCP tools, and skills without leaking raw secrets into logs. Values are kept in OS secure storage and never included in configuration exports.
 - **Dual MCP Runtime:** Embedded MCP in app process or standalone `ruleweaver-mcp` process.
 - **MCP Trust Surface:** Settings now exposes readiness/degraded/error status, actionable diagnostics, endpoint/token copy actions, and ready-to-paste Claude Code / OpenCode snippets.
 - **Command Manager:** CRUD commands, test runs, MCP exposure toggles, and execution history.
@@ -35,7 +35,8 @@ Different types of AI configurations require different management strategies:
 
 ## Security Note
 
-- Scoped secret values are masked in the UI and API responses, but RuleWeaver currently stores them unencrypted at rest in the local app database. For high-sensitivity credentials, prefer per-user machines plus OS-level disk encryption.
+- Scoped secret values are masked in the UI and API responses and stored in the OS credential manager / secure keychain instead of plaintext app persistence.
+- Configuration export/import transfers rules, commands, and skills metadata only. Secret values are never exported or imported, so re-enter them locally on each machine.
 
 ## Getting Started
 
