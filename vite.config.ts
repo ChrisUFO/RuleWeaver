@@ -37,7 +37,17 @@ export default defineConfig(async () => ({
     coverage: {
       provider: "v8",
       reporter: ["text", "json", "html"],
-      exclude: ["node_modules/", "src/test/", "**/*.d.ts", "**/*.config.*", "**/index.ts"],
+      include: ["src/**/*.{ts,tsx}"],
+      exclude: [
+        "node_modules/",
+        "dist/**",
+        "out/**",
+        "src/__tests__/**",
+        "src/test/**",
+        "**/*.d.ts",
+        "**/*.config.*",
+        "**/index.ts",
+      ],
     },
   },
 }));
