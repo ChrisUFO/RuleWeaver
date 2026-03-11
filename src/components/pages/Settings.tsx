@@ -32,6 +32,7 @@ import { McpSettingsCard } from "@/components/settings/McpSettingsCard";
 import { StorageSettingsCard } from "@/components/settings/StorageSettingsCard";
 import { AdapterSettingsCard } from "@/components/settings/AdapterSettingsCard";
 import { RepositorySettingsCard } from "@/components/settings/RepositorySettingsCard";
+import { ScopedSecretsCard } from "@/components/settings/ScopedSecretsCard";
 import { SettingsTabs } from "@/components/settings/SettingsTabs";
 
 const SETTINGS_TABS = [
@@ -55,6 +56,10 @@ export function Settings() {
     repositoryRoots,
     repoPathsDirty,
     isSavingRepos,
+    scopedSecrets,
+    selectedSecretWorkspace,
+    isSecretsLoading,
+    isSavingSecrets,
     storageMode,
     storageInfo,
     isMigratingStorage,
@@ -218,6 +223,19 @@ export function Settings() {
                 onAdd={handlers.addRepositoryRoot}
                 onRemove={handlers.removeRepositoryRoot}
                 onSave={handlers.saveRepositoryRoots}
+              />
+
+              <ScopedSecretsCard
+                repositoryRoots={repositoryRoots}
+                scopedSecrets={scopedSecrets}
+                selectedWorkspace={selectedSecretWorkspace}
+                isLoading={isLoading || isSecretsLoading}
+                isSaving={isSavingSecrets}
+                onWorkspaceChange={handlers.selectSecretWorkspace}
+                onSaveGlobalSecret={handlers.saveGlobalSecret}
+                onSaveWorkspaceSecret={handlers.saveWorkspaceSecret}
+                onDeleteGlobalSecret={handlers.deleteGlobalSecret}
+                onDeleteWorkspaceSecret={handlers.deleteWorkspaceSecret}
               />
             </motion.div>
           )}

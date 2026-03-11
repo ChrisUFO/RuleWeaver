@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 
 // --- Feature flag mock (toggled per test) ---
 let enhancedErrorUxEnabled = true;
@@ -19,6 +19,9 @@ vi.mock("@/lib/featureManager", () => ({
 // --- Tauri API mock ---
 const mockSettingsGet = vi.fn();
 const mockSettingsSet = vi.fn().mockResolvedValue(undefined);
+const mockSettingsListScopedSecrets = vi.fn().mockResolvedValue([]);
+const mockSettingsUpsertScopedSecret = vi.fn().mockResolvedValue(undefined);
+const mockSettingsDeleteScopedSecret = vi.fn().mockResolvedValue(undefined);
 const mockStorageGetMode = vi.fn().mockResolvedValue("sqlite");
 const mockStorageGetInfo = vi.fn().mockResolvedValue({});
 const mockStorageGetMigrationProgress = vi.fn().mockResolvedValue(null);
@@ -32,7 +35,13 @@ const mockRegistryGetTools = vi.fn().mockResolvedValue([]);
 
 vi.mock("@/lib/tauri", () => ({
   api: {
-    settings: { get: mockSettingsGet, set: mockSettingsSet },
+    settings: {
+      get: mockSettingsGet,
+      set: mockSettingsSet,
+      listScopedSecrets: mockSettingsListScopedSecrets,
+      upsertScopedSecret: mockSettingsUpsertScopedSecret,
+      deleteScopedSecret: mockSettingsDeleteScopedSecret,
+    },
     storage: {
       getMode: mockStorageGetMode,
       getInfo: mockStorageGetInfo,
@@ -57,12 +66,14 @@ vi.mock("@tauri-apps/plugin-autostart", () => ({
 }));
 
 const mockRepoSave = vi.fn().mockResolvedValue(undefined);
+const mockRepoSetRoots = vi.fn();
+const mockRepoRefresh = vi.fn().mockResolvedValue(undefined);
 
 vi.mock("@/hooks/useRepositoryRoots", () => ({
   useRepositoryRoots: () => ({
     roots: [],
-    setRoots: vi.fn(),
-    refresh: vi.fn().mockResolvedValue(undefined),
+    setRoots: mockRepoSetRoots,
+    refresh: mockRepoRefresh,
     save: mockRepoSave,
   }),
 }));
@@ -130,7 +141,9 @@ describe("useSettingsState — error UX (flag enabled)", () => {
     const { result } = renderHook(() => useSettingsState(mockAddToast));
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
-    await result.current.handlers.saveSettings();
+    await act(async () => {
+      await result.current.handlers.saveSettings();
+    });
 
     await waitFor(() => {
       const errorCall = mockAddToast.mock.calls.find((c) => c[0]?.variant === "error");
@@ -179,7 +192,9 @@ describe("useSettingsState — error UX (flag disabled)", () => {
     const { result } = renderHook(() => useSettingsState(mockAddToast));
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
-    await result.current.handlers.saveSettings();
+    await act(async () => {
+      await result.current.handlers.saveSettings();
+    });
 
     await waitFor(() => {
       const errorCall = mockAddToast.mock.calls.find((c) => c[0]?.variant === "error");
@@ -218,7 +233,9 @@ describe("useSettingsState — repo roots save failure (flag enabled)", () => {
     const { result } = renderHook(() => useSettingsState(mockAddToast));
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
-    await result.current.handlers.saveRepositoryRoots();
+    await act(async () => {
+      await result.current.handlers.saveRepositoryRoots();
+    });
 
     await waitFor(() => {
       const errorCall = mockAddToast.mock.calls.find((c) => c[0]?.variant === "error");
@@ -236,7 +253,9 @@ describe("useSettingsState — repo roots save failure (flag enabled)", () => {
     const { result } = renderHook(() => useSettingsState(mockAddToast));
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
-    await result.current.handlers.saveRepositoryRoots();
+    await act(async () => {
+      await result.current.handlers.saveRepositoryRoots();
+    });
 
     await waitFor(() => {
       const errorCall = mockAddToast.mock.calls.find((c) => c[0]?.variant === "error");

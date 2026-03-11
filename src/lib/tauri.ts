@@ -30,6 +30,12 @@ import type {
   StatusFilter,
   StatusSummary,
 } from "@/types/status";
+import type {
+  DeleteScopedSecretInput,
+  EffectiveSecret,
+  ScopedSecret,
+  UpsertScopedSecretInput,
+} from "@/types/secret";
 
 export const api = {
   rules: {
@@ -97,6 +103,15 @@ export const api = {
     get: (key: string) => invoke<string | null>("get_setting", { key }),
     set: (key: string, value: string) => invoke<void>("set_setting", { key, value }),
     getAll: () => invoke<Record<string, string>>("get_all_settings"),
+    listScopedSecrets: () => invoke<ScopedSecret[]>("list_scoped_secrets"),
+    upsertScopedSecret: (input: UpsertScopedSecretInput) =>
+      invoke<ScopedSecret>("upsert_scoped_secret", { input }),
+    deleteScopedSecret: (input: DeleteScopedSecretInput) =>
+      invoke<void>("delete_scoped_secret", { input }),
+    resolveScopedSecrets: (workspacePath?: string | null) =>
+      invoke<EffectiveSecret[]>("resolve_scoped_secrets_cmd", {
+        input: { workspacePath: workspacePath ?? null },
+      }),
   },
 
   storage: {
