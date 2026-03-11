@@ -234,7 +234,7 @@ pub async fn export_events(
     let temp_name = format!(".{}.tmp", uuid::Uuid::new_v4());
     let temp_path = path.with_file_name(&temp_name);
 
-    std::fs::write(&temp_path, export_body).map_err(|e| AppError::Io(e))?;
+    std::fs::write(&temp_path, export_body).map_err(AppError::Io)?;
 
     if let Err(e) = std::fs::rename(&temp_path, path) {
         let _ = std::fs::remove_file(&temp_path);
