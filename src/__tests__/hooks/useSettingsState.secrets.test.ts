@@ -9,6 +9,31 @@ const mockDeleteScopedSecret = vi.fn().mockResolvedValue(undefined);
 const mockRepoSetRoots = vi.fn();
 const mockRepoRefresh = vi.fn().mockResolvedValue(undefined);
 
+const makeMcpStatus = (overrides: Record<string, unknown> = {}) => ({
+  running: false,
+  port: 4545,
+  uptimeSeconds: 0,
+  apiToken: "test-token",
+  isWatching: false,
+  endpointUrl: "http://127.0.0.1:4545",
+  healthState: "stopped",
+  statusMessage: "MCP server is stopped",
+  diagnostics: [],
+  availableCommands: 0,
+  availableSkills: 0,
+  watchTargetCount: 0,
+  ...overrides,
+});
+
+const makeMcpInstructions = () => ({
+  claudeCodeJson: "{}",
+  opencodeJson: "{}",
+  standaloneCommand: "ruleweaver-mcp --port 4545 --token test-token",
+  apiToken: "test-token",
+  endpointUrl: "http://127.0.0.1:4545",
+  authHeaderName: "X-API-Key",
+});
+
 vi.mock("@/lib/featureManager", () => ({
   featureManager: { isEnabled: () => true },
   FEATURE_FLAGS: { ENHANCED_ERROR_UX: "enhanced_error_ux" },
@@ -29,11 +54,9 @@ vi.mock("@/lib/tauri", () => ({
       getMigrationProgress: vi.fn().mockResolvedValue(null),
     },
     mcp: {
-      getStatus: vi
-        .fn()
-        .mockResolvedValue({ running: false, port: 0, uptimeSeconds: 0, isWatching: false }),
+      getStatus: vi.fn().mockResolvedValue(makeMcpStatus()),
       getLogs: vi.fn().mockResolvedValue([]),
-      getInstructions: vi.fn().mockResolvedValue(null),
+      getInstructions: vi.fn().mockResolvedValue(makeMcpInstructions()),
     },
     app: {
       getAppDataPath: vi.fn().mockResolvedValue("/data"),

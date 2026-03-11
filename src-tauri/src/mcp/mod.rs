@@ -63,6 +63,40 @@ fn truncate_output(s: String) -> String {
     truncate_output_custom(s, MAX_OUTPUT_SIZE)
 }
 
+const MCP_AUTH_HEADER_NAME: &str = "X-API-Key";
+
+fn mcp_endpoint_url(port: u16) -> String {
+    format!("http://127.0.0.1:{port}")
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum McpHealthState {
+    Stopped,
+    Starting,
+    Ready,
+    Degraded,
+    Error,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum McpDiagnosticSeverity {
+    Info,
+    Warning,
+    Error,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpDiagnostic {
+    pub code: String,
+    pub severity: McpDiagnosticSeverity,
+    pub title: String,
+    pub message: String,
+    pub hint: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct McpStatus {
@@ -71,6 +105,13 @@ pub struct McpStatus {
     pub uptime_seconds: u64,
     pub api_token: Option<String>,
     pub is_watching: bool,
+    pub endpoint_url: String,
+    pub health_state: McpHealthState,
+    pub status_message: String,
+    pub diagnostics: Vec<McpDiagnostic>,
+    pub available_commands: usize,
+    pub available_skills: usize,
+    pub watch_target_count: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -80,19 +121,26 @@ pub struct McpConnectionInstructions {
     pub opencode_json: String,
     pub standalone_command: String,
     pub api_token: String,
+    pub endpoint_url: String,
+    pub auth_header_name: String,
 }
 
 #[derive(Debug)]
 pub struct McpRuntime {
     running: bool,
+    health_state: McpHealthState,
     port: u16,
     api_token: String,
     started_at: Option<Instant>,
     logs: Vec<String>,
+    status_message: String,
+    last_error_code: Option<String>,
+    last_error_message: Option<String>,
     stop_tx: Option<broadcast::Sender<()>>,
     task_handle: Option<JoinHandle<()>>,
     commands: Vec<Command>,
     skills: Vec<Skill>,
+    watch_target_count: usize,
     invocation_timestamps: VecDeque<Instant>,
     db: Option<Arc<Database>>,
     watcher: watcher::WatcherManager,
@@ -125,14 +173,19 @@ impl McpManager {
         Self {
             inner: Arc::new(Mutex::new(McpRuntime {
                 running: false,
+                health_state: McpHealthState::Stopped,
                 port,
                 api_token,
                 started_at: None,
                 logs: Vec::new(),
+                status_message: "MCP server is stopped".to_string(),
+                last_error_code: None,
+                last_error_message: None,
                 stop_tx: None,
                 task_handle: None,
                 commands: Vec::new(),
                 skills: Vec::new(),
+                watch_target_count: 0,
                 invocation_timestamps: VecDeque::new(),
                 db: None,
                 watcher: watcher::WatcherManager::new(),
@@ -154,22 +207,26 @@ impl McpManager {
             state.commands = commands;
             state.skills = skills;
 
-            if state.running {
-                let mut paths = std::collections::HashSet::new();
-                for skill in &state.skills {
-                    if skill.enabled && !skill.directory_path.is_empty() {
-                        paths.insert(std::path::PathBuf::from(&skill.directory_path));
+            let mut paths = std::collections::HashSet::new();
+            for skill in &state.skills {
+                if skill.enabled && !skill.directory_path.is_empty() {
+                    paths.insert(std::path::PathBuf::from(&skill.directory_path));
+                }
+            }
+            for cmd in &state.commands {
+                for path in &cmd.target_paths {
+                    if !path.is_empty() {
+                        paths.insert(std::path::PathBuf::from(path));
                     }
                 }
-                for cmd in &state.commands {
-                    for path in &cmd.target_paths {
-                        if !path.is_empty() {
-                            paths.insert(std::path::PathBuf::from(path));
-                        }
-                    }
-                }
-                let paths_vec = paths.into_iter().collect::<Vec<_>>();
+            }
+            let paths_vec = paths.into_iter().collect::<Vec<_>>();
+            state.watch_target_count = paths_vec.len();
 
+            if !matches!(
+                state.health_state,
+                McpHealthState::Stopped | McpHealthState::Error
+            ) {
                 let manager_clone = self.clone();
                 if let Some(db_arc) = state.db.clone() {
                     if let Err(e) = state.watcher.start(paths_vec, move || {
@@ -204,26 +261,92 @@ impl McpManager {
         state.app_handle = Some(handle);
     }
 
+    async fn set_error_state(&self, code: &str, message: String) {
+        let mut state = self.inner.lock().await;
+        state.running = false;
+        state.health_state = McpHealthState::Error;
+        state.status_message = message.clone();
+        state.last_error_code = Some(code.to_string());
+        state.last_error_message = Some(message);
+        state.started_at = None;
+        state.stop_tx = None;
+        state.watcher.stop();
+    }
+
+    async fn bind_listener(&self, port: u16) -> Result<tokio::net::TcpListener> {
+        let addr = format!("127.0.0.1:{port}");
+        let mut retry_count = 0;
+        let mut backoff_ms = MCP_SERVER_BACKOFF_INITIAL_MS;
+
+        loop {
+            match tokio::net::TcpListener::bind(&addr).await {
+                Ok(listener) => return Ok(listener),
+                Err(error) => {
+                    if retry_count >= MCP_SERVER_RETRY_COUNT {
+                        let code = if error.kind() == std::io::ErrorKind::AddrInUse {
+                            "port_conflict"
+                        } else {
+                            "startup_failed"
+                        };
+                        let message = format!(
+                            "Failed to bind MCP server on {addr} after {} attempts: {error}",
+                            MCP_SERVER_RETRY_COUNT + 1
+                        );
+                        self.log(message.clone()).await?;
+                        self.set_error_state(code, message.clone()).await;
+                        return Err(AppError::Mcp(message));
+                    }
+
+                    self.log(format!("Port {port} busy, retrying in {backoff_ms}ms..."))
+                        .await?;
+                    tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
+                    retry_count += 1;
+                    backoff_ms *= 2;
+                }
+            }
+        }
+    }
+
     pub async fn start(&self, db: &Arc<Database>) -> Result<()> {
         let port = {
             let mut state = self.inner.lock().await;
-            if state.running {
+            if matches!(
+                state.health_state,
+                McpHealthState::Starting | McpHealthState::Ready | McpHealthState::Degraded
+            ) {
                 return Ok(());
             }
 
-            state.running = true;
-            state.started_at = Some(Instant::now());
+            state.running = false;
+            state.health_state = McpHealthState::Starting;
+            state.status_message =
+                format!("Starting MCP server on {}", mcp_endpoint_url(state.port));
+            state.last_error_code = None;
+            state.last_error_message = None;
+            state.started_at = None;
             state.logs.push("Starting MCP server".to_string());
             state.db = Some(Arc::clone(db));
             state.port
         };
 
-        self.refresh_commands(db).await?;
+        if let Err(error) = self.refresh_commands(db).await {
+            let message = format!("Failed to refresh MCP artifacts before start: {error}");
+            self.log(message.clone()).await?;
+            self.set_error_state("refresh_failed", message).await;
+            return Err(error);
+        }
+
+        let listener = self.bind_listener(port).await?;
 
         let (stop_tx, _) = broadcast::channel(1);
         {
             let mut state = self.inner.lock().await;
             state.stop_tx = Some(stop_tx.clone());
+            state.running = true;
+            state.health_state = McpHealthState::Ready;
+            state.status_message =
+                format!("Listening for MCP clients on {}", mcp_endpoint_url(port));
+            state.started_at = Some(Instant::now());
         }
 
         let manager = self.clone();
@@ -244,47 +367,11 @@ impl McpManager {
                 )
                 .with_state(manager.clone());
 
-            let addr = format!("127.0.0.1:{}", port);
-
-            // Port binding with retry/backoff
-            let mut retry_count = 0;
-            let mut backoff_ms = MCP_SERVER_BACKOFF_INITIAL_MS;
-            let listener = loop {
-                match tokio::net::TcpListener::bind(&addr).await {
-                    Ok(l) => break Some(l),
-                    Err(e) => {
-                        if retry_count >= MCP_SERVER_RETRY_COUNT {
-                            let _ = manager
-                                .log(format!(
-                                    "Failed to bind MCP server after {} attempts {}: {}",
-                                    MCP_SERVER_RETRY_COUNT, addr, e
-                                ))
-                                .await;
-                            break None;
-                        }
-                        let _ = manager
-                            .log(format!(
-                                "Port {} busy, retrying in {}ms...",
-                                port, backoff_ms
-                            ))
-                            .await;
-                        tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
-                        retry_count += 1;
-                        backoff_ms *= 2;
-                    }
-                }
-            };
-
-            let listener = match listener {
-                Some(l) => l,
-                None => {
-                    let _ = manager.mark_stopped().await;
-                    return;
-                }
-            };
-
             let _ = manager
-                .log(format!("MCP server listening on {}", addr))
+                .log(format!(
+                    "MCP server listening on {}",
+                    mcp_endpoint_url(port)
+                ))
                 .await;
 
             if let Err(e) = axum::serve(listener, app)
@@ -293,7 +380,10 @@ impl McpManager {
                 })
                 .await
             {
-                let _ = manager.log(format!("MCP server error: {}", e)).await;
+                let message = format!("MCP server error: {}", e);
+                let _ = manager.log(message.clone()).await;
+                manager.set_error_state("server_error", message).await;
+                return;
             }
 
             let _ = manager.log("MCP server stopped".to_string()).await;
@@ -309,27 +399,24 @@ impl McpManager {
     }
 
     pub async fn stop(&self) -> Result<()> {
-        let tx = {
+        let (tx, should_mark_stopped_immediately) = {
             let mut state = self.inner.lock().await;
-            if !state.running {
+            if !state.running && !matches!(state.health_state, McpHealthState::Starting) {
                 return Ok(());
             }
             state.watcher.stop();
-            state.stop_tx.take()
+            state.status_message = "Stopping MCP server".to_string();
+            let tx = state.stop_tx.take();
+            (tx, !state.running)
         };
 
         if let Some(tx) = tx {
             let _ = tx.send(());
+        } else if should_mark_stopped_immediately {
+            self.mark_stopped().await?;
         }
 
         Ok(())
-    }
-
-    pub fn port(&self) -> u16 {
-        // We use a blocking lock here for simplicity as it's just a u16 read
-        // In a real high-concurrency app we'd use a separate atomic or RWLock
-        let state = self.inner.blocking_lock();
-        state.port
     }
 
     pub async fn wait_until_stopped(&self) -> Result<()> {
@@ -347,12 +434,123 @@ impl McpManager {
     pub async fn status(&self) -> Result<McpStatus> {
         let state = self.inner.lock().await;
         let uptime_seconds = state.started_at.map(|t| t.elapsed().as_secs()).unwrap_or(0);
+        let endpoint_url = mcp_endpoint_url(state.port);
+        let has_exposed_artifacts = !state.commands.is_empty() || !state.skills.is_empty();
+        let watcher_expected = state.watch_target_count > 0;
+        let is_watching = state.watcher.is_watching();
+
+        let health_state = if matches!(state.health_state, McpHealthState::Ready)
+            && ((!has_exposed_artifacts) || (watcher_expected && !is_watching))
+        {
+            McpHealthState::Degraded
+        } else {
+            state.health_state.clone()
+        };
+
+        let status_message = match health_state {
+            McpHealthState::Degraded if !has_exposed_artifacts => {
+                "MCP server is reachable, but no commands or skills are exposed yet".to_string()
+            }
+            McpHealthState::Degraded if watcher_expected && !is_watching => {
+                "MCP server is reachable, but artifact watching is unavailable".to_string()
+            }
+            _ => state.status_message.clone(),
+        };
+
+        let mut diagnostics = Vec::new();
+
+        match health_state {
+            McpHealthState::Stopped => diagnostics.push(McpDiagnostic {
+                code: "server_stopped".to_string(),
+                severity: McpDiagnosticSeverity::Info,
+                title: "Server not running".to_string(),
+                message: "Start the MCP server before connecting standalone clients.".to_string(),
+                hint: Some("Use Start Server, then copy one of the configurations below.".to_string()),
+            }),
+            McpHealthState::Starting => diagnostics.push(McpDiagnostic {
+                code: "server_starting".to_string(),
+                severity: McpDiagnosticSeverity::Info,
+                title: "Server is starting".to_string(),
+                message: format!("RuleWeaver is preparing MCP on {endpoint_url}."),
+                hint: Some("Wait for the status to switch to Ready before retrying your client.".to_string()),
+            }),
+            McpHealthState::Error => diagnostics.push(McpDiagnostic {
+                code: state
+                    .last_error_code
+                    .clone()
+                    .unwrap_or_else(|| "startup_failed".to_string()),
+                severity: McpDiagnosticSeverity::Error,
+                title: if state.last_error_code.as_deref() == Some("port_conflict") {
+                    "Port conflict"
+                } else {
+                    "Startup failure"
+                }
+                .to_string(),
+                message: state
+                    .last_error_message
+                    .clone()
+                    .unwrap_or_else(|| "The MCP server could not start.".to_string()),
+                hint: Some(if state.last_error_code.as_deref() == Some("port_conflict") {
+                    format!(
+                        "Another process is already using port {}. Stop that process or change the MCP port, then retry.",
+                        state.port
+                    )
+                } else {
+                    "Review the recent logs below, then retry starting the server.".to_string()
+                }),
+            }),
+            McpHealthState::Ready | McpHealthState::Degraded => {}
+        }
+
+        if !has_exposed_artifacts {
+            diagnostics.push(McpDiagnostic {
+                code: "no_tools_exposed".to_string(),
+                severity: McpDiagnosticSeverity::Warning,
+                title: "No MCP tools or skills exposed".to_string(),
+                message: "Clients can connect, but they will not see any callable tools until a command is exposed via MCP or a skill is added.".to_string(),
+                hint: Some("Enable 'Expose via MCP' on at least one command or create a skill.".to_string()),
+            });
+        }
+
+        if watcher_expected && !is_watching {
+            diagnostics.push(McpDiagnostic {
+                code: "watcher_inactive".to_string(),
+                severity: McpDiagnosticSeverity::Warning,
+                title: "Artifact watcher inactive".to_string(),
+                message: "RuleWeaver cannot currently watch local MCP artifacts for changes.".to_string(),
+                hint: Some("Use Refresh after changing tools, and restart MCP if automatic updates stay stale.".to_string()),
+            });
+        }
+
+        diagnostics.push(McpDiagnostic {
+            code: "client_configuration".to_string(),
+            severity: McpDiagnosticSeverity::Info,
+            title: "Verify client configuration".to_string(),
+            message: format!(
+                "Standalone clients should target {endpoint_url} and send the {MCP_AUTH_HEADER_NAME} header with the current API token."
+            ),
+            hint: Some(
+                "If a client still fails after updating the config, fully restart the client to clear stale protocol or version state."
+                    .to_string(),
+            ),
+        });
+
         Ok(McpStatus {
-            running: state.running,
+            running: matches!(
+                health_state,
+                McpHealthState::Ready | McpHealthState::Degraded
+            ),
             port: state.port,
             uptime_seconds,
             api_token: Some(state.api_token.clone()),
-            is_watching: state.watcher.is_watching(),
+            is_watching,
+            endpoint_url,
+            health_state,
+            status_message,
+            diagnostics,
+            available_commands: state.commands.len(),
+            available_skills: state.skills.len(),
+            watch_target_count: state.watch_target_count,
         })
     }
 
@@ -366,12 +564,13 @@ impl McpManager {
     pub async fn instructions(&self) -> Result<McpConnectionInstructions> {
         let status = self.status().await?;
         let port = status.port;
+        let endpoint_url = status.endpoint_url.clone();
         let token = status.api_token.clone().unwrap_or_default();
 
         let claude_code_json = serde_json::to_string_pretty(&json!({
             "mcpServers": {
                 "ruleweaver": {
-                    "url": format!("http://127.0.0.1:{}", port),
+                    "url": endpoint_url,
                     "env": {
                         "X_API_KEY": token
                     }
@@ -385,9 +584,9 @@ impl McpManager {
                 "servers": [
                     {
                         "name": "ruleweaver",
-                        "url": format!("http://127.0.0.1:{}", port),
+                        "url": mcp_endpoint_url(port),
                         "headers": {
-                            "X-API-Key": token
+                            MCP_AUTH_HEADER_NAME: token
                         }
                     }
                 ]
@@ -400,6 +599,8 @@ impl McpManager {
             opencode_json,
             standalone_command: format!("ruleweaver-mcp --port {} --token {}", port, token),
             api_token: token,
+            endpoint_url: mcp_endpoint_url(port),
+            auth_header_name: MCP_AUTH_HEADER_NAME.to_string(),
         })
     }
 
@@ -416,6 +617,8 @@ impl McpManager {
     async fn mark_stopped(&self) -> Result<()> {
         let mut state = self.inner.lock().await;
         state.running = false;
+        state.health_state = McpHealthState::Stopped;
+        state.status_message = "MCP server is stopped".to_string();
         state.stop_tx = None;
         state.started_at = None;
         state.watcher.stop();
