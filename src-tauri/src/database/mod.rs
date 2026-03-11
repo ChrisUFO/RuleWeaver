@@ -10,8 +10,9 @@ use crate::error::{AppError, Result};
 use crate::file_storage::StorageLocation;
 use crate::models::{
     AdapterType, Command, CommandArgument, CreateCommandInput, CreateRuleInput, CreateSkillInput,
-    ExecutionLog, ReconcileOperation, ReconcileResultType, Rule, Scope, Skill, SyncHistoryEntry,
-    UpdateCommandInput, UpdateRuleInput, UpdateSkillInput,
+    DeleteScopedSecretInput, ExecutionLog, ReconcileOperation, ReconcileResultType, Rule, Scope,
+    ScopedSecret, SecretScope, Skill, SyncHistoryEntry, UpdateCommandInput, UpdateRuleInput,
+    UpdateSkillInput, UpsertScopedSecretInput,
 };
 
 fn parse_timestamp_or_now(timestamp: i64) -> DateTime<Utc> {
@@ -1129,6 +1130,130 @@ impl Database {
         Ok(settings)
     }
 
+    pub async fn list_scoped_secrets(&self) -> Result<Vec<ScopedSecret>> {
+        let conn = self.0.lock().await;
+        let mut stmt = conn.prepare(
+            "SELECT id, key, value, scope, workspace_path, artifact_id, created_at, updated_at
+             FROM scoped_secrets
+             ORDER BY scope, key, workspace_path, artifact_id",
+        )?;
+
+        let secrets = stmt
+            .query_map([], |row| {
+                let scope_raw: String = row.get(3)?;
+                let scope = SecretScope::from_str(&scope_raw).map_err(|err| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        3,
+                        rusqlite::types::Type::Text,
+                        Box::new(std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            err.to_string(),
+                        )),
+                    )
+                })?;
+
+                Ok(ScopedSecret {
+                    id: row.get(0)?,
+                    key: row.get(1)?,
+                    value: row.get(2)?,
+                    scope,
+                    workspace_path: row.get(4)?,
+                    artifact_id: row.get(5)?,
+                    created_at: parse_timestamp_or_now(row.get(6)?),
+                    updated_at: parse_timestamp_or_now(row.get(7)?),
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+
+        Ok(secrets)
+    }
+
+    pub async fn upsert_scoped_secret(
+        &self,
+        input: UpsertScopedSecretInput,
+    ) -> Result<ScopedSecret> {
+        let conn = self.0.lock().await;
+        let now = chrono::Utc::now().timestamp();
+
+        let existing: Option<(String, i64)> = conn
+            .query_row(
+                "SELECT id, created_at
+                 FROM scoped_secrets
+                 WHERE scope = ?
+                   AND key = ?
+                   AND ((workspace_path IS NULL AND ? IS NULL) OR workspace_path = ?)
+                   AND ((artifact_id IS NULL AND ? IS NULL) OR artifact_id = ?)",
+                params![
+                    input.scope.as_str(),
+                    input.key,
+                    input.workspace_path.as_deref(),
+                    input.workspace_path.as_deref(),
+                    input.artifact_id.as_deref(),
+                    input.artifact_id.as_deref(),
+                ],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()?;
+
+        let (id, created_at) = if let Some((id, created_at)) = existing {
+            conn.execute(
+                "UPDATE scoped_secrets
+                 SET key = ?, value = ?, updated_at = ?
+                 WHERE id = ?",
+                params![input.key, input.value, now, id],
+            )?;
+            (id, created_at)
+        } else {
+            let id = uuid::Uuid::new_v4().to_string();
+            conn.execute(
+                "INSERT INTO scoped_secrets (id, key, value, scope, workspace_path, artifact_id, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                params![
+                    id,
+                    input.key,
+                    input.value,
+                    input.scope.as_str(),
+                    input.workspace_path.as_deref(),
+                    input.artifact_id.as_deref(),
+                    now,
+                    now,
+                ],
+            )?;
+            (id, now)
+        };
+
+        Ok(ScopedSecret {
+            id,
+            key: input.key,
+            value: input.value,
+            scope: input.scope,
+            workspace_path: input.workspace_path,
+            artifact_id: input.artifact_id,
+            created_at: parse_timestamp_or_now(created_at),
+            updated_at: parse_timestamp_or_now(now),
+        })
+    }
+
+    pub async fn delete_scoped_secret(&self, input: DeleteScopedSecretInput) -> Result<()> {
+        let conn = self.0.lock().await;
+        conn.execute(
+            "DELETE FROM scoped_secrets
+             WHERE scope = ?
+               AND key = ?
+               AND ((workspace_path IS NULL AND ? IS NULL) OR workspace_path = ?)
+               AND ((artifact_id IS NULL AND ? IS NULL) OR artifact_id = ?)",
+            params![
+                input.scope.as_str(),
+                input.key,
+                input.workspace_path.as_deref(),
+                input.workspace_path.as_deref(),
+                input.artifact_id.as_deref(),
+                input.artifact_id.as_deref(),
+            ],
+        )?;
+        Ok(())
+    }
+
     pub async fn get_database_path(&self) -> Result<String> {
         let conn = self.0.lock().await;
         let path: String = conn.query_row("PRAGMA database_list", [], |row| row.get(2))?;
@@ -1759,7 +1884,33 @@ fn run_migrations(conn: &mut Connection) -> Result<()> {
         add_column_if_missing(&transaction, "skills", "base_path", "TEXT")?;
     }
 
-    transaction.execute("PRAGMA user_version = 16", [])?;
+    if current_version < 17 {
+        transaction.execute(
+            "CREATE TABLE IF NOT EXISTS scoped_secrets (
+                id TEXT PRIMARY KEY NOT NULL,
+                key TEXT NOT NULL COLLATE NOCASE,
+                value TEXT NOT NULL,
+                scope TEXT NOT NULL,
+                workspace_path TEXT,
+                artifact_id TEXT,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            )",
+            [],
+        )?;
+
+        transaction.execute(
+            "CREATE INDEX IF NOT EXISTS idx_scoped_secrets_scope ON scoped_secrets(scope, workspace_path, artifact_id)",
+            [],
+        )?;
+        transaction.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_scoped_secrets_lookup
+             ON scoped_secrets(scope, key, ifnull(workspace_path, ''), ifnull(artifact_id, ''))",
+            [],
+        )?;
+    }
+
+    transaction.execute("PRAGMA user_version = 17", [])?;
     transaction.commit()?;
 
     Ok(())
@@ -1901,5 +2052,50 @@ mod tests {
             updated.target_paths,
             vec!["C:/repo-b".to_string(), "C:/repo-c".to_string()]
         );
+    }
+
+    #[tokio::test]
+    async fn test_scoped_secret_crud_roundtrip() {
+        let db = Database::new_in_memory().await.unwrap();
+
+        let created = db
+            .upsert_scoped_secret(UpsertScopedSecretInput {
+                key: "PROJECT_API_KEY".to_string(),
+                value: "repo-a".to_string(),
+                scope: SecretScope::Workspace,
+                workspace_path: Some("c:/repo-a".to_string()),
+                artifact_id: None,
+            })
+            .await
+            .unwrap();
+        assert_eq!(created.key, "PROJECT_API_KEY");
+
+        let all = db.list_scoped_secrets().await.unwrap();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].value, "repo-a");
+
+        let updated = db
+            .upsert_scoped_secret(UpsertScopedSecretInput {
+                key: "project_api_key".to_string(),
+                value: "repo-b".to_string(),
+                scope: SecretScope::Workspace,
+                workspace_path: Some("c:/repo-a".to_string()),
+                artifact_id: None,
+            })
+            .await
+            .unwrap();
+        assert_eq!(updated.id, created.id);
+        assert_eq!(updated.value, "repo-b");
+
+        db.delete_scoped_secret(DeleteScopedSecretInput {
+            key: "PROJECT_API_KEY".to_string(),
+            scope: SecretScope::Workspace,
+            workspace_path: Some("c:/repo-a".to_string()),
+            artifact_id: None,
+        })
+        .await
+        .unwrap();
+
+        assert!(db.list_scoped_secrets().await.unwrap().is_empty());
     }
 }

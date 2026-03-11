@@ -11,6 +11,7 @@ pub mod path_resolver;
 pub mod reconciliation;
 mod redaction;
 pub mod rule_import;
+mod secrets;
 mod single_instance;
 mod slash_commands;
 mod status;
@@ -441,6 +442,10 @@ pub fn run() {
             commands::get_setting,
             commands::set_setting,
             commands::get_all_settings,
+            commands::list_scoped_secrets,
+            commands::upsert_scoped_secret,
+            commands::delete_scoped_secret,
+            commands::resolve_scoped_secrets_cmd,
             commands::migrate_to_file_storage,
             commands::rollback_file_migration,
             commands::verify_file_migration,

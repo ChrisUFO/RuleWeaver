@@ -5,7 +5,11 @@ use tauri::State;
 
 use crate::database::{get_app_data_path, Database};
 use crate::error::Result;
-use crate::models::{ExecutionLog, SyncHistoryEntry};
+use crate::models::{
+    DeleteScopedSecretInput, EffectiveSecret, ExecutionLog, ResolveScopedSecretsInput,
+    ScopedSecret, SyncHistoryEntry, UpsertScopedSecretInput,
+};
+use crate::secrets;
 
 use super::validate_path;
 
@@ -73,6 +77,35 @@ pub async fn set_setting(key: String, value: String, db: State<'_, Arc<Database>
 #[tauri::command]
 pub async fn get_all_settings(db: State<'_, Arc<Database>>) -> Result<HashMap<String, String>> {
     db.get_all_settings().await
+}
+
+#[tauri::command]
+pub async fn list_scoped_secrets(db: State<'_, Arc<Database>>) -> Result<Vec<ScopedSecret>> {
+    secrets::list_scoped_secrets(db.inner().as_ref()).await
+}
+
+#[tauri::command]
+pub async fn upsert_scoped_secret(
+    input: UpsertScopedSecretInput,
+    db: State<'_, Arc<Database>>,
+) -> Result<ScopedSecret> {
+    secrets::upsert_scoped_secret(db.inner().as_ref(), input).await
+}
+
+#[tauri::command]
+pub async fn delete_scoped_secret(
+    input: DeleteScopedSecretInput,
+    db: State<'_, Arc<Database>>,
+) -> Result<()> {
+    secrets::delete_scoped_secret(db.inner().as_ref(), input).await
+}
+
+#[tauri::command]
+pub async fn resolve_scoped_secrets_cmd(
+    input: ResolveScopedSecretsInput,
+    db: State<'_, Arc<Database>>,
+) -> Result<Vec<EffectiveSecret>> {
+    secrets::resolve_scoped_secrets(db.inner().as_ref(), input).await
 }
 
 #[tauri::command]

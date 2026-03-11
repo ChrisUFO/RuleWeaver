@@ -31,6 +31,7 @@ use crate::execution::{
     slugify, ExecuteAndLogInput,
 };
 use crate::models::{Command, Skill, SkillParameterType};
+use crate::secrets;
 
 fn mcp_error_response(id: serde_json::Value, code: i64, message: &str) -> serde_json::Value {
     json!({
@@ -827,6 +828,25 @@ async fn handle_command_call(
         }
     };
 
+    if let Some(db) = shared_db {
+        match secrets::resolve_command_secret_envs(db.as_ref(), cmd).await {
+            Ok(secret_envs) => envs.extend(secret_envs),
+            Err(e) => {
+                return json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "result": {
+                        "content": [{
+                            "type": "text",
+                            "text": format!("Failed to resolve command secrets: {}", e)
+                        }],
+                        "isError": true
+                    }
+                });
+            }
+        }
+    }
+
     match execute_and_log(ExecuteAndLogInput {
         db: shared_db.as_ref().map(|arc| arc.as_ref()),
         command_id: &cmd.id,
@@ -903,7 +923,7 @@ async fn handle_skill_call(
         skill.directory_path.clone(),
     ));
 
-    // Inject filtered secrets as SKILL_SECRET_*
+    // Inject filtered scoped secrets and preserve legacy allowlist fallback
     if let Some(db) = shared_db {
         let allowlist = db
             .get_setting("mcp_secrets_allowlist")
@@ -911,23 +931,24 @@ async fn handle_skill_call(
             .ok()
             .flatten()
             .unwrap_or_default();
-        let allowed_keys: Vec<String> = allowlist
+        let allowed_keys = allowlist
             .split(',')
             .map(|s| s.trim().to_lowercase())
             .filter(|s| !s.is_empty())
-            .collect();
+            .collect::<std::collections::HashSet<_>>();
 
-        if let Ok(settings) = db.get_all_settings().await {
-            for (k, v) in settings {
-                let low_k = k.to_lowercase();
-                if allowed_keys.contains(&low_k) {
-                    let env_name = format!(
-                        "{}{}",
-                        crate::constants::skills::SKILL_SECRET_PREFIX,
-                        k.replace('-', "_").to_uppercase()
-                    );
-                    final_envs.push((env_name, v));
+        match secrets::resolve_skill_secret_envs(db.as_ref(), skill, &allowed_keys).await {
+            Ok(secret_envs) => {
+                for env in secret_envs {
+                    final_envs.push(env);
                 }
+            }
+            Err(e) => {
+                return mcp_error_response(
+                    id,
+                    -32603,
+                    &format!("Failed to resolve skill secrets: {}", e),
+                );
             }
         }
     }
