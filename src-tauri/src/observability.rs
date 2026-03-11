@@ -1,3 +1,7 @@
+#![allow(clippy::needless_borrow)]
+#![allow(dead_code)]
+
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use crate::database::{Database, ExecutionLogInput, ObservabilityEventInput};
