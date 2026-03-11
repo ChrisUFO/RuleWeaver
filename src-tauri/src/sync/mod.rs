@@ -1,10 +1,7 @@
-#![allow(clippy::needless_borrow)]
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
-
-use sha2::{Digest, Sha256};
 
 use crate::constants::{
     ANTIGRAVITY_FILENAME, GEMINI_FILENAME, LEGACY_ANTIGRAVITY_DIR, LEGACY_OPENCODE_DIR,
@@ -544,23 +541,6 @@ pub fn get_all_adapters() -> Vec<Box<dyn SyncAdapter>> {
         Box::new(RooCodeAdapter),
         Box::new(AugmentAdapter),
     ]
-}
-
-#[allow(dead_code)]
-pub fn get_adapter(adapter_type: AdapterType) -> Option<Box<dyn SyncAdapter>> {
-    match adapter_type {
-        AdapterType::Antigravity => Some(Box::new(AntigravityAdapter)),
-        AdapterType::Gemini => Some(Box::new(GeminiAdapter)),
-        AdapterType::OpenCode => Some(Box::new(OpenCodeAdapter)),
-        AdapterType::Cline => Some(Box::new(ClineAdapter)),
-        AdapterType::ClaudeCode => Some(Box::new(ClaudeCodeAdapter)),
-        AdapterType::Codex => Some(Box::new(CodexAdapter)),
-        AdapterType::Kilo => Some(Box::new(KiloAdapter)),
-        AdapterType::Cursor => Some(Box::new(CursorAdapter)),
-        AdapterType::Windsurf => Some(Box::new(WindsurfAdapter)),
-        AdapterType::RooCode => Some(Box::new(RooCodeAdapter)),
-        AdapterType::Augment => Some(Box::new(AugmentAdapter)),
-    }
 }
 
 pub struct SyncEngine<'a> {
@@ -1134,6 +1114,7 @@ fn compute_diff_summary(expected: &str, actual: &str) -> DiffSummary {
 }
 
 fn compute_content_hash(content: &str) -> String {
+    use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
     hasher.update(content.as_bytes());
     format!("{:x}", hasher.finalize())
@@ -1141,12 +1122,6 @@ fn compute_content_hash(content: &str) -> String {
 
 pub fn compute_content_hash_public(content: &str) -> String {
     compute_content_hash(content)
-}
-
-#[allow(dead_code)]
-fn compute_file_hash(path: &Path) -> Result<String> {
-    let content = fs::read_to_string(path)?;
-    Ok(compute_content_hash(&content))
 }
 
 pub fn check_and_migrate_legacy_paths() -> Result<()> {

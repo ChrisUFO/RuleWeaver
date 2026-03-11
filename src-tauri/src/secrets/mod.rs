@@ -380,7 +380,6 @@ fn merge_effective_secrets(secrets: Vec<ScopedSecret>) -> Vec<EffectiveSecret> {
 }
 
 pub fn infer_command_workspace(command: &Command) -> Result<Option<String>> {
-    let command = command.clone();
     if let Some(base_path) = command.base_path.as_deref() {
         return normalize_workspace_path(base_path).map(Some);
     }
@@ -468,10 +467,11 @@ pub async fn resolve_command_secret_envs(
     db: &Database,
     command: &Command,
 ) -> Result<Vec<(String, String)>> {
+    let workspace_path = infer_command_workspace(command).ok().flatten();
     let effective = resolve_scoped_secrets(
         db,
         ResolveScopedSecretsInput {
-            workspace_path: infer_command_workspace(command)?,
+            workspace_path,
             artifact_scope: Some(SecretScope::Command),
             artifact_id: Some(command.id.clone()),
         },
