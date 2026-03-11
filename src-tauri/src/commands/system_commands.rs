@@ -7,7 +7,7 @@ use crate::database::{get_app_data_path, Database};
 use crate::error::Result;
 use crate::models::{
     DeleteScopedSecretInput, EffectiveSecret, ExecutionLog, ResolveScopedSecretsInput,
-    ScopedSecret, SyncHistoryEntry, UpsertScopedSecretInput,
+    ScopedSecret, SecretStorageStatus, SyncHistoryEntry, UpsertScopedSecretInput,
 };
 use crate::secrets;
 
@@ -82,6 +82,11 @@ pub async fn get_all_settings(db: State<'_, Arc<Database>>) -> Result<HashMap<St
 #[tauri::command]
 pub async fn list_scoped_secrets(db: State<'_, Arc<Database>>) -> Result<Vec<ScopedSecret>> {
     secrets::list_scoped_secrets(db.inner().as_ref()).await
+}
+
+#[tauri::command]
+pub fn get_secret_storage_status_cmd() -> Result<SecretStorageStatus> {
+    Ok(secrets::get_secret_storage_status())
 }
 
 #[tauri::command]

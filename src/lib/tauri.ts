@@ -34,6 +34,7 @@ import type {
   DeleteScopedSecretInput,
   EffectiveSecret,
   ScopedSecret,
+  SecretStorageStatus,
   UpsertScopedSecretInput,
 } from "@/types/secret";
 
@@ -104,6 +105,7 @@ export const api = {
     set: (key: string, value: string) => invoke<void>("set_setting", { key, value }),
     getAll: () => invoke<Record<string, string>>("get_all_settings"),
     listScopedSecrets: () => invoke<ScopedSecret[]>("list_scoped_secrets"),
+    getSecretStorageStatus: () => invoke<SecretStorageStatus>("get_secret_storage_status_cmd"),
     upsertScopedSecret: (input: UpsertScopedSecretInput) =>
       invoke<ScopedSecret>("upsert_scoped_secret", { input }),
     deleteScopedSecret: (input: DeleteScopedSecretInput) =>

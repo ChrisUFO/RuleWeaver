@@ -100,6 +100,7 @@ function makeBaseState(overrides: Partial<UseSettingsStateReturn> = {}): UseSett
     repoPathsDirty: false,
     isSavingRepos: false,
     scopedSecrets: [],
+    secretStorageStatus: null,
     selectedSecretWorkspace: null,
     isSecretsLoading: false,
     isSavingSecrets: false,

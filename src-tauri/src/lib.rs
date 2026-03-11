@@ -444,6 +444,7 @@ pub fn run() {
             commands::set_setting,
             commands::get_all_settings,
             commands::list_scoped_secrets,
+            commands::get_secret_storage_status_cmd,
             commands::upsert_scoped_secret,
             commands::delete_scoped_secret,
             commands::resolve_scoped_secrets_cmd,

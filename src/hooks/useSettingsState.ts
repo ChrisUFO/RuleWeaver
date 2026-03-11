@@ -10,7 +10,7 @@ import { featureManager, FEATURE_FLAGS } from "@/lib/featureManager";
 import type { AdapterType, Rule } from "@/types/rule";
 import type { CommandModel, McpStatus, McpConnectionInstructions } from "@/types/command";
 import type { Skill } from "@/types/skill";
-import type { ScopedSecret } from "@/types/secret";
+import type { ScopedSecret, SecretStorageStatus } from "@/types/secret";
 
 const ADAPTER_SETTINGS_KEY = "adapter_settings";
 
@@ -43,6 +43,7 @@ export interface UseSettingsStateReturn {
   repoPathsDirty: boolean;
   isSavingRepos: boolean;
   scopedSecrets: ScopedSecret[];
+  secretStorageStatus: SecretStorageStatus | null;
   selectedSecretWorkspace: string | null;
   isSecretsLoading: boolean;
   isSavingSecrets: boolean;
@@ -138,6 +139,7 @@ export function useSettingsState(
   const [repoPathsDirty, setRepoPathsDirty] = useState(false);
   const [isSavingRepos, setIsSavingRepos] = useState(false);
   const [scopedSecrets, setScopedSecrets] = useState<ScopedSecret[]>([]);
+  const [secretStorageStatus, setSecretStorageStatus] = useState<SecretStorageStatus | null>(null);
   const [selectedSecretWorkspace, setSelectedSecretWorkspace] = useState<string | null>(null);
   const [isSecretsLoading, setIsSecretsLoading] = useState(true);
   const [isSavingSecrets, setIsSavingSecrets] = useState(false);
@@ -190,6 +192,7 @@ export function useSettingsState(
           autoStartEnabled,
           tools,
           scopedSecretsRes,
+          secretStorageStatusRes,
         ] = await Promise.all([
           api.app.getAppDataPath(),
           api.app.getVersion(),
@@ -204,6 +207,7 @@ export function useSettingsState(
           isEnabled(),
           api.registry.getTools(),
           api.settings.listScopedSecrets(),
+          api.settings.getSecretStorageStatus(),
         ]);
         setAppDataPath(path);
         try {
@@ -228,6 +232,7 @@ export function useSettingsState(
         setMcpLogs(mcpSnapshot.logs);
         setLaunchOnStartup(autoStartEnabled);
         setScopedSecrets(scopedSecretsRes);
+        setSecretStorageStatus(secretStorageStatusRes);
         setIsSecretsLoading(false);
         await refreshRepositoryRoots();
 
@@ -684,7 +689,7 @@ export function useSettingsState(
       await api.storage.exportConfiguration(selected);
       toast.success(addToast, {
         title: "Export Successful",
-        description: `Configuration exported to ${selected}`,
+        description: `Configuration exported to ${selected}. Secret values stay local and are never included.`,
       });
     } catch (error) {
       toast.error(addToast, { title: "Export Failed", error });
@@ -726,7 +731,7 @@ export function useSettingsState(
       await api.storage.importConfiguration(importPreview.path, importMode);
       toast.success(addToast, {
         title: "Import Successful",
-        description: `Configuration imported using ${importMode} mode.`,
+        description: `Configuration imported using ${importMode} mode. Re-enter secrets locally because secret values are never imported.`,
       });
       setIsImportDialogOpen(false);
       setImportPreview(null);
@@ -791,6 +796,7 @@ export function useSettingsState(
     repoPathsDirty,
     isSavingRepos,
     scopedSecrets,
+    secretStorageStatus,
     selectedSecretWorkspace,
     isSecretsLoading,
     isSavingSecrets,

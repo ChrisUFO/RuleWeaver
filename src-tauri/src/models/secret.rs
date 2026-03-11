@@ -103,3 +103,12 @@ pub struct EffectiveSecret {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub artifact_id: Option<String>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SecretStorageStatus {
+    pub backend: String,
+    pub stores_secrets_in_os_credential_manager: bool,
+    pub exports_include_secrets: bool,
+    pub imports_include_secrets: bool,
+}

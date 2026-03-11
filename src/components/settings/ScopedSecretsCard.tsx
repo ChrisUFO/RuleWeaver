@@ -5,11 +5,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import type { ScopedSecret } from "@/types/secret";
+import type { ScopedSecret, SecretStorageStatus } from "@/types/secret";
 
 interface ScopedSecretsCardProps {
   repositoryRoots: readonly string[];
   scopedSecrets: readonly ScopedSecret[];
+  secretStorageStatus: SecretStorageStatus | null;
   selectedWorkspace: string | null;
   isLoading: boolean;
   isSaving: boolean;
@@ -28,6 +29,7 @@ type EffectiveSecretRow = {
 export function ScopedSecretsCard({
   repositoryRoots,
   scopedSecrets,
+  secretStorageStatus,
   selectedWorkspace,
   isLoading,
   isSaving,
@@ -91,6 +93,19 @@ export function ScopedSecretsCard({
         )}
       </CardHeader>
       <CardContent className="space-y-6 pt-6">
+        <div className="rounded-md border border-emerald-500/20 bg-emerald-500/5 p-4 text-xs text-muted-foreground">
+          <div className="font-medium text-foreground">Secure secret handling</div>
+          <p className="mt-1">
+            {secretStorageStatus?.storesSecretsInOsCredentialManager
+              ? `Values are stored in your OS credential manager (${secretStorageStatus.backend}) and never shown again in plain text.`
+              : "Values are stored securely and never shown again in plain text."}
+          </p>
+          <p className="mt-2">
+            Configuration export/import only transfers metadata. Re-enter secret values locally on
+            each machine.
+          </p>
+        </div>
+
         <div className="rounded-md border p-4">
           <div className="mb-3 flex items-center gap-2 text-sm font-medium">
             <ShieldCheck className="h-4 w-4" /> Workspace view

@@ -6,7 +6,7 @@ use crate::database::{Database, ScopedSecretRecord};
 use crate::error::{AppError, Result};
 use crate::models::{
     Command, DeleteScopedSecretInput, EffectiveSecret, ResolveScopedSecretsInput, ScopedSecret,
-    SecretScope, Skill, UpsertScopedSecretInput,
+    SecretScope, SecretStorageStatus, Skill, UpsertScopedSecretInput,
 };
 use crate::path_resolver::PathResolver;
 use crate::secure_storage::SecretStorage;
@@ -409,6 +409,17 @@ pub async fn list_scoped_secrets(db: &Database) -> Result<Vec<ScopedSecret>> {
         .collect())
 }
 
+pub fn get_secret_storage_status() -> SecretStorageStatus {
+    let storage = SecretStorage::global();
+    let backend = storage.backend_name().to_string();
+    SecretStorageStatus {
+        stores_secrets_in_os_credential_manager: backend != "in-memory-test-store",
+        backend,
+        exports_include_secrets: false,
+        imports_include_secrets: false,
+    }
+}
+
 pub async fn upsert_scoped_secret(
     db: &Database,
     input: UpsertScopedSecretInput,
@@ -803,6 +814,13 @@ mod tests {
             .iter()
             .any(|secret| secret.key == "LEGACY_SECRET" && secret.value == "legacy-plaintext"));
         assert_eq!(db.list_scoped_secret_records().await.unwrap()[0].value, "");
+    }
+
+    #[test]
+    fn secret_storage_status_reports_no_secret_export_or_import() {
+        let status = get_secret_storage_status();
+        assert!(!status.exports_include_secrets);
+        assert!(!status.imports_include_secrets);
     }
 
     #[test]

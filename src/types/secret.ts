@@ -19,6 +19,13 @@ export interface EffectiveSecret {
   artifactId?: string | null;
 }
 
+export interface SecretStorageStatus {
+  backend: string;
+  storesSecretsInOsCredentialManager: boolean;
+  exportsIncludeSecrets: boolean;
+  importsIncludeSecrets: boolean;
+}
+
 export interface UpsertScopedSecretInput {
   key: string;
   value: string;
