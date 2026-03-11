@@ -33,6 +33,10 @@ Different types of AI configurations require different management strategies:
   2. Custom Commands Second (Single scripts, quick actions)
   3. Skills Third (Complex, multi-file execution workflows)
 
+## Security Note
+
+- Scoped secret values are masked in the UI and API responses, but RuleWeaver currently stores them unencrypted at rest in the local app database. For high-sensitivity credentials, prefer per-user machines plus OS-level disk encryption.
+
 ## Getting Started
 
 _(Installation instructions will be added as the MVP is developed)_

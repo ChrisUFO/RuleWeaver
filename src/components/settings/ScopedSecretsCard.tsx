@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { KeyRound, ShieldCheck } from "lucide-react";
+import { KeyRound, Loader2, ShieldCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -83,6 +83,12 @@ export function ScopedSecretsCard({
           Define a global baseline, then override secrets per repository root without leaking raw
           values into docs or logs.
         </CardDescription>
+        {isSaving && (
+          <div className="flex items-center gap-2 text-xs text-muted-foreground" aria-live="polite">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            Saving secret changes…
+          </div>
+        )}
       </CardHeader>
       <CardContent className="space-y-6 pt-6">
         <div className="rounded-md border p-4">
@@ -125,13 +131,14 @@ export function ScopedSecretsCard({
             />
             <Button
               disabled={isSaving || !globalKey.trim() || !globalValue.trim()}
+              aria-busy={isSaving}
               onClick={async () => {
                 await onSaveGlobalSecret(globalKey, globalValue);
                 setGlobalKey("");
                 setGlobalValue("");
               }}
             >
-              Save Global
+              {isSaving ? "Saving…" : "Save Global"}
             </Button>
           </div>
           <div className="mt-4 space-y-2">
@@ -152,9 +159,11 @@ export function ScopedSecretsCard({
                 <Button
                   variant="ghost"
                   size="sm"
+                  disabled={isSaving}
+                  aria-busy={isSaving}
                   onClick={() => void onDeleteGlobalSecret(secret.key)}
                 >
-                  Delete
+                  {isSaving ? "Saving…" : "Delete"}
                 </Button>
               </div>
             ))}
@@ -192,13 +201,14 @@ export function ScopedSecretsCard({
                 />
                 <Button
                   disabled={isSaving || !workspaceKey.trim() || !workspaceValue.trim()}
+                  aria-busy={isSaving}
                   onClick={async () => {
                     await onSaveWorkspaceSecret(workspaceKey, workspaceValue, selectedWorkspace);
                     setWorkspaceKey("");
                     setWorkspaceValue("");
                   }}
                 >
-                  Save Override
+                  {isSaving ? "Saving…" : "Save Override"}
                 </Button>
               </div>
 
@@ -225,9 +235,11 @@ export function ScopedSecretsCard({
                       <Button
                         variant="ghost"
                         size="sm"
+                        disabled={isSaving}
+                        aria-busy={isSaving}
                         onClick={() => void onDeleteWorkspaceSecret(secret.key, selectedWorkspace)}
                       >
-                        Remove Override
+                        {isSaving ? "Saving…" : "Remove Override"}
                       </Button>
                     )}
                   </div>

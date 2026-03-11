@@ -32,6 +32,25 @@ fn normalize_secret_key(key: &str) -> Result<String> {
     Ok(trimmed.to_string())
 }
 
+fn validate_secret_key_for_write(key: &str) -> Result<()> {
+    let mut chars = key.chars();
+    let Some(first) = chars.next() else {
+        return Err(AppError::Validation(
+            "Secret key cannot be empty".to_string(),
+        ));
+    };
+
+    if !(first.is_ascii_alphabetic() || first == '_')
+        || !chars.all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+    {
+        return Err(AppError::Validation(
+            "Secret key must match environment variable naming rules (letters, numbers, underscores, and it cannot start with a number)".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
 pub fn secret_env_var_name(key: &str) -> String {
     let env_name = key
         .chars()
@@ -103,6 +122,7 @@ fn validate_scope_fields(
 
 fn normalize_upsert_input(mut input: UpsertScopedSecretInput) -> Result<UpsertScopedSecretInput> {
     input.key = normalize_secret_key(&input.key)?;
+    validate_secret_key_for_write(&input.key)?;
     if let Some(path) = input.workspace_path.as_deref() {
         input.workspace_path = Some(normalize_workspace_path(path)?);
     }
@@ -599,5 +619,28 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(resolved[0].value, "super-secret");
+    }
+
+    #[test]
+    fn upsert_secret_rejects_invalid_env_var_names() {
+        let invalid = normalize_upsert_input(UpsertScopedSecretInput {
+            key: "PROJECT=API_KEY".into(),
+            value: "secret".into(),
+            scope: SecretScope::Global,
+            workspace_path: None,
+            artifact_id: None,
+        });
+
+        assert!(invalid.is_err());
+
+        let leading_digit = normalize_upsert_input(UpsertScopedSecretInput {
+            key: "1PROJECT_API_KEY".into(),
+            value: "secret".into(),
+            scope: SecretScope::Global,
+            workspace_path: None,
+            artifact_id: None,
+        });
+
+        assert!(leading_digit.is_err());
     }
 }

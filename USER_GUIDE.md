@@ -386,6 +386,7 @@ Manage credentials without hardcoding them into commands or skills:
 - Add **workspace overrides** for any configured repository root
 - RuleWeaver resolves secrets with precedence: **artifact override → workspace override → global value**
 - Secret values are reused during command test runs and MCP execution, while logs stay redacted
+- Secret values are masked in the UI and API responses, but the local RuleWeaver database does **not** encrypt them at rest yet; use OS-level disk encryption for high-sensitivity credentials
 
 ### MCP Server
 

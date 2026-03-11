@@ -134,6 +134,7 @@ pub struct McpConnectionInstructions {
 #[derive(Debug)]
 pub struct McpRuntime {
     running: bool,
+    lifecycle_revision: u64,
     health_state: McpHealthState,
     port: u16,
     api_token: String,
@@ -179,6 +180,7 @@ impl McpManager {
         Self {
             inner: Arc::new(Mutex::new(McpRuntime {
                 running: false,
+                lifecycle_revision: 0,
                 health_state: McpHealthState::Stopped,
                 port,
                 api_token,
@@ -267,8 +269,18 @@ impl McpManager {
         state.app_handle = Some(handle);
     }
 
-    async fn set_error_state(&self, code: &str, message: String) {
+    async fn is_start_transition_current(&self, revision: u64) -> bool {
+        let state = self.inner.lock().await;
+        state.lifecycle_revision == revision
+            && matches!(state.health_state, McpHealthState::Starting)
+    }
+
+    async fn set_error_state_if_current(&self, revision: u64, code: &str, message: String) -> bool {
         let mut state = self.inner.lock().await;
+        if state.lifecycle_revision != revision {
+            return false;
+        }
+
         state.running = false;
         state.health_state = McpHealthState::Error;
         state.status_message = message.clone();
@@ -277,9 +289,10 @@ impl McpManager {
         state.started_at = None;
         state.stop_tx = None;
         state.watcher.stop();
+        true
     }
 
-    async fn bind_listener(&self, port: u16) -> Result<tokio::net::TcpListener> {
+    async fn bind_listener(&self, port: u16, revision: u64) -> Result<tokio::net::TcpListener> {
         let addr = format!("127.0.0.1:{port}");
         let mut retry_count = 0;
         let mut backoff_ms = MCP_SERVER_BACKOFF_INITIAL_MS;
@@ -299,7 +312,9 @@ impl McpManager {
                             MCP_SERVER_RETRY_COUNT + 1
                         );
                         self.log(message.clone()).await?;
-                        self.set_error_state(code, message.clone()).await;
+                        let _ = self
+                            .set_error_state_if_current(revision, code, message.clone())
+                            .await;
                         return Err(AppError::Mcp(message));
                     }
 
@@ -314,7 +329,7 @@ impl McpManager {
     }
 
     pub async fn start(&self, db: &Arc<Database>) -> Result<()> {
-        let port = {
+        let (port, start_revision) = {
             let mut state = self.inner.lock().await;
             if matches!(
                 state.health_state,
@@ -323,6 +338,7 @@ impl McpManager {
                 return Ok(());
             }
 
+            state.lifecycle_revision = state.lifecycle_revision.wrapping_add(1);
             state.running = false;
             state.health_state = McpHealthState::Starting;
             state.status_message =
@@ -332,21 +348,40 @@ impl McpManager {
             state.started_at = None;
             state.logs.push("Starting MCP server".to_string());
             state.db = Some(Arc::clone(db));
-            state.port
+            (state.port, state.lifecycle_revision)
         };
 
         if let Err(error) = self.refresh_commands(db).await {
             let message = format!("Failed to refresh MCP artifacts before start: {error}");
             self.log(message.clone()).await?;
-            self.set_error_state("refresh_failed", message).await;
-            return Err(error);
+            if self
+                .set_error_state_if_current(start_revision, "refresh_failed", message)
+                .await
+            {
+                return Err(error);
+            }
+            return Ok(());
         }
 
-        let listener = self.bind_listener(port).await?;
+        let listener = match self.bind_listener(port, start_revision).await {
+            Ok(listener) => listener,
+            Err(error) => {
+                if self.is_start_transition_current(start_revision).await {
+                    return Err(error);
+                }
+                return Ok(());
+            }
+        };
 
         let (stop_tx, _) = broadcast::channel(1);
         {
             let mut state = self.inner.lock().await;
+            if state.lifecycle_revision != start_revision
+                || !matches!(state.health_state, McpHealthState::Starting)
+            {
+                drop(listener);
+                return Ok(());
+            }
             state.stop_tx = Some(stop_tx.clone());
             state.running = true;
             state.health_state = McpHealthState::Ready;
@@ -358,6 +393,7 @@ impl McpManager {
         let manager = self.clone();
         let mut stop_rx = stop_tx.subscribe();
         let handle = tokio::spawn(async move {
+            let task_revision = start_revision;
             let app = Router::new()
                 .route("/", post(mcp_handler))
                 // Support root and any other path for flexibility
@@ -388,12 +424,14 @@ impl McpManager {
             {
                 let message = format!("MCP server error: {}", e);
                 let _ = manager.log(message.clone()).await;
-                manager.set_error_state("server_error", message).await;
+                let _ = manager
+                    .set_error_state_if_current(task_revision, "server_error", message)
+                    .await;
                 return;
             }
 
             let _ = manager.log("MCP server stopped".to_string()).await;
-            let _ = manager.mark_stopped().await;
+            let _ = manager.mark_stopped_if_current(task_revision).await;
         });
 
         {
@@ -623,6 +661,21 @@ impl McpManager {
 
     async fn mark_stopped(&self) -> Result<()> {
         let mut state = self.inner.lock().await;
+        state.running = false;
+        state.health_state = McpHealthState::Stopped;
+        state.status_message = "MCP server is stopped".to_string();
+        state.stop_tx = None;
+        state.started_at = None;
+        state.watcher.stop();
+        Ok(())
+    }
+
+    async fn mark_stopped_if_current(&self, revision: u64) -> Result<()> {
+        let mut state = self.inner.lock().await;
+        if state.lifecycle_revision != revision {
+            return Ok(());
+        }
+
         state.running = false;
         state.health_state = McpHealthState::Stopped;
         state.status_message = "MCP server is stopped".to_string();
@@ -1042,6 +1095,12 @@ async fn handle_command_call(
         match secrets::resolve_command_secret_envs(db.as_ref(), cmd).await {
             Ok(secret_envs) => envs.extend(secret_envs),
             Err(e) => {
+                log::warn!(
+                    "Failed to resolve MCP command secrets for '{}' ({}): {}",
+                    cmd.name,
+                    cmd.id,
+                    e
+                );
                 return json!({
                     "jsonrpc": "2.0",
                     "id": id,
@@ -1154,6 +1213,12 @@ async fn handle_skill_call(
                 }
             }
             Err(e) => {
+                log::warn!(
+                    "Failed to resolve MCP skill secrets for '{}' ({}): {}",
+                    skill.name,
+                    skill.id,
+                    e
+                );
                 return mcp_error_response(
                     id,
                     -32603,
