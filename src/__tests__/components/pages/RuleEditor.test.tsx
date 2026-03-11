@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { RuleEditor } from "../../../components/pages/RuleEditor";
 import { ToastProvider } from "../../../components/ui/toast";
@@ -107,13 +107,19 @@ describe("RuleEditor", () => {
     vi.clearAllMocks();
   });
 
-  it("renders in edit mode with rule name in heading", () => {
+  it("renders in edit mode with rule name in heading", async () => {
     renderWithProviders(<RuleEditor rule={baseRule} onBack={vi.fn()} onSelectRule={vi.fn()} />);
+    await act(async () => {
+      await Promise.resolve();
+    });
     expect(screen.getByText("Edit: My Rule")).toBeInTheDocument();
   });
 
-  it("renders in create mode", () => {
+  it("renders in create mode", async () => {
     renderWithProviders(<RuleEditor rule={null} onBack={vi.fn()} onSelectRule={vi.fn()} isNew />);
+    await act(async () => {
+      await Promise.resolve();
+    });
     expect(screen.getByText("Create Rule")).toBeInTheDocument();
   });
 
@@ -274,7 +280,9 @@ describe("RuleEditor", () => {
     const saveShortcut = lastCall[0].shortcuts.find((s) => s.key === "s");
 
     expect(saveShortcut).toBeDefined();
-    await saveShortcut!.action();
+    await act(async () => {
+      await saveShortcut!.action();
+    });
 
     await waitFor(() => {
       expect(mockUpdateRule).toHaveBeenCalled();
