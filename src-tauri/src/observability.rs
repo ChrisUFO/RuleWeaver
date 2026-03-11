@@ -163,7 +163,7 @@ pub async fn record_skill_execution(
 }
 
 pub async fn record_mcp_event(db: &Database, input: &McpEventRecordInput<'_>) -> Result<String> {
-    let (summary, summary_redacted) = redact_text(input.summary);
+    let (summary, _) = redact_text(input.summary);
     let (metadata, _) = redact_optional(input.metadata);
 
     db.add_observability_event(&ObservabilityEventInput {
