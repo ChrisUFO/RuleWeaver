@@ -1310,7 +1310,7 @@ async fn handle_command_call(
         }
     }
 
-    let workspace_path = secrets::infer_command_workspace(cmd).ok().flatten();
+    let workspace_path = secrets::infer_command_workspace(&cmd).ok().flatten();
 
     match execute_and_log(ExecuteAndLogInput {
         db: shared_db.as_ref().map(|arc| arc.as_ref()),
