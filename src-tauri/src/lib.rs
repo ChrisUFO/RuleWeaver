@@ -528,6 +528,11 @@ pub fn run() {
 
 pub fn run_mcp_cli(port: u16, token: Option<String>) -> std::result::Result<(), String> {
     let rt = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
+    let token = token.or_else(|| {
+        std::env::var(crate::mcp::MCP_TOKEN_ENV_VAR)
+            .ok()
+            .filter(|value| !value.trim().is_empty())
+    });
 
     rt.block_on(async {
         let db = Arc::new(Database::new_for_cli().await.map_err(|e| e.to_string())?);

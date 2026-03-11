@@ -64,9 +64,14 @@ fn truncate_output(s: String) -> String {
 }
 
 const MCP_AUTH_HEADER_NAME: &str = "X-API-Key";
+pub const MCP_TOKEN_ENV_VAR: &str = "RULEWEAVER_MCP_TOKEN";
 
 fn mcp_endpoint_url(port: u16) -> String {
     format!("http://127.0.0.1:{port}")
+}
+
+fn mcp_standalone_command(port: u16) -> String {
+    format!("ruleweaver-mcp --port {port}")
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -123,6 +128,7 @@ pub struct McpConnectionInstructions {
     pub api_token: String,
     pub endpoint_url: String,
     pub auth_header_name: String,
+    pub token_env_var_name: String,
 }
 
 #[derive(Debug)]
@@ -597,10 +603,11 @@ impl McpManager {
         Ok(McpConnectionInstructions {
             claude_code_json,
             opencode_json,
-            standalone_command: format!("ruleweaver-mcp --port {} --token {}", port, token),
+            standalone_command: mcp_standalone_command(port),
             api_token: token,
             endpoint_url: mcp_endpoint_url(port),
             auth_header_name: MCP_AUTH_HEADER_NAME.to_string(),
+            token_env_var_name: MCP_TOKEN_ENV_VAR.to_string(),
         })
     }
 
@@ -1337,5 +1344,11 @@ mod tests {
     fn test_disallowed_patterns() {
         assert!(contains_disallowed_pattern("rm -rf /").is_some());
         assert!(contains_disallowed_pattern("echo hi").is_none());
+    }
+
+    #[test]
+    fn test_standalone_command_omits_token() {
+        assert_eq!(mcp_standalone_command(4545), "ruleweaver-mcp --port 4545");
+        assert!(!mcp_standalone_command(4545).contains("token"));
     }
 }

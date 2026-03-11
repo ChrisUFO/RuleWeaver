@@ -94,6 +94,7 @@ export interface McpConnectionInstructions {
   apiToken: string;
   endpointUrl: string;
   authHeaderName: string;
+  tokenEnvVarName?: string;
 }
 
 export interface ExecutionLog {

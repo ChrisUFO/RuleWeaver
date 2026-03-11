@@ -37,10 +37,11 @@ const baseStatus: McpStatus = {
 const baseInstructions: McpConnectionInstructions = {
   claudeCodeJson: '{"mcpServers":{"ruleweaver":{"url":"http://127.0.0.1:4545"}}}',
   opencodeJson: '{"mcp":{"servers":[{"name":"ruleweaver"}]}}',
-  standaloneCommand: "ruleweaver-mcp --port 4545 --token test-token",
+  standaloneCommand: "ruleweaver-mcp --port 4545",
   apiToken: "test-token",
   endpointUrl: "http://127.0.0.1:4545",
   authHeaderName: "X-API-Key",
+  tokenEnvVarName: "RULEWEAVER_MCP_TOKEN",
 };
 
 const noopAsync = vi.fn().mockResolvedValue(undefined);
@@ -78,10 +79,11 @@ describe("McpSettingsCard", () => {
     expect(screen.getByText(/no mcp tools or skills exposed/i)).toBeInTheDocument();
     expect(screen.getByText(/verify client configuration/i)).toBeInTheDocument();
     expect(screen.getByText(/copy a working client config from this screen/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/RULEWEAVER_MCP_TOKEN/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/http:\/\/127.0.0.1:4545/i).length).toBeGreaterThan(0);
   });
 
-  it("copies endpoint and token details to the clipboard", async () => {
+  it("copies endpoint, token, and standalone command details to the clipboard", async () => {
     renderWithProviders(
       <McpSettingsCard
         mcpStatus={baseStatus}
@@ -103,9 +105,12 @@ describe("McpSettingsCard", () => {
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /copy endpoint/i }));
       fireEvent.click(screen.getByRole("button", { name: /copy token/i }));
+      fireEvent.click(screen.getByRole("button", { name: /copy command/i }));
     });
 
     expect(writeText).toHaveBeenNthCalledWith(1, "http://127.0.0.1:4545");
     expect(writeText).toHaveBeenNthCalledWith(2, "test-token");
+    expect(writeText).toHaveBeenNthCalledWith(3, "ruleweaver-mcp --port 4545");
+    expect(writeText.mock.calls[2]?.[0]).not.toContain("test-token");
   });
 });

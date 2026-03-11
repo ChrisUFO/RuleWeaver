@@ -92,6 +92,7 @@ export function McpSettingsCard({
 
   const endpointUrl = mcpInstructions?.endpointUrl ?? mcpStatus?.endpointUrl ?? "";
   const apiToken = mcpInstructions?.apiToken ?? mcpStatus?.apiToken ?? "";
+  const standaloneTokenEnvVar = mcpInstructions?.tokenEnvVarName ?? "RULEWEAVER_MCP_TOKEN";
 
   const handleCopy = async (label: string, value: string) => {
     if (!value || !navigator.clipboard?.writeText) {
@@ -235,10 +236,11 @@ export function McpSettingsCard({
           </div>
           <ol className="space-y-2 text-sm text-muted-foreground">
             <li>1. Start the MCP server from this card.</li>
-            <li>2. Copy the endpoint, token, or JSON snippet below.</li>
-            <li>3. Paste the config into Claude Code or OpenCode.</li>
+            <li>2. Copy the endpoint and API token below.</li>
+            <li>3. For standalone mode, set {standaloneTokenEnvVar} before launching.</li>
+            <li>4. Paste the config into Claude Code or OpenCode.</li>
             <li>
-              4. Fully restart the MCP client after config changes to avoid stale protocol state.
+              5. Fully restart the MCP client after config changes to avoid stale protocol state.
             </li>
           </ol>
         </div>
@@ -357,6 +359,10 @@ export function McpSettingsCard({
                   <code className="block overflow-auto rounded-md bg-muted p-2 text-xs">
                     {mcpInstructions.standaloneCommand}
                   </code>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Set <code>{standaloneTokenEnvVar}</code> to the copied API token before running
+                    this command so the token does not land in shell history or process lists.
+                  </p>
                 </div>
 
                 <div className="grid gap-2 md:grid-cols-2">

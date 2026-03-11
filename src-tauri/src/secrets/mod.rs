@@ -10,6 +10,8 @@ use crate::models::{
 };
 use crate::path_resolver::PathResolver;
 
+const MASKED_SECRET_VALUE: &str = "••••••••";
+
 fn normalize_path_for_compare(path: &Path) -> String {
     let normalized = path.to_string_lossy().replace('\\', "/");
     let trimmed = normalized.trim_end_matches('/').to_string();
@@ -123,6 +125,11 @@ fn normalize_delete_input(mut input: DeleteScopedSecretInput) -> Result<DeleteSc
     Ok(input)
 }
 
+fn mask_scoped_secret(mut secret: ScopedSecret) -> ScopedSecret {
+    secret.value = MASKED_SECRET_VALUE.to_string();
+    secret
+}
+
 fn normalize_resolve_input(
     mut input: ResolveScopedSecretsInput,
 ) -> Result<ResolveScopedSecretsInput> {
@@ -228,15 +235,22 @@ pub fn infer_skill_workspace(skill: &Skill) -> Result<Option<String>> {
 }
 
 pub async fn list_scoped_secrets(db: &Database) -> Result<Vec<ScopedSecret>> {
-    db.list_scoped_secrets().await
+    Ok(db
+        .list_scoped_secrets()
+        .await?
+        .into_iter()
+        .map(mask_scoped_secret)
+        .collect())
 }
 
 pub async fn upsert_scoped_secret(
     db: &Database,
     input: UpsertScopedSecretInput,
 ) -> Result<ScopedSecret> {
-    db.upsert_scoped_secret(normalize_upsert_input(input)?)
-        .await
+    Ok(mask_scoped_secret(
+        db.upsert_scoped_secret(normalize_upsert_input(input)?)
+            .await?,
+    ))
 }
 
 pub async fn delete_scoped_secret(db: &Database, input: DeleteScopedSecretInput) -> Result<()> {
@@ -282,6 +296,10 @@ pub async fn resolve_skill_secret_envs(
     skill: &Skill,
     allowed_keys: &HashSet<String>,
 ) -> Result<Vec<(String, String)>> {
+    if allowed_keys.is_empty() {
+        return Ok(Vec::new());
+    }
+
     let effective = resolve_scoped_secrets(
         db,
         ResolveScopedSecretsInput {
@@ -303,10 +321,6 @@ pub async fn resolve_skill_secret_envs(
             envs.push((env_name.clone(), secret.value.clone()));
             envs.push((format!("{}{}", SKILL_SECRET_PREFIX, env_name), secret.value));
         }
-    }
-
-    if allowed_keys.is_empty() {
-        return Ok(envs);
     }
 
     let settings = db.get_all_settings().await?;
@@ -512,5 +526,78 @@ mod tests {
         assert!(envs
             .iter()
             .any(|(key, value)| key == "LEGACY_TOKEN" && value == "legacy-value"));
+    }
+
+    #[tokio::test]
+    async fn skill_secret_envs_require_explicit_allowlist() {
+        let db = Database::new_in_memory().await.unwrap();
+        let skill = db
+            .create_skill(CreateSkillInput {
+                id: Some("skill-1".into()),
+                name: "Build Skill".into(),
+                description: "Skill".into(),
+                instructions: "Run steps".into(),
+                scope: Scope::Local,
+                input_schema: vec![],
+                directory_path: "./skills/build".into(),
+                entry_point: "run.cmd".into(),
+                enabled: true,
+                target_adapters: vec![],
+                target_paths: vec!["C:/repo-a".into()],
+                base_path: Some("C:/repo-a".into()),
+            })
+            .await
+            .unwrap();
+
+        upsert_scoped_secret(
+            &db,
+            UpsertScopedSecretInput {
+                key: "PROJECT_API_KEY".into(),
+                value: "repo-a".into(),
+                scope: SecretScope::Workspace,
+                workspace_path: Some("C:/repo-a".into()),
+                artifact_id: None,
+            },
+        )
+        .await
+        .unwrap();
+        db.set_setting("LEGACY_TOKEN", "legacy-value")
+            .await
+            .unwrap();
+
+        let envs = resolve_skill_secret_envs(&db, &skill, &HashSet::new())
+            .await
+            .unwrap();
+
+        assert!(envs.is_empty());
+    }
+
+    #[tokio::test]
+    async fn secret_list_and_upsert_mask_values() {
+        let db = Database::new_in_memory().await.unwrap();
+
+        let saved = upsert_scoped_secret(
+            &db,
+            UpsertScopedSecretInput {
+                key: "PROJECT_API_KEY".into(),
+                value: "super-secret".into(),
+                scope: SecretScope::Global,
+                workspace_path: None,
+                artifact_id: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(saved.value, MASKED_SECRET_VALUE);
+
+        let listed = list_scoped_secrets(&db).await.unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].value, MASKED_SECRET_VALUE);
+
+        let resolved = resolve_scoped_secrets(&db, ResolveScopedSecretsInput::default())
+            .await
+            .unwrap();
+        assert_eq!(resolved[0].value, "super-secret");
     }
 }
