@@ -182,7 +182,7 @@ pub async fn record_mcp_event(db: &Database, input: &McpEventRecordInput<'_>) ->
         exit_code: None,
         failure_class: None,
         attempt_number: None,
-        is_redacted: true || summary_redacted || metadata_redacted,
+        is_redacted: true,
     })
     .await
 }
