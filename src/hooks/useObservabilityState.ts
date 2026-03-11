@@ -20,13 +20,7 @@ function toUnixTimestamp(value: string): number | undefined {
 export interface UseObservabilityStateReturn {
   events: ObservabilityEvent[];
   selectedIds: string[];
-  query: string;
-  entityName: string;
-  source: string;
-  eventType: ObservabilityEventType | "";
-  status: ObservabilityEventStatus | "";
-  fromTimestamp: string;
-  toTimestamp: string;
+  workspacePath: string;
   isLoading: boolean;
   isExporting: boolean;
   error: string | null;
@@ -35,6 +29,7 @@ export interface UseObservabilityStateReturn {
     setQuery: (value: string) => void;
     setEntityName: (value: string) => void;
     setSource: (value: string) => void;
+    setWorkspacePath: (value: string) => void;
     setEventType: (value: ObservabilityEventType | "") => void;
     setStatus: (value: ObservabilityEventStatus | "") => void;
     setFromTimestamp: (value: string) => void;
@@ -52,6 +47,8 @@ export function useObservabilityState(
 ): UseObservabilityStateReturn {
   const [events, setEvents] = useState<ObservabilityEvent[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [workspacePath, setWorkspacePath] = useState("");
+  const [limit, setLimit] = useState(DEFAULT_PAGE_SIZE);
   const [query, setQuery] = useState("");
   const [entityName, setEntityName] = useState("");
   const [source, setSource] = useState("");
@@ -59,10 +56,16 @@ export function useObservabilityState(
   const [status, setStatus] = useState<ObservabilityEventStatus | "">("");
   const [fromTimestamp, setFromTimestamp] = useState("");
   const [toTimestamp, setToTimestamp] = useState("");
-  const [limit, setLimit] = useState(DEFAULT_PAGE_SIZE);
   const [isLoading, setIsLoading] = useState(true);
   const [isExporting, setIsExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Hardening: Debounced query to prevent excessive backend load
+  const [debouncedQuery, setDebouncedQuery] = useState(query);
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedQuery(query), 300);
+    return () => clearTimeout(timer);
+  }, [query]);
 
   const filter = useMemo<ObservabilityEventFilter>(
     () => ({
@@ -70,40 +73,59 @@ export function useObservabilityState(
       status: status || undefined,
       source: source.trim() || undefined,
       entityName: entityName.trim() || undefined,
-      query: query.trim() || undefined,
+      workspacePath: workspacePath.trim() || undefined,
+      query: debouncedQuery.trim() || undefined,
       fromTimestamp: toUnixTimestamp(fromTimestamp),
       toTimestamp: toUnixTimestamp(toTimestamp),
       limit,
     }),
-    [entityName, eventType, fromTimestamp, limit, query, source, status, toTimestamp]
+    [
+      debouncedQuery,
+      entityName,
+      eventType,
+      fromTimestamp,
+      limit,
+      source,
+      status,
+      toTimestamp,
+      workspacePath,
+    ]
   );
 
-  const refresh = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const nextEvents = await api.observability.list(filter);
-      setEvents(nextEvents);
-      setSelectedIds((current) =>
-        current.filter((id) => nextEvents.some((event) => event.id === id))
-      );
-    } catch (cause) {
-      const message = cause instanceof Error ? cause.message : "Failed to load logs";
-      setError(message);
-      addToast({ title: "Logs Unavailable", description: message, variant: "error" });
-    } finally {
-      setIsLoading(false);
-    }
-  }, [addToast, filter]);
+  const refresh = useCallback(
+    async (signal?: AbortSignal) => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const nextEvents = await api.observability.list(filter);
+        if (signal?.aborted) return;
+        setEvents(nextEvents);
+        setSelectedIds((current) =>
+          current.filter((id) => nextEvents.some((event) => event.id === id))
+        );
+      } catch (cause: unknown) {
+        if (signal?.aborted) return;
+        const message = cause instanceof Error ? cause.message : "Failed to load logs";
+        setError(message);
+        addToast({ title: "Logs Unavailable", description: message, variant: "error" });
+      } finally {
+        if (!signal?.aborted) setIsLoading(false);
+      }
+    },
+    [addToast, filter]
+  );
 
   useEffect(() => {
-    void refresh();
+    const controller = new AbortController();
+    void refresh(controller.signal);
+    return () => controller.abort();
   }, [refresh]);
 
   const clearFilters = useCallback(() => {
     setQuery("");
     setEntityName("");
     setSource("");
+    setWorkspacePath("");
     setEventType("");
     setStatus("");
     setFromTimestamp("");
@@ -139,7 +161,7 @@ export function useObservabilityState(
             : `Exported ${count} filtered log entries.`,
         variant: "success",
       });
-    } catch (cause) {
+    } catch (cause: unknown) {
       addToast({
         title: "Export Failed",
         description: cause instanceof Error ? cause.message : "Failed to export logs",
@@ -160,6 +182,7 @@ export function useObservabilityState(
     status,
     fromTimestamp,
     toTimestamp,
+    workspacePath,
     isLoading,
     isExporting,
     error,
@@ -177,6 +200,10 @@ export function useObservabilityState(
         setLimit(DEFAULT_PAGE_SIZE);
         setSource(value);
       },
+      setWorkspacePath: (value) => {
+        setLimit(DEFAULT_PAGE_SIZE);
+        setWorkspacePath(value);
+      },
       setEventType: (value) => {
         setLimit(DEFAULT_PAGE_SIZE);
         setEventType(value);
@@ -185,11 +212,11 @@ export function useObservabilityState(
         setLimit(DEFAULT_PAGE_SIZE);
         setStatus(value);
       },
-      setFromTimestamp: (value) => {
+      setFromTimestamp: (value: string) => {
         setLimit(DEFAULT_PAGE_SIZE);
         setFromTimestamp(value);
       },
-      setToTimestamp: (value) => {
+      setToTimestamp: (value: string) => {
         setLimit(DEFAULT_PAGE_SIZE);
         setToTimestamp(value);
       },

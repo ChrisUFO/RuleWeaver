@@ -33,7 +33,8 @@ export interface ObservabilityEventFilter {
   status?: ObservabilityEventStatus;
   source?: string;
   entityName?: string;
-  query?: string;
+  workspacePath?: string;
+  metadata?: Record<string, unknown>;
   fromTimestamp?: number;
   toTimestamp?: number;
   limit?: number;

@@ -1,4 +1,4 @@
-import { Download, RefreshCw, Search, X } from "lucide-react";
+import { Clipboard, Download, RefreshCw, Search, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -60,12 +60,26 @@ export function Logs() {
     status,
     fromTimestamp,
     toTimestamp,
+    workspacePath,
     isLoading,
     isExporting,
     error,
     hasMore,
     handlers,
   } = useObservabilityState(addToast);
+
+  const copyToClipboard = async (text: string, label: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      addToast({ title: "Copied", description: `${label} copied to clipboard.` });
+    } catch {
+      addToast({
+        title: "Copy Failed",
+        description: "Failed to copy to clipboard.",
+        variant: "error",
+      });
+    }
+  };
 
   return (
     <div className="space-y-6 p-6">
@@ -115,6 +129,14 @@ export function Logs() {
             <label className="space-y-2 text-sm">
               <span>Source</span>
               <Input value={source} onChange={(e) => handlers.setSource(e.target.value)} />
+            </label>
+            <label className="space-y-2 text-sm">
+              <span>Workspace path</span>
+              <Input
+                placeholder="e.g. /home/user/project"
+                value={workspacePath}
+                onChange={(e) => handlers.setWorkspacePath(e.target.value)}
+              />
             </label>
             <label className="space-y-2 text-sm">
               <span>Event type</span>
@@ -168,11 +190,15 @@ export function Logs() {
         </CardHeader>
         <CardContent className="space-y-3">
           {error ? (
-            <div className="rounded-md border border-destructive/30 bg-destructive/10 p-4 text-sm">
+            <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
               {error}
             </div>
-          ) : isLoading ? (
-            <p className="text-sm text-muted-foreground">Loading logs…</p>
+          ) : isLoading && events.length === 0 ? (
+            <div className="space-y-3">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="h-24 animate-pulse rounded-lg bg-muted" />
+              ))}
+            </div>
           ) : events.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               No log entries match the current filters.
@@ -200,6 +226,14 @@ export function Logs() {
                         {event.entityName ? (
                           <Badge variant="secondary">{event.entityName}</Badge>
                         ) : null}
+                        {event.workspacePath ? (
+                          <Badge
+                            variant="secondary"
+                            className="max-w-[200px] truncate font-mono text-[10px]"
+                          >
+                            {event.workspacePath}
+                          </Badge>
+                        ) : null}
                       </div>
                       <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
                         <span>{new Date(event.timestamp * 1000).toLocaleString()}</span>
@@ -221,8 +255,21 @@ export function Logs() {
                 </div>
 
                 {formatMetadata(event.metadata) ? (
-                  <details className="mt-3 rounded-md bg-muted/40 p-3 text-xs">
-                    <summary className="cursor-pointer font-medium">Metadata</summary>
+                  <details className="group mt-3 rounded-md bg-muted/40 p-3 text-xs">
+                    <summary className="flex cursor-pointer items-center justify-between font-medium">
+                      <span>Metadata</span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 w-6 p-0 opacity-0 transition group-hover:opacity-100"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          copyToClipboard(formatMetadata(event.metadata) || "", "Metadata");
+                        }}
+                      >
+                        <Clipboard className="h-3.5 w-3.5" />
+                      </Button>
+                    </summary>
                     <pre className="mt-2 whitespace-pre-wrap break-all text-muted-foreground">
                       {formatMetadata(event.metadata)}
                     </pre>
@@ -230,11 +277,26 @@ export function Logs() {
                 ) : null}
 
                 {event.stdoutExcerpt || event.stderrExcerpt ? (
-                  <details className="mt-3 rounded-md bg-muted/40 p-3 text-xs">
-                    <summary className="cursor-pointer font-medium">Output excerpts</summary>
+                  <details className="group mt-3 rounded-md bg-muted/40 p-3 text-xs">
+                    <summary className="flex cursor-pointer items-center justify-between font-medium">
+                      <span>Output excerpts</span>
+                    </summary>
                     {event.stdoutExcerpt ? (
                       <div className="mt-2 space-y-1">
-                        <div className="font-medium">stdout</div>
+                        <div className="flex items-center justify-between font-medium">
+                          <span>stdout</span>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 w-6 p-0 opacity-0 transition group-hover:opacity-100"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              copyToClipboard(event.stdoutExcerpt || "", "Stdout");
+                            }}
+                          >
+                            <Clipboard className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
                         <pre className="whitespace-pre-wrap break-all text-muted-foreground">
                           {event.stdoutExcerpt}
                         </pre>
@@ -242,7 +304,20 @@ export function Logs() {
                     ) : null}
                     {event.stderrExcerpt ? (
                       <div className="mt-2 space-y-1">
-                        <div className="font-medium">stderr</div>
+                        <div className="flex items-center justify-between font-medium">
+                          <span>stderr</span>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 w-6 p-0 opacity-0 transition group-hover:opacity-100"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              copyToClipboard(event.stderrExcerpt || "", "Stderr");
+                            }}
+                          >
+                            <Clipboard className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
                         <pre className="whitespace-pre-wrap break-all text-muted-foreground">
                           {event.stderrExcerpt}
                         </pre>

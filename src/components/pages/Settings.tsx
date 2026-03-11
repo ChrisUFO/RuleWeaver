@@ -42,7 +42,7 @@ const SETTINGS_TABS = [
   { id: "infrastructure", label: "Infrastructure", icon: Database },
 ];
 
-export function Settings() {
+export function Settings({ onNavigate }: { onNavigate?: (view: string) => void }) {
   const { addToast } = useToast();
   const [activeTab, setActiveTab] = useState("general");
 
@@ -265,6 +265,7 @@ export function Settings() {
                 onToggleAutoStart={handlers.toggleMcpAutoStart}
                 onToggleMinimizeToTray={handlers.toggleMinimizeToTray}
                 onToggleLaunchOnStartup={handlers.toggleLaunchOnStartup}
+                onNavigateToLogs={() => onNavigate?.("logs")}
               />
 
               <AdapterSettingsCard

@@ -168,7 +168,7 @@ describe("Dashboard lifecycle", () => {
 
     renderWithProviders(<Dashboard onNavigate={vi.fn()} />);
 
-    const button = await screen.findByRole("button", { name: /view full logs/i });
+    const button = await screen.findByRole("button", { name: /sync logs/i });
     expect(button).toBeDisabled();
     expect(screen.getByText(/run a sync to generate logs/i)).toBeInTheDocument();
   });
@@ -193,7 +193,7 @@ describe("Dashboard lifecycle", () => {
 
     renderWithProviders(<Dashboard onNavigate={vi.fn()} />);
 
-    const button = await screen.findByRole("button", { name: /view full logs/i });
+    const button = await screen.findByRole("button", { name: /sync logs/i });
     expect(button).toBeEnabled();
 
     await userEvent.click(button);
@@ -202,7 +202,7 @@ describe("Dashboard lifecycle", () => {
       expect(api.sync.getHistory).toHaveBeenCalledWith(100);
     });
 
-    expect(await screen.findByText("Sync Logs")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Sync Logs" })).toBeInTheDocument();
   });
 
   it("shows retry UI when full log loading fails", async () => {
@@ -223,7 +223,7 @@ describe("Dashboard lifecycle", () => {
 
     renderWithProviders(<Dashboard onNavigate={vi.fn()} />);
 
-    const button = await screen.findByRole("button", { name: /view full logs/i });
+    const button = await screen.findByRole("button", { name: /sync logs/i });
     await userEvent.click(button);
 
     expect(await screen.findByText(/unable to load sync logs/i)).toBeInTheDocument();

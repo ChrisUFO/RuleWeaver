@@ -126,6 +126,9 @@ export const api = {
         rules_migrated: number;
         rules_skipped: number;
         errors: Array<{ rule_id: string; rule_name: string; error: string }>;
+        entity_name?: string;
+        workspace_path?: string;
+        from_timestamp?: string;
         backup_path?: string;
         storage_dir: string;
       }>("migrate_to_file_storage"),

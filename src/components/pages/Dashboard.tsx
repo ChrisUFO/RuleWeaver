@@ -524,7 +524,7 @@ export function Dashboard({ onNavigate }: { onNavigate: (view: string, id?: stri
                       )}
                     </div>
                   </CardContent>
-                  <div className="p-4 bg-white/5 mt-auto">
+                  <div className="p-4 bg-white/5 mt-auto space-y-2">
                     <Button
                       variant="ghost"
                       onClick={handleViewFullLogs}
@@ -536,7 +536,14 @@ export function Dashboard({ onNavigate }: { onNavigate: (view: string, id?: stri
                       }
                       className="w-full h-8 text-xs font-bold text-primary/60 hover:text-primary hover:bg-transparent"
                     >
-                      {isLoadingFullHistory ? "Loading Logs..." : "View Full Logs"}
+                      {isLoadingFullHistory ? "Loading Logs..." : "Sync Logs"}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => onNavigate("logs")}
+                      className="w-full h-8 text-xs font-bold glass border-primary/20 hover:bg-primary/5"
+                    >
+                      System Diagnostics
                     </Button>
                     {syncHistory.length === 0 && (
                       <p className="mt-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60 text-center">

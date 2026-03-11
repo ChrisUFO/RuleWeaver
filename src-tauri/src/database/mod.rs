@@ -48,15 +48,16 @@ fn parse_observability_event_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Ob
         entity_kind: row.get(5)?,
         entity_id: row.get(6)?,
         entity_name: row.get(7)?,
-        summary: row.get(8)?,
-        metadata: row.get(9)?,
-        stdout_excerpt: row.get(10)?,
-        stderr_excerpt: row.get(11)?,
-        duration_ms: row.get::<_, Option<i64>>(12)?.map(|value| value as u64),
-        exit_code: row.get(13)?,
-        failure_class: row.get(14)?,
-        attempt_number: row.get::<_, Option<i64>>(15)?.map(|value| value as u8),
-        is_redacted: row.get::<_, i32>(16)? != 0,
+        workspace_path: row.get(8)?,
+        summary: row.get(9)?,
+        metadata: row.get(10)?,
+        stdout_excerpt: row.get(11)?,
+        stderr_excerpt: row.get(12)?,
+        duration_ms: row.get::<_, Option<i64>>(13)?.map(|value| value as u64),
+        exit_code: row.get(14)?,
+        failure_class: row.get(15)?,
+        attempt_number: row.get::<_, Option<i64>>(16)?.map(|value| value as u8),
+        is_redacted: row.get::<_, i32>(17)? != 0,
     })
 }
 
@@ -79,6 +80,7 @@ pub struct ExecutionLogInput<'a> {
     pub triggered_by: &'a str,
     pub failure_class: Option<&'a str>,
     pub adapter_context: Option<&'a str>,
+    pub workspace_path: Option<&'a str>,
     pub is_redacted: bool,
     pub attempt_number: u8,
 }
@@ -90,6 +92,7 @@ pub struct ObservabilityEventInput<'a> {
     pub entity_kind: Option<&'a str>,
     pub entity_id: Option<&'a str>,
     pub entity_name: Option<&'a str>,
+    pub workspace_path: Option<&'a str>,
     pub summary: &'a str,
     pub metadata: Option<&'a str>,
     pub stdout_excerpt: Option<&'a str>,
@@ -961,39 +964,73 @@ impl Database {
         Ok(())
     }
 
-    pub async fn add_observability_event(&self, input: &ObservabilityEventInput<'_>) -> Result<()> {
-        let conn = self.0.lock().await;
+    pub async fn add_observability_event(
+        &self,
+        input: &ObservabilityEventInput<'_>,
+    ) -> Result<String> {
         let id = uuid::Uuid::new_v4().to_string();
-        let now = chrono::Utc::now().timestamp();
+        let timestamp = chrono::Utc::now();
 
+        // Defense-in-depth: second-pass redaction on all text fields
+        let (summary, summary_redacted) = crate::redaction::redact(input.summary);
+        let (metadata, metadata_redacted) = match input.metadata {
+            Some(m) => {
+                let (r, red) = crate::redaction::redact(m);
+                (Some(r), red)
+            }
+            None => (None, false),
+        };
+        let (stdout, stdout_redacted) = match input.stdout_excerpt {
+            Some(s) => {
+                let (r, red) = crate::redaction::redact(s);
+                (Some(r), red)
+            }
+            None => (None, false),
+        };
+        let (stderr, stderr_redacted) = match input.stderr_excerpt {
+            Some(s) => {
+                let (r, red) = crate::redaction::redact(s);
+                (Some(r), red)
+            }
+            None => (None, false),
+        };
+
+        let is_redacted = input.is_redacted
+            || summary_redacted
+            || metadata_redacted
+            || stdout_redacted
+            || stderr_redacted;
+
+        let conn = self.0.lock().await; // Re-added this line as it was missing in the provided snippet but needed for `conn.execute`
         conn.execute(
             "INSERT INTO observability_events (
                 id, timestamp, event_type, status, source, entity_kind, entity_id, entity_name,
-                summary, metadata, stdout_excerpt, stderr_excerpt, duration_ms, exit_code,
-                failure_class, attempt_number, is_redacted
-             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                workspace_path, summary, metadata, stdout_excerpt, stderr_excerpt, duration_ms,
+                exit_code, failure_class, attempt_number, is_redacted
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             params![
                 id,
-                now,
+                timestamp.timestamp(), // Use timestamp.timestamp() for i64
                 input.event_type.as_str(),
                 input.status.as_str(),
                 input.source,
                 input.entity_kind,
                 input.entity_id,
                 input.entity_name,
-                input.summary,
-                input.metadata,
-                input.stdout_excerpt,
-                input.stderr_excerpt,
+                input.workspace_path,
+                summary,  // Use redacted summary
+                metadata, // Use redacted metadata
+                stdout,   // Use redacted stdout
+                stderr,   // Use redacted stderr
                 input.duration_ms.map(|value| value as i64),
                 input.exit_code,
                 input.failure_class,
                 input.attempt_number.map(|value| value as i64),
-                input.is_redacted as i32,
+                is_redacted as i32,
             ],
         )?;
 
-        Ok(())
+        Ok(id)
     }
 
     pub async fn list_observability_events(
@@ -1033,6 +1070,18 @@ impl Database {
             sql_params.push(Box::new(format!("%{}%", entity_name.trim().to_lowercase())));
         }
 
+        if let Some(workspace_path) = filter
+            .workspace_path
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+        {
+            where_clauses.push("LOWER(COALESCE(workspace_path, '')) LIKE ?".to_string());
+            sql_params.push(Box::new(format!(
+                "%{}%",
+                workspace_path.trim().to_lowercase()
+            )));
+        }
+
         if let Some(query) = filter
             .query
             .as_deref()
@@ -1040,10 +1089,10 @@ impl Database {
         {
             let pattern = format!("%{}%", query.trim().to_lowercase());
             where_clauses.push(
-                "(LOWER(summary) LIKE ? OR LOWER(source) LIKE ? OR LOWER(COALESCE(entity_name, '')) LIKE ? OR LOWER(COALESCE(metadata, '')) LIKE ? OR LOWER(COALESCE(stdout_excerpt, '')) LIKE ? OR LOWER(COALESCE(stderr_excerpt, '')) LIKE ?)"
+                "(LOWER(summary) LIKE ? OR LOWER(source) LIKE ? OR LOWER(COALESCE(entity_name, '')) LIKE ? OR LOWER(COALESCE(workspace_path, '')) LIKE ? OR LOWER(COALESCE(metadata, '')) LIKE ? OR LOWER(COALESCE(stdout_excerpt, '')) LIKE ? OR LOWER(COALESCE(stderr_excerpt, '')) LIKE ?)"
                     .to_string(),
             );
-            for _ in 0..6 {
+            for _ in 0..7 {
                 sql_params.push(Box::new(pattern.clone()));
             }
         }
@@ -1058,7 +1107,7 @@ impl Database {
             sql_params.push(Box::new(to_timestamp.timestamp()));
         }
 
-        let mut sql = "SELECT id, timestamp, event_type, status, source, entity_kind, entity_id, entity_name, summary, metadata, stdout_excerpt, stderr_excerpt, duration_ms, exit_code, failure_class, attempt_number, is_redacted FROM observability_events".to_string();
+        let mut sql = "SELECT id, timestamp, event_type, status, source, entity_kind, entity_id, entity_name, workspace_path, summary, metadata, stdout_excerpt, stderr_excerpt, duration_ms, exit_code, failure_class, attempt_number, is_redacted FROM observability_events".to_string();
         if !where_clauses.is_empty() {
             sql.push_str(" WHERE ");
             sql.push_str(&where_clauses.join(" AND "));
@@ -1089,7 +1138,7 @@ impl Database {
             .collect::<Vec<_>>()
             .join(", ");
         let sql = format!(
-            "SELECT id, timestamp, event_type, status, source, entity_kind, entity_id, entity_name, summary, metadata, stdout_excerpt, stderr_excerpt, duration_ms, exit_code, failure_class, attempt_number, is_redacted FROM observability_events WHERE id IN ({placeholders}) ORDER BY timestamp DESC, id DESC"
+            "SELECT id, timestamp, event_type, status, source, entity_kind, entity_id, entity_name, workspace_path, summary, metadata, stdout_excerpt, stderr_excerpt, duration_ms, exit_code, failure_class, attempt_number, is_redacted FROM observability_events WHERE id IN ({placeholders}) ORDER BY timestamp DESC, id DESC"
         );
 
         let mut stmt = conn.prepare(&sql)?;
@@ -2210,7 +2259,19 @@ fn run_migrations(conn: &mut Connection) -> Result<()> {
         )?;
     }
 
-    transaction.execute("PRAGMA user_version = 19", [])?;
+    if current_version < 20 {
+        transaction.execute(
+            "ALTER TABLE observability_events ADD COLUMN workspace_path TEXT",
+            [],
+        )?;
+        transaction.execute(
+            "CREATE INDEX IF NOT EXISTS idx_observability_events_workspace_path
+             ON observability_events(workspace_path)",
+            [],
+        )?;
+    }
+
+    transaction.execute("PRAGMA user_version = 20", [])?;
     transaction.commit()?;
 
     Ok(())
@@ -2411,6 +2472,7 @@ mod tests {
             entity_kind: Some("command"),
             entity_id: Some("cmd-1"),
             entity_name: Some("Deploy docs"),
+            workspace_path: Some("c:/repos/docs"),
             summary: "Command execution failed",
             metadata: Some("{\"toolName\":\"Deploy docs\"}"),
             stdout_excerpt: None,
@@ -2431,6 +2493,7 @@ mod tests {
             entity_kind: Some("mcp"),
             entity_id: None,
             entity_name: Some("server"),
+            workspace_path: None,
             summary: "MCP server is ready",
             metadata: None,
             stdout_excerpt: None,
@@ -2449,6 +2512,7 @@ mod tests {
                 event_type: Some(ObservabilityEventType::CommandRun),
                 status: Some(ObservabilityEventStatus::Error),
                 entity_name: Some("deploy".to_string()),
+                workspace_path: Some("repos/docs".to_string()),
                 query: Some("timeout".to_string()),
                 limit: Some(25),
                 ..Default::default()
@@ -2458,6 +2522,7 @@ mod tests {
 
         assert_eq!(filtered.len(), 1);
         assert_eq!(filtered[0].entity_name.as_deref(), Some("Deploy docs"));
+        assert_eq!(filtered[0].workspace_path.as_deref(), Some("c:/repos/docs"));
         assert!(filtered[0].is_redacted);
 
         let looked_up = db
@@ -2479,6 +2544,7 @@ mod tests {
             entity_kind: Some("skill"),
             entity_id: Some("skill-1"),
             entity_name: Some("Summarize Repo"),
+            workspace_path: Some("c:/repos/app"),
             summary: "Skill execution succeeded",
             metadata: Some("{\"triggeredBy\":\"mcp-skill\"}"),
             stdout_excerpt: Some("token=***REDACTED***"),

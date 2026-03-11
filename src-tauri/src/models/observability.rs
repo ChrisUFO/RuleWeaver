@@ -93,6 +93,7 @@ pub struct ObservabilityEvent {
     pub entity_kind: Option<String>,
     pub entity_id: Option<String>,
     pub entity_name: Option<String>,
+    pub workspace_path: Option<String>,
     pub summary: String,
     pub metadata: Option<String>,
     pub stdout_excerpt: Option<String>,
@@ -111,6 +112,7 @@ pub struct ObservabilityEventFilter {
     pub status: Option<ObservabilityEventStatus>,
     pub source: Option<String>,
     pub entity_name: Option<String>,
+    pub workspace_path: Option<String>,
     pub query: Option<String>,
     #[serde(default, with = "crate::models::timestamp::optional")]
     pub from_timestamp: Option<DateTime<Utc>>,

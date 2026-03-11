@@ -31,6 +31,7 @@ interface McpSettingsCardProps {
   onToggleAutoStart: (enabled: boolean) => Promise<void>;
   onToggleMinimizeToTray: (enabled: boolean) => Promise<void>;
   onToggleLaunchOnStartup: (enabled: boolean) => Promise<void>;
+  onNavigateToLogs?: () => void;
 }
 
 export function McpSettingsCard({
@@ -47,6 +48,7 @@ export function McpSettingsCard({
   onToggleAutoStart,
   onToggleMinimizeToTray,
   onToggleLaunchOnStartup,
+  onNavigateToLogs,
 }: McpSettingsCardProps) {
   const [copiedLabel, setCopiedLabel] = useState<string | null>(null);
 
@@ -417,7 +419,17 @@ export function McpSettingsCard({
         )}
 
         <div className="rounded-md border p-3">
-          <div className="mb-2 text-sm font-medium">Recent MCP Logs</div>
+          <div className="mb-2 flex items-center justify-between text-sm font-medium">
+            <span>Recent MCP Logs</span>
+            <Button
+              variant="link"
+              size="sm"
+              className="h-auto p-0 text-xs text-primary"
+              onClick={onNavigateToLogs}
+            >
+              View Full History
+            </Button>
+          </div>
           <div className="max-h-40 space-y-1 overflow-auto text-xs text-muted-foreground">
             {mcpLogs.length === 0 && <div>No logs yet.</div>}
             {mcpLogs.map((log, idx) => (

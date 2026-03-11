@@ -258,19 +258,23 @@ pub struct ExecuteAndLogInput<'a> {
     pub triggered_by: &'a str,
     pub max_retries: Option<u8>,
     pub adapter_context: Option<&'a str>,
+    pub workspace_path: Option<&'a str>,
 }
 
 /// Executes a command and logs the result.
 ///
 /// Respects the provided `max_retries`. The total number of attempts will be
 /// 1 (the initial attempt) + the number of retries.
-pub async fn execute_and_log(input: ExecuteAndLogInput<'_>) -> Result<(i32, String, String, u64)> {
+pub async fn execute_and_log(
+    input: ExecuteAndLogInput<'_>,
+) -> Result<(i32, String, String, u64, Option<String>)> {
     let max_attempts = input.max_retries.map(|r| (r as u32) + 1).unwrap_or(1);
 
     let mut last_exit_code: i32 = 0;
     let mut last_stdout = String::new();
     let mut last_stderr = String::new();
     let mut last_duration_ms: u64 = 0;
+    let mut last_event_id: Option<String> = None;
 
     for attempt in 1..=max_attempts {
         let attempt_start = std::time::Instant::now();
@@ -301,20 +305,35 @@ pub async fn execute_and_log(input: ExecuteAndLogInput<'_>) -> Result<(i32, Stri
                         triggered_by: input.triggered_by,
                         failure_class: Some(failure_class.as_str()),
                         adapter_context: input.adapter_context,
+                        workspace_path: input.workspace_path,
                         is_redacted,
                         attempt_number: attempt as u8,
                     };
                     let _ = db.add_execution_log(&log_input).await;
-                    let _ = crate::observability::record_command_execution(db, &log_input).await;
+                    last_event_id = crate::observability::record_command_execution(db, &log_input)
+                        .await
+                        .ok();
                 }
 
                 if exit_code == 0 {
-                    return Ok((exit_code, stdout_redacted, stderr_redacted, duration_ms));
+                    return Ok((
+                        exit_code,
+                        stdout_redacted,
+                        stderr_redacted,
+                        duration_ms,
+                        last_event_id,
+                    ));
                 }
 
                 let should_retry = attempt < max_attempts && failure_class.is_retryable();
                 if !should_retry {
-                    return Ok((exit_code, stdout_redacted, stderr_redacted, duration_ms));
+                    return Ok((
+                        exit_code,
+                        stdout_redacted,
+                        stderr_redacted,
+                        duration_ms,
+                        last_event_id,
+                    ));
                 }
             }
             Err(AppError::InvalidInput { message }) if message.contains("timed out") => {
@@ -338,11 +357,14 @@ pub async fn execute_and_log(input: ExecuteAndLogInput<'_>) -> Result<(i32, Stri
                         triggered_by: input.triggered_by,
                         failure_class: Some(failure_class.as_str()),
                         adapter_context: input.adapter_context,
+                        workspace_path: input.workspace_path,
                         is_redacted: false,
                         attempt_number: attempt as u8,
                     };
                     let _ = db.add_execution_log(&log_input).await;
-                    let _ = crate::observability::record_command_execution(db, &log_input).await;
+                    last_event_id = crate::observability::record_command_execution(db, &log_input)
+                        .await
+                        .ok();
                 }
 
                 let should_retry = attempt < max_attempts && failure_class.is_retryable();
@@ -356,7 +378,13 @@ pub async fn execute_and_log(input: ExecuteAndLogInput<'_>) -> Result<(i32, Stri
         }
     }
 
-    Ok((last_exit_code, last_stdout, last_stderr, last_duration_ms))
+    Ok((
+        last_exit_code,
+        last_stdout,
+        last_stderr,
+        last_duration_ms,
+        last_event_id,
+    ))
 }
 
 #[cfg(test)]
@@ -462,11 +490,13 @@ mod tests {
             triggered_by: "test",
             max_retries: Some(0),
             adapter_context: Some("unit-test"),
+            workspace_path: None,
         })
         .await
         .unwrap();
 
         assert_eq!(result.0, 0);
+        assert!(result.4.is_some());
 
         let events = db
             .list_observability_events(&Default::default())

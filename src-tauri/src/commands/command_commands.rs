@@ -317,8 +317,9 @@ async fn test_command_internal(
     envs.extend(secrets::resolve_command_secret_envs(db.inner().as_ref(), &cmd).await?);
 
     let args_json = serde_json::to_string(&args).map_err(AppError::Serialization)?;
+    let workspace_path = secrets::infer_command_workspace(&cmd).ok().flatten();
 
-    let (exit_code, stdout, stderr, duration_ms) = execute_and_log(ExecuteAndLogInput {
+    let (exit_code, stdout, stderr, duration_ms, _event_id) = execute_and_log(ExecuteAndLogInput {
         db: Some(db),
         command_id: &cmd.id,
         command_name: &cmd.name,
@@ -329,6 +330,7 @@ async fn test_command_internal(
         triggered_by: "test",
         max_retries: cmd.max_retries,
         adapter_context: None,
+        workspace_path: workspace_path.as_deref(),
     })
     .await?;
 

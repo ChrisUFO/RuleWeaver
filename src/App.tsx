@@ -116,7 +116,7 @@ function App() {
       skills: <Skills initialSelectedId={pendingId} onClearInitialId={() => setPendingId(null)} />,
       status: <Status onNavigate={handleNavigate} />,
       logs: <Logs />,
-      settings: <Settings />,
+      settings: <Settings onNavigate={handleNavigate} />,
     };
 
     const currentViewComponent = views[activeView] || <Dashboard onNavigate={handleNavigate} />;

@@ -1310,6 +1310,8 @@ async fn handle_command_call(
         }
     }
 
+    let workspace_path = secrets::infer_command_workspace(&cmd).ok().flatten();
+
     match execute_and_log(ExecuteAndLogInput {
         db: shared_db.as_ref().map(|arc| arc.as_ref()),
         command_id: &cmd.id,
@@ -1321,10 +1323,11 @@ async fn handle_command_call(
         triggered_by: "mcp",
         max_retries: cmd.max_retries,
         adapter_context: Some("mcp"),
+        workspace_path: workspace_path.as_deref(),
     })
     .await
     {
-        Ok((exit_code, stdout, stderr, duration_ms)) => {
+        Ok((exit_code, stdout, stderr, duration_ms, _event_id)) => {
             let _ = manager
                 .log(format!(
                     "MCP tools/call '{}' exit code {} ({}ms)",
@@ -1567,6 +1570,7 @@ async fn handle_skill_call(
             triggered_by: "mcp-skill",
             failure_class: None,
             adapter_context: Some("mcp-skill"),
+            workspace_path: Some(resolved_path.as_str()),
             is_redacted: was_redacted,
             attempt_number: 1,
         };
@@ -1580,6 +1584,7 @@ async fn handle_skill_call(
                 output: &stdout_redacted,
                 duration_ms,
                 exit_code: if is_error { 1 } else { 0 },
+                workspace_path: Some(resolved_path.as_str()),
                 is_redacted: was_redacted,
             },
         )
