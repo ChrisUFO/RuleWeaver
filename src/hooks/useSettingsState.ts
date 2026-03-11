@@ -10,6 +10,7 @@ import { featureManager, FEATURE_FLAGS } from "@/lib/featureManager";
 import type { AdapterType, Rule } from "@/types/rule";
 import type { CommandModel, McpStatus, McpConnectionInstructions } from "@/types/command";
 import type { Skill } from "@/types/skill";
+import type { ScopedSecret } from "@/types/secret";
 
 const ADAPTER_SETTINGS_KEY = "adapter_settings";
 
@@ -41,6 +42,10 @@ export interface UseSettingsStateReturn {
   repositoryRoots: string[];
   repoPathsDirty: boolean;
   isSavingRepos: boolean;
+  scopedSecrets: ScopedSecret[];
+  selectedSecretWorkspace: string | null;
+  isSecretsLoading: boolean;
+  isSavingSecrets: boolean;
   storageMode: "sqlite" | "file";
   storageInfo: Record<string, string> | null;
   isMigratingStorage: boolean;
@@ -71,6 +76,11 @@ export interface UseSettingsStateReturn {
     addRepositoryRoot: () => Promise<void>;
     removeRepositoryRoot: (path: string) => Promise<void>;
     saveRepositoryRoots: () => Promise<void>;
+    selectSecretWorkspace: (workspacePath: string | null) => void;
+    saveGlobalSecret: (key: string, value: string) => Promise<void>;
+    saveWorkspaceSecret: (key: string, value: string, workspacePath: string) => Promise<void>;
+    deleteGlobalSecret: (key: string) => Promise<void>;
+    deleteWorkspaceSecret: (key: string, workspacePath: string) => Promise<void>;
     migrateToFileStorage: () => Promise<void>;
     rollbackMigration: () => Promise<void>;
     verifyMigration: () => Promise<void>;
@@ -127,6 +137,24 @@ export function useSettingsState(
   const [mcpLogs, setMcpLogs] = useState<string[]>([]);
   const [repoPathsDirty, setRepoPathsDirty] = useState(false);
   const [isSavingRepos, setIsSavingRepos] = useState(false);
+  const [scopedSecrets, setScopedSecrets] = useState<ScopedSecret[]>([]);
+  const [selectedSecretWorkspace, setSelectedSecretWorkspace] = useState<string | null>(null);
+  const [isSecretsLoading, setIsSecretsLoading] = useState(true);
+  const [isSavingSecrets, setIsSavingSecrets] = useState(false);
+
+  const loadMcpSnapshot = useCallback(async () => {
+    const [status, instructions, logs] = await Promise.all([
+      api.mcp.getStatus(),
+      api.mcp.getInstructions(),
+      api.mcp.getLogs(20),
+    ]);
+
+    setMcpStatus(status);
+    setMcpInstructions(instructions);
+    setMcpLogs(logs);
+
+    return { status, instructions, logs };
+  }, []);
 
   const {
     roots: repositoryRoots,
@@ -134,6 +162,15 @@ export function useSettingsState(
     refresh: refreshRepositoryRoots,
     save: saveRepositoryRootsSetting,
   } = useRepositoryRoots(false);
+
+  const refreshScopedSecrets = useCallback(async () => {
+    setIsSecretsLoading(true);
+    try {
+      setScopedSecrets(await api.settings.listScopedSecrets());
+    } finally {
+      setIsSecretsLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     const loadData = async () => {
@@ -147,12 +184,12 @@ export function useSettingsState(
           info,
           savedBackupPath,
           progress,
-          mcpStatusRes,
           mcpAutoStartSetting,
           minimizeToTraySetting,
-          mcpLogsInitial,
+          mcpSnapshot,
           autoStartEnabled,
           tools,
+          scopedSecretsRes,
         ] = await Promise.all([
           api.app.getAppDataPath(),
           api.app.getVersion(),
@@ -161,12 +198,12 @@ export function useSettingsState(
           api.storage.getInfo(),
           api.settings.get("file_storage_backup_path"),
           api.storage.getMigrationProgress(),
-          api.mcp.getStatus(),
           api.settings.get("mcp_auto_start"),
           api.settings.get("minimize_to_tray"),
-          api.mcp.getLogs(20),
+          loadMcpSnapshot(),
           isEnabled(),
           api.registry.getTools(),
+          api.settings.listScopedSecrets(),
         ]);
         setAppDataPath(path);
         try {
@@ -184,11 +221,14 @@ export function useSettingsState(
         setStorageInfo(info);
         setBackupPath(savedBackupPath ?? "");
         setMigrationProgress(progress);
-        setMcpStatus(mcpStatusRes);
+        setMcpStatus(mcpSnapshot.status);
+        setMcpInstructions(mcpSnapshot.instructions);
         setMcpAutoStart(mcpAutoStartSetting === "true");
         setMinimizeToTray(minimizeToTraySetting !== "false");
-        setMcpLogs(mcpLogsInitial);
+        setMcpLogs(mcpSnapshot.logs);
         setLaunchOnStartup(autoStartEnabled);
+        setScopedSecrets(scopedSecretsRes);
+        setIsSecretsLoading(false);
         await refreshRepositoryRoots();
 
         let parsedSettings: AdapterSettings = {};
@@ -206,6 +246,7 @@ export function useSettingsState(
         });
         setAdapterSettings(initialSettings);
       } catch (error) {
+        setIsSecretsLoading(false);
         console.error("Failed to load settings:", error);
         if (featureManager.isEnabled(FEATURE_FLAGS.ENHANCED_ERROR_UX)) {
           toast.error(addToast, {
@@ -221,7 +262,13 @@ export function useSettingsState(
       }
     };
     loadData();
-  }, [refreshRepositoryRoots, addToast, onNavigate]);
+  }, [refreshRepositoryRoots, addToast, loadMcpSnapshot, onNavigate]);
+
+  useEffect(() => {
+    if (selectedSecretWorkspace && !repositoryRoots.includes(selectedSecretWorkspace)) {
+      setSelectedSecretWorkspace(null);
+    }
+  }, [repositoryRoots, selectedSecretWorkspace]);
 
   const handleOpenAppData = useCallback(async () => {
     try {
@@ -343,6 +390,87 @@ export function useSettingsState(
     }
   }, [repositoryRoots, saveRepositoryRootsSetting, addToast]);
 
+  const saveGlobalSecret = useCallback(
+    async (key: string, value: string) => {
+      setIsSavingSecrets(true);
+      try {
+        await api.settings.upsertScopedSecret({ key, value, scope: "global" });
+        await refreshScopedSecrets();
+        toast.success(addToast, {
+          title: "Global Secret Saved",
+          description: `${key.trim()} is now available as the global baseline`,
+        });
+      } catch (error) {
+        toast.error(addToast, { title: "Secret Save Failed", error });
+      } finally {
+        setIsSavingSecrets(false);
+      }
+    },
+    [addToast, refreshScopedSecrets]
+  );
+
+  const saveWorkspaceSecret = useCallback(
+    async (key: string, value: string, workspacePath: string) => {
+      setIsSavingSecrets(true);
+      try {
+        await api.settings.upsertScopedSecret({
+          key,
+          value,
+          scope: "workspace",
+          workspacePath,
+        });
+        await refreshScopedSecrets();
+        toast.success(addToast, {
+          title: "Workspace Secret Saved",
+          description: `${key.trim()} now overrides the global value for this repository`,
+        });
+      } catch (error) {
+        toast.error(addToast, { title: "Secret Save Failed", error });
+      } finally {
+        setIsSavingSecrets(false);
+      }
+    },
+    [addToast, refreshScopedSecrets]
+  );
+
+  const deleteGlobalSecret = useCallback(
+    async (key: string) => {
+      setIsSavingSecrets(true);
+      try {
+        await api.settings.deleteScopedSecret({ key, scope: "global" });
+        await refreshScopedSecrets();
+        toast.success(addToast, {
+          title: "Global Secret Deleted",
+          description: `${key.trim()} has been removed from the shared baseline`,
+        });
+      } catch (error) {
+        toast.error(addToast, { title: "Secret Delete Failed", error });
+      } finally {
+        setIsSavingSecrets(false);
+      }
+    },
+    [addToast, refreshScopedSecrets]
+  );
+
+  const deleteWorkspaceSecret = useCallback(
+    async (key: string, workspacePath: string) => {
+      setIsSavingSecrets(true);
+      try {
+        await api.settings.deleteScopedSecret({ key, scope: "workspace", workspacePath });
+        await refreshScopedSecrets();
+        toast.success(addToast, {
+          title: "Workspace Override Removed",
+          description: `${key.trim()} now falls back to the inherited global value`,
+        });
+      } catch (error) {
+        toast.error(addToast, { title: "Secret Delete Failed", error });
+      } finally {
+        setIsSavingSecrets(false);
+      }
+    },
+    [addToast, refreshScopedSecrets]
+  );
+
   const migrateToFileStorage = useCallback(async () => {
     setIsMigratingStorage(true);
     let poll: ReturnType<typeof setInterval> | null = null;
@@ -436,28 +564,20 @@ export function useSettingsState(
 
   const refreshMcpStatus = useCallback(async () => {
     try {
-      const [status, logs] = await Promise.all([api.mcp.getStatus(), api.mcp.getLogs(20)]);
-      setMcpStatus(status);
-      setMcpLogs(logs);
+      await loadMcpSnapshot();
     } catch (error) {
       toast.error(addToast, { title: "MCP Status Error", error });
     }
-  }, [addToast]);
+  }, [addToast, loadMcpSnapshot]);
 
   const startMcp = useCallback(async () => {
     setIsMcpLoading(true);
     try {
       await api.mcp.start();
-      const [status, instructions] = await Promise.all([
-        api.mcp.getStatus(),
-        api.mcp.getInstructions(),
-      ]);
-      setMcpStatus(status);
-      setMcpInstructions(instructions);
-      setMcpLogs(await api.mcp.getLogs(20));
+      const { status } = await loadMcpSnapshot();
       toast.success(addToast, {
         title: "MCP Started",
-        description: `Server running on port ${status.port}`,
+        description: status.statusMessage,
       });
     } catch (error) {
       toast.error(addToast, {
@@ -471,7 +591,7 @@ export function useSettingsState(
     } finally {
       setIsMcpLoading(false);
     }
-  }, [addToast, onNavigate]);
+  }, [addToast, loadMcpSnapshot, onNavigate]);
 
   const stopMcp = useCallback(async () => {
     setIsMcpLoading(true);
@@ -670,6 +790,10 @@ export function useSettingsState(
     repositoryRoots,
     repoPathsDirty,
     isSavingRepos,
+    scopedSecrets,
+    selectedSecretWorkspace,
+    isSecretsLoading,
+    isSavingSecrets,
     storageMode,
     storageInfo,
     isMigratingStorage,
@@ -700,6 +824,11 @@ export function useSettingsState(
       addRepositoryRoot,
       removeRepositoryRoot,
       saveRepositoryRoots,
+      selectSecretWorkspace: setSelectedSecretWorkspace,
+      saveGlobalSecret,
+      saveWorkspaceSecret,
+      deleteGlobalSecret,
+      deleteWorkspaceSecret,
       migrateToFileStorage,
       rollbackMigration,
       verifyMigration,

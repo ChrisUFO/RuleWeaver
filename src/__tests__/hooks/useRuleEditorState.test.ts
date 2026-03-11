@@ -73,6 +73,12 @@ const baseProps = {
   onSelectRule: vi.fn(),
 };
 
+const flushEffects = async () => {
+  await act(async () => {
+    await Promise.resolve();
+  });
+};
+
 describe("useRuleEditorState adapter path + preview", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -80,7 +86,7 @@ describe("useRuleEditorState adapter path + preview", () => {
     mockTools = [];
   });
 
-  it("returns per-rule global target path for per_rule_dir adapters", () => {
+  it("returns per-rule global target path for per_rule_dir adapters", async () => {
     mockTools = [
       makeTool({
         id: "opencode",
@@ -98,6 +104,7 @@ describe("useRuleEditorState adapter path + preview", () => {
     ];
 
     const { result } = renderHook(() => useRuleEditorState(baseProps));
+    await flushEffects();
 
     act(() => {
       result.current.setName("My Rule!!!");
@@ -107,7 +114,7 @@ describe("useRuleEditorState adapter path + preview", () => {
     expect(result.current.getAdapterPath("opencode")).toBe("~/.config/opencode/rules/my-rule.md");
   });
 
-  it("returns per-rule local target path for per_rule_dir adapters", () => {
+  it("returns per-rule local target path for per_rule_dir adapters", async () => {
     mockTools = [
       makeTool({
         id: "opencode",
@@ -125,6 +132,7 @@ describe("useRuleEditorState adapter path + preview", () => {
     ];
 
     const { result } = renderHook(() => useRuleEditorState(baseProps));
+    await flushEffects();
 
     act(() => {
       result.current.setName("Repo Rule");
@@ -135,7 +143,7 @@ describe("useRuleEditorState adapter path + preview", () => {
     expect(result.current.getAdapterPath("opencode")).toBe("/repo/a/.opencode/rules/repo-rule.md");
   });
 
-  it("returns single-file path for single_file adapters", () => {
+  it("returns single-file path for single_file adapters", async () => {
     mockTools = [
       makeTool({
         id: "claude-code",
@@ -151,10 +159,11 @@ describe("useRuleEditorState adapter path + preview", () => {
     ];
 
     const { result } = renderHook(() => useRuleEditorState(baseProps));
+    await flushEffects();
     expect(result.current.getAdapterPath("claude-code")).toBe("~/.claude/CLAUDE.md");
   });
 
-  it("uses rule-id fallback slug when sanitized rule name is empty", () => {
+  it("uses rule-id fallback slug when sanitized rule name is empty", async () => {
     const existingRule = {
       id: "rule-123",
       name: "Legacy",
@@ -187,6 +196,7 @@ describe("useRuleEditorState adapter path + preview", () => {
     const { result } = renderHook(() =>
       useRuleEditorState({ ...baseProps, isNew: false, rule: existingRule })
     );
+    await flushEffects();
 
     act(() => {
       result.current.setName("!!!");
@@ -198,7 +208,7 @@ describe("useRuleEditorState adapter path + preview", () => {
     );
   });
 
-  it("generates marker + rule header preview for both file models", () => {
+  it("generates marker + rule header preview for both file models", async () => {
     mockTools = [
       makeTool({
         id: "opencode",
@@ -227,6 +237,7 @@ describe("useRuleEditorState adapter path + preview", () => {
     ];
 
     const { result } = renderHook(() => useRuleEditorState(baseProps));
+    await flushEffects();
 
     act(() => {
       result.current.setName("Preview Rule");

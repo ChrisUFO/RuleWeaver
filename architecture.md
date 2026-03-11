@@ -5,7 +5,7 @@ RuleWeaver is designed as a standalone desktop application. It requires deep fil
 ## Documentation
 
 - **AI Tools Reference:** See [`docs/ai-tools-commands-reference.md`](./docs/ai-tools-commands-reference.md) for comprehensive documentation on how each supported AI tool handles rules, custom commands, and skills.
-- **Implementation Plan:** See [`PLAN.md`](./PLAN.md) for the active strategic implementation plan (currently focused on dashboard artifact health and sync progress clarity for issues #79, #80 - completed).
+- **Implementation Plan:** [`PLAN.md`](./PLAN.md) is the temporary local milestone plan when present; treat this architecture document and the user-facing docs as the lasting product source of truth.
 
 ## Versioning Strategy
 
@@ -65,7 +65,7 @@ The React/TypeScript application running in the Tauri webview.
 
 This layer handles all OS-level operations.
 
-- **Database Manager:** Stores indexed metadata, command definitions, execution logs, and settings (including MCP settings and storage mode).
+- **Database Manager:** Stores indexed metadata, command definitions, execution logs, settings, and scoped secret records used by commands and MCP execution.
 - **File Storage Engine:** Reads/writes rule markdown files with YAML frontmatter, supports migration/rollback, and handles local+global rule roots.
 - **File Sync Engine (The "Adapters"):**
   - Because every AI tool expects a different filename (`GEMINI.md`, `AGENTS.md`, `.clinerules`) or specific frontmatter, the Sync Engine acts as a collection of **Tool-Specific Adapters (Post-Processors)**.
@@ -84,6 +84,7 @@ This layer handles all OS-level operations.
   - Runs a local MCP-compatible HTTP JSON-RPC server on localhost.
   - Reads commands from database and exposes them as `tools/list`.
   - Handles `tools/call` execution and returns stdout/stderr payloads.
+  - Publishes structured readiness/degraded/error status, actionable diagnostics, recent logs, and connection instructions for standalone onboarding.
   - Available in two modes:
     - **Embedded mode:** runs inside RuleWeaver desktop app.
     - **Standalone mode:** runs via `ruleweaver-mcp --port <PORT>`.
@@ -114,6 +115,7 @@ This layer handles all OS-level operations.
 - **Execution Engine:**
   - Centralized command execution with timeout and retry policies.
   - Per-command configuration for `timeout_ms` and `max_retries` (bounded to 3).
+  - Resolves secrets with precedence across global, workspace, and artifact-specific scopes before command or MCP execution.
   - Secret redaction pipeline scans stdout/stderr for API keys, tokens, and credentials.
   - Structured failure classification (`Timeout`, `PermissionDenied`, `MissingBinary`, `NonZeroExit`).
   - Only retryable failures (transient errors) trigger retries; validation/binary errors fail fast.
@@ -125,7 +127,7 @@ This layer handles all OS-level operations.
 - **Manual Import UX:** The Rules page exposes import actions for AI tools, files, folders, URLs, and clipboard content, with result summaries.
   - Includes drag-and-drop file import and import-time option overrides (scope/adapters/conflict mode).
 - **Repository Roots Registry:** Settings persist a managed list of local repository roots (`local_rule_paths`) used for local artifact selection and local import discovery.
-  - Rules, commands, and skills can reference these configured roots instead of free-form path entry.
+  - Rules, commands, skills, and workspace-scoped secrets reference these configured roots instead of free-form path entry.
 - **MCP Clients:** AI tools (Claude Code, OpenCode, etc.) connect to localhost MCP endpoint or launch standalone `ruleweaver-mcp` binary. They use `tools/list` + `tools/call` to invoke commands.
 
 ## Runtime Topology

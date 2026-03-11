@@ -60,12 +60,31 @@ export interface TestCommandResult {
   durationMs: number;
 }
 
+export type McpHealthState = "stopped" | "starting" | "ready" | "degraded" | "error";
+
+export type McpDiagnosticSeverity = "info" | "warning" | "error";
+
+export interface McpDiagnostic {
+  code: string;
+  severity: McpDiagnosticSeverity;
+  title: string;
+  message: string;
+  hint?: string;
+}
+
 export interface McpStatus {
   running: boolean;
   port: number;
   uptimeSeconds: number;
   apiToken?: string;
   isWatching: boolean;
+  endpointUrl: string;
+  healthState: McpHealthState;
+  statusMessage: string;
+  diagnostics: McpDiagnostic[];
+  availableCommands: number;
+  availableSkills: number;
+  watchTargetCount: number;
 }
 
 export interface McpConnectionInstructions {
@@ -73,6 +92,9 @@ export interface McpConnectionInstructions {
   opencodeJson: string;
   standaloneCommand: string;
   apiToken: string;
+  endpointUrl: string;
+  authHeaderName: string;
+  tokenEnvVarName?: string;
 }
 
 export interface ExecutionLog {

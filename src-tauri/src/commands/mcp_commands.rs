@@ -20,7 +20,8 @@ pub async fn start_mcp_server(
     mcp.set_app_handle(app).await;
     match mcp.start(&db).await {
         Ok(_) => {
-            status.update_mcp_status(&format!("Running (Port {})", mcp.port()));
+            let mcp_status = mcp.status().await?;
+            status.update_mcp_status(&mcp_status.status_message);
             Ok(())
         }
         Err(e) => {
@@ -37,7 +38,8 @@ pub async fn stop_mcp_server(
 ) -> Result<()> {
     match mcp.stop().await {
         Ok(_) => {
-            status.update_mcp_status("Stopped");
+            let mcp_status = mcp.status().await?;
+            status.update_mcp_status(&mcp_status.status_message);
             Ok(())
         }
         Err(e) => {
@@ -60,7 +62,8 @@ pub async fn restart_mcp_server(
     mcp.set_app_handle(app).await;
     match mcp.start(&db).await {
         Ok(_) => {
-            status.update_mcp_status(&format!("Running (Port {})", mcp.port()));
+            let mcp_status = mcp.status().await?;
+            status.update_mcp_status(&mcp_status.status_message);
             Ok(())
         }
         Err(e) => {

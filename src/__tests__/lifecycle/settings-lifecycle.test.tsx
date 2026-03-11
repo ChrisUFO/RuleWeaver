@@ -62,6 +62,11 @@ function makeHandlers() {
     addRepositoryRoot: vi.fn().mockResolvedValue(undefined),
     removeRepositoryRoot: vi.fn().mockResolvedValue(undefined),
     saveRepositoryRoots: vi.fn().mockResolvedValue(undefined),
+    selectSecretWorkspace: vi.fn(),
+    saveGlobalSecret: vi.fn().mockResolvedValue(undefined),
+    saveWorkspaceSecret: vi.fn().mockResolvedValue(undefined),
+    deleteGlobalSecret: vi.fn().mockResolvedValue(undefined),
+    deleteWorkspaceSecret: vi.fn().mockResolvedValue(undefined),
     migrateToFileStorage: vi.fn(),
     rollbackMigration: vi.fn(),
     verifyMigration: vi.fn(),
@@ -94,6 +99,10 @@ function makeBaseState(overrides: Partial<UseSettingsStateReturn> = {}): UseSett
     repositoryRoots: [],
     repoPathsDirty: false,
     isSavingRepos: false,
+    scopedSecrets: [],
+    selectedSecretWorkspace: null,
+    isSecretsLoading: false,
+    isSavingSecrets: false,
     storageMode: "sqlite",
     storageInfo: null,
     isMigratingStorage: false,
@@ -165,7 +174,9 @@ describe("Settings lifecycle", () => {
     await user.click(contextTab);
 
     await waitFor(() => {
-      expect(screen.getByText("/projects/my-app")).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: /remove repository \/projects\/my-app/i })
+      ).toBeInTheDocument();
     });
 
     const removeBtn = screen.getByRole("button", {
@@ -174,6 +185,46 @@ describe("Settings lifecycle", () => {
     await user.click(removeBtn);
 
     expect(handlers.removeRepositoryRoot).toHaveBeenCalledWith("/projects/my-app");
+  });
+
+  it("saving a workspace override on Context tab calls handlers.saveWorkspaceSecret", async () => {
+    const user = userEvent.setup();
+    const handlers = makeHandlers();
+    vi.mocked(useSettingsState).mockReturnValue(
+      makeBaseState({
+        repositoryRoots: ["/projects/my-app"],
+        selectedSecretWorkspace: "/projects/my-app",
+        scopedSecrets: [
+          {
+            id: "secret-1",
+            key: "PROJECT_API_KEY",
+            value: "global",
+            scope: "global",
+            createdAt: 1,
+            updatedAt: 1,
+          },
+        ],
+        handlers,
+      })
+    );
+
+    renderWithProviders(<Settings />);
+
+    await user.click(screen.getByRole("button", { name: /context/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/scoped secrets/i)).toBeInTheDocument();
+    });
+
+    await user.type(screen.getByLabelText(/workspace secret key/i), "PROJECT_API_KEY");
+    await user.type(screen.getByLabelText(/workspace secret value/i), "repo-token");
+    await user.click(screen.getByRole("button", { name: /save override/i }));
+
+    expect(handlers.saveWorkspaceSecret).toHaveBeenCalledWith(
+      "PROJECT_API_KEY",
+      "repo-token",
+      "/projects/my-app"
+    );
   });
 
   it("Save Changes button is visible when hasChanges is true and calls saveSettings on click", async () => {

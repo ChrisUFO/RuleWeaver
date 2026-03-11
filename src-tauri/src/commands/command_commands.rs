@@ -18,6 +18,7 @@ use crate::mcp::McpManager;
 use crate::models::{
     Command, CreateCommandInput, SyncError, SyncResult, TestCommandResult, UpdateCommandInput,
 };
+use crate::secrets;
 use crate::slash_commands::SlashCommandSyncEngine;
 
 use crate::templates::commands::{get_bundled_command_templates, TemplateCommand};
@@ -60,11 +61,19 @@ pub async fn create_command(
         let engine = SlashCommandSyncEngine::new(Arc::clone(&db));
         // Sync global and local (per target_paths) slash files; errors are non-fatal.
         if let Err(e) = engine.sync_command(&created, true) {
-            log::warn!("Failed to sync global slash command for '{}': {}", created.name, e);
+            log::warn!(
+                "Failed to sync global slash command for '{}': {}",
+                created.name,
+                e
+            );
         }
         if !created.target_paths.is_empty() {
             if let Err(e) = engine.sync_command(&created, false) {
-                log::warn!("Failed to sync local slash command for '{}': {}", created.name, e);
+                log::warn!(
+                    "Failed to sync local slash command for '{}': {}",
+                    created.name,
+                    e
+                );
             }
         }
     }
@@ -122,7 +131,8 @@ pub async fn update_command(
         ) {
             log::warn!(
                 "Failed to remove slash command files for '{}': {}",
-                existing.name, e
+                existing.name,
+                e
             );
         }
     }
@@ -138,7 +148,8 @@ pub async fn update_command(
         ) {
             log::warn!(
                 "Failed to remove stale slash files for renamed command '{}': {}",
-                existing.name, e
+                existing.name,
+                e
             );
         }
     } else {
@@ -152,10 +163,13 @@ pub async fn update_command(
             .cloned()
             .collect();
         if !deselected.is_empty() {
-            if let Err(e) = engine.remove_command(&existing.name, &deselected, &existing.target_paths) {
+            if let Err(e) =
+                engine.remove_command(&existing.name, &deselected, &existing.target_paths)
+            {
                 log::warn!(
                     "Failed to remove deselected adapter slash files for '{}': {}",
-                    existing.name, e
+                    existing.name,
+                    e
                 );
             }
         }
@@ -164,11 +178,19 @@ pub async fn update_command(
     // Autosync slash commands on save when the command opts in to slash generation.
     if updated.generate_slash_commands && !updated.slash_command_adapters.is_empty() {
         if let Err(e) = engine.sync_command(&updated, true) {
-            log::warn!("Failed to sync global slash command for '{}': {}", updated.name, e);
+            log::warn!(
+                "Failed to sync global slash command for '{}': {}",
+                updated.name,
+                e
+            );
         }
         if !updated.target_paths.is_empty() {
             if let Err(e) = engine.sync_command(&updated, false) {
-                log::warn!("Failed to sync local slash command for '{}': {}", updated.name, e);
+                log::warn!(
+                    "Failed to sync local slash command for '{}': {}",
+                    updated.name,
+                    e
+                );
             }
         }
     }
@@ -198,7 +220,8 @@ pub async fn delete_command(
         ) {
             log::warn!(
                 "Failed to remove slash command files for deleted command '{}': {}",
-                command.name, e
+                command.name,
+                e
             );
         }
     }
@@ -290,6 +313,8 @@ async fn test_command_internal(
 
         envs.push((argument_env_var_name(&arg.name), safe_value));
     }
+
+    envs.extend(secrets::resolve_command_secret_envs(db.inner().as_ref(), &cmd).await?);
 
     let args_json = serde_json::to_string(&args).map_err(AppError::Serialization)?;
 

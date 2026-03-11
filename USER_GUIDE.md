@@ -378,16 +378,27 @@ Repository roots are used for:
 - Local skill directory paths
 - Import discovery
 
+### Scoped Secrets
+
+Manage credentials without hardcoding them into commands or skills:
+
+- Save **global** secret values once for shared environments
+- Add **workspace overrides** for any configured repository root
+- RuleWeaver resolves secrets with precedence: **artifact override → workspace override → global value**
+- Secret values are reused during command test runs and MCP execution, while logs stay redacted
+- Secret values are masked in the UI and API responses, but the local RuleWeaver database does **not** encrypt them at rest yet; use OS-level disk encryption for high-sensitivity credentials
+
 ### MCP Server
 
 Configure the Model Context Protocol server:
 
-- **Status** — Running/Stopped with port and uptime
+- **Status** — Ready / Degraded / Error with port, uptime, and exposed tool counts
 - **Start/Stop** — Control the server
 - **Auto-start MCP** — Start automatically when RuleWeaver launches
 - **Minimize to tray on close** — Keep MCP running when window closes
 - **Launch on startup** — Start RuleWeaver on system login
-- **Connection snippets** — Copy configuration for Claude Code and OpenCode
+- **Diagnostics** — Surface port conflicts, missing exposed tools, watcher problems, and stale client config hints
+- **Connection snippets** — Copy endpoint URL, API token, standalone command, and Claude Code / OpenCode JSON
 
 ### Storage
 
@@ -455,13 +466,13 @@ ruleweaver-mcp --port 8080
 Use the configuration snippets shown in **Settings → MCP Server**:
 
 **Claude Code:**
-Add the generated JSON to your Claude Code configuration.
+Add the generated JSON to your Claude Code configuration, then fully restart Claude Code.
 
 **OpenCode:**
-Add the generated JSON to your OpenCode configuration.
+Add the generated JSON to your OpenCode configuration, then restart OpenCode after saving.
 
 **Other tools:**
-Use synced rule/command files, or configure MCP client to connect to the localhost endpoint.
+Use synced rule/command files, or configure the MCP client to connect to the localhost endpoint and send the current API token header shown in Settings.
 
 ---
 
@@ -502,8 +513,9 @@ Use synced rule/command files, or configure MCP client to connect to the localho
 
 ### MCP Issues
 
-- **Server won't start** — Check port availability
-- **Tools not appearing** — Verify MCP connection in AI tool settings
+- **Server won't start** — Check the MCP diagnostics panel for port conflicts or startup failures
+- **Tools not appearing** — Confirm at least one command has **Expose via MCP** enabled, then click **Refresh**
+- **Client connects but calls fail** — Re-copy the endpoint/token from Settings and fully restart the client to clear stale protocol state
 - **App closed unexpectedly** — Enable "Minimize to tray on close" to keep embedded MCP alive
 
 ### Storage Issues

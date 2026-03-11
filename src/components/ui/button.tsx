@@ -46,9 +46,14 @@ export interface ButtonProps
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, variant, size, asChild = false, motionProps, ...props }, ref) => {
-    const Comp = asChild ? Slot : (motion.button as React.ElementType);
+    if (asChild) {
+      return (
+        <Slot className={cn(buttonVariants({ variant, size, className }))} ref={ref} {...props} />
+      );
+    }
+
     return (
-      <Comp
+      <motion.button
         className={cn(buttonVariants({ variant, size, className }))}
         ref={ref}
         whileHover={{ scale: 1.01 }}

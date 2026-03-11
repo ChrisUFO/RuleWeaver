@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { renderHook, act } from "@testing-library/react";
+import { renderHook, act, waitFor } from "@testing-library/react";
 import { useCommandsState } from "@/hooks/useCommandsState";
 
 vi.mock("@/lib/tauri", () => ({
@@ -48,25 +48,29 @@ vi.mock("@/lib/tauri", () => ({
 
 const mockAddToast = vi.fn();
 
+const waitForLoaded = async (result: { current: { isLoading: boolean } }) => {
+  await waitFor(() => expect(result.current.isLoading).toBe(false));
+};
+
 describe("useCommandsState", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it("initializes with empty state", () => {
+  it("initializes with empty state", async () => {
     const { result } = renderHook(() => useCommandsState(mockAddToast));
 
     expect(result.current.commands).toEqual([]);
     expect(result.current.selectedId).toBe("");
     expect(result.current.isLoading).toBe(true);
+
+    await waitForLoaded(result);
   });
 
   it("loads commands on mount", async () => {
     const { result } = renderHook(() => useCommandsState(mockAddToast));
 
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    });
+    await waitForLoaded(result);
 
     expect(result.current.commands).toHaveLength(1);
     expect(result.current.commands[0].name).toBe("Test Command");
@@ -76,12 +80,11 @@ describe("useCommandsState", () => {
   it("updates form when command selected", async () => {
     const { result } = renderHook(() => useCommandsState(mockAddToast));
 
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    });
+    await waitForLoaded(result);
 
-    act(() => {
+    await act(async () => {
       result.current.handlers.setSelectedId("1");
+      await Promise.resolve();
     });
 
     expect(result.current.selectedId).toBe("1");
@@ -91,9 +94,7 @@ describe("useCommandsState", () => {
   it("filters commands by query", async () => {
     const { result } = renderHook(() => useCommandsState(mockAddToast));
 
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    });
+    await waitForLoaded(result);
 
     act(() => {
       result.current.handlers.setQuery("test");
@@ -111,6 +112,8 @@ describe("useCommandsState", () => {
   it("updates form fields", async () => {
     const { result } = renderHook(() => useCommandsState(mockAddToast));
 
+    await waitForLoaded(result);
+
     act(() => {
       result.current.handlers.updateForm({ name: "New Name" });
     });
@@ -120,6 +123,8 @@ describe("useCommandsState", () => {
 
   it("toggles target paths", async () => {
     const { result } = renderHook(() => useCommandsState(mockAddToast));
+
+    await waitForLoaded(result);
 
     act(() => {
       result.current.handlers.toggleTargetPath("/path/to/repo", true);
@@ -137,6 +142,8 @@ describe("useCommandsState", () => {
   it("toggles slash command adapters", async () => {
     const { result } = renderHook(() => useCommandsState(mockAddToast));
 
+    await waitForLoaded(result);
+
     act(() => {
       result.current.handlers.toggleSlashCommandAdapter("gemini");
     });
@@ -153,9 +160,7 @@ describe("useCommandsState", () => {
   it("duplicates a command successfully", async () => {
     const { result } = renderHook(() => useCommandsState(mockAddToast));
 
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    });
+    await waitForLoaded(result);
 
     act(() => {
       result.current.handlers.setSelectedId("1");
@@ -192,19 +197,14 @@ describe("useCommandsState", () => {
 
     const { result } = renderHook(() => useCommandsState(mockAddToast));
 
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    });
+    await waitForLoaded(result);
 
     act(() => {
       result.current.handlers.setSelectedId("1");
     });
 
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    });
+    await waitFor(() => expect(result.current.commandHistory).toHaveLength(1));
 
-    expect(result.current.commandHistory).toHaveLength(1);
     expect(result.current.commandHistory[0].id).toBe("hist-1");
   });
 });

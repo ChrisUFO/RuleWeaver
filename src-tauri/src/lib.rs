@@ -11,6 +11,7 @@ pub mod path_resolver;
 pub mod reconciliation;
 mod redaction;
 pub mod rule_import;
+mod secrets;
 mod single_instance;
 mod slash_commands;
 mod status;
@@ -441,6 +442,10 @@ pub fn run() {
             commands::get_setting,
             commands::set_setting,
             commands::get_all_settings,
+            commands::list_scoped_secrets,
+            commands::upsert_scoped_secret,
+            commands::delete_scoped_secret,
+            commands::resolve_scoped_secrets_cmd,
             commands::migrate_to_file_storage,
             commands::rollback_file_migration,
             commands::verify_file_migration,
@@ -523,6 +528,11 @@ pub fn run() {
 
 pub fn run_mcp_cli(port: u16, token: Option<String>) -> std::result::Result<(), String> {
     let rt = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
+    let token = token.or_else(|| {
+        std::env::var(crate::mcp::MCP_TOKEN_ENV_VAR)
+            .ok()
+            .filter(|value| !value.trim().is_empty())
+    });
 
     rt.block_on(async {
         let db = Arc::new(Database::new_for_cli().await.map_err(|e| e.to_string())?);
