@@ -19,9 +19,10 @@ Different types of AI configurations require different management strategies:
 
 - **Standalone GUI:** A fast, native desktop application (built with Tauri).
 - **Scope Management:** Clearly define if a Configuration is "Global" (applied everywhere) or "Local" (applied only when the AI is operating within specific defined repository paths).
-- **Workspace-Scoped Secrets:** Store shared credentials globally, override them per repository root, and reuse the resolved values in command tests, MCP tools, and skills without leaking raw secrets into logs.
+- **Workspace-Scoped Secrets:** Store shared credentials globally, override them per repository root, and reuse the resolved values in command tests, MCP tools, and skills without leaking raw secrets into logs. Values are kept in OS secure storage and never included in configuration exports.
 - **Dual MCP Runtime:** Embedded MCP in app process or standalone `ruleweaver-mcp` process.
 - **MCP Trust Surface:** Settings now exposes readiness/degraded/error status, actionable diagnostics, endpoint/token copy actions, and ready-to-paste Claude Code / OpenCode snippets.
+- **Observability Logs:** A dedicated Logs page captures MCP lifecycle/client activity plus command and skill runs, with filters and redaction-safe JSON export.
 - **Command Manager:** CRUD commands, test runs, MCP exposure toggles, and execution history.
 - **Command Stub Sync:** Generates command files for supported tools (`COMMANDS.toml` / `COMMANDS.md`).
 - **Native Slash Commands:** Generate native `/commandname` triggers for 8 AI tools with automatic file generation and incremental sync.
@@ -35,7 +36,9 @@ Different types of AI configurations require different management strategies:
 
 ## Security Note
 
-- Scoped secret values are masked in the UI and API responses, but RuleWeaver currently stores them unencrypted at rest in the local app database. For high-sensitivity credentials, prefer per-user machines plus OS-level disk encryption.
+- Scoped secret values are masked in the UI and API responses and stored in the OS credential manager / secure keychain instead of plaintext app persistence.
+- Configuration export/import transfers rules, commands, and skills metadata only. Secret values are never exported or imported, so re-enter them locally on each machine.
+- Logs and exports only retain redacted execution excerpts and metadata; masked secrets are never re-materialized in observability output.
 
 ## Getting Started
 
@@ -49,6 +52,7 @@ _(Installation instructions will be added as the MVP is developed)_
   - rules and skills management
   - MCP setup and runtime modes
   - workspace-scoped secret management
+  - logs filtering and export workflow
   - agent connection guidance
 
 ### Prerequisites
@@ -67,6 +71,7 @@ npm run tauri:dev
 ### MCP Runtime Modes
 
 - **Embedded MCP:** Start RuleWeaver desktop app and use Settings -> MCP Server controls.
+- **Logs & Export:** Open the Logs screen to filter MCP lifecycle/client events plus command and skill runs, then export the current filtered view or selected entries as JSON.
 - **Standalone MCP:** Build and run:
 
 ```bash

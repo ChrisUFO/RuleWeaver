@@ -34,8 +34,10 @@ import type {
   DeleteScopedSecretInput,
   EffectiveSecret,
   ScopedSecret,
+  SecretStorageStatus,
   UpsertScopedSecretInput,
 } from "@/types/secret";
+import type { ObservabilityEvent, ObservabilityEventFilter } from "@/types/observability";
 
 export const api = {
   rules: {
@@ -104,6 +106,7 @@ export const api = {
     set: (key: string, value: string) => invoke<void>("set_setting", { key, value }),
     getAll: () => invoke<Record<string, string>>("get_all_settings"),
     listScopedSecrets: () => invoke<ScopedSecret[]>("list_scoped_secrets"),
+    getSecretStorageStatus: () => invoke<SecretStorageStatus>("get_secret_storage_status_cmd"),
     upsertScopedSecret: (input: UpsertScopedSecretInput) =>
       invoke<ScopedSecret>("upsert_scoped_secret", { input }),
     deleteScopedSecret: (input: DeleteScopedSecretInput) =>
@@ -210,6 +213,13 @@ export const api = {
         limit: limit ?? 50,
         offset: offset ?? 0,
       }),
+  },
+
+  observability: {
+    list: (filter?: ObservabilityEventFilter) =>
+      invoke<ObservabilityEvent[]>("list_observability_events", { filter }),
+    export: (path: string, filter?: ObservabilityEventFilter, selectedIds?: string[]) =>
+      invoke<number>("export_observability_events", { path, filter, selectedIds }),
   },
 
   slashCommands: {

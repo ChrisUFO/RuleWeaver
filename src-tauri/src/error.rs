@@ -65,6 +65,10 @@ pub enum AppError {
     #[error("Internal error: {message}")]
     #[allow(dead_code)]
     Internal { message: String },
+
+    #[error("Secure storage error: {message}")]
+    #[allow(dead_code)]
+    SecureStorage { message: String },
 }
 
 impl<T> From<PoisonError<T>> for AppError {

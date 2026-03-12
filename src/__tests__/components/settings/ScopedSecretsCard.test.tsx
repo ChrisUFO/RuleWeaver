@@ -29,6 +29,12 @@ describe("ScopedSecretsCard", () => {
       <ScopedSecretsCard
         repositoryRoots={["C:/repo-a"]}
         scopedSecrets={scopedSecrets}
+        secretStorageStatus={{
+          backend: "os-keychain",
+          storesSecretsInOsCredentialManager: true,
+          exportsIncludeSecrets: false,
+          importsIncludeSecrets: false,
+        }}
         selectedWorkspace="C:/repo-a"
         isLoading={false}
         isSaving
@@ -41,6 +47,10 @@ describe("ScopedSecretsCard", () => {
     );
 
     expect(screen.getByText(/saving secret changes/i)).toBeInTheDocument();
+    expect(screen.getByText(/secure secret handling/i)).toBeInTheDocument();
+    expect(screen.getByText(/os credential manager/i)).toBeInTheDocument();
+    expect(screen.getByText(/never shown again in plain text/i)).toBeInTheDocument();
+    expect(screen.getByText(/export\/import only transfers metadata/i)).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: /saving/i }).length).toBeGreaterThan(0);
     screen.getAllByRole("button", { name: /saving/i }).forEach((button) => {
       expect(button).toBeDisabled();

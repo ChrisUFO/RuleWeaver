@@ -42,7 +42,7 @@ const SETTINGS_TABS = [
   { id: "infrastructure", label: "Infrastructure", icon: Database },
 ];
 
-export function Settings() {
+export function Settings({ onNavigate }: { onNavigate?: (view: string) => void }) {
   const { addToast } = useToast();
   const [activeTab, setActiveTab] = useState("general");
 
@@ -57,6 +57,7 @@ export function Settings() {
     repoPathsDirty,
     isSavingRepos,
     scopedSecrets,
+    secretStorageStatus,
     selectedSecretWorkspace,
     isSecretsLoading,
     isSavingSecrets,
@@ -228,6 +229,7 @@ export function Settings() {
               <ScopedSecretsCard
                 repositoryRoots={repositoryRoots}
                 scopedSecrets={scopedSecrets}
+                secretStorageStatus={secretStorageStatus}
                 selectedWorkspace={selectedSecretWorkspace}
                 isLoading={isLoading || isSecretsLoading}
                 isSaving={isSavingSecrets}
@@ -263,6 +265,7 @@ export function Settings() {
                 onToggleAutoStart={handlers.toggleMcpAutoStart}
                 onToggleMinimizeToTray={handlers.toggleMinimizeToTray}
                 onToggleLaunchOnStartup={handlers.toggleLaunchOnStartup}
+                onNavigateToLogs={() => onNavigate?.("logs")}
               />
 
               <AdapterSettingsCard
@@ -350,7 +353,7 @@ export function Settings() {
                       </div>
                       <p className="text-xs text-muted-foreground leading-relaxed">
                         Save your rules, commands, and skills to a JSON or YAML file for backup or
-                        sharing.
+                        sharing. Secret values stay in local secure storage and are never exported.
                       </p>
                       <Button
                         variant="outline"
@@ -369,7 +372,8 @@ export function Settings() {
                       </div>
                       <p className="text-xs text-muted-foreground leading-relaxed">
                         Load configuration from a file. This will replace existing items with the
-                        same ID.
+                        same ID, but secret values are never imported and must be re-entered
+                        locally.
                       </p>
                       <Button
                         variant="outline"
@@ -442,6 +446,10 @@ export function Settings() {
             </DialogDescription>
           </DialogHeader>
           <div className="py-4 space-y-4">
+            <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 text-xs text-muted-foreground">
+              Secret values are excluded from configuration files. Imported rules, commands, and
+              skills may require local secrets to be re-entered after import.
+            </div>
             <div className="grid grid-cols-3 gap-2">
               <div className="rounded-xl border border-white/5 bg-white/5 p-3 text-center">
                 <div className="text-xl font-black">{importPreview?.rules.length || 0}</div>

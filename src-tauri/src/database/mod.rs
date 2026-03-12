@@ -3,16 +3,17 @@ use std::str::FromStr;
 use tokio::sync::Mutex;
 
 use chrono::{DateTime, TimeZone, Utc};
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, params_from_iter, Connection, OptionalExtension};
 use tauri::Manager;
 
 use crate::error::{AppError, Result};
 use crate::file_storage::StorageLocation;
 use crate::models::{
     AdapterType, Command, CommandArgument, CreateCommandInput, CreateRuleInput, CreateSkillInput,
-    DeleteScopedSecretInput, ExecutionLog, ReconcileOperation, ReconcileResultType, Rule, Scope,
-    ScopedSecret, SecretScope, Skill, SyncHistoryEntry, UpdateCommandInput, UpdateRuleInput,
-    UpdateSkillInput, UpsertScopedSecretInput,
+    DeleteScopedSecretInput, ExecutionLog, ObservabilityEvent, ObservabilityEventFilter,
+    ObservabilityEventStatus, ObservabilityEventType, ReconcileOperation, ReconcileResultType,
+    Rule, Scope, ScopedSecret, SecretScope, Skill, SyncHistoryEntry, UpdateCommandInput,
+    UpdateRuleInput, UpdateSkillInput, UpsertScopedSecretInput,
 };
 
 fn parse_timestamp_or_now(timestamp: i64) -> DateTime<Utc> {
@@ -22,7 +23,45 @@ fn parse_timestamp_or_now(timestamp: i64) -> DateTime<Utc> {
         .unwrap_or_else(chrono::Utc::now)
 }
 
-pub struct Database(Mutex<Connection>);
+fn parse_observability_event_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ObservabilityEvent> {
+    let timestamp: i64 = row.get(1)?;
+    let event_type_raw: String = row.get(2)?;
+    let status_raw: String = row.get(3)?;
+    Ok(ObservabilityEvent {
+        id: row.get(0)?,
+        timestamp: parse_timestamp_or_now(timestamp),
+        event_type: event_type_raw.parse().map_err(|error: AppError| {
+            rusqlite::Error::FromSqlConversionFailure(
+                2,
+                rusqlite::types::Type::Text,
+                Box::new(error),
+            )
+        })?,
+        status: status_raw.parse().map_err(|error: AppError| {
+            rusqlite::Error::FromSqlConversionFailure(
+                3,
+                rusqlite::types::Type::Text,
+                Box::new(error),
+            )
+        })?,
+        source: row.get(4)?,
+        entity_kind: row.get(5)?,
+        entity_id: row.get(6)?,
+        entity_name: row.get(7)?,
+        workspace_path: row.get(8)?,
+        summary: row.get(9)?,
+        metadata: row.get(10)?,
+        stdout_excerpt: row.get(11)?,
+        stderr_excerpt: row.get(12)?,
+        duration_ms: row.get::<_, Option<i64>>(13)?.map(|value| value as u64),
+        exit_code: row.get(14)?,
+        failure_class: row.get(15)?,
+        attempt_number: row.get::<_, Option<i64>>(16)?.map(|value| value as u8),
+        is_redacted: row.get::<_, i32>(17)? != 0,
+    })
+}
+
+pub struct Database(Mutex<Connection>, String);
 
 impl std::fmt::Debug for Database {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -41,8 +80,28 @@ pub struct ExecutionLogInput<'a> {
     pub triggered_by: &'a str,
     pub failure_class: Option<&'a str>,
     pub adapter_context: Option<&'a str>,
+    pub workspace_path: Option<&'a str>,
     pub is_redacted: bool,
     pub attempt_number: u8,
+}
+
+pub struct ObservabilityEventInput<'a> {
+    pub event_type: ObservabilityEventType,
+    pub status: ObservabilityEventStatus,
+    pub source: &'a str,
+    pub entity_kind: Option<&'a str>,
+    pub entity_id: Option<&'a str>,
+    pub entity_name: Option<&'a str>,
+    pub workspace_path: Option<&'a str>,
+    pub summary: &'a str,
+    pub metadata: Option<&'a str>,
+    pub stdout_excerpt: Option<&'a str>,
+    pub stderr_excerpt: Option<&'a str>,
+    pub duration_ms: Option<u64>,
+    pub exit_code: Option<i32>,
+    pub failure_class: Option<&'a str>,
+    pub attempt_number: Option<u8>,
+    pub is_redacted: bool,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -60,8 +119,21 @@ pub struct ReconciliationLogEntry {
     pub error_message: Option<String>,
 }
 
+#[derive(Debug, Clone)]
+pub struct ScopedSecretRecord {
+    pub id: String,
+    pub key: String,
+    pub value: String,
+    pub scope: SecretScope,
+    pub workspace_path: Option<String>,
+    pub artifact_id: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
 impl Database {
     async fn new_with_db_path(db_path: PathBuf) -> Result<Self> {
+        let secret_namespace = db_path.to_string_lossy().to_string();
         if let Some(parent) = db_path.parent() {
             std::fs::create_dir_all(parent)?;
         }
@@ -75,7 +147,7 @@ impl Database {
         .await
         .map_err(|e| AppError::Database(rusqlite::Error::ToSqlConversionFailure(Box::new(e))))??;
 
-        Ok(Self(Mutex::new(conn)))
+        Ok(Self(Mutex::new(conn), secret_namespace))
     }
 
     pub async fn new(app_handle: &tauri::AppHandle) -> Result<Self> {
@@ -95,6 +167,8 @@ impl Database {
 
     #[cfg(any(test, feature = "test-helpers"))]
     pub async fn new_in_memory() -> Result<Self> {
+        crate::secure_storage::reset_test_store();
+        let secret_namespace = format!("memory:{}", uuid::Uuid::new_v4());
         let conn = tokio::task::spawn_blocking(move || -> Result<Connection> {
             let mut conn = Connection::open_in_memory()?;
             run_migrations(&mut conn)?;
@@ -103,7 +177,11 @@ impl Database {
         .await
         .map_err(|e| AppError::Database(rusqlite::Error::ToSqlConversionFailure(Box::new(e))))??;
 
-        Ok(Self(Mutex::new(conn)))
+        Ok(Self(Mutex::new(conn), secret_namespace))
+    }
+
+    pub fn secret_namespace(&self) -> &str {
+        &self.1
     }
 
     /// Re-establishes the database connection and runs migrations.
@@ -886,6 +964,190 @@ impl Database {
         Ok(())
     }
 
+    pub async fn add_observability_event(
+        &self,
+        input: &ObservabilityEventInput<'_>,
+    ) -> Result<String> {
+        let id = uuid::Uuid::new_v4().to_string();
+        let timestamp = chrono::Utc::now();
+
+        // Defense-in-depth: second-pass redaction on all text fields
+        let (summary, summary_redacted) = crate::redaction::redact(input.summary);
+        let (metadata, metadata_redacted) = match input.metadata {
+            Some(m) => {
+                let (r, red) = crate::redaction::redact(m);
+                (Some(r), red)
+            }
+            None => (None, false),
+        };
+        let (stdout, stdout_redacted) = match input.stdout_excerpt {
+            Some(s) => {
+                let (r, red) = crate::redaction::redact(s);
+                (Some(r), red)
+            }
+            None => (None, false),
+        };
+        let (stderr, stderr_redacted) = match input.stderr_excerpt {
+            Some(s) => {
+                let (r, red) = crate::redaction::redact(s);
+                (Some(r), red)
+            }
+            None => (None, false),
+        };
+
+        let is_redacted = input.is_redacted
+            || summary_redacted
+            || metadata_redacted
+            || stdout_redacted
+            || stderr_redacted;
+
+        let conn = self.0.lock().await; // Re-added this line as it was missing in the provided snippet but needed for `conn.execute`
+        conn.execute(
+            "INSERT INTO observability_events (
+                id, timestamp, event_type, status, source, entity_kind, entity_id, entity_name,
+                workspace_path, summary, metadata, stdout_excerpt, stderr_excerpt, duration_ms,
+                exit_code, failure_class, attempt_number, is_redacted
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            params![
+                id,
+                timestamp.timestamp(), // Use timestamp.timestamp() for i64
+                input.event_type.as_str(),
+                input.status.as_str(),
+                input.source,
+                input.entity_kind,
+                input.entity_id,
+                input.entity_name,
+                input.workspace_path,
+                summary,  // Use redacted summary
+                metadata, // Use redacted metadata
+                stdout,   // Use redacted stdout
+                stderr,   // Use redacted stderr
+                input.duration_ms.map(|value| value as i64),
+                input.exit_code,
+                input.failure_class,
+                input.attempt_number.map(|value| value as i64),
+                is_redacted as i32,
+            ],
+        )?;
+
+        Ok(id)
+    }
+
+    pub async fn list_observability_events(
+        &self,
+        filter: &ObservabilityEventFilter,
+    ) -> Result<Vec<ObservabilityEvent>> {
+        let conn = self.0.lock().await;
+
+        let mut where_clauses = Vec::new();
+        let mut sql_params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+
+        if let Some(event_type) = &filter.event_type {
+            where_clauses.push("event_type = ?".to_string());
+            sql_params.push(Box::new(event_type.as_str().to_string()));
+        }
+
+        if let Some(status) = &filter.status {
+            where_clauses.push("status = ?".to_string());
+            sql_params.push(Box::new(status.as_str().to_string()));
+        }
+
+        if let Some(source) = filter
+            .source
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+        {
+            where_clauses.push("LOWER(source) LIKE ?".to_string());
+            sql_params.push(Box::new(format!("%{}%", source.trim().to_lowercase())));
+        }
+
+        if let Some(entity_name) = filter
+            .entity_name
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+        {
+            where_clauses.push("LOWER(COALESCE(entity_name, '')) LIKE ?".to_string());
+            sql_params.push(Box::new(format!("%{}%", entity_name.trim().to_lowercase())));
+        }
+
+        if let Some(workspace_path) = filter
+            .workspace_path
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+        {
+            where_clauses.push("LOWER(COALESCE(workspace_path, '')) LIKE ?".to_string());
+            sql_params.push(Box::new(format!(
+                "%{}%",
+                workspace_path.trim().to_lowercase()
+            )));
+        }
+
+        if let Some(query) = filter
+            .query
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+        {
+            let pattern = format!("%{}%", query.trim().to_lowercase());
+            where_clauses.push(
+                "(LOWER(summary) LIKE ? OR LOWER(source) LIKE ? OR LOWER(COALESCE(entity_name, '')) LIKE ? OR LOWER(COALESCE(workspace_path, '')) LIKE ? OR LOWER(COALESCE(metadata, '')) LIKE ? OR LOWER(COALESCE(stdout_excerpt, '')) LIKE ? OR LOWER(COALESCE(stderr_excerpt, '')) LIKE ?)"
+                    .to_string(),
+            );
+            for _ in 0..7 {
+                sql_params.push(Box::new(pattern.clone()));
+            }
+        }
+
+        if let Some(from_timestamp) = filter.from_timestamp {
+            where_clauses.push("timestamp >= ?".to_string());
+            sql_params.push(Box::new(from_timestamp.timestamp()));
+        }
+
+        if let Some(to_timestamp) = filter.to_timestamp {
+            where_clauses.push("timestamp <= ?".to_string());
+            sql_params.push(Box::new(to_timestamp.timestamp()));
+        }
+
+        let mut sql = "SELECT id, timestamp, event_type, status, source, entity_kind, entity_id, entity_name, workspace_path, summary, metadata, stdout_excerpt, stderr_excerpt, duration_ms, exit_code, failure_class, attempt_number, is_redacted FROM observability_events".to_string();
+        if !where_clauses.is_empty() {
+            sql.push_str(" WHERE ");
+            sql.push_str(&where_clauses.join(" AND "));
+        }
+        sql.push_str(" ORDER BY timestamp DESC, id DESC LIMIT ?");
+        sql_params.push(Box::new(filter.limit.unwrap_or(250).min(1000) as i64));
+
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt
+            .query_map(
+                params_from_iter(sql_params.iter()),
+                parse_observability_event_row,
+            )?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    pub async fn get_observability_events_by_ids(
+        &self,
+        ids: &[String],
+    ) -> Result<Vec<ObservabilityEvent>> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let conn = self.0.lock().await;
+        let placeholders = std::iter::repeat_n("?", ids.len())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let sql = format!(
+            "SELECT id, timestamp, event_type, status, source, entity_kind, entity_id, entity_name, workspace_path, summary, metadata, stdout_excerpt, stderr_excerpt, duration_ms, exit_code, failure_class, attempt_number, is_redacted FROM observability_events WHERE id IN ({placeholders}) ORDER BY timestamp DESC, id DESC"
+        );
+
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt
+            .query_map(params_from_iter(ids.iter()), parse_observability_event_row)?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
     pub async fn get_execution_history(&self, limit: u32) -> Result<Vec<ExecutionLog>> {
         let conn = self.0.lock().await;
         let mut stmt = conn.prepare(
@@ -1080,6 +1342,12 @@ impl Database {
         Ok(())
     }
 
+    pub async fn delete_setting(&self, key: &str) -> Result<()> {
+        let conn = self.0.lock().await;
+        conn.execute("DELETE FROM settings WHERE key = ?", params![key])?;
+        Ok(())
+    }
+
     pub async fn merge_setting_string_array_unique(
         &self,
         key: &str,
@@ -1130,7 +1398,7 @@ impl Database {
         Ok(settings)
     }
 
-    pub async fn list_scoped_secrets(&self) -> Result<Vec<ScopedSecret>> {
+    pub async fn list_scoped_secret_records(&self) -> Result<Vec<ScopedSecretRecord>> {
         let conn = self.0.lock().await;
         let mut stmt = conn.prepare(
             "SELECT id, key, value, scope, workspace_path, artifact_id, created_at, updated_at
@@ -1152,7 +1420,7 @@ impl Database {
                     )
                 })?;
 
-                Ok(ScopedSecret {
+                Ok(ScopedSecretRecord {
                     id: row.get(0)?,
                     key: row.get(1)?,
                     value: row.get(2)?,
@@ -1166,6 +1434,24 @@ impl Database {
             .collect::<std::result::Result<Vec<_>, _>>()?;
 
         Ok(secrets)
+    }
+
+    pub async fn list_scoped_secrets(&self) -> Result<Vec<ScopedSecret>> {
+        Ok(self
+            .list_scoped_secret_records()
+            .await?
+            .into_iter()
+            .map(|secret| ScopedSecret {
+                id: secret.id,
+                key: secret.key,
+                value: secret.value,
+                scope: secret.scope,
+                workspace_path: secret.workspace_path,
+                artifact_id: secret.artifact_id,
+                created_at: secret.created_at,
+                updated_at: secret.updated_at,
+            })
+            .collect())
     }
 
     pub async fn upsert_scoped_secret(
@@ -1198,9 +1484,9 @@ impl Database {
         let (id, created_at) = if let Some((id, created_at)) = existing {
             conn.execute(
                 "UPDATE scoped_secrets
-                 SET key = ?, value = ?, updated_at = ?
+                 SET key = ?, value = '', updated_at = ?
                  WHERE id = ?",
-                params![input.key, input.value, now, id],
+                params![input.key, now, id],
             )?;
             (id, created_at)
         } else {
@@ -1211,7 +1497,7 @@ impl Database {
                 params![
                     id,
                     input.key,
-                    input.value,
+                    "",
                     input.scope.as_str(),
                     input.workspace_path.as_deref(),
                     input.artifact_id.as_deref(),
@@ -1225,13 +1511,36 @@ impl Database {
         Ok(ScopedSecret {
             id,
             key: input.key,
-            value: input.value,
+            value: String::new(),
             scope: input.scope,
             workspace_path: input.workspace_path,
             artifact_id: input.artifact_id,
             created_at: parse_timestamp_or_now(created_at),
             updated_at: parse_timestamp_or_now(now),
         })
+    }
+
+    pub async fn clear_scoped_secret_plaintext_value(&self, id: &str) -> Result<()> {
+        let conn = self.0.lock().await;
+        conn.execute(
+            "UPDATE scoped_secrets SET value = '', updated_at = ? WHERE id = ?",
+            params![chrono::Utc::now().timestamp(), id],
+        )?;
+        Ok(())
+    }
+
+    #[cfg(test)]
+    pub async fn force_set_scoped_secret_plaintext_value(
+        &self,
+        key: &str,
+        value: &str,
+    ) -> Result<()> {
+        let conn = self.0.lock().await;
+        conn.execute(
+            "UPDATE scoped_secrets SET value = ?, updated_at = ? WHERE key = ?",
+            params![value, chrono::Utc::now().timestamp(), key],
+        )?;
+        Ok(())
     }
 
     pub async fn delete_scoped_secret(&self, input: DeleteScopedSecretInput) -> Result<()> {
@@ -1910,7 +2219,59 @@ fn run_migrations(conn: &mut Connection) -> Result<()> {
         )?;
     }
 
-    transaction.execute("PRAGMA user_version = 17", [])?;
+    if current_version < 19 {
+        transaction.execute(
+            "CREATE TABLE IF NOT EXISTS observability_events (
+                id TEXT PRIMARY KEY NOT NULL,
+                timestamp INTEGER NOT NULL,
+                event_type TEXT NOT NULL,
+                status TEXT NOT NULL,
+                source TEXT NOT NULL,
+                entity_kind TEXT,
+                entity_id TEXT,
+                entity_name TEXT,
+                summary TEXT NOT NULL,
+                metadata TEXT,
+                stdout_excerpt TEXT,
+                stderr_excerpt TEXT,
+                duration_ms INTEGER,
+                exit_code INTEGER,
+                failure_class TEXT,
+                attempt_number INTEGER,
+                is_redacted INTEGER NOT NULL DEFAULT 0
+            )",
+            [],
+        )?;
+        transaction.execute(
+            "CREATE INDEX IF NOT EXISTS idx_observability_events_timestamp
+             ON observability_events(timestamp DESC)",
+            [],
+        )?;
+        transaction.execute(
+            "CREATE INDEX IF NOT EXISTS idx_observability_events_type_status
+             ON observability_events(event_type, status, timestamp DESC)",
+            [],
+        )?;
+        transaction.execute(
+            "CREATE INDEX IF NOT EXISTS idx_observability_events_entity_name
+             ON observability_events(entity_name)",
+            [],
+        )?;
+    }
+
+    if current_version < 20 {
+        transaction.execute(
+            "ALTER TABLE observability_events ADD COLUMN workspace_path TEXT",
+            [],
+        )?;
+        transaction.execute(
+            "CREATE INDEX IF NOT EXISTS idx_observability_events_workspace_path
+             ON observability_events(workspace_path)",
+            [],
+        )?;
+    }
+
+    transaction.execute("PRAGMA user_version = 20", [])?;
     transaction.commit()?;
 
     Ok(())
@@ -1954,8 +2315,8 @@ pub fn default_app_data_dir() -> Result<PathBuf> {
 mod tests {
     use super::*;
     use crate::models::{
-        CreateCommandInput, CreateSkillInput, SkillParameter, SkillParameterType,
-        UpdateCommandInput, UpdateSkillInput,
+        CreateCommandInput, CreateSkillInput, ObservabilityEventStatus, ObservabilityEventType,
+        SkillParameter, SkillParameterType, UpdateCommandInput, UpdateSkillInput,
     };
 
     #[tokio::test]
@@ -2072,7 +2433,8 @@ mod tests {
 
         let all = db.list_scoped_secrets().await.unwrap();
         assert_eq!(all.len(), 1);
-        assert_eq!(all[0].value, "repo-a");
+        assert_eq!(all[0].value, "");
+        assert_eq!(all[0].workspace_path.as_deref(), Some("c:/repo-a"));
 
         let updated = db
             .upsert_scoped_secret(UpsertScopedSecretInput {
@@ -2085,7 +2447,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(updated.id, created.id);
-        assert_eq!(updated.value, "repo-b");
+        assert_eq!(updated.value, "");
 
         db.delete_scoped_secret(DeleteScopedSecretInput {
             key: "PROJECT_API_KEY".to_string(),
@@ -2097,5 +2459,128 @@ mod tests {
         .unwrap();
 
         assert!(db.list_scoped_secrets().await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_observability_events_filtering_and_lookup() {
+        let db = Database::new_in_memory().await.unwrap();
+
+        db.add_observability_event(&ObservabilityEventInput {
+            event_type: ObservabilityEventType::CommandRun,
+            status: ObservabilityEventStatus::Error,
+            source: "mcp",
+            entity_kind: Some("command"),
+            entity_id: Some("cmd-1"),
+            entity_name: Some("Deploy docs"),
+            workspace_path: Some("c:/repos/docs"),
+            summary: "Command execution failed",
+            metadata: Some("{\"toolName\":\"Deploy docs\"}"),
+            stdout_excerpt: None,
+            stderr_excerpt: Some("timeout"),
+            duration_ms: Some(500),
+            exit_code: Some(1),
+            failure_class: Some("timeout"),
+            attempt_number: Some(1),
+            is_redacted: true,
+        })
+        .await
+        .unwrap();
+
+        db.add_observability_event(&ObservabilityEventInput {
+            event_type: ObservabilityEventType::McpLifecycle,
+            status: ObservabilityEventStatus::Success,
+            source: "mcp",
+            entity_kind: Some("mcp"),
+            entity_id: None,
+            entity_name: Some("server"),
+            workspace_path: None,
+            summary: "MCP server is ready",
+            metadata: None,
+            stdout_excerpt: None,
+            stderr_excerpt: None,
+            duration_ms: None,
+            exit_code: None,
+            failure_class: None,
+            attempt_number: None,
+            is_redacted: true,
+        })
+        .await
+        .unwrap();
+
+        let filtered = db
+            .list_observability_events(&ObservabilityEventFilter {
+                event_type: Some(ObservabilityEventType::CommandRun),
+                status: Some(ObservabilityEventStatus::Error),
+                entity_name: Some("deploy".to_string()),
+                workspace_path: Some("repos/docs".to_string()),
+                query: Some("timeout".to_string()),
+                limit: Some(25),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].entity_name.as_deref(), Some("Deploy docs"));
+        assert_eq!(filtered[0].workspace_path.as_deref(), Some("c:/repos/docs"));
+        assert!(filtered[0].is_redacted);
+
+        let looked_up = db
+            .get_observability_events_by_ids(&[filtered[0].id.clone()])
+            .await
+            .unwrap();
+        assert_eq!(looked_up.len(), 1);
+        assert_eq!(looked_up[0].summary, "Command execution failed");
+    }
+
+    #[tokio::test]
+    async fn test_observability_export_writes_redacted_entries() {
+        let db = Database::new_in_memory().await.unwrap();
+
+        db.add_observability_event(&ObservabilityEventInput {
+            event_type: ObservabilityEventType::SkillRun,
+            status: ObservabilityEventStatus::Success,
+            source: "mcp-skill",
+            entity_kind: Some("skill"),
+            entity_id: Some("skill-1"),
+            entity_name: Some("Summarize Repo"),
+            workspace_path: Some("c:/repos/app"),
+            summary: "Skill execution succeeded",
+            metadata: Some("{\"triggeredBy\":\"mcp-skill\"}"),
+            stdout_excerpt: Some("token=***REDACTED***"),
+            stderr_excerpt: None,
+            duration_ms: Some(220),
+            exit_code: Some(0),
+            failure_class: None,
+            attempt_number: Some(1),
+            is_redacted: true,
+        })
+        .await
+        .unwrap();
+
+        let export_path = std::env::temp_dir().join(format!(
+            "ruleweaver-observability-{}.json",
+            uuid::Uuid::new_v4()
+        ));
+
+        crate::observability::export_events(
+            &db,
+            &export_path,
+            None,
+            &ObservabilityEventFilter {
+                event_type: Some(ObservabilityEventType::SkillRun),
+                limit: Some(25),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let export_body = std::fs::read_to_string(&export_path).unwrap();
+        std::fs::remove_file(&export_path).unwrap();
+
+        assert!(export_body.contains("***REDACTED***"));
+        assert!(export_body.contains("\"eventCount\": 1"));
+        assert!(export_body.contains("\"isRedacted\": true"));
     }
 }

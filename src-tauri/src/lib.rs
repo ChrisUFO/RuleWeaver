@@ -7,11 +7,13 @@ mod feature_flags;
 mod file_storage;
 mod mcp;
 pub mod models;
+mod observability;
 pub mod path_resolver;
 pub mod reconciliation;
 mod redaction;
 pub mod rule_import;
 mod secrets;
+mod secure_storage;
 mod single_instance;
 mod slash_commands;
 mod status;
@@ -443,6 +445,7 @@ pub fn run() {
             commands::set_setting,
             commands::get_all_settings,
             commands::list_scoped_secrets,
+            commands::get_secret_storage_status_cmd,
             commands::upsert_scoped_secret,
             commands::delete_scoped_secret,
             commands::resolve_scoped_secrets_cmd,
@@ -500,6 +503,8 @@ pub fn run() {
             commands::get_mcp_logs,
             commands::get_execution_history,
             commands::get_execution_history_filtered,
+            commands::list_observability_events,
+            commands::export_observability_events,
             slash_commands::commands::sync_slash_command,
             slash_commands::commands::sync_all_slash_commands,
             slash_commands::commands::get_slash_command_status,

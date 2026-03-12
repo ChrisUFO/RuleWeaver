@@ -30,7 +30,9 @@ use crate::execution::{
     execute_shell_with_timeout_env_dir, replace_template_with_env_ref, sanitize_argument_value,
     slugify, ExecuteAndLogInput,
 };
-use crate::models::{Command, Skill, SkillParameterType};
+use crate::models::{
+    Command, ObservabilityEventStatus, ObservabilityEventType, Skill, SkillParameterType,
+};
 use crate::secrets;
 
 fn mcp_error_response(id: serde_json::Value, code: i64, message: &str) -> serde_json::Value {
@@ -154,6 +156,17 @@ pub struct McpRuntime {
     app_handle: Option<tauri::AppHandle>,
 }
 
+impl McpRuntime {
+    fn transition_to_stopped(&mut self) {
+        self.running = false;
+        self.health_state = McpHealthState::Stopped;
+        self.status_message = "MCP server is stopped".to_string();
+        self.stop_tx = None;
+        self.started_at = None;
+        self.watcher.stop();
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct McpManager {
     pub inner: Arc<Mutex<McpRuntime>>,
@@ -205,6 +218,36 @@ impl McpManager {
     pub async fn set_api_token(&self, token: String) {
         let mut state = self.inner.lock().await;
         state.api_token = token;
+    }
+
+    async fn observability_db(&self) -> Option<Arc<Database>> {
+        self.inner.lock().await.db.clone()
+    }
+
+    async fn record_mcp_observability_event(
+        &self,
+        event_type: ObservabilityEventType,
+        status: ObservabilityEventStatus,
+        entity_name: Option<&str>,
+        summary: &str,
+        metadata: Option<String>,
+        duration_ms: Option<u64>,
+    ) {
+        if let Some(db) = self.observability_db().await {
+            let _ = crate::observability::record_mcp_event(
+                db.as_ref(),
+                &crate::observability::McpEventRecordInput {
+                    event_type,
+                    status,
+                    source: "mcp",
+                    entity_name,
+                    summary,
+                    metadata: metadata.as_deref(),
+                    duration_ms,
+                },
+            )
+            .await;
+        }
     }
 
     pub async fn refresh_commands(&self, db: &Database) -> Result<()> {
@@ -312,9 +355,23 @@ impl McpManager {
                             MCP_SERVER_RETRY_COUNT + 1
                         );
                         self.log(message.clone()).await?;
-                        let _ = self
+                        let state_updated = self
                             .set_error_state_if_current(revision, code, message.clone())
                             .await;
+                        if state_updated {
+                            self.record_mcp_observability_event(
+                                ObservabilityEventType::McpLifecycle,
+                                ObservabilityEventStatus::Error,
+                                Some("server"),
+                                &message,
+                                Some(
+                                    serde_json::json!({ "code": code, "endpoint": addr })
+                                        .to_string(),
+                                ),
+                                None,
+                            )
+                            .await;
+                        }
                         return Err(AppError::Mcp(message));
                     }
 
@@ -351,6 +408,16 @@ impl McpManager {
             (state.port, state.lifecycle_revision)
         };
 
+        self.record_mcp_observability_event(
+            ObservabilityEventType::McpLifecycle,
+            ObservabilityEventStatus::Started,
+            Some("server"),
+            "Starting MCP server",
+            Some(serde_json::json!({ "endpoint": mcp_endpoint_url(port) }).to_string()),
+            None,
+        )
+        .await;
+
         if let Err(error) = self.refresh_commands(db).await {
             let message = format!("Failed to refresh MCP artifacts before start: {error}");
             self.log(message.clone()).await?;
@@ -358,6 +425,15 @@ impl McpManager {
                 .set_error_state_if_current(start_revision, "refresh_failed", message)
                 .await
             {
+                self.record_mcp_observability_event(
+                    ObservabilityEventType::McpLifecycle,
+                    ObservabilityEventStatus::Error,
+                    Some("artifact-refresh"),
+                    "Failed to refresh MCP artifacts before start",
+                    Some(serde_json::json!({ "error": error.to_string() }).to_string()),
+                    None,
+                )
+                .await;
                 return Err(error);
             }
             return Ok(());
@@ -389,6 +465,16 @@ impl McpManager {
                 format!("Listening for MCP clients on {}", mcp_endpoint_url(port));
             state.started_at = Some(Instant::now());
         }
+
+        self.record_mcp_observability_event(
+            ObservabilityEventType::McpLifecycle,
+            ObservabilityEventStatus::Success,
+            Some("server"),
+            "MCP server is ready",
+            Some(serde_json::json!({ "endpoint": mcp_endpoint_url(port) }).to_string()),
+            None,
+        )
+        .await;
 
         let manager = self.clone();
         let mut stop_rx = stop_tx.subscribe();
@@ -424,9 +510,21 @@ impl McpManager {
             {
                 let message = format!("MCP server error: {}", e);
                 let _ = manager.log(message.clone()).await;
-                let _ = manager
+                let state_updated = manager
                     .set_error_state_if_current(task_revision, "server_error", message)
                     .await;
+                if state_updated {
+                    manager
+                        .record_mcp_observability_event(
+                            ObservabilityEventType::McpLifecycle,
+                            ObservabilityEventStatus::Error,
+                            Some("server"),
+                            "MCP server encountered an error",
+                            Some(serde_json::json!({ "error": e.to_string() }).to_string()),
+                            None,
+                        )
+                        .await;
+                }
                 return;
             }
 
@@ -660,28 +758,48 @@ impl McpManager {
     }
 
     async fn mark_stopped(&self) -> Result<()> {
-        let mut state = self.inner.lock().await;
-        state.running = false;
-        state.health_state = McpHealthState::Stopped;
-        state.status_message = "MCP server is stopped".to_string();
-        state.stop_tx = None;
-        state.started_at = None;
-        state.watcher.stop();
+        let had_db = {
+            let mut state = self.inner.lock().await;
+            let had_db = state.db.is_some();
+            state.transition_to_stopped();
+            had_db
+        };
+        if had_db {
+            self.record_mcp_observability_event(
+                ObservabilityEventType::McpLifecycle,
+                ObservabilityEventStatus::Stopped,
+                Some("server"),
+                "MCP server stopped",
+                None,
+                None,
+            )
+            .await;
+        }
         Ok(())
     }
 
     async fn mark_stopped_if_current(&self, revision: u64) -> Result<()> {
-        let mut state = self.inner.lock().await;
-        if state.lifecycle_revision != revision {
-            return Ok(());
-        }
+        let had_db = {
+            let mut state = self.inner.lock().await;
+            if state.lifecycle_revision != revision {
+                return Ok(());
+            }
 
-        state.running = false;
-        state.health_state = McpHealthState::Stopped;
-        state.status_message = "MCP server is stopped".to_string();
-        state.stop_tx = None;
-        state.started_at = None;
-        state.watcher.stop();
+            let had_db = state.db.is_some();
+            state.transition_to_stopped();
+            had_db
+        };
+        if had_db {
+            self.record_mcp_observability_event(
+                ObservabilityEventType::McpLifecycle,
+                ObservabilityEventStatus::Stopped,
+                Some("server"),
+                "MCP server stopped",
+                None,
+                None,
+            )
+            .await;
+        }
         Ok(())
     }
 
@@ -718,6 +836,7 @@ async fn mcp_handler(
     headers: HeaderMap,
     Json(request): Json<JsonRpcRequest>,
 ) -> Response {
+    let request_method = request.method.clone();
     let auth_valid = {
         let state = manager.inner.lock().await;
 
@@ -727,6 +846,16 @@ async fn mcp_handler(
     };
 
     if !auth_valid {
+        manager
+            .record_mcp_observability_event(
+                ObservabilityEventType::McpClient,
+                ObservabilityEventStatus::Warning,
+                Some("authentication"),
+                "Rejected MCP request with invalid or missing API key",
+                Some(serde_json::json!({ "method": request_method }).to_string()),
+                None,
+            )
+            .await;
         return (
             StatusCode::UNAUTHORIZED,
             "Unauthorized: Invalid or missing X-API-Key header",
@@ -776,6 +905,52 @@ async fn mcp_handler(
             }
         }),
     };
+
+    match request_method.as_str() {
+        "initialize" => {
+            manager
+                .record_mcp_observability_event(
+                    ObservabilityEventType::McpClient,
+                    ObservabilityEventStatus::Success,
+                    Some("initialize"),
+                    "MCP client initialized a session",
+                    None,
+                    None,
+                )
+                .await;
+        }
+        "tools/list" => {
+            manager
+                .record_mcp_observability_event(
+                    ObservabilityEventType::McpClient,
+                    ObservabilityEventStatus::Success,
+                    Some("tools/list"),
+                    "MCP client listed available tools",
+                    Some(
+                        serde_json::json!({
+                            "commandCount": commands.iter().filter(|command| command.expose_via_mcp).count(),
+                            "skillCount": skills.iter().filter(|skill| skill.enabled).count(),
+                        })
+                        .to_string(),
+                    ),
+                    None,
+                )
+                .await;
+        }
+        "tools/call" => {}
+        _ => {
+            manager
+                .record_mcp_observability_event(
+                    ObservabilityEventType::McpClient,
+                    ObservabilityEventStatus::Warning,
+                    Some("unknown-method"),
+                    "MCP client called an unknown method",
+                    Some(serde_json::json!({ "method": request_method }).to_string()),
+                    None,
+                )
+                .await;
+        }
+    }
 
     Json(response).into_response()
 }
@@ -944,6 +1119,16 @@ async fn handle_tools_call(
     };
 
     if !allow {
+        manager
+            .record_mcp_observability_event(
+                ObservabilityEventType::McpClient,
+                ObservabilityEventStatus::Warning,
+                Some("rate-limit"),
+                "Rejected MCP tools/call request because the rate limit was exceeded",
+                None,
+                None,
+            )
+            .await;
         return json!({
             "jsonrpc": "2.0",
             "id": id,
@@ -978,6 +1163,16 @@ async fn handle_tools_call(
     {
         handle_skill_call(manager, id, skill, args_map, shared_db).await
     } else {
+        manager
+            .record_mcp_observability_event(
+                ObservabilityEventType::McpClient,
+                ObservabilityEventStatus::Warning,
+                Some("tools/call"),
+                "MCP client requested an unknown or disabled tool",
+                Some(serde_json::json!({ "toolName": name }).to_string()),
+                None,
+            )
+            .await;
         json!({
             "jsonrpc": "2.0",
             "id": id,
@@ -1116,6 +1311,8 @@ async fn handle_command_call(
         }
     }
 
+    let workspace_path = secrets::infer_command_workspace(cmd).ok().flatten();
+
     match execute_and_log(ExecuteAndLogInput {
         db: shared_db.as_ref().map(|arc| arc.as_ref()),
         command_id: &cmd.id,
@@ -1127,10 +1324,11 @@ async fn handle_command_call(
         triggered_by: "mcp",
         max_retries: cmd.max_retries,
         adapter_context: Some("mcp"),
+        workspace_path: workspace_path.as_deref(),
     })
     .await
     {
-        Ok((exit_code, stdout, stderr, duration_ms)) => {
+        Ok((exit_code, stdout, stderr, duration_ms, _event_id)) => {
             let _ = manager
                 .log(format!(
                     "MCP tools/call '{}' exit code {} ({}ms)",
@@ -1362,22 +1560,36 @@ async fn handle_skill_call(
         };
         let skill_name = format!("skill:{}", skill.name);
         let (stdout_redacted, was_redacted) = crate::redaction::redact(&output);
-        let _ = db
-            .add_execution_log(&ExecutionLogInput {
-                command_id: &skill.id,
-                command_name: &skill_name,
+        let log_input = ExecutionLogInput {
+            command_id: &skill.id,
+            command_name: &skill_name,
+            arguments_json: &args_json,
+            stdout: &stdout_redacted,
+            stderr: "",
+            exit_code: if is_error { 1 } else { 0 },
+            duration_ms,
+            triggered_by: "mcp-skill",
+            failure_class: None,
+            adapter_context: Some("mcp-skill"),
+            workspace_path: Some(resolved_path.as_str()),
+            is_redacted: was_redacted,
+            attempt_number: 1,
+        };
+        let _ = db.add_execution_log(&log_input).await;
+        let _ = crate::observability::record_skill_execution(
+            db.as_ref(),
+            &crate::observability::SkillExecutionRecordInput {
+                skill,
+                source: "mcp-skill",
                 arguments_json: &args_json,
-                stdout: &stdout_redacted,
-                stderr: "",
-                exit_code: if is_error { 1 } else { 0 },
+                output: &stdout_redacted,
                 duration_ms,
-                triggered_by: "mcp-skill",
-                failure_class: None,
-                adapter_context: Some("mcp-skill"),
+                exit_code: if is_error { 1 } else { 0 },
+                workspace_path: Some(resolved_path.as_str()),
                 is_redacted: was_redacted,
-                attempt_number: 1,
-            })
-            .await;
+            },
+        )
+        .await;
     }
 
     json!({

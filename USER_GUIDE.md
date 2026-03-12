@@ -386,7 +386,8 @@ Manage credentials without hardcoding them into commands or skills:
 - Add **workspace overrides** for any configured repository root
 - RuleWeaver resolves secrets with precedence: **artifact override → workspace override → global value**
 - Secret values are reused during command test runs and MCP execution, while logs stay redacted
-- Secret values are masked in the UI and API responses, but the local RuleWeaver database does **not** encrypt them at rest yet; use OS-level disk encryption for high-sensitivity credentials
+- Secret values are masked in the UI and API responses and stored in your OS credential manager / secure keychain instead of plaintext app persistence
+- Configuration export/import does **not** include secret values; re-enter them locally after moving to a new machine or importing a backup
 
 ### MCP Server
 
@@ -399,6 +400,14 @@ Configure the Model Context Protocol server:
 - **Launch on startup** — Start RuleWeaver on system login
 - **Diagnostics** — Surface port conflicts, missing exposed tools, watcher problems, and stale client config hints
 - **Connection snippets** — Copy endpoint URL, API token, standalone command, and Claude Code / OpenCode JSON
+
+### Logs
+
+Use the dedicated **Logs** page to inspect unified diagnostics across MCP lifecycle events, MCP client calls, command runs, and skill runs.
+
+- Filter by event type, status, source, tool/skill name, date range, or free-text search
+- Expand metadata and redacted stdout/stderr excerpts for troubleshooting
+- Select specific rows or export the current filtered result set as JSON for support/debugging
 
 ### Storage
 
@@ -424,8 +433,8 @@ Enable/disable individual AI tool adapters:
 
 ### Data Management
 
-- **Export Configuration** — Save rules, commands, and skills to JSON/YAML
-- **Import Configuration** — Load from a backup file
+- **Export Configuration** — Save rules, commands, and skills metadata to JSON/YAML (secret values are excluded)
+- **Import Configuration** — Load from a backup file and then re-enter any required local secrets
 
 ### About
 
@@ -474,6 +483,8 @@ Add the generated JSON to your OpenCode configuration, then restart OpenCode aft
 **Other tools:**
 Use synced rule/command files, or configure the MCP client to connect to the localhost endpoint and send the current API token header shown in Settings.
 
+For deeper troubleshooting after the server starts, use the **Logs** page to inspect MCP lifecycle/client events and export a redacted trace.
+
 ---
 
 ## 8) Keyboard Shortcuts
@@ -517,6 +528,7 @@ Use synced rule/command files, or configure the MCP client to connect to the loc
 - **Tools not appearing** — Confirm at least one command has **Expose via MCP** enabled, then click **Refresh**
 - **Client connects but calls fail** — Re-copy the endpoint/token from Settings and fully restart the client to clear stale protocol state
 - **App closed unexpectedly** — Enable "Minimize to tray on close" to keep embedded MCP alive
+- **Need to share diagnostics** — Open **Logs**, filter to the affected events, and export the redacted JSON trace
 
 ### Storage Issues
 

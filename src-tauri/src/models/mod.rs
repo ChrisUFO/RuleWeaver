@@ -1,6 +1,7 @@
 mod command;
 mod config;
 mod import;
+mod observability;
 mod parse_error;
 pub mod reconciliation;
 pub mod registry;
@@ -12,6 +13,7 @@ pub mod timestamp;
 pub use command::*;
 pub use config::*;
 pub use import::*;
+pub use observability::*;
 pub use parse_error::ParseEnumError;
 pub use reconciliation::*;
 pub use rule::*;

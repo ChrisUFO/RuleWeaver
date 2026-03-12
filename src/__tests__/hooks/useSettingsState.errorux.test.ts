@@ -22,6 +22,12 @@ const mockSettingsSet = vi.fn().mockResolvedValue(undefined);
 const mockSettingsListScopedSecrets = vi.fn().mockResolvedValue([]);
 const mockSettingsUpsertScopedSecret = vi.fn().mockResolvedValue(undefined);
 const mockSettingsDeleteScopedSecret = vi.fn().mockResolvedValue(undefined);
+const mockSettingsGetSecretStorageStatus = vi.fn().mockResolvedValue({
+  backend: "os-credential-manager",
+  storesSecretsInOsCredentialManager: true,
+  exportsIncludeSecrets: false,
+  importsIncludeSecrets: false,
+});
 const mockStorageGetMode = vi.fn().mockResolvedValue("sqlite");
 const mockStorageGetInfo = vi.fn().mockResolvedValue({});
 const mockStorageGetMigrationProgress = vi.fn().mockResolvedValue(null);
@@ -64,6 +70,7 @@ vi.mock("@/lib/tauri", () => ({
       listScopedSecrets: mockSettingsListScopedSecrets,
       upsertScopedSecret: mockSettingsUpsertScopedSecret,
       deleteScopedSecret: mockSettingsDeleteScopedSecret,
+      getSecretStorageStatus: mockSettingsGetSecretStorageStatus,
     },
     storage: {
       getMode: mockStorageGetMode,
