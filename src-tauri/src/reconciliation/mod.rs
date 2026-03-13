@@ -1811,15 +1811,19 @@ mod tests {
 
     #[tokio::test]
     async fn test_reconcile_is_idempotent() {
-        let db = std::sync::Arc::new(crate::database::Database::new_in_memory().await.unwrap());
-        let engine = ReconciliationEngine::new(db.clone()).unwrap();
+        use tempfile::TempDir;
 
-        // First run on empty database
+        let temp_dir = TempDir::new().unwrap();
+        let db = std::sync::Arc::new(crate::database::Database::new_in_memory().await.unwrap());
+
+        let path_resolver = PathResolver::new_with_home(temp_dir.path().to_path_buf(), Vec::new());
+        let engine = ReconciliationEngine::new_with_resolver(db.clone(), path_resolver);
+
         let r1 = engine.reconcile(false, None).await.unwrap();
         assert!(r1.success);
 
-        // Second run should be a no-op (no changes)
-        let engine2 = ReconciliationEngine::new(db).unwrap();
+        let path_resolver2 = PathResolver::new_with_home(temp_dir.path().to_path_buf(), Vec::new());
+        let engine2 = ReconciliationEngine::new_with_resolver(db, path_resolver2);
         let r2 = engine2.reconcile(false, None).await.unwrap();
         assert!(r2.success);
         assert_eq!(r2.created, 0, "Second run should not create anything");
