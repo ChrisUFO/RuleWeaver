@@ -1,12 +1,11 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use crate::constants::skills::SKILL_SECRET_PREFIX;
 use crate::database::{Database, ScopedSecretRecord};
 use crate::error::{AppError, Result};
 use crate::models::{
     Command, DeleteScopedSecretInput, EffectiveSecret, ResolveScopedSecretsInput, ScopedSecret,
-    SecretScope, SecretStorageStatus, Skill, UpsertScopedSecretInput,
+    SecretScope, SecretStorageStatus, UpsertScopedSecretInput,
 };
 use crate::path_resolver::PathResolver;
 use crate::secure_storage::SecretStorage;
@@ -389,16 +388,6 @@ pub fn infer_command_workspace(command: &Command) -> Result<Option<String>> {
     }
 }
 
-pub fn infer_skill_workspace(skill: &Skill) -> Result<Option<String>> {
-    if let Some(base_path) = skill.base_path.as_deref() {
-        return normalize_workspace_path(base_path).map(Some);
-    }
-    match skill.target_paths.as_slice() {
-        [only] => normalize_workspace_path(only).map(Some),
-        _ => Ok(None),
-    }
-}
-
 pub async fn list_scoped_secrets(db: &Database) -> Result<Vec<ScopedSecret>> {
     ensure_secure_secret_storage(db).await?;
     Ok(db
@@ -482,41 +471,6 @@ pub async fn resolve_command_secret_envs(
         .into_iter()
         .map(|secret| (secret_env_var_name(&secret.key), secret.value))
         .collect())
-}
-
-pub async fn resolve_skill_secret_envs(
-    db: &Database,
-    skill: &Skill,
-    allowed_keys: &HashSet<String>,
-) -> Result<Vec<(String, String)>> {
-    if allowed_keys.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    let effective = resolve_scoped_secrets(
-        db,
-        ResolveScopedSecretsInput {
-            workspace_path: infer_skill_workspace(skill)?,
-            artifact_scope: Some(SecretScope::Skill),
-            artifact_id: Some(skill.id.clone()),
-        },
-    )
-    .await?;
-
-    let mut envs = Vec::new();
-    let mut seen = HashSet::new();
-    for secret in effective {
-        if !allowed_keys.is_empty() && !allowed_keys.contains(&secret.key.to_lowercase()) {
-            continue;
-        }
-        let env_name = secret_env_var_name(&secret.key);
-        if seen.insert(env_name.clone()) {
-            envs.push((env_name.clone(), secret.value.clone()));
-            envs.push((format!("{}{}", SKILL_SECRET_PREFIX, env_name), secret.value));
-        }
-    }
-
-    Ok(envs)
 }
 
 #[cfg(test)]
@@ -654,107 +608,6 @@ mod tests {
         assert!(envs
             .iter()
             .any(|(key, value)| key == "PROJECT_API_KEY" && value == "repo-a"));
-    }
-
-    #[tokio::test]
-    async fn skill_secret_envs_migrate_legacy_allowlisted_settings() {
-        let db = Database::new_in_memory().await.unwrap();
-        let skill = db
-            .create_skill(CreateSkillInput {
-                id: Some("skill-1".into()),
-                name: "Build Skill".into(),
-                description: "Skill".into(),
-                instructions: "Run steps".into(),
-                scope: Scope::Local,
-                input_schema: vec![],
-                directory_path: "./skills/build".into(),
-                entry_point: "run.cmd".into(),
-                enabled: true,
-                target_adapters: vec![],
-                target_paths: vec!["C:/repo-a".into()],
-                base_path: Some("C:/repo-a".into()),
-            })
-            .await
-            .unwrap();
-
-        upsert_scoped_secret(
-            &db,
-            UpsertScopedSecretInput {
-                key: "PROJECT_API_KEY".into(),
-                value: "repo-a".into(),
-                scope: SecretScope::Workspace,
-                workspace_path: Some("C:/repo-a".into()),
-                artifact_id: None,
-            },
-        )
-        .await
-        .unwrap();
-        db.set_setting("mcp_secrets_allowlist", "PROJECT_API_KEY,LEGACY_TOKEN")
-            .await
-            .unwrap();
-        db.set_setting("LEGACY_TOKEN", "legacy-value")
-            .await
-            .unwrap();
-
-        let allowed = HashSet::from(["project_api_key".to_string(), "legacy_token".to_string()]);
-        let envs = resolve_skill_secret_envs(&db, &skill, &allowed)
-            .await
-            .unwrap();
-
-        assert!(envs
-            .iter()
-            .any(|(key, value)| key == "PROJECT_API_KEY" && value == "repo-a"));
-        assert!(envs
-            .iter()
-            .any(|(key, value)| key == "SKILL_SECRET_PROJECT_API_KEY" && value == "repo-a"));
-        assert!(envs
-            .iter()
-            .any(|(key, value)| key == "LEGACY_TOKEN" && value == "legacy-value"));
-        assert_eq!(db.get_setting("LEGACY_TOKEN").await.unwrap(), None);
-    }
-
-    #[tokio::test]
-    async fn skill_secret_envs_require_explicit_allowlist() {
-        let db = Database::new_in_memory().await.unwrap();
-        let skill = db
-            .create_skill(CreateSkillInput {
-                id: Some("skill-1".into()),
-                name: "Build Skill".into(),
-                description: "Skill".into(),
-                instructions: "Run steps".into(),
-                scope: Scope::Local,
-                input_schema: vec![],
-                directory_path: "./skills/build".into(),
-                entry_point: "run.cmd".into(),
-                enabled: true,
-                target_adapters: vec![],
-                target_paths: vec!["C:/repo-a".into()],
-                base_path: Some("C:/repo-a".into()),
-            })
-            .await
-            .unwrap();
-
-        upsert_scoped_secret(
-            &db,
-            UpsertScopedSecretInput {
-                key: "PROJECT_API_KEY".into(),
-                value: "repo-a".into(),
-                scope: SecretScope::Workspace,
-                workspace_path: Some("C:/repo-a".into()),
-                artifact_id: None,
-            },
-        )
-        .await
-        .unwrap();
-        db.set_setting("LEGACY_TOKEN", "legacy-value")
-            .await
-            .unwrap();
-
-        let envs = resolve_skill_secret_envs(&db, &skill, &HashSet::new())
-            .await
-            .unwrap();
-
-        assert!(envs.is_empty());
     }
 
     #[tokio::test]

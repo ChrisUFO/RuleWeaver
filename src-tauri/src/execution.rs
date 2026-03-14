@@ -115,38 +115,6 @@ fn escape_cmd_argument(value: &str) -> String {
     escaped
 }
 
-pub fn contains_disallowed_pattern(script: &str) -> Option<String> {
-    let lower = script.to_lowercase();
-    let patterns: [(&str, &str, &str); 18] = [
-        ("rm -rf", "destructive", "rm -rf"),
-        ("del /f", "destructive", "del /f"),
-        ("format ", "destructive", "format"),
-        ("mkfs", "destructive", "mkfs"),
-        ("shutdown", "system control", "shutdown"),
-        ("reboot", "system control", "reboot"),
-        ("curl |", "network pipe", "curl pipe"),
-        ("wget |", "network pipe", "wget pipe"),
-        ("base64 -d", "encoding", "base64 decode"),
-        ("base64 --decode", "encoding", "base64 decode"),
-        ("| sh", "shell pipe", "pipe to shell"),
-        ("| bash", "shell pipe", "pipe to bash"),
-        ("| zsh", "shell pipe", "pipe to zsh"),
-        ("`", "substitution", "backticks"),
-        ("$(", "substitution", "command substitution"),
-        ("eval ", "dynamic execution", "eval"),
-        ("exec ", "dynamic execution", "exec"),
-        ("<<", "I/O", "heredoc"),
-    ];
-
-    for (needle, category, name) in patterns {
-        if lower.contains(needle) {
-            return Some(format!("matched {} pattern: {}", category, name));
-        }
-    }
-
-    None
-}
-
 pub async fn execute_shell_with_timeout_env(
     script: &str,
     timeout_dur: Duration,

@@ -3,33 +3,11 @@ use std::path::Path;
 use crate::database::{Database, ExecutionLogInput, ObservabilityEventInput};
 use crate::error::{AppError, Result};
 use crate::models::{
-    ObservabilityEventFilter, ObservabilityEventStatus, ObservabilityEventType,
-    ObservabilityExport, Skill,
+    ObservabilityEventFilter, ObservabilityEventStatus, ObservabilityEventType, ObservabilityExport,
 };
 use crate::redaction::redact;
 
 const MAX_EXCERPT_CHARS: usize = 2000;
-
-pub struct SkillExecutionRecordInput<'a> {
-    pub skill: &'a Skill,
-    pub source: &'a str,
-    pub arguments_json: &'a str,
-    pub output: &'a str,
-    pub duration_ms: u64,
-    pub exit_code: i32,
-    pub workspace_path: Option<&'a str>,
-    pub is_redacted: bool,
-}
-
-pub struct McpEventRecordInput<'a> {
-    pub event_type: ObservabilityEventType,
-    pub status: ObservabilityEventStatus,
-    pub source: &'a str,
-    pub entity_name: Option<&'a str>,
-    pub summary: &'a str,
-    pub metadata: Option<&'a str>,
-    pub duration_ms: Option<u64>,
-}
 
 pub fn build_excerpt(value: &str) -> Option<String> {
     let trimmed = value.trim();
@@ -112,77 +90,6 @@ pub async fn record_command_execution(
             || stdout_redacted
             || stderr_redacted
             || summary_redacted,
-    })
-    .await
-}
-
-pub async fn record_skill_execution(
-    db: &Database,
-    input: &SkillExecutionRecordInput<'_>,
-) -> Result<String> {
-    let metadata = serde_json::json!({
-        "arguments": input.arguments_json,
-        "triggeredBy": input.source,
-        "directoryPath": input.skill.directory_path,
-        "entryPoint": input.skill.entry_point,
-        "workspacePath": input.workspace_path,
-    })
-    .to_string();
-    let (metadata, metadata_redacted) = redact_optional(Some(&metadata));
-    let (stdout_excerpt, stdout_redacted) = redact_excerpt(input.output);
-    let summary = if input.exit_code == 0 {
-        "Skill execution succeeded"
-    } else {
-        "Skill execution failed"
-    };
-    let (summary, summary_redacted) = redact_text(summary);
-
-    db.add_observability_event(&ObservabilityEventInput {
-        event_type: ObservabilityEventType::SkillRun,
-        status: if input.exit_code == 0 {
-            ObservabilityEventStatus::Success
-        } else {
-            ObservabilityEventStatus::Error
-        },
-        source: input.source,
-        entity_kind: Some("skill"),
-        entity_id: Some(&input.skill.id),
-        entity_name: Some(&input.skill.name),
-        workspace_path: input.workspace_path,
-        summary: &summary,
-        metadata: metadata.as_deref(),
-        stdout_excerpt: stdout_excerpt.as_deref(),
-        stderr_excerpt: None,
-        duration_ms: Some(input.duration_ms),
-        exit_code: Some(input.exit_code),
-        failure_class: None,
-        attempt_number: Some(1),
-        is_redacted: input.is_redacted || metadata_redacted || stdout_redacted || summary_redacted,
-    })
-    .await
-}
-
-pub async fn record_mcp_event(db: &Database, input: &McpEventRecordInput<'_>) -> Result<String> {
-    let (summary, _) = redact_text(input.summary);
-    let (metadata, _) = redact_optional(input.metadata);
-
-    db.add_observability_event(&ObservabilityEventInput {
-        event_type: input.event_type.clone(),
-        status: input.status.clone(),
-        source: input.source,
-        entity_kind: Some("mcp"),
-        entity_id: None,
-        entity_name: input.entity_name,
-        workspace_path: None,
-        summary: &summary,
-        metadata: metadata.as_deref(),
-        stdout_excerpt: None,
-        stderr_excerpt: None,
-        duration_ms: input.duration_ms,
-        exit_code: None,
-        failure_class: None,
-        attempt_number: None,
-        is_redacted: true,
     })
     .await
 }

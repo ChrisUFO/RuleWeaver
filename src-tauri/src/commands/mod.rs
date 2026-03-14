@@ -1,7 +1,6 @@
 pub mod adapters;
 pub mod command_commands;
 pub mod import_commands;
-pub mod mcp_commands;
 pub mod migration_commands;
 pub mod observability_commands;
 pub mod reconciliation_commands;
@@ -16,7 +15,6 @@ use adapters::{
 };
 pub use command_commands::*;
 pub use import_commands::*;
-pub use mcp_commands::*;
 pub use migration_commands::*;
 pub use observability_commands::*;
 pub use reconciliation_commands::*;

@@ -81,7 +81,10 @@ pub fn scan_rule_file_import(
     let validated_path = validate_path(&path)?;
     let opts = options.unwrap_or_default();
     let max_size = rule_import::resolve_max_size(&opts);
-    Ok(rule_import::scan_file_to_candidates(&validated_path, max_size))
+    Ok(rule_import::scan_file_to_candidates(
+        &validated_path,
+        max_size,
+    ))
 }
 
 #[tauri::command]
