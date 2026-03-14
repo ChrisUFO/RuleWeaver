@@ -14,7 +14,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select } from "@/components/ui/select";
 import { SlashCommandsSection } from "./SlashCommandsSection";
@@ -293,20 +292,6 @@ export function CommandEditor({
               })}
             </div>
           )}
-        </div>
-
-        <div className="flex items-center justify-between rounded-xl border border-white/5 bg-white/5 p-4 transition-colors hover:bg-white/10">
-          <div>
-            <div className="font-semibold text-sm">Expose via MCP</div>
-            <div className="text-[10px] uppercase tracking-wider text-muted-foreground/60">
-              Enable this command in tools/list responses.
-            </div>
-          </div>
-          <Switch
-            checked={form.exposeViaMcp}
-            onCheckedChange={(checked) => onUpdateForm({ exposeViaMcp: checked })}
-            aria-label="Expose command via MCP"
-          />
         </div>
 
         <SlashCommandsSection

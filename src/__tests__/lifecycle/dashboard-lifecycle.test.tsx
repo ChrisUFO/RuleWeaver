@@ -87,7 +87,6 @@ describe("Dashboard lifecycle", () => {
         description: "",
         script: "echo test",
         arguments: [],
-        exposeViaMcp: true,
         isPlaceholder: false,
         createdAt: Date.now(),
         updatedAt: Date.now(),

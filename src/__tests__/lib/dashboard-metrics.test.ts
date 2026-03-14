@@ -40,7 +40,6 @@ describe("dashboard metrics", () => {
           description: "",
           script: "echo 1",
           arguments: [],
-          exposeViaMcp: true,
           isPlaceholder: false,
           createdAt: now,
           updatedAt: now,

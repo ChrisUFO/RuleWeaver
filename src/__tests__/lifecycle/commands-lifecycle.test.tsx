@@ -54,7 +54,6 @@ const mockCommand: CommandModel = {
   description: "Deploys the application",
   script: "npm run deploy",
   arguments: [],
-  exposeViaMcp: true,
   isPlaceholder: false,
   createdAt: Date.now(),
   updatedAt: Date.now(),

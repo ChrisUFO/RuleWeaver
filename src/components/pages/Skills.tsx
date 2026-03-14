@@ -28,8 +28,6 @@ import { useRepositoryRoots } from "@/hooks/useRepositoryRoots";
 import { ImportDialog } from "@/components/import/ImportDialog";
 import { useKeyboardShortcuts, SHORTCUTS } from "@/hooks/useKeyboardShortcuts";
 import type { ArtifactStatusEntry } from "@/types/status";
-import { useMcpWatcher } from "@/hooks/useMcpWatcher";
-import { WatchingIndicator } from "@/components/ui/WatchingIndicator";
 
 interface SkillsProps {
   initialSelectedId?: string | null;
@@ -62,7 +60,6 @@ export function Skills({ initialSelectedId, onClearInitialId }: SkillsProps) {
     setSkills(data);
   }, []);
 
-  const { mcpStatus, mcpJustRefreshed } = useMcpWatcher(loadSkills);
   const { addToast } = useToast();
 
   const selected = useMemo(
@@ -363,15 +360,6 @@ export function Skills({ initialSelectedId, onClearInitialId }: SkillsProps) {
                   >
                     <Copy className="h-3.5 w-3.5" />
                   </Button>
-                  {skill.enabled &&
-                    mcpStatus?.running &&
-                    mcpStatus.isWatching &&
-                    skill.directoryPath && (
-                      <WatchingIndicator
-                        path={skill.directoryPath}
-                        justRefreshed={mcpJustRefreshed}
-                      />
-                    )}
                   {!skill.enabled && (
                     <Badge
                       variant="secondary"

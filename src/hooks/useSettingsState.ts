@@ -8,7 +8,7 @@ import type { useToast } from "@/components/ui/toast";
 import { useRepositoryRoots } from "@/hooks/useRepositoryRoots";
 import { featureManager, FEATURE_FLAGS } from "@/lib/featureManager";
 import type { AdapterType, Rule } from "@/types/rule";
-import type { CommandModel, McpStatus, McpConnectionInstructions } from "@/types/command";
+import type { CommandModel } from "@/types/command";
 import type { Skill } from "@/types/skill";
 import type { ScopedSecret, SecretStorageStatus } from "@/types/secret";
 
@@ -54,13 +54,8 @@ export interface UseSettingsStateReturn {
   migrationProgress: MigrationProgress | null;
   isRollingBack: boolean;
   isVerifyingMigration: boolean;
-  mcpStatus: McpStatus | null;
-  mcpInstructions: McpConnectionInstructions | null;
-  isMcpLoading: boolean;
-  mcpAutoStart: boolean;
   minimizeToTray: boolean;
   launchOnStartup: boolean;
-  mcpLogs: string[];
   isExporting: boolean;
   isImporting: boolean;
   importPreview: ImportPreview | null;
@@ -85,10 +80,6 @@ export interface UseSettingsStateReturn {
     migrateToFileStorage: () => Promise<void>;
     rollbackMigration: () => Promise<void>;
     verifyMigration: () => Promise<void>;
-    startMcp: () => Promise<void>;
-    stopMcp: () => Promise<void>;
-    refreshMcpStatus: () => Promise<void>;
-    toggleMcpAutoStart: (enabled: boolean) => Promise<void>;
     toggleMinimizeToTray: (enabled: boolean) => Promise<void>;
     toggleLaunchOnStartup: (enabled: boolean) => Promise<void>;
     handleExport: () => Promise<void>;
@@ -130,12 +121,7 @@ export function useSettingsState(
   const [migrationProgress, setMigrationProgress] = useState<MigrationProgress | null>(null);
   const [isRollingBack, setIsRollingBack] = useState(false);
   const [isVerifyingMigration, setIsVerifyingMigration] = useState(false);
-  const [mcpStatus, setMcpStatus] = useState<McpStatus | null>(null);
-  const [mcpInstructions, setMcpInstructions] = useState<McpConnectionInstructions | null>(null);
-  const [isMcpLoading, setIsMcpLoading] = useState(false);
-  const [mcpAutoStart, setMcpAutoStart] = useState(false);
   const [minimizeToTray, setMinimizeToTray] = useState(true);
-  const [mcpLogs, setMcpLogs] = useState<string[]>([]);
   const [repoPathsDirty, setRepoPathsDirty] = useState(false);
   const [isSavingRepos, setIsSavingRepos] = useState(false);
   const [scopedSecrets, setScopedSecrets] = useState<ScopedSecret[]>([]);
@@ -143,20 +129,6 @@ export function useSettingsState(
   const [selectedSecretWorkspace, setSelectedSecretWorkspace] = useState<string | null>(null);
   const [isSecretsLoading, setIsSecretsLoading] = useState(true);
   const [isSavingSecrets, setIsSavingSecrets] = useState(false);
-
-  const loadMcpSnapshot = useCallback(async () => {
-    const [status, instructions, logs] = await Promise.all([
-      api.mcp.getStatus(),
-      api.mcp.getInstructions(),
-      api.mcp.getLogs(20),
-    ]);
-
-    setMcpStatus(status);
-    setMcpInstructions(instructions);
-    setMcpLogs(logs);
-
-    return { status, instructions, logs };
-  }, []);
 
   const {
     roots: repositoryRoots,
@@ -186,9 +158,7 @@ export function useSettingsState(
           info,
           savedBackupPath,
           progress,
-          mcpAutoStartSetting,
           minimizeToTraySetting,
-          mcpSnapshot,
           autoStartEnabled,
           tools,
           scopedSecretsRes,
@@ -201,9 +171,7 @@ export function useSettingsState(
           api.storage.getInfo(),
           api.settings.get("file_storage_backup_path"),
           api.storage.getMigrationProgress(),
-          api.settings.get("mcp_auto_start"),
           api.settings.get("minimize_to_tray"),
-          loadMcpSnapshot(),
           isEnabled(),
           api.registry.getTools(),
           api.settings.listScopedSecrets(),
@@ -225,11 +193,7 @@ export function useSettingsState(
         setStorageInfo(info);
         setBackupPath(savedBackupPath ?? "");
         setMigrationProgress(progress);
-        setMcpStatus(mcpSnapshot.status);
-        setMcpInstructions(mcpSnapshot.instructions);
-        setMcpAutoStart(mcpAutoStartSetting === "true");
         setMinimizeToTray(minimizeToTraySetting !== "false");
-        setMcpLogs(mcpSnapshot.logs);
         setLaunchOnStartup(autoStartEnabled);
         setScopedSecrets(scopedSecretsRes);
         setSecretStorageStatus(secretStorageStatusRes);
@@ -267,7 +231,7 @@ export function useSettingsState(
       }
     };
     loadData();
-  }, [refreshRepositoryRoots, addToast, loadMcpSnapshot, onNavigate]);
+  }, [refreshRepositoryRoots, addToast, onNavigate]);
 
   useEffect(() => {
     if (selectedSecretWorkspace && !repositoryRoots.includes(selectedSecretWorkspace)) {
@@ -567,70 +531,6 @@ export function useSettingsState(
     }
   }, [addToast]);
 
-  const refreshMcpStatus = useCallback(async () => {
-    try {
-      await loadMcpSnapshot();
-    } catch (error) {
-      toast.error(addToast, { title: "MCP Status Error", error });
-    }
-  }, [addToast, loadMcpSnapshot]);
-
-  const startMcp = useCallback(async () => {
-    setIsMcpLoading(true);
-    try {
-      await api.mcp.start();
-      const { status } = await loadMcpSnapshot();
-      toast.success(addToast, {
-        title: "MCP Started",
-        description: status.statusMessage,
-      });
-    } catch (error) {
-      toast.error(addToast, {
-        title: "MCP Start Failed",
-        error,
-        action:
-          featureManager.isEnabled(FEATURE_FLAGS.ENHANCED_ERROR_UX) && onNavigate
-            ? { label: "View Logs", onClick: () => onNavigate("settings") }
-            : undefined,
-      });
-    } finally {
-      setIsMcpLoading(false);
-    }
-  }, [addToast, loadMcpSnapshot, onNavigate]);
-
-  const stopMcp = useCallback(async () => {
-    setIsMcpLoading(true);
-    try {
-      await api.mcp.stop();
-      await refreshMcpStatus();
-      toast.success(addToast, {
-        title: "MCP Stopped",
-        description: "Server has been stopped",
-      });
-    } catch (error) {
-      toast.error(addToast, { title: "MCP Stop Failed", error });
-    } finally {
-      setIsMcpLoading(false);
-    }
-  }, [refreshMcpStatus, addToast]);
-
-  const toggleMcpAutoStart = useCallback(
-    async (enabled: boolean) => {
-      setMcpAutoStart(enabled);
-      try {
-        await api.settings.set("mcp_auto_start", enabled ? "true" : "false");
-        toast.success(addToast, {
-          title: "MCP Setting Saved",
-          description: enabled ? "MCP will auto-start on app launch" : "MCP auto-start disabled",
-        });
-      } catch (error) {
-        setMcpAutoStart(!enabled);
-        toast.error(addToast, { title: "Setting Failed", error });
-      }
-    },
-    [addToast]
-  );
-
   const toggleMinimizeToTray = useCallback(
     async (enabled: boolean) => {
       setMinimizeToTray(enabled);
@@ -807,13 +707,8 @@ export function useSettingsState(
     migrationProgress,
     isRollingBack,
     isVerifyingMigration,
-    mcpStatus,
-    mcpInstructions,
-    isMcpLoading,
-    mcpAutoStart,
     minimizeToTray,
     launchOnStartup,
-    mcpLogs,
     isExporting,
     isImporting,
     importPreview,
@@ -838,10 +733,6 @@ export function useSettingsState(
       migrateToFileStorage,
       rollbackMigration,
       verifyMigration,
-      startMcp,
-      stopMcp,
-      refreshMcpStatus,
-      toggleMcpAutoStart,
       toggleMinimizeToTray,
       toggleLaunchOnStartup,
       handleExport,
