@@ -1,13 +1,16 @@
 use std::collections::HashMap;
 use std::fs;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::State;
 
 use crate::database::{get_app_data_path, Database};
 use crate::error::Result;
+use crate::models::registry::REGISTRY;
 use crate::models::{
-    DeleteScopedSecretInput, EffectiveSecret, ExecutionLog, ResolveScopedSecretsInput,
-    ScopedSecret, SecretStorageStatus, SyncHistoryEntry, UpsertScopedSecretInput,
+    AdapterType, DeleteScopedSecretInput, EffectiveSecret, ExecutionLog, InstalledToolInfo,
+    ResolveScopedSecretsInput, ScopedSecret, SecretStorageStatus, SyncHistoryEntry,
+    UpsertScopedSecretInput,
 };
 use crate::secrets;
 
@@ -149,4 +152,45 @@ pub fn open_in_explorer(path: String) -> Result<()> {
     }
 
     Ok(())
+}
+
+#[tauri::command]
+pub fn detect_installed_tools() -> Result<Vec<InstalledToolInfo>> {
+    let home = dirs::home_dir().ok_or_else(|| {
+        crate::error::AppError::Path("Could not determine home directory".to_string())
+    })?;
+
+    let tools = REGISTRY.all();
+    let mut results = Vec::new();
+
+    for tool in tools {
+        let config_path = get_tool_config_path(&tool.id, &home);
+        let is_installed = config_path.as_ref().map(|p| p.exists()).unwrap_or(false);
+
+        results.push(InstalledToolInfo {
+            adapter: tool.id,
+            name: tool.name.to_string(),
+            is_installed,
+            config_path: config_path.map(|p| p.to_string_lossy().to_string()),
+        });
+    }
+
+    Ok(results)
+}
+
+fn get_tool_config_path(adapter: &AdapterType, home: &PathBuf) -> Option<PathBuf> {
+    let path = match adapter {
+        AdapterType::ClaudeCode => home.join(".claude"),
+        AdapterType::Cursor => home.join(".cursor"),
+        AdapterType::OpenCode => home.join(".config").join("opencode"),
+        AdapterType::Cline => home.join("Documents").join("Cline"),
+        AdapterType::Gemini => home.join(".gemini"),
+        AdapterType::Codex => home.join(".codex"),
+        AdapterType::Kilo => home.join(".kilocode"),
+        AdapterType::RooCode => home.join(".roo"),
+        AdapterType::Augment => home.join(".augment"),
+        AdapterType::Antigravity => home.join(".gemini").join("antigravity"),
+        AdapterType::Copilot => home.join(".copilot"),
+    };
+    Some(path)
 }

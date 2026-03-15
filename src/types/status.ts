@@ -10,6 +10,13 @@ export type ArtifactSyncStatus =
   | "unsupported"
   | "error";
 
+export interface InstalledToolInfo {
+  adapter: AdapterType;
+  name: string;
+  isInstalled: boolean;
+  configPath: string | null;
+}
+
 export interface ArtifactStatusEntry {
   id: string;
   artifactId: string;

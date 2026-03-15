@@ -469,6 +469,7 @@ pub fn run() {
             status::commands::repair_artifact,
             status::commands::repair_all_artifacts,
             status::commands::refresh_artifact_status,
+            commands::detect_installed_tools,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

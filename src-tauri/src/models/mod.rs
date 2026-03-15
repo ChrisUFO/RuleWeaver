@@ -8,6 +8,7 @@ pub mod registry;
 mod rule;
 mod secret;
 mod skill;
+mod sync_manifest;
 pub mod timestamp;
 
 pub use command::*;
@@ -16,6 +17,8 @@ pub use import::*;
 pub use observability::*;
 pub use parse_error::ParseEnumError;
 pub use reconciliation::*;
+pub use registry::*;
 pub use rule::*;
 pub use secret::*;
 pub use skill::*;
+pub use sync_manifest::*;

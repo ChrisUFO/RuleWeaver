@@ -24,6 +24,7 @@ import type {
 import type { CreateSkillInput, Skill, UpdateSkillInput, TemplateSkill } from "@/types/skill";
 import type {
   ArtifactStatusEntry,
+  InstalledToolInfo,
   RepairResult,
   StatusFilter,
   StatusSummary,
@@ -264,6 +265,7 @@ export const api = {
 
   registry: {
     getTools: () => invoke<ToolEntry[]>("get_tool_registry"),
+    detectInstalledTools: () => invoke<InstalledToolInfo[]>("detect_installed_tools"),
   },
 
   status: {

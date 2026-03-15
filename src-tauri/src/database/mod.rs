@@ -10,10 +10,11 @@ use crate::error::{AppError, Result};
 use crate::file_storage::StorageLocation;
 use crate::models::{
     AdapterType, Command, CommandArgument, CreateCommandInput, CreateRuleInput, CreateSkillInput,
-    DeleteScopedSecretInput, ExecutionLog, ObservabilityEvent, ObservabilityEventFilter,
-    ObservabilityEventStatus, ObservabilityEventType, ReconcileOperation, ReconcileResultType,
-    Rule, Scope, ScopedSecret, SecretScope, Skill, SyncHistoryEntry, UpdateCommandInput,
-    UpdateRuleInput, UpdateSkillInput, UpsertScopedSecretInput,
+    CreateSyncManifestInput, DeleteScopedSecretInput, ExecutionLog, ObservabilityEvent,
+    ObservabilityEventFilter, ObservabilityEventStatus, ObservabilityEventType, ReconcileOperation,
+    ReconcileResultType, Rule, Scope, ScopedSecret, SecretScope, Skill, SyncHistoryEntry,
+    SyncManifestEntry, SyncManifestFilter, UpdateCommandInput, UpdateRuleInput, UpdateSkillInput,
+    UpsertScopedSecretInput,
 };
 
 fn parse_timestamp_or_now(timestamp: i64) -> DateTime<Utc> {
@@ -1860,6 +1861,182 @@ impl Database {
         conn.execute("DELETE FROM reconciliation_logs", [])?;
         Ok(())
     }
+
+    pub async fn upsert_sync_manifest(
+        &self,
+        input: CreateSyncManifestInput,
+    ) -> Result<SyncManifestEntry> {
+        let conn = self.0.lock().await;
+        let id = input
+            .id
+            .clone()
+            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+        let now = chrono::Utc::now().timestamp();
+
+        conn.execute(
+            "INSERT INTO sync_manifest (id, path, artifact_id, artifact_type, adapter, scope, written_at, content_hash)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+             ON CONFLICT(path) DO UPDATE SET
+                 artifact_id = excluded.artifact_id,
+                 artifact_type = excluded.artifact_type,
+                 adapter = excluded.adapter,
+                 scope = excluded.scope,
+                 written_at = excluded.written_at,
+                 content_hash = excluded.content_hash",
+            rusqlite::params![
+                id,
+                input.path,
+                input.artifact_id,
+                input.artifact_type.as_str(),
+                input.adapter.as_str(),
+                input.scope.as_str(),
+                now,
+                input.content_hash
+            ],
+        )?;
+
+        Ok(SyncManifestEntry {
+            id,
+            path: input.path,
+            artifact_id: input.artifact_id,
+            artifact_type: input.artifact_type,
+            adapter: input.adapter,
+            scope: input.scope,
+            written_at: chrono::Utc::now(),
+            content_hash: input.content_hash,
+        })
+    }
+
+    pub async fn get_sync_manifest_by_path(&self, path: &str) -> Result<Option<SyncManifestEntry>> {
+        let conn = self.0.lock().await;
+        let mut stmt = conn.prepare(
+            "SELECT id, path, artifact_id, artifact_type, adapter, scope, written_at, content_hash
+             FROM sync_manifest WHERE path = ?1",
+        )?;
+
+        let result = stmt
+            .query_row(rusqlite::params![path], |row| {
+                Ok(SyncManifestEntry {
+                    id: row.get("id")?,
+                    path: row.get("path")?,
+                    artifact_id: row.get("artifact_id")?,
+                    artifact_type: row
+                        .get::<_, String>("artifact_type")?
+                        .parse()
+                        .unwrap_or(crate::models::registry::ArtifactType::Rule),
+                    adapter: row
+                        .get::<_, String>("adapter")?
+                        .parse()
+                        .unwrap_or(crate::models::AdapterType::Gemini),
+                    scope: row
+                        .get::<_, String>("scope")?
+                        .parse()
+                        .unwrap_or(crate::models::Scope::Global),
+                    written_at: parse_timestamp_or_now(row.get("written_at")?),
+                    content_hash: row.get("content_hash")?,
+                })
+            })
+            .optional()?;
+
+        Ok(result)
+    }
+
+    pub async fn list_sync_manifest(
+        &self,
+        filter: SyncManifestFilter,
+    ) -> Result<Vec<SyncManifestEntry>> {
+        let conn = self.0.lock().await;
+
+        let mut sql = "SELECT id, path, artifact_id, artifact_type, adapter, scope, written_at, content_hash FROM sync_manifest WHERE 1=1".to_string();
+        let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+
+        if let Some(adapter) = &filter.adapter {
+            sql.push_str(" AND adapter = ?");
+            params_vec.push(Box::new(adapter.as_str().to_string()));
+        }
+        if let Some(artifact_type) = &filter.artifact_type {
+            sql.push_str(" AND artifact_type = ?");
+            params_vec.push(Box::new(artifact_type.as_str().to_string()));
+        }
+        if let Some(artifact_id) = &filter.artifact_id {
+            sql.push_str(" AND artifact_id = ?");
+            params_vec.push(Box::new(artifact_id.clone()));
+        }
+        if let Some(scope) = &filter.scope {
+            sql.push_str(" AND scope = ?");
+            params_vec.push(Box::new(scope.as_str().to_string()));
+        }
+
+        let params: Vec<&dyn rusqlite::ToSql> = params_vec.iter().map(|p| p.as_ref()).collect();
+
+        let mut stmt = conn.prepare(&sql)?;
+        let entries = stmt
+            .query_map(params.as_slice(), |row| {
+                Ok(SyncManifestEntry {
+                    id: row.get("id")?,
+                    path: row.get("path")?,
+                    artifact_id: row.get("artifact_id")?,
+                    artifact_type: row
+                        .get::<_, String>("artifact_type")?
+                        .parse()
+                        .unwrap_or(crate::models::registry::ArtifactType::Rule),
+                    adapter: row
+                        .get::<_, String>("adapter")?
+                        .parse()
+                        .unwrap_or(crate::models::AdapterType::Gemini),
+                    scope: row
+                        .get::<_, String>("scope")?
+                        .parse()
+                        .unwrap_or(crate::models::Scope::Global),
+                    written_at: parse_timestamp_or_now(row.get("written_at")?),
+                    content_hash: row.get("content_hash")?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+
+        Ok(entries)
+    }
+
+    pub async fn delete_sync_manifest_by_path(&self, path: &str) -> Result<()> {
+        let conn = self.0.lock().await;
+        conn.execute(
+            "DELETE FROM sync_manifest WHERE path = ?1",
+            rusqlite::params![path],
+        )?;
+        Ok(())
+    }
+
+    pub async fn delete_sync_manifest_by_filter(
+        &self,
+        filter: SyncManifestFilter,
+    ) -> Result<usize> {
+        let conn = self.0.lock().await;
+
+        let mut sql = "DELETE FROM sync_manifest WHERE 1=1".to_string();
+        let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+
+        if let Some(adapter) = &filter.adapter {
+            sql.push_str(" AND adapter = ?");
+            params_vec.push(Box::new(adapter.as_str().to_string()));
+        }
+        if let Some(artifact_type) = &filter.artifact_type {
+            sql.push_str(" AND artifact_type = ?");
+            params_vec.push(Box::new(artifact_type.as_str().to_string()));
+        }
+        if let Some(artifact_id) = &filter.artifact_id {
+            sql.push_str(" AND artifact_id = ?");
+            params_vec.push(Box::new(artifact_id.clone()));
+        }
+        if let Some(scope) = &filter.scope {
+            sql.push_str(" AND scope = ?");
+            params_vec.push(Box::new(scope.as_str().to_string()));
+        }
+
+        let params: Vec<&dyn rusqlite::ToSql> = params_vec.iter().map(|p| p.as_ref()).collect();
+        let count = conn.execute(&sql, params.as_slice())?;
+
+        Ok(count)
+    }
 }
 
 fn run_migrations(conn: &mut Connection) -> Result<()> {
@@ -2273,7 +2450,35 @@ fn run_migrations(conn: &mut Connection) -> Result<()> {
         }
     }
 
-    transaction.execute("PRAGMA user_version = 21", [])?;
+    if current_version < 22 {
+        transaction.execute(
+            "CREATE TABLE IF NOT EXISTS sync_manifest (
+                id TEXT PRIMARY KEY NOT NULL,
+                path TEXT NOT NULL UNIQUE,
+                artifact_id TEXT NOT NULL,
+                artifact_type TEXT NOT NULL,
+                adapter TEXT NOT NULL,
+                scope TEXT NOT NULL,
+                written_at INTEGER NOT NULL,
+                content_hash TEXT NOT NULL
+            )",
+            [],
+        )?;
+        transaction.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sync_manifest_path ON sync_manifest(path)",
+            [],
+        )?;
+        transaction.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sync_manifest_artifact_id ON sync_manifest(artifact_id)",
+            [],
+        )?;
+        transaction.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sync_manifest_adapter ON sync_manifest(adapter)",
+            [],
+        )?;
+    }
+
+    transaction.execute("PRAGMA user_version = 22", [])?;
     transaction.commit()?;
 
     Ok(())

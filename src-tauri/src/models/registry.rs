@@ -2,6 +2,9 @@ use crate::models::rule::{AdapterType, Scope};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::str::FromStr;
+
+use super::parse_error::ParseEnumError;
 
 /// Global tool registry singleton.
 ///
@@ -36,6 +39,20 @@ impl ArtifactType {
             ArtifactType::CommandStub => "command_stub",
             ArtifactType::SlashCommand => "slash_command",
             ArtifactType::Skill => "skill",
+        }
+    }
+}
+
+impl FromStr for ArtifactType {
+    type Err = ParseEnumError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "rule" => Ok(ArtifactType::Rule),
+            "command_stub" => Ok(ArtifactType::CommandStub),
+            "slash_command" => Ok(ArtifactType::SlashCommand),
+            "skill" => Ok(ArtifactType::Skill),
+            _ => Err(ParseEnumError),
         }
     }
 }
