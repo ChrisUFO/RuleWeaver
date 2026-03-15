@@ -2,7 +2,7 @@
 
 This document is the source of truth for capability divergence between AI tool adapters supported by RuleWeaver. It is updated per release and reflects the registry definitions in `src-tauri/src/models/registry.rs`.
 
-Last updated: 2026-03-11 (release: feat/17-secrets-observability-foundations)
+Last updated: 2026-03-15 (release: feature/saddle-features-milestone-20)
 
 ---
 
@@ -14,12 +14,12 @@ Last updated: 2026-03-11 (release: feat/17-secrets-observability-foundations)
 | Claude Code |  ✅   |      ✅       |       ✅       |   ✅   |      ✅      |     ✅      |
 | Cline       |  ✅   |      ✅       |       ✅       |   ✅   |      ✅      |     ✅      |
 | Codex       |  ✅   |      ✅       |       ✅       |   ✅   |      ✅      |     ✅      |
+| Copilot     |  ✅   |      ❌       |       ❌       |   ❌   |      ✅      |     ❌      |
 | Cursor      |  ✅   |      ❌       |       ✅       |   ❌   |      ✅      |     ✅      |
 | Gemini      |  ✅   |      ✅       |       ✅       |   ✅   |      ✅      |     ✅      |
 | Kilo Code   |  ✅   |      ✅       |       ✅       |  ✅\*  |      ✅      |     ✅      |
 | OpenCode    |  ✅   |      ✅       |       ✅       |   ✅   |      ✅      |     ✅      |
 | Roo Code    |  ✅   |      ✅       |       ✅       |   ✅   |      ✅      |     ✅      |
-| Windsurf    |  ✅   |      ✅       |      ✅\*      |   ✅   |      ✅      |     ✅      |
 
 ---
 
@@ -51,18 +51,16 @@ Kilo Code has `supports_skills: true` in its capability flags, but both `global_
 
 **Action required when Kilo Code publishes their skills directory spec:** update `PathTemplates` in `registry.rs` to set `global_skills_dir` and `local_skills_dir`.
 
-### Windsurf — Slash Commands Capability Flag Set but Paths Not Configured
+### Copilot — Global Rules Only, No Commands or Skills
 
-**Capability flags:** `supports_slash_commands: true`
-**Path config:** `slash_command_extension: None`, `global_commands_dir: None`, `local_commands_dir: None`
+**Capability flags:** `supports_command_stubs: false`, `supports_slash_commands: false`, `supports_skills: false`, `supports_local_scope: false`
 
-Windsurf has `supports_slash_commands: true` but no slash command extension, global commands directory, or local commands directory is configured. This means:
+GitHub Copilot has limited support for custom instructions:
 
-- No slash command files (e.g., `command.md`) are written to any Windsurf directory.
-- The slash command generation UI will not offer Windsurf as a target adapter.
-- Skills are supported and written to `~/.windsurf/skills/` (global) and `.windsurf/skills/` (local).
-
-**Action required when Windsurf publishes their slash command spec:** update `PathTemplates` to set `slash_command_extension`, `global_commands_dir`, and `local_commands_dir`.
+- Rules are written to `~/.copilot/instructions.md` (global only)
+- No slash commands or command stubs are supported
+- No skills directory exists
+- Local scope is not supported (no `.copilot/` directory configuration)
 
 ---
 
@@ -114,7 +112,7 @@ Use `SUPPORT_MATRIX.md` for the exhaustive per-adapter × per-capability matrix.
 | `SYNC_STATUS_CONFIG parity`               | Every `ArtifactSyncStatus` union member has a `SYNC_STATUS_CONFIG` entry with a non-empty label; no undeclared keys exist. |
 | `ARTIFACT_TYPE_LABELS parity`             | Every `ArtifactType` union member has a label; no undeclared keys exist.                                                   |
 | `REPAIR_ACTION_LABELS parity`             | Exact string assertions for every repair button / toast title constant in `src/types/status.ts`.                           |
-| `Skills adapter capability filter parity` | Fixture of all 10 known adapters, asserting cursor is excluded and all 9 skills-capable adapters are present.              |
+| `Skills adapter capability filter parity` | Fixture of all 11 known adapters, asserting cursor and copilot are excluded and all 9 skills-capable adapters are present. |
 
 ### When a check fails
 
