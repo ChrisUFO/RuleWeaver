@@ -46,9 +46,9 @@ pub enum AdapterType {
     Codex,
     Kilo,
     Cursor,
-    Windsurf,
     RooCode,
     Augment,
+    Copilot,
 }
 
 impl AdapterType {
@@ -62,9 +62,9 @@ impl AdapterType {
             AdapterType::Codex => "codex",
             AdapterType::Kilo => "kilo",
             AdapterType::Cursor => "cursor",
-            AdapterType::Windsurf => "windsurf",
             AdapterType::RooCode => "roocode",
             AdapterType::Augment => "augment",
+            AdapterType::Copilot => "copilot",
         }
     }
 
@@ -79,9 +79,9 @@ impl AdapterType {
             AdapterType::Codex,
             AdapterType::Kilo,
             AdapterType::Cursor,
-            AdapterType::Windsurf,
             AdapterType::RooCode,
             AdapterType::Augment,
+            AdapterType::Copilot,
         ]
     }
 }
@@ -99,9 +99,9 @@ impl FromStr for AdapterType {
             "codex" => Ok(AdapterType::Codex),
             "kilo" => Ok(AdapterType::Kilo),
             "cursor" => Ok(AdapterType::Cursor),
-            "windsurf" => Ok(AdapterType::Windsurf),
             "roocode" => Ok(AdapterType::RooCode),
             "augment" => Ok(AdapterType::Augment),
+            "copilot" => Ok(AdapterType::Copilot),
             _ => Err(ParseEnumError),
         }
     }
@@ -352,9 +352,9 @@ mod tests {
         assert!(all.contains(&AdapterType::Codex));
         assert!(all.contains(&AdapterType::Kilo));
         assert!(all.contains(&AdapterType::Cursor));
-        assert!(all.contains(&AdapterType::Windsurf));
         assert!(all.contains(&AdapterType::RooCode));
         assert!(all.contains(&AdapterType::Augment));
+        assert!(all.contains(&AdapterType::Copilot));
     }
 
     #[test]

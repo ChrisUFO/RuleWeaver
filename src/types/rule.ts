@@ -11,9 +11,9 @@ export type AdapterType =
   | "codex"
   | "kilo"
   | "cursor"
-  | "windsurf"
   | "roocode"
-  | "augment";
+  | "augment"
+  | "copilot";
 
 export interface Rule {
   id: string;

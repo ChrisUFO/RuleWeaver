@@ -1623,19 +1623,19 @@ mod tests {
             .to_string_lossy()
             .ends_with("my-rule.md"));
 
-        let windsurf_local = resolver
+        let copilot_local = resolver
             .rule_file_path(
-                AdapterType::Windsurf,
+                AdapterType::Copilot,
                 "My Rule",
                 Some("r1"),
                 Scope::Local,
                 Some(&repo_root),
             )
             .unwrap();
-        assert!(windsurf_local
+        assert!(copilot_local
             .path
             .to_string_lossy()
-            .ends_with(".windsurfrules"));
+            .ends_with("copilot-instructions.md"));
     }
 
     #[test]

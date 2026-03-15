@@ -1181,9 +1181,9 @@ fn adapter_label(adapter: AdapterType) -> &'static str {
         AdapterType::Codex => "Codex",
         AdapterType::Kilo => "Kilo",
         AdapterType::Cursor => "Cursor",
-        AdapterType::Windsurf => "Windsurf",
         AdapterType::RooCode => "Roo Code",
         AdapterType::Augment => "Augment Code / Auggie",
+        AdapterType::Copilot => "GitHub Copilot",
     }
 }
 
@@ -1884,9 +1884,7 @@ enabledAdapters:
         assert!(!global
             .iter()
             .any(|p| p.contains(".antigravity") && p.contains("GEMINI.md")));
-        assert!(global
-            .iter()
-            .any(|p| p.contains(".windsurf") && p.contains("rules")));
+        assert!(global.iter().any(|p| p.contains(".copilot")));
         assert!(global
             .iter()
             .any(|p| p.contains(".roo") && p.contains("rules")));

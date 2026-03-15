@@ -369,19 +369,19 @@ async fn test_rule_file_model_matrix_per_rule_global_and_local() {
 }
 
 #[tokio::test]
-async fn test_rule_file_model_matrix_windsurf_mixed_scope_behavior() {
+async fn test_rule_file_model_copilot_single_file_behavior() {
     let (db, home_dir) = make_env().await;
     let repo_root = TempDir::new().unwrap();
     let repo_path = repo_root.path().to_string_lossy().to_string();
 
     db.create_rule(CreateRuleInput {
         id: None,
-        name: "Windsurf Global".into(),
-        description: "global should be per-rule".into(),
-        content: "Windsurf global content".into(),
+        name: "Copilot Global".into(),
+        description: "global single-file".into(),
+        content: "Copilot global content".into(),
         scope: Scope::Global,
         target_paths: None,
-        enabled_adapters: vec![AdapterType::Windsurf],
+        enabled_adapters: vec![AdapterType::Copilot],
         enabled: true,
     })
     .await
@@ -389,12 +389,12 @@ async fn test_rule_file_model_matrix_windsurf_mixed_scope_behavior() {
 
     db.create_rule(CreateRuleInput {
         id: None,
-        name: "Windsurf Local".into(),
-        description: "local should be single-file".into(),
-        content: "Windsurf local content".into(),
+        name: "Copilot Local".into(),
+        description: "local single-file".into(),
+        content: "Copilot local content".into(),
         scope: Scope::Local,
         target_paths: Some(vec![repo_path]),
-        enabled_adapters: vec![AdapterType::Windsurf],
+        enabled_adapters: vec![AdapterType::Copilot],
         enabled: true,
     })
     .await
@@ -408,16 +408,23 @@ async fn test_rule_file_model_matrix_windsurf_mixed_scope_behavior() {
     let result = engine.reconcile(false, None).await.unwrap();
     assert!(result.success);
 
-    let global_file = home_dir
+    let global_file = home_dir.path().join(".copilot").join("instructions.md");
+    let local_file = repo_root
         .path()
-        .join(".windsurf")
-        .join("rules")
-        .join("windsurf-global.md");
-    let local_file = repo_root.path().join(".windsurfrules");
+        .join(".github")
+        .join("copilot-instructions.md");
 
-    assert!(global_file.exists(), "Expected windsurf global per-rule output");
-    assert!(local_file.exists(), "Expected windsurf local single-file output");
+    assert!(
+        global_file.exists(),
+        "Expected copilot global single-file output"
+    );
+    assert!(
+        local_file.exists(),
+        "Expected copilot local single-file output"
+    );
 
+    let global_content = std::fs::read_to_string(global_file).unwrap();
     let local_content = std::fs::read_to_string(local_file).unwrap();
-    assert!(local_content.contains("Windsurf local content"));
+    assert!(global_content.contains("Copilot global content"));
+    assert!(local_content.contains("Copilot local content"));
 }

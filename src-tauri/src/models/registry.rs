@@ -357,45 +357,7 @@ impl ToolRegistry {
             },
         );
 
-        // 9. Windsurf
-        entries.insert(
-            AdapterType::Windsurf,
-            ToolEntry {
-                id: AdapterType::Windsurf,
-                name: "Windsurf",
-                description: "Windsurf AI assistant",
-                icon: "windsurf",
-                // Windsurf supports rules and skills. Command stubs and slash commands are not
-                // distributed because no path or extension is configured.
-                capabilities: ToolCapabilities {
-                    supports_rules: true,
-                    supports_command_stubs: false,
-                    supports_slash_commands: false,
-                    supports_skills: true,
-                    supports_global_scope: true,
-                    supports_local_scope: true,
-                },
-                paths: PathTemplates {
-                    global_path: "~/.windsurf/rules",
-                    local_path_template: ".windsurfrules",
-                    global_rules_dir: Some("~/.windsurf/rules"),
-                    local_rules_dir_template: None,
-                    global_rule_file_model: RuleFileModel::PerRuleDir,
-                    local_rule_file_model: RuleFileModel::SingleFile,
-                    global_commands_dir: None,
-                    local_commands_dir: None,
-                    command_stub_filename: "COMMANDS.md",
-                    global_skills_dir: Some(".windsurf/skills"),
-                    local_skills_dir: Some(".windsurf/skills"),
-                    skill_filename: "SKILL.md",
-                },
-                file_format: "markdown",
-                slash_command_extension: None,
-                slash_command_argument_pattern: None,
-            },
-        );
-
-        // 10. RooCode
+        // 9. RooCode
         entries.insert(
             AdapterType::RooCode,
             ToolEntry {
@@ -424,7 +386,7 @@ impl ToolRegistry {
             },
         );
 
-        // 11. Augment
+        // 10. Augment
         entries.insert(
             AdapterType::Augment,
             ToolEntry {
@@ -444,14 +406,50 @@ impl ToolRegistry {
                     global_path: "~/.augment/rules",
                     local_path_template: ".augment/rules",
                     global_rules_dir: Some("~/.augment/rules"),
-                    local_rules_dir_template: Some(".augment/rules"),
+                    local_rules_dir_template: Some("~/.augment/rules"),
                     global_rule_file_model: RuleFileModel::PerRuleDir,
                     local_rule_file_model: RuleFileModel::PerRuleDir,
-                    global_commands_dir: Some(".augment/commands"),
-                    local_commands_dir: Some(".augment/commands"),
+                    global_commands_dir: Some("~/.augment/commands"),
+                    local_commands_dir: Some("~/.augment/commands"),
                     command_stub_filename: "COMMANDS.md",
-                    global_skills_dir: Some(".augment/skills"),
-                    local_skills_dir: Some(".augment/skills"),
+                    global_skills_dir: Some("~/.augment/skills"),
+                    local_skills_dir: Some("~/.augment/skills"),
+                    skill_filename: "SKILL.md",
+                },
+                file_format: "markdown",
+                slash_command_extension: Some("md"),
+                slash_command_argument_pattern: None,
+            },
+        );
+
+        // 11. Copilot
+        entries.insert(
+            AdapterType::Copilot,
+            ToolEntry {
+                id: AdapterType::Copilot,
+                name: "GitHub Copilot",
+                description: "GitHub Copilot AI coding assistant",
+                icon: "copilot",
+                capabilities: ToolCapabilities {
+                    supports_rules: true,
+                    supports_command_stubs: false,
+                    supports_slash_commands: true,
+                    supports_skills: false,
+                    supports_global_scope: true,
+                    supports_local_scope: true,
+                },
+                paths: PathTemplates {
+                    global_path: "~/.copilot/instructions.md",
+                    local_path_template: ".github/copilot-instructions.md",
+                    global_rules_dir: None,
+                    local_rules_dir_template: None,
+                    global_rule_file_model: RuleFileModel::SingleFile,
+                    local_rule_file_model: RuleFileModel::SingleFile,
+                    global_commands_dir: Some("~/.copilot/commands"),
+                    local_commands_dir: Some(".github/copilot-commands"),
+                    command_stub_filename: "COMMANDS.md",
+                    global_skills_dir: None,
+                    local_skills_dir: None,
                     skill_filename: "SKILL.md",
                 },
                 file_format: "markdown",
@@ -669,9 +667,9 @@ mod tests {
         assert!(registry.get(&AdapterType::Codex).is_some());
         assert!(registry.get(&AdapterType::Kilo).is_some());
         assert!(registry.get(&AdapterType::Cursor).is_some());
-        assert!(registry.get(&AdapterType::Windsurf).is_some());
         assert!(registry.get(&AdapterType::RooCode).is_some());
         assert!(registry.get(&AdapterType::Augment).is_some());
+        assert!(registry.get(&AdapterType::Copilot).is_some());
     }
 
     #[test]
@@ -786,6 +784,7 @@ mod tests {
             AdapterType::ClaudeCode,
             AdapterType::Gemini,
             AdapterType::Cursor,
+            AdapterType::Copilot,
         ];
         for adapter in single_file {
             let entry = registry.get(&adapter).unwrap();
@@ -802,7 +801,6 @@ mod tests {
             AdapterType::Cline,
             AdapterType::Codex,
             AdapterType::Kilo,
-            AdapterType::Windsurf,
             AdapterType::RooCode,
             AdapterType::Augment,
         ];
@@ -814,12 +812,6 @@ mod tests {
             );
             assert!(entry.paths.global_rules_dir.is_some());
         }
-
-        let windsurf = registry.get(&AdapterType::Windsurf).unwrap();
-        assert_eq!(
-            windsurf.rule_file_model(Scope::Local),
-            RuleFileModel::SingleFile
-        );
     }
 
     #[test]
@@ -934,7 +926,6 @@ mod tests {
             "Matrix must contain Claude Code"
         );
         assert!(matrix.contains("Cursor"), "Matrix must contain Cursor");
-        assert!(matrix.contains("Windsurf"), "Matrix must contain Windsurf");
         assert!(
             matrix.contains("Kilo Code"),
             "Matrix must contain Kilo Code"
@@ -948,12 +939,15 @@ mod tests {
         assert!(matrix.contains("Cline"), "Matrix must contain Cline");
         assert!(matrix.contains("Codex"), "Matrix must contain Codex");
         assert!(matrix.contains("Roo Code"), "Matrix must contain Roo Code");
+        assert!(
+            matrix.contains("GitHub Copilot"),
+            "Matrix must contain GitHub Copilot"
+        );
     }
 
     #[test]
     fn test_generate_support_matrix_cursor_shows_no_skills() {
         let matrix = generate_support_matrix();
-        // Find Cursor row and verify it has ❌ in the Skills column (4th ❌/✅ in the row)
         let cursor_line = matrix
             .lines()
             .find(|l| l.starts_with("| Cursor"))
@@ -966,16 +960,16 @@ mod tests {
     }
 
     #[test]
-    fn test_generate_support_matrix_windsurf_has_skill_paths() {
+    fn test_generate_support_matrix_copilot_shows_no_skills() {
         let matrix = generate_support_matrix();
-        // Windsurf's path row should contain the windsurf/skills path
-        let windsurf_path_line = matrix
+        let copilot_line = matrix
             .lines()
-            .find(|l| l.starts_with("| Windsurf") && l.contains("windsurf/skills"))
-            .is_some();
+            .find(|l| l.starts_with("| GitHub Copilot"))
+            .expect("GitHub Copilot row must be in matrix");
         assert!(
-            windsurf_path_line,
-            "Windsurf must have windsurf/skills paths in the matrix"
+            copilot_line.contains("❌"),
+            "GitHub Copilot row must contain ❌ for unsupported capabilities: {}",
+            copilot_line
         );
     }
 }

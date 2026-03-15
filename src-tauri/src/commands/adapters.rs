@@ -107,13 +107,13 @@ impl CommandAdapter for CursorAdapter {
     }
 }
 
-pub struct WindsurfAdapter;
-impl CommandAdapter for WindsurfAdapter {
+pub struct CopilotAdapter;
+impl CommandAdapter for CopilotAdapter {
     fn name(&self) -> &'static str {
-        "windsurf"
+        "copilot"
     }
     fn format(&self, commands: &[Command]) -> String {
-        format_markdown(commands, "RuleWeaver Commands (Windsurf)")
+        format_markdown(commands, "RuleWeaver Commands (GitHub Copilot)")
     }
 }
 

@@ -416,11 +416,11 @@ impl SyncAdapter for CursorAdapter {
     }
 }
 
-pub struct WindsurfAdapter;
+pub struct CopilotAdapter;
 
-impl SyncAdapter for WindsurfAdapter {
+impl SyncAdapter for CopilotAdapter {
     fn id(&self) -> AdapterType {
-        AdapterType::Windsurf
+        AdapterType::Copilot
     }
 
     fn name(&self) -> &str {
@@ -432,7 +432,7 @@ impl SyncAdapter for WindsurfAdapter {
         Path::new(entry.paths.local_path_template)
             .file_name()
             .and_then(|s| s.to_str())
-            .unwrap_or("rules.md")
+            .unwrap_or("copilot-instructions.md")
     }
 
     fn description(&self) -> &str {
@@ -537,7 +537,7 @@ pub fn get_all_adapters() -> Vec<Box<dyn SyncAdapter>> {
         Box::new(CodexAdapter),
         Box::new(KiloAdapter),
         Box::new(CursorAdapter),
-        Box::new(WindsurfAdapter),
+        Box::new(CopilotAdapter),
         Box::new(RooCodeAdapter),
         Box::new(AugmentAdapter),
     ]
