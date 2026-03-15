@@ -2483,22 +2483,22 @@ mod tests {
         .unwrap();
 
         db.add_observability_event(&ObservabilityEventInput {
-            event_type: ObservabilityEventType::McpLifecycle,
+            event_type: ObservabilityEventType::SkillRun,
             status: ObservabilityEventStatus::Success,
-            source: "mcp",
-            entity_kind: Some("mcp"),
-            entity_id: None,
-            entity_name: Some("server"),
-            workspace_path: None,
-            summary: "MCP server is ready",
-            metadata: None,
+            source: "skill-runner",
+            entity_kind: Some("skill"),
+            entity_id: Some("skill-1"),
+            entity_name: Some("Summarize Repo"),
+            workspace_path: Some("c:/repos/app"),
+            summary: "Skill execution succeeded",
+            metadata: Some("{\"triggeredBy\":\"skill-runner\"}"),
             stdout_excerpt: None,
             stderr_excerpt: None,
-            duration_ms: None,
-            exit_code: None,
+            duration_ms: Some(220),
+            exit_code: Some(0),
             failure_class: None,
-            attempt_number: None,
-            is_redacted: true,
+            attempt_number: Some(1),
+            is_redacted: false,
         })
         .await
         .unwrap();
