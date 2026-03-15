@@ -64,7 +64,14 @@ The React/TypeScript application running in the Tauri webview.
 
 This layer handles all OS-level operations.
 
-- **Database Manager:** Stores indexed metadata, command definitions, execution logs, structured observability events, settings, and scoped secret metadata. Raw secret values remain in OS secure storage and are referenced by opaque keys.
+- **Database Manager:** Stores indexed metadata, command definitions, execution logs, structured observability events, settings, scoped secret metadata, and sync tracking data. Raw secret values remain in OS secure storage and are referenced by opaque keys.
+  - **Tables:**
+    - `rules`, `commands`, `skills` — Core artifact storage
+    - `sync_manifest` — Tracks all files written by RuleWeaver with content hashes for drift detection and clean uninstall
+    - `tool_sync_preferences` — Per-tool global sync toggles (rules/commands/skills) for granular control
+    - `settings` — Key-value store for app preferences including `reconciliation_mode`
+    - `secrets` — Scoped secret metadata (values in OS secure storage)
+    - `reconciliation_logs` — Audit trail of all sync operations
 - **File Storage Engine:** Reads/writes rule markdown files with YAML frontmatter, supports migration/rollback, and handles local+global rule roots.
 - **File Sync Engine (The "Adapters"):**
   - Because every AI tool expects a different filename (`GEMINI.md`, `AGENTS.md`, `.clinerules`) or specific frontmatter, the Sync Engine acts as a collection of **Tool-Specific Adapters (Post-Processors)**.
