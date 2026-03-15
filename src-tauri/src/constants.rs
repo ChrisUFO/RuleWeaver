@@ -39,7 +39,3 @@ pub const NEW_KILO_DIR: &str = ".kilocode";
 pub const NEW_CURSOR_DIR: &str = ".cursor";
 pub const NEW_COPILOT_DIR: &str = ".copilot";
 pub const NEW_ROO_CODE_DIR: &str = ".roo";
-
-pub mod settings_keys {
-    pub const RECONCILIATION_MODE: &str = "reconciliation_mode";
-}
