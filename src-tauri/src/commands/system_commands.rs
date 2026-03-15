@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tauri::State;
 
@@ -178,7 +178,7 @@ pub fn detect_installed_tools() -> Result<Vec<InstalledToolInfo>> {
     Ok(results)
 }
 
-fn get_tool_config_path(adapter: &AdapterType, home: &PathBuf) -> Option<PathBuf> {
+fn get_tool_config_path(adapter: &AdapterType, home: &Path) -> Option<PathBuf> {
     let path = match adapter {
         AdapterType::ClaudeCode => home.join(".claude"),
         AdapterType::Cursor => home.join(".cursor"),
