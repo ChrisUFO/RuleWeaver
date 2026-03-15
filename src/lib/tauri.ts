@@ -18,8 +18,6 @@ import type {
   CreateCommandInput,
   UpdateCommandInput,
   TestCommandResult,
-  McpStatus,
-  McpConnectionInstructions,
   ExecutionLog,
   TemplateCommand,
 } from "@/types/command";
@@ -187,15 +185,6 @@ export const api = {
     getTemplates: () => invoke<TemplateSkill[]>("get_skill_templates"),
     installTemplate: (templateId: string) =>
       invoke<Skill>("install_skill_template", { templateId }),
-  },
-
-  mcp: {
-    getStatus: () => invoke<McpStatus>("get_mcp_status"),
-    start: () => invoke<void>("start_mcp_server"),
-    stop: () => invoke<void>("stop_mcp_server"),
-    restart: () => invoke<void>("restart_mcp_server"),
-    getInstructions: () => invoke<McpConnectionInstructions>("get_mcp_connection_instructions"),
-    getLogs: (limit?: number) => invoke<string[]>("get_mcp_logs", { limit: limit ?? 50 }),
   },
 
   execution: {

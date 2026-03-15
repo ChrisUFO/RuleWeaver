@@ -14,7 +14,6 @@ use crate::execution::{
     argument_env_var_name, execute_and_log, replace_template_with_env_ref, sanitize_argument_value,
     validate_enum_argument, ExecuteAndLogInput,
 };
-use crate::mcp::McpManager;
 use crate::models::{
     Command, CreateCommandInput, SyncError, SyncResult, TestCommandResult, UpdateCommandInput,
 };
@@ -44,7 +43,6 @@ pub async fn get_command_by_id(id: String, db: State<'_, Arc<Database>>) -> Resu
 pub async fn create_command(
     input: CreateCommandInput,
     db: State<'_, Arc<Database>>,
-    mcp: State<'_, McpManager>,
 ) -> Result<Command> {
     validate_command_input(&input.name, &input.script)?;
     validate_command_arguments(&input.arguments)?;
@@ -54,7 +52,6 @@ pub async fn create_command(
     validate_paths_within_registered_roots(&db, &input.target_paths).await?;
     let created = db.create_command(input).await?;
     register_local_paths(&db, &created.target_paths).await?;
-    mcp.refresh_commands(&db).await?;
 
     // Autosync slash commands on save when the command opts in to slash generation.
     if created.generate_slash_commands && !created.slash_command_adapters.is_empty() {
@@ -86,7 +83,6 @@ pub async fn update_command(
     id: String,
     input: UpdateCommandInput,
     db: State<'_, Arc<Database>>,
-    mcp: State<'_, McpManager>,
 ) -> Result<Command> {
     // Capture the pre-update state before making any changes so we can detect
     // renames and adapter deselections that would leave orphan slash files.
@@ -115,7 +111,6 @@ pub async fn update_command(
 
     let updated = db.update_command(&id, input).await?;
     register_local_paths(&db, &updated.target_paths).await?;
-    mcp.refresh_commands(&db).await?;
 
     let engine = SlashCommandSyncEngine::new(Arc::clone(&db));
 
@@ -199,16 +194,11 @@ pub async fn update_command(
 }
 
 #[tauri::command]
-pub async fn delete_command(
-    id: String,
-    db: State<'_, Arc<Database>>,
-    mcp: State<'_, McpManager>,
-) -> Result<()> {
+pub async fn delete_command(id: String, db: State<'_, Arc<Database>>) -> Result<()> {
     // Read before deleting so we have adapter and target_path info for cleanup.
     let command = db.get_command_by_id(&id).await?;
 
     db.delete_command(&id).await?;
-    mcp.refresh_commands(&db).await?;
 
     // Remove slash command files for this command across all adapters and repo roots.
     if !command.slash_command_adapters.is_empty() {
@@ -442,7 +432,6 @@ pub fn get_command_templates() -> Result<Vec<TemplateCommand>> {
 pub async fn install_command_template(
     template_id: String,
     db: State<'_, Arc<Database>>,
-    mcp: State<'_, McpManager>,
 ) -> Result<Command> {
     // 1. Check idempotency: is it already installed?
     if let Ok(existing) = db.get_command_by_id(&template_id).await {
@@ -473,11 +462,6 @@ pub async fn install_command_template(
     // 5. Registration
     // If registration fails, we must rollback the DB entry
     if let Err(e) = register_local_paths(&db, &created.target_paths).await {
-        let _ = db.delete_command(&created.id).await;
-        return Err(e);
-    }
-
-    if let Err(e) = mcp.refresh_commands(&db).await {
         let _ = db.delete_command(&created.id).await;
         return Err(e);
     }

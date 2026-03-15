@@ -1,6 +1,6 @@
 [package]
 name = "ruleweaver"
-version = "0.0.35-43"
+version = "0.0.37-133"
 description = "A unified desktop app for managing AI coding assistant rules and configurations"
 authors = ["ChrisUFO"]
 edition = "2021"
@@ -8,10 +8,6 @@ edition = "2021"
 [[bin]]
 name = "ruleweaver"
 path = "src/main.rs"
-
-[[bin]]
-name = "ruleweaver-mcp"
-path = "src/bin/mcp-server.rs"
 
 [[bin]]
 name = "gen_docs"
@@ -45,9 +41,6 @@ regex = "1"
 log = "0.4"
 env_logger = "0.11"
 clap = { version = "4", features = ["derive"] }
-axum = "0.7"
-axum-extra = { version = "0.9", features = ["typed-header"] }
-tower-http = { version = "0.5", features = ["cors"] }
 toml = "0.8"
 parking_lot = "0.12.5"
 tauri-plugin-notification = "2"

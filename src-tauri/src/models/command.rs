@@ -14,7 +14,6 @@ pub struct Command {
     pub description: String,
     pub script: String,
     pub arguments: Vec<CommandArgument>,
-    pub expose_via_mcp: bool,
     #[serde(default)]
     pub is_placeholder: bool,
     #[serde(default)]
@@ -146,7 +145,6 @@ impl Command {
             description,
             script,
             arguments: Vec::new(),
-            expose_via_mcp: true,
             is_placeholder,
             generate_slash_commands: false,
             slash_command_adapters: Vec::new(),
@@ -169,8 +167,6 @@ pub struct CreateCommandInput {
     pub script: String,
     #[serde(default)]
     pub arguments: Vec<CommandArgument>,
-    #[serde(default = "default_true")]
-    pub expose_via_mcp: bool,
     #[serde(default)]
     pub is_placeholder: bool,
     #[serde(default)]
@@ -187,10 +183,6 @@ pub struct CreateCommandInput {
     pub max_retries: Option<u8>,
 }
 
-fn default_true() -> bool {
-    true
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateCommandInput {
@@ -198,7 +190,6 @@ pub struct UpdateCommandInput {
     pub description: Option<String>,
     pub script: Option<String>,
     pub arguments: Option<Vec<CommandArgument>>,
-    pub expose_via_mcp: Option<bool>,
     pub is_placeholder: Option<bool>,
     pub generate_slash_commands: Option<bool>,
     pub slash_command_adapters: Option<Vec<String>>,
@@ -231,7 +222,6 @@ mod tests {
             false,
         );
         assert_eq!(command.name, "Fmt");
-        assert!(command.expose_via_mcp);
         assert!(command.arguments.is_empty());
         assert!(!command.id.is_empty());
     }
@@ -251,7 +241,6 @@ mod tests {
                 default_value: None,
                 options: None,
             }],
-            expose_via_mcp: true,
             is_placeholder: false,
             generate_slash_commands: false,
             slash_command_adapters: vec![],

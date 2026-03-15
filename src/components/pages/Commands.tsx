@@ -31,8 +31,6 @@ export function Commands({ initialSelectedId, onClearInitialId }: CommandsProps)
     filtered,
     availableAdapters,
     slashStatus,
-    mcpStatus,
-    mcpJustRefreshed,
     isLoading,
     isSaving,
     isTesting,
@@ -60,8 +58,6 @@ export function Commands({ initialSelectedId, onClearInitialId }: CommandsProps)
         query={query}
         isSaving={isSaving}
         isSyncing={isSyncing}
-        mcpStatus={mcpStatus}
-        mcpJustRefreshed={mcpJustRefreshed}
         onSelect={handlers.setSelectedId}
         onDuplicate={handlers.handleDuplicate}
         onQueryChange={handlers.setQuery}

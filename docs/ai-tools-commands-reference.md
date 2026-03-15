@@ -37,24 +37,6 @@ A comprehensive guide to how each AI coding tool handles **rules**, **custom com
 
 ---
 
-## Artifact Auto-Refresh
-
-RuleWeaver includes a background file watcher that automatically detects changes to your local skill and command artifacts.
-
-### How it Works
-
-- **Discovery:** When the MCP server starts, RuleWeaver identifies all local directories used by enabled skills (`directoryPath`) and commands with `targetPaths`.
-- **Watching:** Recursive filesystem watchers are established for these directories using the `notify` crate.
-- **Auto-Refresh:** When a file modification or rename is detected, RuleWeaver automatically triggers a refresh of the MCP tool registry.
-- **Debouncing:** Changes are debounced (500ms) to ensure multiple rapid saves only trigger a single refresh.
-
-### UI Indicators
-
-- **Watching Icon:** A pulsing "Eye" icon (👁️) appears next to enabled skills and commands in their respective lists when the MCP server is actively watching them.
-- **MCP Status:** The "Watching" badge in the MCP Settings card indicates if the background watcher is operational.
-
----
-
 ## Portable Configuration
 
 RuleWeaver provides features to make command and skill configurations fully portable:
@@ -171,7 +153,7 @@ RuleWeaver provides features to make command and skill configurations fully port
   - Step-by-step task automation
   - Natural language instructions
   - XML tool syntax for precise control
-  - MCP tool integration
+  - Tool integration via slash commands
 - **Example:**
 
   ````markdown
@@ -518,8 +500,8 @@ Cursor has its own skills-like feature in its UI, but it is not interoperable wi
     allow_implicit_invocation: true
   dependencies:
     tools:
-      - type: "mcp"
-        value: "server-name"
+      - type: "api"
+        value: "external-service"
   ```
 
 **Documentation:** https://developers.openai.com/codex/skills

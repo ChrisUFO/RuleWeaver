@@ -4,8 +4,7 @@ import { toast } from "@/lib/toast-helpers";
 import { togglePathInSet, filterByQuery } from "@/lib/collection-utils";
 import { generateDuplicateName } from "@/lib/utils";
 import type { useToast } from "@/components/ui/toast";
-import type { CommandModel, ExecutionLog, McpStatus } from "@/types/command";
-import { useMcpWatcher } from "./useMcpWatcher";
+import type { CommandModel, ExecutionLog } from "@/types/command";
 
 export interface AdapterInfo {
   name: string;
@@ -16,7 +15,6 @@ export interface CommandFormData {
   name: string;
   description: string;
   script: string;
-  exposeViaMcp: boolean;
   generateSlashCommands: boolean;
   slashCommandAdapters: string[];
   targetPaths: string[];
@@ -51,8 +49,6 @@ export interface UseCommandsStateReturn {
   filtered: CommandModel[];
   availableAdapters: AdapterInfo[];
   slashStatus: Record<string, SlashSyncStatus>;
-  mcpStatus: McpStatus | null;
-  mcpJustRefreshed: boolean;
   isLoading: boolean;
   isSaving: boolean;
   isTesting: boolean;
@@ -82,7 +78,6 @@ const initialFormData: CommandFormData = {
   name: "",
   description: "",
   script: "",
-  exposeViaMcp: true,
   generateSlashCommands: false,
   slashCommandAdapters: [],
   targetPaths: [],
@@ -119,8 +114,6 @@ export function useCommandsState(
     const result = await api.commands.getAll();
     setCommands(result);
   }, []);
-
-  const { mcpStatus, mcpJustRefreshed, refreshMcpStatus } = useMcpWatcher(loadCommands);
 
   const selected = useMemo(
     () => commands.find((cmd) => cmd.id === selectedId) ?? null,
@@ -190,13 +183,13 @@ export function useCommandsState(
   const refresh = useCallback(async () => {
     setIsLoading(true);
     try {
-      await Promise.all([loadCommands(), loadAvailableAdapters(), refreshMcpStatus()]);
+      await Promise.all([loadCommands(), loadAvailableAdapters()]);
     } catch (error) {
       toast.error(addToast, { title: "Failed to Load Commands", error });
     } finally {
       setIsLoading(false);
     }
-  }, [loadCommands, loadAvailableAdapters, refreshMcpStatus, addToast]);
+  }, [loadCommands, loadAvailableAdapters, addToast]);
 
   useEffect(() => {
     refresh();
@@ -220,7 +213,6 @@ export function useCommandsState(
       name: selected.name,
       description: selected.description,
       script: selected.script,
-      exposeViaMcp: Boolean(selected.exposeViaMcp),
       generateSlashCommands: Boolean(selected.generateSlashCommands),
       slashCommandAdapters: selected.slashCommandAdapters ?? [],
       targetPaths: selected.targetPaths ?? [],
@@ -268,7 +260,6 @@ export function useCommandsState(
         script: "echo hello",
         isPlaceholder: false,
         arguments: [],
-        exposeViaMcp: true,
         targetPaths: [],
       });
       await loadCommands();
@@ -289,7 +280,6 @@ export function useCommandsState(
         name: form.name,
         description: form.description,
         script: form.script,
-        exposeViaMcp: form.exposeViaMcp,
         generateSlashCommands: form.generateSlashCommands,
         slashCommandAdapters: form.slashCommandAdapters,
         targetPaths: form.targetPaths,
@@ -332,7 +322,6 @@ export function useCommandsState(
         const name = isSelected ? form.name : base.name;
         const description = isSelected ? form.description : base.description;
         const script = isSelected ? form.script : base.script;
-        const exposeViaMcp = isSelected ? form.exposeViaMcp : base.exposeViaMcp;
         const targetPaths = isSelected ? form.targetPaths : (base.targetPaths ?? []);
         const basePath = isSelected ? form.basePath : (base.basePath ?? null);
         const timeoutMs = isSelected ? form.timeoutMs : (base.timeoutMs ?? null);
@@ -353,7 +342,6 @@ export function useCommandsState(
           script,
           isPlaceholder: base.isPlaceholder,
           arguments: base.arguments,
-          exposeViaMcp,
           targetPaths,
           basePath,
           timeoutMs: timeoutMs ?? undefined,
@@ -517,8 +505,6 @@ export function useCommandsState(
     filtered,
     availableAdapters,
     slashStatus,
-    mcpStatus,
-    mcpJustRefreshed,
     isLoading,
     isSaving,
     isTesting,

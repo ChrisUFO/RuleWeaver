@@ -1,4 +1,4 @@
-export type ObservabilityEventType = "mcpLifecycle" | "mcpClient" | "commandRun" | "skillRun";
+export type ObservabilityEventType = "commandRun" | "skillRun";
 
 export type ObservabilityEventStatus =
   | "info"

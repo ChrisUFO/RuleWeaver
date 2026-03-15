@@ -24,11 +24,11 @@ fn parse_timestamp_or_now(timestamp: i64) -> DateTime<Utc> {
 }
 
 fn parse_observability_event_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ObservabilityEvent> {
-    let timestamp: i64 = row.get(1)?;
-    let event_type_raw: String = row.get(2)?;
-    let status_raw: String = row.get(3)?;
+    let timestamp: i64 = row.get("timestamp")?;
+    let event_type_raw: String = row.get("event_type")?;
+    let status_raw: String = row.get("status")?;
     Ok(ObservabilityEvent {
-        id: row.get(0)?,
+        id: row.get("id")?,
         timestamp: parse_timestamp_or_now(timestamp),
         event_type: event_type_raw.parse().map_err(|error: AppError| {
             rusqlite::Error::FromSqlConversionFailure(
@@ -44,20 +44,24 @@ fn parse_observability_event_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Ob
                 Box::new(error),
             )
         })?,
-        source: row.get(4)?,
-        entity_kind: row.get(5)?,
-        entity_id: row.get(6)?,
-        entity_name: row.get(7)?,
-        workspace_path: row.get(8)?,
-        summary: row.get(9)?,
-        metadata: row.get(10)?,
-        stdout_excerpt: row.get(11)?,
-        stderr_excerpt: row.get(12)?,
-        duration_ms: row.get::<_, Option<i64>>(13)?.map(|value| value as u64),
-        exit_code: row.get(14)?,
-        failure_class: row.get(15)?,
-        attempt_number: row.get::<_, Option<i64>>(16)?.map(|value| value as u8),
-        is_redacted: row.get::<_, i32>(17)? != 0,
+        source: row.get("source")?,
+        entity_kind: row.get("entity_kind")?,
+        entity_id: row.get("entity_id")?,
+        entity_name: row.get("entity_name")?,
+        workspace_path: row.get("workspace_path")?,
+        summary: row.get("summary")?,
+        metadata: row.get("metadata")?,
+        stdout_excerpt: row.get("stdout_excerpt")?,
+        stderr_excerpt: row.get("stderr_excerpt")?,
+        duration_ms: row
+            .get::<_, Option<i64>>("duration_ms")?
+            .map(|value| value as u64),
+        exit_code: row.get("exit_code")?,
+        failure_class: row.get("failure_class")?,
+        attempt_number: row
+            .get::<_, Option<i64>>("attempt_number")?
+            .map(|value| value as u8),
+        is_redacted: row.get::<_, i32>("is_redacted")? != 0,
     })
 }
 
@@ -217,16 +221,16 @@ impl Database {
 
         let rules = stmt
             .query_map([], |row| {
-                let id: String = row.get(0)?;
-                let name: String = row.get(1)?;
-                let description: String = row.get(2)?;
-                let content: String = row.get(3)?;
-                let scope_str: String = row.get(4)?;
-                let target_paths_json: Option<String> = row.get(5)?;
-                let enabled_adapters_json: String = row.get(6)?;
-                let enabled: bool = row.get(7)?;
-                let created_at: i64 = row.get(8)?;
-                let updated_at: i64 = row.get(9)?;
+                let id: String = row.get("id")?;
+                let name: String = row.get("name")?;
+                let description: String = row.get("description")?;
+                let content: String = row.get("content")?;
+                let scope_str: String = row.get("scope")?;
+                let target_paths_json: Option<String> = row.get("target_paths")?;
+                let enabled_adapters_json: String = row.get("enabled_adapters")?;
+                let enabled: bool = row.get("enabled")?;
+                let created_at: i64 = row.get("created_at")?;
+                let updated_at: i64 = row.get("updated_at")?;
 
                 let scope = Scope::from_str(&scope_str).map_err(|_| {
                     rusqlite::Error::FromSqlConversionFailure(
@@ -242,7 +246,7 @@ impl Database {
                 let target_paths: Option<Vec<String>> = match target_paths_json {
                     Some(j) => Some(serde_json::from_str(&j).map_err(|e| {
                         rusqlite::Error::FromSqlConversionFailure(
-                            4,
+                            5,
                             rusqlite::types::Type::Text,
                             Box::new(e),
                         )
@@ -253,7 +257,7 @@ impl Database {
                 let enabled_adapters: Vec<AdapterType> =
                     serde_json::from_str(&enabled_adapters_json).map_err(|e| {
                         rusqlite::Error::FromSqlConversionFailure(
-                            5,
+                            6,
                             rusqlite::types::Type::Text,
                             Box::new(e),
                         )
@@ -287,16 +291,16 @@ impl Database {
 
         let rule = stmt
             .query_row(params![id], |row| {
-                let id: String = row.get(0)?;
-                let name: String = row.get(1)?;
-                let description: String = row.get(2)?;
-                let content: String = row.get(3)?;
-                let scope_str: String = row.get(4)?;
-                let target_paths_json: Option<String> = row.get(5)?;
-                let enabled_adapters_json: String = row.get(6)?;
-                let enabled: bool = row.get(7)?;
-                let created_at: i64 = row.get(8)?;
-                let updated_at: i64 = row.get(9)?;
+                let id: String = row.get("id")?;
+                let name: String = row.get("name")?;
+                let description: String = row.get("description")?;
+                let content: String = row.get("content")?;
+                let scope_str: String = row.get("scope")?;
+                let target_paths_json: Option<String> = row.get("target_paths")?;
+                let enabled_adapters_json: String = row.get("enabled_adapters")?;
+                let enabled: bool = row.get("enabled")?;
+                let created_at: i64 = row.get("created_at")?;
+                let updated_at: i64 = row.get("updated_at")?;
 
                 let scope = Scope::from_str(&scope_str).map_err(|_| {
                     rusqlite::Error::FromSqlConversionFailure(
@@ -312,17 +316,18 @@ impl Database {
                 let target_paths: Option<Vec<String>> = match target_paths_json {
                     Some(j) => Some(serde_json::from_str(&j).map_err(|e| {
                         rusqlite::Error::FromSqlConversionFailure(
-                            4,
+                            5,
                             rusqlite::types::Type::Text,
                             Box::new(e),
                         )
                     })?),
                     None => None,
                 };
+
                 let enabled_adapters: Vec<AdapterType> =
                     serde_json::from_str(&enabled_adapters_json).map_err(|e| {
                         rusqlite::Error::FromSqlConversionFailure(
-                            5,
+                            6,
                             rusqlite::types::Type::Text,
                             Box::new(e),
                         )
@@ -445,28 +450,27 @@ impl Database {
     pub async fn get_all_commands(&self) -> Result<Vec<Command>> {
         let conn = self.0.lock().await;
         let mut stmt = conn.prepare(
-            "SELECT id, name, description, script, arguments, expose_via_mcp, is_placeholder, generate_slash_commands, slash_command_adapters, target_paths, created_at, updated_at, timeout_ms, max_retries, base_path
+            "SELECT id, name, description, script, arguments, is_placeholder, generate_slash_commands, slash_command_adapters, target_paths, created_at, updated_at, timeout_ms, max_retries, base_path
              FROM commands
              ORDER BY updated_at DESC",
         )?;
 
         let commands = stmt
             .query_map([], |row| {
-                let id: String = row.get(0)?;
-                let name: String = row.get(1)?;
-                let description: String = row.get(2)?;
-                let script: String = row.get(3)?;
-                let arguments_json: String = row.get(4)?;
-                let expose_via_mcp: bool = row.get(5)?;
-                let is_placeholder: bool = row.get(6)?;
-                let generate_slash_commands: bool = row.get(7)?;
-                let slash_adapters_json: String = row.get(8)?;
-                let target_paths_json: String = row.get(9)?;
-                let created_at: i64 = row.get(10)?;
-                let updated_at: i64 = row.get(11)?;
-                let timeout_ms: Option<i64> = row.get(12)?;
-                let max_retries: Option<i32> = row.get(13)?;
-                let base_path: Option<String> = row.get(14)?;
+                let id: String = row.get("id")?;
+                let name: String = row.get("name")?;
+                let description: String = row.get("description")?;
+                let script: String = row.get("script")?;
+                let arguments_json: String = row.get("arguments")?;
+                let is_placeholder: bool = row.get("is_placeholder")?;
+                let generate_slash_commands: bool = row.get("generate_slash_commands")?;
+                let slash_adapters_json: String = row.get("slash_command_adapters")?;
+                let target_paths_json: String = row.get("target_paths")?;
+                let created_at: i64 = row.get("created_at")?;
+                let updated_at: i64 = row.get("updated_at")?;
+                let timeout_ms: Option<i64> = row.get("timeout_ms")?;
+                let max_retries: Option<i32> = row.get("max_retries")?;
+                let base_path: Option<String> = row.get("base_path")?;
 
                 let arguments: Vec<CommandArgument> = serde_json::from_str(&arguments_json)
                     .map_err(|e| {
@@ -501,7 +505,6 @@ impl Database {
                     description,
                     script,
                     arguments,
-                    expose_via_mcp,
                     is_placeholder,
                     generate_slash_commands,
                     slash_command_adapters,
@@ -521,28 +524,27 @@ impl Database {
     pub async fn get_command_by_id(&self, id: &str) -> Result<Command> {
         let conn = self.0.lock().await;
         let mut stmt = conn.prepare(
-            "SELECT id, name, description, script, arguments, expose_via_mcp, is_placeholder, generate_slash_commands, slash_command_adapters, target_paths, created_at, updated_at, timeout_ms, max_retries, base_path
+            "SELECT id, name, description, script, arguments, is_placeholder, generate_slash_commands, slash_command_adapters, target_paths, created_at, updated_at, timeout_ms, max_retries, base_path
              FROM commands
              WHERE id = ?",
         )?;
 
         let command = stmt
             .query_row(params![id], |row| {
-                let id: String = row.get(0)?;
-                let name: String = row.get(1)?;
-                let description: String = row.get(2)?;
-                let script: String = row.get(3)?;
-                let arguments_json: String = row.get(4)?;
-                let expose_via_mcp: bool = row.get(5)?;
-                let is_placeholder: bool = row.get(6)?;
-                let generate_slash_commands: bool = row.get(7)?;
-                let slash_adapters_json: String = row.get(8)?;
-                let target_paths_json: String = row.get(9)?;
-                let created_at: i64 = row.get(10)?;
-                let updated_at: i64 = row.get(11)?;
-                let timeout_ms: Option<i64> = row.get(12)?;
-                let max_retries: Option<i32> = row.get(13)?;
-                let base_path: Option<String> = row.get(14)?;
+                let id: String = row.get("id")?;
+                let name: String = row.get("name")?;
+                let description: String = row.get("description")?;
+                let script: String = row.get("script")?;
+                let arguments_json: String = row.get("arguments")?;
+                let is_placeholder: bool = row.get("is_placeholder")?;
+                let generate_slash_commands: bool = row.get("generate_slash_commands")?;
+                let slash_adapters_json: String = row.get("slash_command_adapters")?;
+                let target_paths_json: String = row.get("target_paths")?;
+                let created_at: i64 = row.get("created_at")?;
+                let updated_at: i64 = row.get("updated_at")?;
+                let timeout_ms: Option<i64> = row.get("timeout_ms")?;
+                let max_retries: Option<i32> = row.get("max_retries")?;
+                let base_path: Option<String> = row.get("base_path")?;
 
                 let arguments: Vec<CommandArgument> = serde_json::from_str(&arguments_json)
                     .map_err(|e| {
@@ -577,7 +579,6 @@ impl Database {
                     description,
                     script,
                     arguments,
-                    expose_via_mcp,
                     is_placeholder,
                     generate_slash_commands,
                     slash_command_adapters,
@@ -608,15 +609,14 @@ impl Database {
         let target_paths_json = serde_json::to_string(&input.target_paths)?;
 
         conn.execute(
-            "INSERT INTO commands (id, name, description, script, arguments, expose_via_mcp, is_placeholder, generate_slash_commands, slash_command_adapters, target_paths, created_at, updated_at, timeout_ms, max_retries, base_path)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO commands (id, name, description, script, arguments, is_placeholder, generate_slash_commands, slash_command_adapters, target_paths, created_at, updated_at, timeout_ms, max_retries, base_path)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             params![
                 id,
                 input.name,
                 input.description,
                 input.script,
                 arguments_json,
-                input.expose_via_mcp,
                 input.is_placeholder,
                 input.generate_slash_commands,
                 slash_adapters_json,
@@ -641,7 +641,6 @@ impl Database {
         let description = input.description.unwrap_or(existing.description);
         let script = input.script.unwrap_or(existing.script);
         let arguments = input.arguments.unwrap_or(existing.arguments);
-        let expose_via_mcp = input.expose_via_mcp.unwrap_or(existing.expose_via_mcp);
         let is_placeholder = input.is_placeholder.unwrap_or(existing.is_placeholder);
         let generate_slash_commands = input
             .generate_slash_commands
@@ -659,14 +658,13 @@ impl Database {
         let target_paths_json = serde_json::to_string(&target_paths)?;
 
         conn.execute(
-            "UPDATE commands SET name = ?, description = ?, script = ?, arguments = ?, expose_via_mcp = ?, is_placeholder = ?, generate_slash_commands = ?, slash_command_adapters = ?, target_paths = ?, updated_at = ?, timeout_ms = ?, max_retries = ?, base_path = ?
+            "UPDATE commands SET name = ?, description = ?, script = ?, arguments = ?, is_placeholder = ?, generate_slash_commands = ?, slash_command_adapters = ?, target_paths = ?, updated_at = ?, timeout_ms = ?, max_retries = ?, base_path = ?
              WHERE id = ?",
             params![
                 name,
                 description,
                 script,
                 arguments_json,
-                expose_via_mcp,
                 is_placeholder,
                 generate_slash_commands,
                 slash_adapters_json,
@@ -700,12 +698,12 @@ impl Database {
         let skills = stmt
             .query_map([], |row| {
                 Ok(Skill {
-                    id: row.get(0)?,
-                    name: row.get(1)?,
-                    description: row.get(2)?,
-                    instructions: row.get(3)?,
+                    id: row.get("id")?,
+                    name: row.get("name")?,
+                    description: row.get("description")?,
+                    instructions: row.get("instructions")?,
                     input_schema: {
-                        let raw: String = row.get(4)?;
+                        let raw: String = row.get("input_schema")?;
                         serde_json::from_str(&raw).map_err(|e| {
                             rusqlite::Error::FromSqlConversionFailure(
                                 4,
@@ -714,12 +712,12 @@ impl Database {
                             )
                         })?
                     },
-                    enabled: row.get(5)?,
-                    created_at: parse_timestamp_or_now(row.get(6)?),
-                    updated_at: parse_timestamp_or_now(row.get(7)?),
-                    directory_path: row.get(8)?,
-                    entry_point: row.get(9)?,
-                    scope: Scope::from_str(&row.get::<_, String>(10)?).map_err(|_| {
+                    enabled: row.get("enabled")?,
+                    created_at: parse_timestamp_or_now(row.get("created_at")?),
+                    updated_at: parse_timestamp_or_now(row.get("updated_at")?),
+                    directory_path: row.get("directory_path")?,
+                    entry_point: row.get("entry_point")?,
+                    scope: Scope::from_str(&row.get::<_, String>("scope")?).map_err(|_| {
                         rusqlite::Error::FromSqlConversionFailure(
                             10,
                             rusqlite::types::Type::Text,
@@ -730,20 +728,20 @@ impl Database {
                         )
                     })?,
                     target_adapters: {
-                        let raw: String = row.get(11)?;
+                        let raw: String = row.get("target_adapters")?;
                         serde_json::from_str(&raw).unwrap_or_else(|e| {
                             log::warn!("Failed to parse skill JSON: {}. Falling back to empty.", e);
                             Vec::new()
                         })
                     },
                     target_paths: {
-                        let raw: String = row.get(12)?;
+                        let raw: String = row.get("target_paths")?;
                         serde_json::from_str(&raw).unwrap_or_else(|e| {
                             log::warn!("Failed to parse skill JSON: {}. Falling back to empty.", e);
                             Vec::new()
                         })
                     },
-                    base_path: row.get(13)?,
+                    base_path: row.get("base_path")?,
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -761,12 +759,12 @@ impl Database {
         let skill = stmt
             .query_row(params![id], |row| {
                 Ok(Skill {
-                    id: row.get(0)?,
-                    name: row.get(1)?,
-                    description: row.get(2)?,
-                    instructions: row.get(3)?,
+                    id: row.get("id")?,
+                    name: row.get("name")?,
+                    description: row.get("description")?,
+                    instructions: row.get("instructions")?,
                     input_schema: {
-                        let raw: String = row.get(4)?;
+                        let raw: String = row.get("input_schema")?;
                         serde_json::from_str(&raw).map_err(|e| {
                             rusqlite::Error::FromSqlConversionFailure(
                                 4,
@@ -775,12 +773,12 @@ impl Database {
                             )
                         })?
                     },
-                    enabled: row.get(5)?,
-                    created_at: parse_timestamp_or_now(row.get(6)?),
-                    updated_at: parse_timestamp_or_now(row.get(7)?),
-                    directory_path: row.get(8)?,
-                    entry_point: row.get(9)?,
-                    scope: Scope::from_str(&row.get::<_, String>(10)?).map_err(|_| {
+                    enabled: row.get("enabled")?,
+                    created_at: parse_timestamp_or_now(row.get("created_at")?),
+                    updated_at: parse_timestamp_or_now(row.get("updated_at")?),
+                    directory_path: row.get("directory_path")?,
+                    entry_point: row.get("entry_point")?,
+                    scope: Scope::from_str(&row.get::<_, String>("scope")?).map_err(|_| {
                         rusqlite::Error::FromSqlConversionFailure(
                             10,
                             rusqlite::types::Type::Text,
@@ -791,20 +789,20 @@ impl Database {
                         )
                     })?,
                     target_adapters: {
-                        let raw: String = row.get(11)?;
+                        let raw: String = row.get("target_adapters")?;
                         serde_json::from_str(&raw).unwrap_or_else(|e| {
                             log::warn!("Failed to parse skill JSON: {}. Falling back to empty.", e);
                             Vec::new()
                         })
                     },
                     target_paths: {
-                        let raw: String = row.get(12)?;
+                        let raw: String = row.get("target_paths")?;
                         serde_json::from_str(&raw).unwrap_or_else(|e| {
                             log::warn!("Failed to parse skill JSON: {}. Falling back to empty.", e);
                             Vec::new()
                         })
                     },
-                    base_path: row.get(13)?,
+                    base_path: row.get("base_path")?,
                 })
             })
             .map_err(|e| match e {
@@ -897,12 +895,6 @@ impl Database {
         let conn = self.0.lock().await;
         conn.execute("DELETE FROM skills WHERE id = ?", params![id])?;
         Ok(())
-    }
-
-    pub async fn get_mcp_data(&self) -> Result<(Vec<Command>, Vec<Skill>)> {
-        let commands = self.get_all_commands().await?;
-        let skills = self.get_all_skills().await?;
-        Ok((commands, skills))
     }
 
     pub async fn rule_exists_with_name(&self, name: &str) -> Result<bool> {
@@ -1159,22 +1151,22 @@ impl Database {
 
         let rows = stmt
             .query_map(params![limit], |row| {
-                let timestamp: i64 = row.get(8)?;
+                let timestamp: i64 = row.get("executed_at")?;
                 Ok(ExecutionLog {
-                    id: row.get(0)?,
-                    command_id: row.get(1)?,
-                    command_name: row.get(2)?,
-                    arguments: row.get(3)?,
-                    stdout: row.get(4)?,
-                    stderr: row.get(5)?,
-                    exit_code: row.get(6)?,
-                    duration_ms: row.get::<_, i64>(7)? as u64,
+                    id: row.get("id")?,
+                    command_id: row.get("command_id")?,
+                    command_name: row.get("command_name")?,
+                    arguments: row.get("arguments")?,
+                    stdout: row.get("stdout")?,
+                    stderr: row.get("stderr")?,
+                    exit_code: row.get("exit_code")?,
+                    duration_ms: row.get::<_, i64>("duration_ms")? as u64,
                     executed_at: parse_timestamp_or_now(timestamp),
-                    triggered_by: row.get(9)?,
-                    failure_class: row.get(10)?,
-                    adapter_context: row.get(11)?,
-                    is_redacted: row.get::<_, i32>(12)? != 0,
-                    attempt_number: row.get::<_, i32>(13)? as u8,
+                    triggered_by: row.get("triggered_by")?,
+                    failure_class: row.get("failure_class")?,
+                    adapter_context: row.get("adapter_context")?,
+                    is_redacted: row.get::<_, i32>("is_redacted")? != 0,
+                    attempt_number: row.get::<_, i32>("attempt_number")? as u8,
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -1222,22 +1214,22 @@ impl Database {
 
         let rows = stmt
             .query_map(params_refs.as_slice(), |row| {
-                let timestamp: i64 = row.get(8)?;
+                let timestamp: i64 = row.get("executed_at")?;
                 Ok(ExecutionLog {
-                    id: row.get(0)?,
-                    command_id: row.get(1)?,
-                    command_name: row.get(2)?,
-                    arguments: row.get(3)?,
-                    stdout: row.get(4)?,
-                    stderr: row.get(5)?,
-                    exit_code: row.get(6)?,
-                    duration_ms: row.get::<_, i64>(7)? as u64,
+                    id: row.get("id")?,
+                    command_id: row.get("command_id")?,
+                    command_name: row.get("command_name")?,
+                    arguments: row.get("arguments")?,
+                    stdout: row.get("stdout")?,
+                    stderr: row.get("stderr")?,
+                    exit_code: row.get("exit_code")?,
+                    duration_ms: row.get::<_, i64>("duration_ms")? as u64,
                     executed_at: parse_timestamp_or_now(timestamp),
-                    triggered_by: row.get(9)?,
-                    failure_class: row.get(10)?,
-                    adapter_context: row.get(11)?,
-                    is_redacted: row.get::<_, i32>(12)? != 0,
-                    attempt_number: row.get::<_, i32>(13)? as u8,
+                    triggered_by: row.get("triggered_by")?,
+                    failure_class: row.get("failure_class")?,
+                    adapter_context: row.get("adapter_context")?,
+                    is_redacted: row.get::<_, i32>("is_redacted")? != 0,
+                    attempt_number: row.get::<_, i32>("attempt_number")? as u8,
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -1301,11 +1293,11 @@ impl Database {
 
         let entries = stmt
             .query_map(params![limit], |row| {
-                let id: String = row.get(0)?;
-                let timestamp: i64 = row.get(1)?;
-                let files_written: u32 = row.get(2)?;
-                let status: String = row.get(3)?;
-                let triggered_by: String = row.get(4)?;
+                let id: String = row.get("id")?;
+                let timestamp: i64 = row.get("timestamp")?;
+                let files_written: u32 = row.get("files_written")?;
+                let status: String = row.get("status")?;
+                let triggered_by: String = row.get("triggered_by")?;
 
                 Ok(SyncHistoryEntry {
                     id,
@@ -1389,8 +1381,8 @@ impl Database {
 
         let settings = stmt
             .query_map([], |row| {
-                let key: String = row.get(0)?;
-                let value: String = row.get(1)?;
+                let key: String = row.get("key")?;
+                let value: String = row.get("value")?;
                 Ok((key, value))
             })?
             .collect::<std::result::Result<std::collections::HashMap<String, String>, _>>()?;
@@ -1408,7 +1400,7 @@ impl Database {
 
         let secrets = stmt
             .query_map([], |row| {
-                let scope_raw: String = row.get(3)?;
+                let scope_raw: String = row.get("scope")?;
                 let scope = SecretScope::from_str(&scope_raw).map_err(|err| {
                     rusqlite::Error::FromSqlConversionFailure(
                         3,
@@ -1421,14 +1413,14 @@ impl Database {
                 })?;
 
                 Ok(ScopedSecretRecord {
-                    id: row.get(0)?,
-                    key: row.get(1)?,
-                    value: row.get(2)?,
+                    id: row.get("id")?,
+                    key: row.get("key")?,
+                    value: row.get("value")?,
                     scope,
-                    workspace_path: row.get(4)?,
-                    artifact_id: row.get(5)?,
-                    created_at: parse_timestamp_or_now(row.get(6)?),
-                    updated_at: parse_timestamp_or_now(row.get(7)?),
+                    workspace_path: row.get("workspace_path")?,
+                    artifact_id: row.get("artifact_id")?,
+                    created_at: parse_timestamp_or_now(row.get("created_at")?),
+                    updated_at: parse_timestamp_or_now(row.get("updated_at")?),
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -1667,12 +1659,12 @@ impl Database {
         let sql = match mode {
             crate::models::ImportMode::Overwrite => {
                 log::info!("Import: Overwriting command {}", command.id);
-                "INSERT OR REPLACE INTO commands (id, name, description, script, arguments, expose_via_mcp, is_placeholder, generate_slash_commands, slash_command_adapters, target_paths, created_at, updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                "INSERT OR REPLACE INTO commands (id, name, description, script, arguments, is_placeholder, generate_slash_commands, slash_command_adapters, target_paths, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             }
             crate::models::ImportMode::Skip => {
-                "INSERT OR IGNORE INTO commands (id, name, description, script, arguments, expose_via_mcp, is_placeholder, generate_slash_commands, slash_command_adapters, target_paths, created_at, updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                "INSERT OR IGNORE INTO commands (id, name, description, script, arguments, is_placeholder, generate_slash_commands, slash_command_adapters, target_paths, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             }
         };
 
@@ -1684,7 +1676,6 @@ impl Database {
                 command.description,
                 command.script,
                 arguments_json,
-                command.expose_via_mcp,
                 command.is_placeholder,
                 command.generate_slash_commands,
                 slash_adapters_json,
@@ -1808,30 +1799,30 @@ impl Database {
 
         let logs = stmt
             .query_map(rusqlite::params![limit], |row| {
-                let op_str: String = row.get(2)?;
+                let op_str: String = row.get("operation")?;
                 let operation =
                     ReconcileOperation::from_str(&op_str).unwrap_or(ReconcileOperation::Check);
 
-                let adapter_str: Option<String> = row.get(4)?;
+                let adapter_str: Option<String> = row.get("adapter")?;
                 let adapter = adapter_str.and_then(|s| AdapterType::from_str(&s).ok());
 
-                let scope_str: Option<String> = row.get(5)?;
+                let scope_str: Option<String> = row.get("scope")?;
                 let scope = scope_str.and_then(|s| Scope::from_str(&s).ok());
 
-                let res_str: String = row.get(7)?;
+                let res_str: String = row.get("result")?;
                 let result =
                     ReconcileResultType::from_str(&res_str).unwrap_or(ReconcileResultType::Failed);
 
                 Ok(ReconciliationLogEntry {
-                    id: row.get(0)?,
-                    timestamp: parse_timestamp_or_now(row.get(1)?),
+                    id: row.get("id")?,
+                    timestamp: parse_timestamp_or_now(row.get("timestamp")?),
                     operation,
-                    artifact_type: row.get(3)?,
+                    artifact_type: row.get("artifact_type")?,
                     adapter,
                     scope,
-                    path: row.get(6)?,
+                    path: row.get("path")?,
                     result,
-                    error_message: row.get(8)?,
+                    error_message: row.get("error_message")?,
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -1850,14 +1841,14 @@ impl Database {
         )?;
 
         let rows = stmt.query_map([], |row| {
-            let path: String = row.get(0)?;
-            let operation: String = row.get(1)?;
-            let timestamp: DateTime<Utc> = parse_timestamp_or_now(row.get(2)?);
-            Ok((path, operation, timestamp))
+            let path: String = row.get("path")?;
+            let operation: String = row.get("operation")?;
+            let timestamp: DateTime<Utc> = parse_timestamp_or_now(row.get("timestamp")?);
+            Ok((path, (operation, timestamp)))
         })?;
 
         let mut ops = std::collections::HashMap::new();
-        for (path, operation, timestamp) in rows.flatten() {
+        for (path, (operation, timestamp)) in rows.flatten() {
             ops.insert(path, (operation, timestamp));
         }
 
@@ -2271,7 +2262,18 @@ fn run_migrations(conn: &mut Connection) -> Result<()> {
         )?;
     }
 
-    transaction.execute("PRAGMA user_version = 20", [])?;
+    if current_version < 21 {
+        let mut stmt = transaction.prepare("PRAGMA table_info(commands)")?;
+        let cols: Vec<String> = stmt
+            .query_map([], |row| row.get(1))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+
+        if cols.iter().any(|c| c == "expose_via_mcp") {
+            transaction.execute("ALTER TABLE commands DROP COLUMN expose_via_mcp", [])?;
+        }
+    }
+
+    transaction.execute("PRAGMA user_version = 21", [])?;
     transaction.commit()?;
 
     Ok(())
@@ -2384,7 +2386,6 @@ mod tests {
                 description: "Run build".to_string(),
                 script: "npm run build".to_string(),
                 arguments: vec![],
-                expose_via_mcp: true,
                 is_placeholder: false,
                 generate_slash_commands: false,
                 slash_command_adapters: vec![],
@@ -2468,7 +2469,7 @@ mod tests {
         db.add_observability_event(&ObservabilityEventInput {
             event_type: ObservabilityEventType::CommandRun,
             status: ObservabilityEventStatus::Error,
-            source: "mcp",
+            source: "command-test",
             entity_kind: Some("command"),
             entity_id: Some("cmd-1"),
             entity_name: Some("Deploy docs"),
@@ -2487,22 +2488,22 @@ mod tests {
         .unwrap();
 
         db.add_observability_event(&ObservabilityEventInput {
-            event_type: ObservabilityEventType::McpLifecycle,
+            event_type: ObservabilityEventType::SkillRun,
             status: ObservabilityEventStatus::Success,
-            source: "mcp",
-            entity_kind: Some("mcp"),
-            entity_id: None,
-            entity_name: Some("server"),
-            workspace_path: None,
-            summary: "MCP server is ready",
-            metadata: None,
+            source: "skill-runner",
+            entity_kind: Some("skill"),
+            entity_id: Some("skill-1"),
+            entity_name: Some("Summarize Repo"),
+            workspace_path: Some("c:/repos/app"),
+            summary: "Skill execution succeeded",
+            metadata: Some("{\"triggeredBy\":\"skill-runner\"}"),
             stdout_excerpt: None,
             stderr_excerpt: None,
-            duration_ms: None,
-            exit_code: None,
+            duration_ms: Some(220),
+            exit_code: Some(0),
             failure_class: None,
-            attempt_number: None,
-            is_redacted: true,
+            attempt_number: Some(1),
+            is_redacted: false,
         })
         .await
         .unwrap();
@@ -2540,13 +2541,13 @@ mod tests {
         db.add_observability_event(&ObservabilityEventInput {
             event_type: ObservabilityEventType::SkillRun,
             status: ObservabilityEventStatus::Success,
-            source: "mcp-skill",
+            source: "skill-runner",
             entity_kind: Some("skill"),
             entity_id: Some("skill-1"),
             entity_name: Some("Summarize Repo"),
             workspace_path: Some("c:/repos/app"),
             summary: "Skill execution succeeded",
-            metadata: Some("{\"triggeredBy\":\"mcp-skill\"}"),
+            metadata: Some("{\"triggeredBy\":\"skill-runner\"}"),
             stdout_excerpt: Some("token=***REDACTED***"),
             stderr_excerpt: None,
             duration_ms: Some(220),

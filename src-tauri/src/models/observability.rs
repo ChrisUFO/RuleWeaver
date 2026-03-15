@@ -6,8 +6,6 @@ use crate::error::AppError;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ObservabilityEventType {
-    McpLifecycle,
-    McpClient,
     CommandRun,
     SkillRun,
 }
@@ -15,8 +13,6 @@ pub enum ObservabilityEventType {
 impl ObservabilityEventType {
     pub fn as_str(&self) -> &'static str {
         match self {
-            Self::McpLifecycle => "mcp_lifecycle",
-            Self::McpClient => "mcp_client",
             Self::CommandRun => "command_run",
             Self::SkillRun => "skill_run",
         }
@@ -28,8 +24,6 @@ impl std::str::FromStr for ObservabilityEventType {
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value {
-            "mcp_lifecycle" => Ok(Self::McpLifecycle),
-            "mcp_client" => Ok(Self::McpClient),
             "command_run" => Ok(Self::CommandRun),
             "skill_run" => Ok(Self::SkillRun),
             other => Err(AppError::InvalidInput {

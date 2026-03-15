@@ -11,7 +11,6 @@ export interface CommandModel {
   description: string;
   script: string;
   arguments: CommandArgument[];
-  exposeViaMcp: boolean;
   isPlaceholder: boolean;
   generateSlashCommands?: boolean;
   slashCommandAdapters?: string[];
@@ -30,7 +29,6 @@ export interface CreateCommandInput {
   script: string;
   isPlaceholder: boolean;
   arguments?: CommandArgument[];
-  exposeViaMcp?: boolean;
   targetPaths?: string[];
   basePath?: string | null;
   timeoutMs?: number;
@@ -43,7 +41,6 @@ export interface UpdateCommandInput {
   script?: string;
   isPlaceholder?: boolean;
   arguments?: CommandArgument[];
-  exposeViaMcp?: boolean;
   generateSlashCommands?: boolean;
   slashCommandAdapters?: string[];
   targetPaths?: string[];
@@ -58,43 +55,6 @@ export interface TestCommandResult {
   stderr: string;
   exitCode: number;
   durationMs: number;
-}
-
-export type McpHealthState = "stopped" | "starting" | "ready" | "degraded" | "error";
-
-export type McpDiagnosticSeverity = "info" | "warning" | "error";
-
-export interface McpDiagnostic {
-  code: string;
-  severity: McpDiagnosticSeverity;
-  title: string;
-  message: string;
-  hint?: string;
-}
-
-export interface McpStatus {
-  running: boolean;
-  port: number;
-  uptimeSeconds: number;
-  apiToken?: string;
-  isWatching: boolean;
-  endpointUrl: string;
-  healthState: McpHealthState;
-  statusMessage: string;
-  diagnostics: McpDiagnostic[];
-  availableCommands: number;
-  availableSkills: number;
-  watchTargetCount: number;
-}
-
-export interface McpConnectionInstructions {
-  claudeCodeJson: string;
-  opencodeJson: string;
-  standaloneCommand: string;
-  apiToken: string;
-  endpointUrl: string;
-  authHeaderName: string;
-  tokenEnvVarName?: string;
 }
 
 export interface ExecutionLog {

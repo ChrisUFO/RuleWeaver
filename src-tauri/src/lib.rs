@@ -5,7 +5,6 @@ pub mod error;
 mod execution;
 mod feature_flags;
 mod file_storage;
-mod mcp;
 pub mod models;
 mod observability;
 pub mod path_resolver;
@@ -22,7 +21,6 @@ pub mod templates;
 
 use database::Database;
 use file_storage::RuleFileWatcher;
-use mcp::McpManager;
 use std::sync::Arc;
 use tauri::menu::{MenuBuilder, MenuItemBuilder};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
@@ -37,17 +35,12 @@ pub struct WatcherState(pub RuleFileWatcher);
 #[derive(Default)]
 pub struct GlobalStatus {
     pub sync_status: parking_lot::Mutex<String>,
-    pub mcp_status: parking_lot::Mutex<String>,
     pub menu: parking_lot::Mutex<Option<tauri::menu::Menu<tauri::Wry>>>,
 }
 
 impl GlobalStatus {
     pub fn update_tray(&self) {
         let sync = match self.sync_status.try_lock() {
-            Some(s) => s.clone(),
-            None => return,
-        };
-        let mcp = match self.mcp_status.try_lock() {
             Some(s) => s.clone(),
             None => return,
         };
@@ -58,20 +51,11 @@ impl GlobalStatus {
                     if let Some(menu_item) = item.as_menuitem() {
                         if menu_item.id().as_ref() == "status" {
                             let _ = menu_item.set_text(format!("Status: {}", sync));
-                        } else if menu_item.id().as_ref() == "mcp_info" {
-                            let _ = menu_item.set_text(format!("MCP: {}", mcp));
                         }
                     }
                 }
             }
         }
-    }
-
-    pub fn update_mcp_status(&self, status: &str) {
-        {
-            *self.mcp_status.lock() = status.to_string();
-        }
-        self.update_tray();
     }
 }
 
@@ -203,36 +187,16 @@ pub fn run() {
             })?;
 
             let watcher = RuleFileWatcher::new();
-            let mcp_manager = McpManager::new(crate::constants::DEFAULT_MCP_PORT);
 
-            // Need to block on getting settings for initial setup
-            let (auto_start_mcp, _minimize_to_tray, storage_mode) = tauri::async_runtime::block_on(async {
-                let auto = db
-                    .get_setting("mcp_auto_start")
-                    .await
-                    .ok()
-                    .flatten()
-                    .map(|v| v == "true")
-                    .unwrap_or(false);
-
+            let storage_mode = tauri::async_runtime::block_on(async {
                 let min = db.get_setting(MINIMIZE_TO_TRAY_KEY).await.ok().flatten();
                 if min.is_none() {
                     db.set_setting(MINIMIZE_TO_TRAY_KEY, "true").await?;
                 }
 
-                let storage = db.get_storage_mode().await?;
-                Ok::<_, crate::error::AppError>((auto, min, storage))
+                db.get_storage_mode().await
             })?;
 
-            if auto_start_mcp {
-                let mcp_for_setup = mcp_manager.clone();
-                let db_for_setup = Arc::clone(&db);
-                tauri::async_runtime::spawn(async move {
-                    let _ = mcp_for_setup.start(&db_for_setup).await;
-                });
-            }
-
-            // Start file watcher if in file storage mode
             if storage_mode == "file" {
                 let app_handle = app.handle().clone();
                 let db_clone = Arc::clone(&db);
@@ -249,16 +213,12 @@ pub fn run() {
                 .enabled(false)
                 .build(app)?;
             let quick_sync = MenuItemBuilder::with_id("sync", "Quick Sync").build(app)?;
-            let mcp_info = MenuItemBuilder::with_id("mcp_info", "MCP: Disconnected")
-                .enabled(false)
-                .build(app)?;
 
             let show = MenuItemBuilder::with_id("show", "Show RuleWeaver").build(app)?;
             let hide = MenuItemBuilder::with_id("hide", "Hide to Tray").build(app)?;
             let quit = MenuItemBuilder::with_id("quit", "Quit RuleWeaver").build(app)?;
             let tray_menu = MenuBuilder::new(app)
                 .item(&status_label)
-                .item(&mcp_info)
                 .separator()
                 .item(&quick_sync)
                 .separator()
@@ -345,12 +305,6 @@ pub fn run() {
                         if let Some(watcher_state) = app.try_state::<WatcherState>() {
                             let _ = watcher_state.0.stop();
                         }
-                        if let Some(mcp) = app.try_state::<McpManager>() {
-                            let mcp_clone = mcp.inner().clone();
-                            tauri::async_runtime::spawn(async move {
-                                let _ = mcp_clone.stop().await;
-                            });
-                        }
                         app.exit(0);
                     }
                     _ => {}
@@ -408,10 +362,6 @@ pub fn run() {
                                     let _ = main.hide();
                                 }
                             } else {
-                                if let Some(mcp) = app.try_state::<McpManager>() {
-                                    let mcp_clone = mcp.inner().clone();
-                                    let _ = mcp_clone.stop().await;
-                                }
                                 app.exit(0);
                             }
                         });
@@ -420,7 +370,6 @@ pub fn run() {
             }
 
             app.manage(Arc::clone(&db));
-            app.manage(mcp_manager);
             app.manage(WatcherState(watcher));
             app.manage(global_status);
             Ok(())
@@ -495,12 +444,6 @@ pub fn run() {
             commands::install_command_template,
             commands::sync_skills,
             commands::get_skill_supported_adapters,
-            commands::get_mcp_status,
-            commands::start_mcp_server,
-            commands::stop_mcp_server,
-            commands::restart_mcp_server,
-            commands::get_mcp_connection_instructions,
-            commands::get_mcp_logs,
             commands::get_execution_history,
             commands::get_execution_history_filtered,
             commands::list_observability_events,
@@ -529,31 +472,6 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
-}
-
-pub fn run_mcp_cli(port: u16, token: Option<String>) -> std::result::Result<(), String> {
-    let rt = tokio::runtime::Runtime::new().map_err(|e| e.to_string())?;
-    let token = token.or_else(|| {
-        std::env::var(crate::mcp::MCP_TOKEN_ENV_VAR)
-            .ok()
-            .filter(|value| !value.trim().is_empty())
-    });
-
-    rt.block_on(async {
-        let db = Arc::new(Database::new_for_cli().await.map_err(|e| e.to_string())?);
-        let manager = McpManager::new(port);
-
-        if let Some(t) = token {
-            manager.set_api_token(t).await;
-        }
-
-        manager.start(&db).await.map_err(|e| e.to_string())?;
-        manager
-            .wait_until_stopped()
-            .await
-            .map_err(|e| e.to_string())?;
-        Ok(())
-    })
 }
 
 async fn setup_watcher(

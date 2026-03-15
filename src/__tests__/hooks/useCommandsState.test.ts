@@ -12,7 +12,6 @@ vi.mock("@/lib/tauri", () => ({
           description: "A test",
           script: "echo test",
           arguments: [],
-          expose_via_mcp: true,
         },
       ]),
       create: vi.fn().mockResolvedValue({

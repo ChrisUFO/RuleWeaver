@@ -393,8 +393,7 @@ impl ReconciliationEngine {
     async fn compute_desired_state_command_stubs(&self, desired: &mut DesiredState) -> Result<()> {
         let commands = self.db.get_all_commands().await?;
 
-        let exposed_commands: Vec<_> = commands.into_iter().filter(|c| c.expose_via_mcp).collect();
-        if exposed_commands.is_empty() {
+        if commands.is_empty() {
             return Ok(());
         }
 
@@ -410,7 +409,7 @@ impl ReconciliationEngine {
                 .path_resolver
                 .global_path(adapter, ArtifactType::CommandStub)
             {
-                let content = formatter::format_command_stub_content(&adapter, &exposed_commands);
+                let content = formatter::format_command_stub_content(&adapter, &commands);
                 let content_hash = compute_content_hash(&content);
                 let path_str = resolved.path.to_string_lossy().to_string();
 
@@ -523,9 +522,8 @@ impl ReconciliationEngine {
     /// Compute desired state for skills.
     ///
     /// Respects per-skill `target_adapters`: when non-empty only those adapters
-    /// are included; unsupported adapters are silently skipped (MCP-only fallback
-    /// is handled by the MCP layer). When `target_adapters` is empty all registry-
-    /// supported adapters are used (existing behaviour).
+    /// are included; unsupported adapters are silently skipped. When `target_adapters`
+    /// is empty all registry-supported adapters are used (existing behaviour).
     ///
     /// For local-scope skills, `target_paths` on the skill take priority over the
     /// global repository roots when non-empty.
@@ -1710,7 +1708,6 @@ mod tests {
             description: "A test command".to_string(),
             script: "echo test".to_string(),
             arguments: vec![],
-            expose_via_mcp: true,
             is_placeholder: false,
             generate_slash_commands: false,
             slash_command_adapters: vec![],
@@ -1745,7 +1742,6 @@ mod tests {
             description: "A test slash command".to_string(),
             script: "echo test".to_string(),
             arguments: vec![],
-            expose_via_mcp: false,
             is_placeholder: false,
             generate_slash_commands: true,
             slash_command_adapters: vec!["claude-code".to_string()],
@@ -2433,7 +2429,6 @@ mod tests {
                 description: "A test command".to_string(),
                 script: "echo 'test'".to_string(),
                 arguments: vec![],
-                expose_via_mcp: false,
                 is_placeholder: false,
                 generate_slash_commands: true,
                 slash_command_adapters: vec!["claude-code".to_string(), "opencode".to_string()],
@@ -2479,7 +2474,6 @@ mod tests {
                 description: "A local command".to_string(),
                 script: "echo 'local'".to_string(),
                 arguments: vec![],
-                expose_via_mcp: false,
                 is_placeholder: false,
                 generate_slash_commands: true,
                 slash_command_adapters: vec!["claude-code".to_string()],
@@ -2528,7 +2522,6 @@ mod tests {
                 description: "A command without slash commands".to_string(),
                 script: "echo 'no slash'".to_string(),
                 arguments: vec![],
-                expose_via_mcp: true,
                 is_placeholder: false,
                 generate_slash_commands: false,
                 slash_command_adapters: vec![],
@@ -2570,11 +2563,10 @@ mod tests {
 
             db.create_command(crate::models::CreateCommandInput {
                 id: None,
-                name: "MCP Command".to_string(),
-                description: "A command exposed via MCP".to_string(),
-                script: "echo 'mcp'".to_string(),
+                name: "Test Command".to_string(),
+                description: "A test command".to_string(),
+                script: "echo 'test'".to_string(),
                 arguments: vec![],
-                expose_via_mcp: true,
                 is_placeholder: false,
                 generate_slash_commands: false,
                 slash_command_adapters: vec![],
@@ -2600,23 +2592,22 @@ mod tests {
 
         assert!(
             !stub_entries.is_empty(),
-            "Should have command stub entries when expose_via_mcp is true"
+            "Should have command stub entries for all commands"
         );
     }
 
     #[test]
-    fn test_command_stub_not_created_when_mcp_disabled() {
+    fn test_command_stub_created_for_all_commands() {
         let rt = tokio::runtime::Runtime::new().unwrap();
         let db = rt.block_on(async {
             let db = std::sync::Arc::new(crate::database::Database::new_in_memory().await.unwrap());
 
             db.create_command(crate::models::CreateCommandInput {
                 id: None,
-                name: "Non-MCP Command".to_string(),
-                description: "A command not exposed via MCP".to_string(),
-                script: "echo 'not mcp'".to_string(),
+                name: "Any Command".to_string(),
+                description: "A command".to_string(),
+                script: "echo 'test'".to_string(),
                 arguments: vec![],
-                expose_via_mcp: false,
                 is_placeholder: false,
                 generate_slash_commands: false,
                 slash_command_adapters: vec![],
@@ -2641,8 +2632,8 @@ mod tests {
             .collect();
 
         assert!(
-            stub_entries.is_empty(),
-            "Should not have command stub when expose_via_mcp is false"
+            !stub_entries.is_empty(),
+            "Should have command stub for all commands"
         );
     }
 

@@ -10,9 +10,8 @@ RuleWeaver is a unified desktop application that centrally manages configuration
 4. [Managing Commands](#4-managing-commands)
 5. [Managing Skills](#5-managing-skills)
 6. [Settings](#6-settings)
-7. [MCP Server](#7-mcp-server)
-8. [Keyboard Shortcuts](#8-keyboard-shortcuts)
-9. [Troubleshooting](#9-troubleshooting)
+7. [Keyboard Shortcuts](#7-keyboard-shortcuts)
+8. [Troubleshooting](#8-troubleshooting)
 
 ---
 
@@ -220,7 +219,7 @@ Understanding the RuleWeaver artifact lifecycle helps diagnose sync issues:
 
 ## 4) Managing Commands
 
-Commands are executable scripts that can be triggered via MCP or slash commands.
+Commands are executable scripts that can be triggered via slash commands in AI tools.
 
 ### Commands List
 
@@ -239,10 +238,9 @@ Commands are executable scripts that can be triggered via MCP or slash commands.
    - **Timeout (ms)**: Set a maximum execution time (defaults to 30,000ms).
    - **Max Retries**: Configure up to 3 automatic retries for transient failures (timeouts, network errors).
 6. Optionally select **target repositories**
-7. Toggle **Expose via MCP** to make available to AI tools
-8. Toggle **Generate Slash Commands** for native `/command` support
-9. Select **target AI tools** for slash commands
-10. Click **Save**
+7. Toggle **Generate Slash Commands** for native `/command` support
+8. Select **target AI tools** for slash commands
+9. Click **Save**
 
 ### Testing Commands
 
@@ -385,25 +383,13 @@ Manage credentials without hardcoding them into commands or skills:
 - Save **global** secret values once for shared environments
 - Add **workspace overrides** for any configured repository root
 - RuleWeaver resolves secrets with precedence: **artifact override → workspace override → global value**
-- Secret values are reused during command test runs and MCP execution, while logs stay redacted
+- Secret values are reused during command test runs, while logs stay redacted
 - Secret values are masked in the UI and API responses and stored in your OS credential manager / secure keychain instead of plaintext app persistence
 - Configuration export/import does **not** include secret values; re-enter them locally after moving to a new machine or importing a backup
 
-### MCP Server
-
-Configure the Model Context Protocol server:
-
-- **Status** — Ready / Degraded / Error with port, uptime, and exposed tool counts
-- **Start/Stop** — Control the server
-- **Auto-start MCP** — Start automatically when RuleWeaver launches
-- **Minimize to tray on close** — Keep MCP running when window closes
-- **Launch on startup** — Start RuleWeaver on system login
-- **Diagnostics** — Surface port conflicts, missing exposed tools, watcher problems, and stale client config hints
-- **Connection snippets** — Copy endpoint URL, API token, standalone command, and Claude Code / OpenCode JSON
-
 ### Logs
 
-Use the dedicated **Logs** page to inspect unified diagnostics across MCP lifecycle events, MCP client calls, command runs, and skill runs.
+Use the dedicated **Logs** page to inspect unified diagnostics across command runs and skill runs.
 
 - Filter by event type, status, source, tool/skill name, date range, or free-text search
 - Expand metadata and redacted stdout/stderr excerpts for troubleshooting
@@ -444,50 +430,7 @@ Enable/disable individual AI tool adapters:
 
 ---
 
-## 7) MCP Server
-
-RuleWeaver supports two MCP runtime modes:
-
-### Embedded MCP
-
-Runs within the desktop application:
-
-1. Start RuleWeaver
-2. Go to **Settings → MCP Server**
-3. Click **Start**
-4. Enable **Auto-start MCP** for convenience
-5. Enable **Minimize to tray on close** to keep running in background
-
-### Standalone MCP
-
-Run the MCP server independently:
-
-```bash
-# From source
-cargo run --manifest-path src-tauri/Cargo.toml --bin ruleweaver-mcp -- --port 8080
-
-# Using built binary
-ruleweaver-mcp --port 8080
-```
-
-### Connecting AI Tools
-
-Use the configuration snippets shown in **Settings → MCP Server**:
-
-**Claude Code:**
-Add the generated JSON to your Claude Code configuration, then fully restart Claude Code.
-
-**OpenCode:**
-Add the generated JSON to your OpenCode configuration, then restart OpenCode after saving.
-
-**Other tools:**
-Use synced rule/command files, or configure the MCP client to connect to the localhost endpoint and send the current API token header shown in Settings.
-
-For deeper troubleshooting after the server starts, use the **Logs** page to inspect MCP lifecycle/client events and export a redacted trace.
-
----
-
-## 8) Keyboard Shortcuts
+## 7) Keyboard Shortcuts
 
 | Shortcut       | Action                         |
 | -------------- | ------------------------------ |
@@ -507,12 +450,10 @@ For deeper troubleshooting after the server starts, use the **Logs** page to ins
 
 ---
 
-## 9) Troubleshooting
+## 8) Troubleshooting
 
 ### Sync Issues
 
-- **Port conflict** — Change MCP port or stop conflicting process
-- **No tools listed** — Confirm commands have "Expose via MCP" enabled
 - **Rules not updating** — Verify adapter toggle in Settings → Adapters, then resync
 - **Conflicts detected** — Use conflict resolution dialog to choose local or remote version
 
@@ -521,14 +462,6 @@ For deeper troubleshooting after the server starts, use the **Logs** page to ins
 - **URL import blocked** — Only `http`/`https` allowed; localhost/private IPs blocked for security
 - **Drag-and-drop not working** — Some platforms don't expose file paths; use "Import File" instead
 - **No candidates found** — Ensure source files exist and are readable
-
-### MCP Issues
-
-- **Server won't start** — Check the MCP diagnostics panel for port conflicts or startup failures
-- **Tools not appearing** — Confirm at least one command has **Expose via MCP** enabled, then click **Refresh**
-- **Client connects but calls fail** — Re-copy the endpoint/token from Settings and fully restart the client to clear stale protocol state
-- **App closed unexpectedly** — Enable "Minimize to tray on close" to keep embedded MCP alive
-- **Need to share diagnostics** — Open **Logs**, filter to the affected events, and export the redacted JSON trace
 
 ### Storage Issues
 

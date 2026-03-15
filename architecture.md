@@ -48,7 +48,6 @@ Installers include the full timestamp in the filename (e.g., `ruleweaver_0.0.1_2
 - **Frontend:** React, TypeScript, TailwindCSS.
 - **Backend:** Rust.
 - **Persistence:** File-first markdown + YAML frontmatter (`~/.ruleweaver/rules/*.md`, `{repo}/.ruleweaver/rules/*.md`) with SQLite as index/cache and settings store.
-- **MCP Runtime:** Embedded MCP manager in app process and standalone MCP binary (`ruleweaver-mcp`).
 
 ## High-Level Architecture
 
@@ -59,7 +58,7 @@ The system is composed of three main layers:
 The React/TypeScript application running in the Tauri webview.
 
 - **State Management:** Holds the UI state for editing Rules, Commands, Skills, and operator diagnostics such as the Logs screen.
-- **Communication:** Communicates with the Rust backend via Tauri IPC (Inter-Process Communication) to save rules, trigger syncs, start/stop the MCP server, and query/export observability events.
+- **Communication:** Communicates with the Rust backend via Tauri IPC (Inter-Process Communication) to save rules, trigger syncs, and query/export observability events.
 
 ### 2. The Core Logic Layer (Rust Backend)
 
@@ -77,17 +76,10 @@ This layer handles all OS-level operations.
   - Supports import sources: AI tool directories, single files, directories, URLs, and clipboard text.
   - Normalizes imported content, applies duplicate detection and conflict policy (`skip`, `rename`, `replace`), and stores import history/source mapping.
   - Writes imported rules to DB and file storage mode (if enabled), then runs sync to keep generated tool files current.
-- **Command Stub Sync Engine:**
-  - Generates tool-facing command definition files (`COMMANDS.toml` / `COMMANDS.md`) for supported adapters.
-  - Keeps command UX in client tools while execution remains centralized in MCP.
-- **MCP Server Engine:**
-  - Runs a local MCP-compatible HTTP JSON-RPC server on localhost.
-  - Reads commands from database and exposes them as `tools/list`.
-  - Handles `tools/call` execution and returns stdout/stderr payloads.
-  - Publishes structured readiness/degraded/error status, actionable diagnostics, recent logs, connection instructions for standalone onboarding, and structured MCP lifecycle/client observability events.
-  - Available in two modes:
-    - **Embedded mode:** runs inside RuleWeaver desktop app.
-    - **Standalone mode:** runs via `ruleweaver-mcp --port <PORT>`.
+- **Command Sync Engine:**
+  - Generates native slash command files (`.md`/`.toml`) directly into each AI tool's command directory.
+  - Commands are executed natively by AI tools without a separate server.
+  - Supports adapter-specific formatting for each tool's command syntax.
 - **Skills Engine:**
   - Stores and manages Skills metadata/instructions in database.
   - Exposes full CRUD in UI and participates in reconciliation/status projections.
@@ -105,7 +97,6 @@ This layer handles all OS-level operations.
   - Each skill can target specific adapters (or all supported adapters by default).
   - Generates SKILL.md files directly in AI tool skill directories (e.g., `~/Documents/Cline/Skills/`).
   - Respects adapter capabilities — skips unsupported tools silently.
-  - Works alongside MCP-only fallback for tools without native skill support.
 - **Status Engine (Unified Artifact Status):**
   - Single operator view across all artifact types (rules, commands, skills).
   - Projects reconciliation state into status entries with sync health indicators.
@@ -115,7 +106,7 @@ This layer handles all OS-level operations.
 - **Execution Engine:**
   - Centralized command execution with timeout and retry policies.
   - Per-command configuration for `timeout_ms` and `max_retries` (bounded to 3).
-  - Resolves secrets with precedence across global, workspace, and artifact-specific scopes before command or MCP execution.
+  - Resolves secrets with precedence across global, workspace, and artifact-specific scopes before command execution.
   - Secret redaction pipeline scans stdout/stderr for API keys, tokens, and credentials.
   - Structured failure classification (`Timeout`, `PermissionDenied`, `MissingBinary`, `NonZeroExit`).
   - Emits redaction-safe observability records for command and skill runs so the Logs page can filter and export operational history without exposing raw secrets.
@@ -129,19 +120,14 @@ This layer handles all OS-level operations.
   - Includes drag-and-drop file import and import-time option overrides (scope/adapters/conflict mode).
 - **Repository Roots Registry:** Settings persist a managed list of local repository roots (`local_rule_paths`) used for local artifact selection and local import discovery.
   - Rules, commands, skills, and workspace-scoped secrets reference these configured roots instead of free-form path entry.
-- **MCP Clients:** AI tools (Claude Code, OpenCode, etc.) connect to localhost MCP endpoint or launch standalone `ruleweaver-mcp` binary. They use `tools/list` + `tools/call` to invoke commands.
 
 ## Runtime Topology
 
 ```text
-Option A: Embedded MCP
-AI Tool -> localhost:PORT -> RuleWeaver Desktop App (MCP manager)
-
-Option B: Standalone MCP
-AI Tool -> launches `ruleweaver-mcp` -> localhost:PORT -> MCP manager
+AI Tool -> reads rule/command/skill files -> RuleWeaver generates and syncs files
 
 Window Lifecycle:
-- With `minimize_to_tray = true`, close requests hide the window and keep the app/MCP process alive.
+- With `minimize_to_tray = true`, close requests hide the window and keep the app process alive.
 - System tray menu controls show/hide and quit behavior.
 ```
 
@@ -169,7 +155,7 @@ Window Lifecycle:
       "id": "789",
       "name": "Format Code",
       "script": "npm run format",
-      "expose_via_mcp": true
+      "generate_slash_commands": true
     }
   ],
   "skills": [

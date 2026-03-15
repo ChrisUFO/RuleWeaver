@@ -10,8 +10,6 @@ import type { ObservabilityEventStatus, ObservabilityEventType } from "@/types/o
 
 const EVENT_TYPE_OPTIONS = [
   { value: "", label: "All event types" },
-  { value: "mcpLifecycle", label: "MCP lifecycle" },
-  { value: "mcpClient", label: "MCP client" },
   { value: "commandRun", label: "Command runs" },
   { value: "skillRun", label: "Skill runs" },
 ];
@@ -87,7 +85,7 @@ export function Logs() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Logs</h1>
           <p className="text-sm text-muted-foreground">
-            Unified diagnostics for MCP lifecycle, client activity, command runs, and skill runs.
+            Unified diagnostics for command runs and skill runs.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">

@@ -25,7 +25,7 @@ const sampleEvent = {
   timestamp: 1_710_000_000,
   eventType: "commandRun" as const,
   status: "error" as const,
-  source: "mcp",
+  source: "command",
   entityName: "Deploy docs",
   summary: "Command execution failed",
   metadata: '{"toolName":"Deploy docs"}',

@@ -28,7 +28,6 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
 import { useSettingsState } from "@/hooks/useSettingsState";
-import { McpSettingsCard } from "@/components/settings/McpSettingsCard";
 import { StorageSettingsCard } from "@/components/settings/StorageSettingsCard";
 import { AdapterSettingsCard } from "@/components/settings/AdapterSettingsCard";
 import { RepositorySettingsCard } from "@/components/settings/RepositorySettingsCard";
@@ -42,7 +41,7 @@ const SETTINGS_TABS = [
   { id: "infrastructure", label: "Infrastructure", icon: Database },
 ];
 
-export function Settings({ onNavigate }: { onNavigate?: (view: string) => void }) {
+export function Settings({ onNavigate: _onNavigate }: { onNavigate?: (view: string) => void }) {
   const { addToast } = useToast();
   const [activeTab, setActiveTab] = useState("general");
 
@@ -68,13 +67,6 @@ export function Settings({ onNavigate }: { onNavigate?: (view: string) => void }
     migrationProgress,
     isRollingBack,
     isVerifyingMigration,
-    mcpStatus,
-    mcpInstructions,
-    isMcpLoading,
-    mcpAutoStart,
-    minimizeToTray,
-    launchOnStartup,
-    mcpLogs,
     isExporting,
     isImporting,
     importPreview,
@@ -251,23 +243,6 @@ export function Settings({ onNavigate }: { onNavigate?: (view: string) => void }
               exit="exit"
               className="space-y-6"
             >
-              <McpSettingsCard
-                mcpStatus={mcpStatus}
-                mcpInstructions={mcpInstructions}
-                mcpLogs={mcpLogs}
-                isMcpLoading={isMcpLoading}
-                mcpAutoStart={mcpAutoStart}
-                minimizeToTray={minimizeToTray}
-                launchOnStartup={launchOnStartup}
-                onStart={handlers.startMcp}
-                onStop={handlers.stopMcp}
-                onRefresh={handlers.refreshMcpStatus}
-                onToggleAutoStart={handlers.toggleMcpAutoStart}
-                onToggleMinimizeToTray={handlers.toggleMinimizeToTray}
-                onToggleLaunchOnStartup={handlers.toggleLaunchOnStartup}
-                onNavigateToLogs={() => onNavigate?.("logs")}
-              />
-
               <AdapterSettingsCard
                 adapterSettings={adapterSettings}
                 isLoading={isLoading}

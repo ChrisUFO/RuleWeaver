@@ -207,7 +207,7 @@ rm ~/.clinerules
 
 ## Backward Compatibility
 
-The old MCP-based command execution still works. Slash commands are an **additional** feature that provides better discoverability.
+Slash commands are the native feature that provides better discoverability and AI tool integration.
 
 ## Getting Help
 
