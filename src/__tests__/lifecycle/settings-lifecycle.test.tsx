@@ -252,7 +252,7 @@ describe("Settings lifecycle", () => {
 
     // The AdapterSettingsCard renders each adapter in a row that contains both
     // the adapter name and its switch. Scope the search to that row using within()
-    // to avoid picking up the MCP switches that appear earlier in the tab.
+    // to avoid picking up other switches that appear earlier in the tab.
     const claudeCodeEl = screen.getByText("Claude Code");
     // Navigate up to the row div: font-medium → unnamed div → flex gap-3 → flex justify-between (row)
     const adapterRow = claudeCodeEl.closest('[class*="rounded-md border"]');

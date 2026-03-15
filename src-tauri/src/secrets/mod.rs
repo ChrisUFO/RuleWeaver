@@ -220,45 +220,9 @@ async fn migrate_plaintext_scoped_secrets(db: &Database, storage: &SecretStorage
     Ok(())
 }
 
-async fn migrate_legacy_allowlisted_settings(db: &Database, storage: &SecretStorage) -> Result<()> {
-    let namespace = db.secret_namespace();
-    let Some(allowlist_raw) = db.get_setting("mcp_secrets_allowlist").await? else {
-        return Ok(());
-    };
-
-    for key in allowlist_raw
-        .split(',')
-        .map(str::trim)
-        .filter(|entry| !entry.is_empty())
-    {
-        let Some(value) = db.get_setting(key).await? else {
-            continue;
-        };
-
-        if value.trim().is_empty() {
-            db.delete_setting(key).await?;
-            continue;
-        }
-
-        let input = normalize_upsert_input(UpsertScopedSecretInput {
-            key: key.to_string(),
-            value,
-            scope: SecretScope::Global,
-            workspace_path: None,
-            artifact_id: None,
-        })?;
-        persist_secret_value(storage, namespace, &input).await?;
-        db.upsert_scoped_secret(input).await?;
-        db.delete_setting(key).await?;
-    }
-
-    Ok(())
-}
-
 async fn ensure_secure_secret_storage(db: &Database) -> Result<SecretStorage> {
     let storage = SecretStorage::global();
     migrate_plaintext_scoped_secrets(db, &storage).await?;
-    migrate_legacy_allowlisted_settings(db, &storage).await?;
     Ok(storage)
 }
 
@@ -476,7 +440,7 @@ pub async fn resolve_command_secret_envs(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{CreateCommandInput, CreateSkillInput, Scope};
+    use crate::models::CreateCommandInput;
 
     #[tokio::test]
     async fn resolves_secret_precedence_global_workspace_artifact() {

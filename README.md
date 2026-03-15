@@ -4,29 +4,21 @@ RuleWeaver is a unified, standalone desktop application designed to centrally ma
 
 Managing different file formats and local/global settings across 10+ AI tools is a nightmare. RuleWeaver solves this by acting as a single source of truth using a **Hybrid Synchronization Model**.
 
-## The Hybrid Approach
+## The File-Based Approach
 
 Different types of AI configurations require different management strategies:
 
 1. **Rules (Static Context):** Managed via **File Sync**. You write your global or repo-specific rules in the RuleWeaver UI. The app then uses **Tool-Specific Adapters (Post-Processors)** to automatically translate and copy these rules into the specific proprietary formats and directories required by each target tool (e.g., configuring `.clinerules` for Cline, `.cursorrules` for Cursor, or `AGENTS.md` for OpenCode).
-2. **Commands & Skills (Executable Actions):** Managed via a **Local MCP Server** combined with **UI Stub Syncing**. RuleWeaver supports two MCP runtime modes:
-   - **Embedded mode:** MCP runs inside the desktop app process.
-   - **Standalone mode:** MCP runs as a separate binary (`ruleweaver-mcp --port 8080`).
-
-   RuleWeaver generates the `.md`/`.toml` command stubs for tool UX, while command execution happens through MCP.
+2. **Commands & Skills (Executable Actions):** Managed via **File-Based Sync**. RuleWeaver generates native slash command files (`.md`/`.toml`) directly into each AI tool's command directory. Commands are executed natively by the AI tools.
 
 ## Features
 
 - **Standalone GUI:** A fast, native desktop application (built with Tauri).
 - **Scope Management:** Clearly define if a Configuration is "Global" (applied everywhere) or "Local" (applied only when the AI is operating within specific defined repository paths).
-- **Workspace-Scoped Secrets:** Store shared credentials globally, override them per repository root, and reuse the resolved values in command tests, MCP tools, and skills without leaking raw secrets into logs. Values are kept in OS secure storage and never included in configuration exports.
-- **Dual MCP Runtime:** Embedded MCP in app process or standalone `ruleweaver-mcp` process.
-- **MCP Trust Surface:** Settings now exposes readiness/degraded/error status, actionable diagnostics, endpoint/token copy actions, and ready-to-paste Claude Code / OpenCode snippets.
-- **Observability Logs:** A dedicated Logs page captures MCP lifecycle/client activity plus command and skill runs, with filters and redaction-safe JSON export.
-- **Command Manager:** CRUD commands, test runs, MCP exposure toggles, and execution history.
-- **Command Stub Sync:** Generates command files for supported tools (`COMMANDS.toml` / `COMMANDS.md`).
-- **Native Slash Commands:** Generate native `/commandname` triggers for 8 AI tools with automatic file generation and incremental sync.
-- **Background Keep-Alive:** Optional close-to-tray behavior keeps MCP available.
+- **Workspace-Scoped Secrets:** Store shared credentials globally, override them per repository root, and reuse the resolved values in command tests and skills without leaking raw secrets into logs. Values are kept in OS secure storage and never included in configuration exports.
+- **Observability Logs:** A dedicated Logs page captures command and skill runs, with filters and redaction-safe JSON export.
+- **Command Manager:** CRUD commands, test runs, and execution history.
+- **Native Slash Commands:** Generate native `/commandname` triggers for 9 AI tools with automatic file generation and incremental sync.
 - **Native Skills Distribution:** Skills are synced as `SKILL.md` files directly into each AI tool's skill directory (Claude Code, OpenCode, Cline, Gemini, Roo Code, Windsurf, Antigravity, Codex). Per-skill adapter targeting lets you control which tools receive each skill. Global and local scope both supported.
 - **Unified Status & Repair:** Single operator view across all artifact types (rules, commands, skills). Filter by adapter, artifact type, or sync status. One-click repair re-syncs drifted or missing artifacts.
 - **Priority Tiering:**
@@ -50,10 +42,8 @@ _(Installation instructions will be added as the MVP is developed)_
 
 - See `USER_GUIDE.md` for:
   - rules and skills management
-  - MCP setup and runtime modes
   - workspace-scoped secret management
   - logs filtering and export workflow
-  - agent connection guidance
 
 ### Prerequisites
 
@@ -67,22 +57,6 @@ _(Installation instructions will be added as the MVP is developed)_
 npm install
 npm run tauri:dev
 ```
-
-### MCP Runtime Modes
-
-- **Embedded MCP:** Start RuleWeaver desktop app and use Settings -> MCP Server controls.
-- **Logs & Export:** Open the Logs screen to filter MCP lifecycle/client events plus command and skill runs, then export the current filtered view or selected entries as JSON.
-- **Standalone MCP:** Build and run:
-
-```bash
-cargo run --manifest-path src-tauri/Cargo.toml --bin ruleweaver-mcp -- --port 8080
-```
-
-Use the connection snippets shown in Settings to configure Claude Code/OpenCode.
-
-The MCP Settings card also shows endpoint + token copy actions, recent logs, and diagnostics for common failure modes such as port conflicts, missing exposed tools, and stale client configuration.
-
-If **Minimize to tray on close** is enabled (Settings -> MCP Server), closing the window keeps RuleWeaver and embedded MCP running in the background.
 
 ### Build Scripts
 
