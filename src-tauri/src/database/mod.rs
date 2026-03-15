@@ -13,8 +13,8 @@ use crate::models::{
     CreateSyncManifestInput, DeleteScopedSecretInput, ExecutionLog, ObservabilityEvent,
     ObservabilityEventFilter, ObservabilityEventStatus, ObservabilityEventType, ReconcileOperation,
     ReconcileResultType, Rule, Scope, ScopedSecret, SecretScope, Skill, SyncHistoryEntry,
-    SyncManifestEntry, SyncManifestFilter, UpdateCommandInput, UpdateRuleInput, UpdateSkillInput,
-    UpsertScopedSecretInput,
+    SyncManifestEntry, SyncManifestFilter, ToolSyncPreferences, UpdateCommandInput,
+    UpdateRuleInput, UpdateSkillInput, UpsertScopedSecretInput, UpsertToolSyncPreferencesInput,
 };
 
 fn parse_timestamp_or_now(timestamp: i64) -> DateTime<Utc> {
@@ -2037,6 +2037,86 @@ impl Database {
 
         Ok(count)
     }
+
+    pub async fn get_all_tool_sync_preferences(&self) -> Result<Vec<ToolSyncPreferences>> {
+        let conn = self.0.lock().await;
+        let mut stmt = conn.prepare(
+            "SELECT tool_id, sync_rules, sync_commands, sync_skills FROM tool_sync_preferences",
+        )?;
+
+        let prefs = stmt
+            .query_map([], |row| {
+                let tool_id_str: String = row.get("tool_id")?;
+                let tool_id = AdapterType::from_str(&tool_id_str).unwrap_or(AdapterType::Gemini);
+                Ok(ToolSyncPreferences {
+                    tool_id,
+                    sync_rules: row.get::<_, i32>("sync_rules")? != 0,
+                    sync_commands: row.get::<_, i32>("sync_commands")? != 0,
+                    sync_skills: row.get::<_, i32>("sync_skills")? != 0,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+
+        Ok(prefs)
+    }
+
+    pub async fn get_tool_sync_preferences(
+        &self,
+        tool_id: &AdapterType,
+    ) -> Result<Option<ToolSyncPreferences>> {
+        let conn = self.0.lock().await;
+        let mut stmt = conn.prepare(
+            "SELECT tool_id, sync_rules, sync_commands, sync_skills FROM tool_sync_preferences WHERE tool_id = ?1",
+        )?;
+
+        let result = stmt
+            .query_row(rusqlite::params![tool_id.as_str()], |row| {
+                let tool_id_str: String = row.get("tool_id")?;
+                let tool_id = AdapterType::from_str(&tool_id_str).unwrap_or(AdapterType::Gemini);
+                Ok(ToolSyncPreferences {
+                    tool_id,
+                    sync_rules: row.get::<_, i32>("sync_rules")? != 0,
+                    sync_commands: row.get::<_, i32>("sync_commands")? != 0,
+                    sync_skills: row.get::<_, i32>("sync_skills")? != 0,
+                })
+            })
+            .optional()?;
+
+        Ok(result)
+    }
+
+    pub async fn upsert_tool_sync_preferences(
+        &self,
+        input: UpsertToolSyncPreferencesInput,
+    ) -> Result<ToolSyncPreferences> {
+        let conn = self.0.lock().await;
+
+        let sync_rules = input.sync_rules.unwrap_or(true) as i32;
+        let sync_commands = input.sync_commands.unwrap_or(true) as i32;
+        let sync_skills = input.sync_skills.unwrap_or(true) as i32;
+
+        conn.execute(
+            "INSERT INTO tool_sync_preferences (tool_id, sync_rules, sync_commands, sync_skills)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(tool_id) DO UPDATE SET
+                 sync_rules = excluded.sync_rules,
+                 sync_commands = excluded.sync_commands,
+                 sync_skills = excluded.sync_skills",
+            rusqlite::params![
+                input.tool_id.as_str(),
+                sync_rules,
+                sync_commands,
+                sync_skills
+            ],
+        )?;
+
+        Ok(ToolSyncPreferences {
+            tool_id: input.tool_id,
+            sync_rules: sync_rules != 0,
+            sync_commands: sync_commands != 0,
+            sync_skills: sync_skills != 0,
+        })
+    }
 }
 
 fn run_migrations(conn: &mut Connection) -> Result<()> {
@@ -2478,7 +2558,19 @@ fn run_migrations(conn: &mut Connection) -> Result<()> {
         )?;
     }
 
-    transaction.execute("PRAGMA user_version = 22", [])?;
+    if current_version < 23 {
+        transaction.execute(
+            "CREATE TABLE IF NOT EXISTS tool_sync_preferences (
+                tool_id TEXT PRIMARY KEY NOT NULL,
+                sync_rules INTEGER NOT NULL DEFAULT 1,
+                sync_commands INTEGER NOT NULL DEFAULT 1,
+                sync_skills INTEGER NOT NULL DEFAULT 1
+            )",
+            [],
+        )?;
+    }
+
+    transaction.execute("PRAGMA user_version = 23", [])?;
     transaction.commit()?;
 
     Ok(())

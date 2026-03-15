@@ -17,6 +17,20 @@ export interface InstalledToolInfo {
   configPath: string | null;
 }
 
+export interface ToolSyncPreferences {
+  toolId: AdapterType;
+  syncRules: boolean;
+  syncCommands: boolean;
+  syncSkills: boolean;
+}
+
+export interface UpsertToolSyncPreferencesInput {
+  toolId: AdapterType;
+  syncRules?: boolean;
+  syncCommands?: boolean;
+  syncSkills?: boolean;
+}
+
 export interface ArtifactStatusEntry {
   id: string;
   artifactId: string;

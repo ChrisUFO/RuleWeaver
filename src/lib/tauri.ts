@@ -12,6 +12,7 @@ import type {
   ImportScanResult,
   TemplateRule,
   ToolEntry,
+  AdapterType,
 } from "@/types/rule";
 import type {
   CommandModel,
@@ -28,6 +29,8 @@ import type {
   RepairResult,
   StatusFilter,
   StatusSummary,
+  ToolSyncPreferences,
+  UpsertToolSyncPreferencesInput,
 } from "@/types/status";
 import type {
   DeleteScopedSecretInput,
@@ -266,6 +269,11 @@ export const api = {
   registry: {
     getTools: () => invoke<ToolEntry[]>("get_tool_registry"),
     detectInstalledTools: () => invoke<InstalledToolInfo[]>("detect_installed_tools"),
+    getAllToolSyncPreferences: () => invoke<ToolSyncPreferences[]>("get_all_tool_sync_preferences"),
+    getToolSyncPreferences: (toolId: AdapterType) =>
+      invoke<ToolSyncPreferences | null>("get_tool_sync_preferences", { toolId }),
+    upsertToolSyncPreferences: (input: UpsertToolSyncPreferencesInput) =>
+      invoke<ToolSyncPreferences>("upsert_tool_sync_preferences", { input }),
   },
 
   status: {

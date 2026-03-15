@@ -10,7 +10,7 @@ use crate::models::registry::REGISTRY;
 use crate::models::{
     AdapterType, DeleteScopedSecretInput, EffectiveSecret, ExecutionLog, InstalledToolInfo,
     ResolveScopedSecretsInput, ScopedSecret, SecretStorageStatus, SyncHistoryEntry,
-    UpsertScopedSecretInput,
+    ToolSyncPreferences, UpsertScopedSecretInput, UpsertToolSyncPreferencesInput,
 };
 use crate::secrets;
 
@@ -193,4 +193,27 @@ fn get_tool_config_path(adapter: &AdapterType, home: &Path) -> Option<PathBuf> {
         AdapterType::Copilot => home.join(".copilot"),
     };
     Some(path)
+}
+
+#[tauri::command]
+pub async fn get_all_tool_sync_preferences(
+    db: State<'_, Arc<Database>>,
+) -> Result<Vec<ToolSyncPreferences>> {
+    db.get_all_tool_sync_preferences().await
+}
+
+#[tauri::command]
+pub async fn get_tool_sync_preferences(
+    tool_id: AdapterType,
+    db: State<'_, Arc<Database>>,
+) -> Result<Option<ToolSyncPreferences>> {
+    db.get_tool_sync_preferences(&tool_id).await
+}
+
+#[tauri::command]
+pub async fn upsert_tool_sync_preferences(
+    input: UpsertToolSyncPreferencesInput,
+    db: State<'_, Arc<Database>>,
+) -> Result<ToolSyncPreferences> {
+    db.upsert_tool_sync_preferences(input).await
 }
