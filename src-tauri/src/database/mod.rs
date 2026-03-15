@@ -1799,30 +1799,30 @@ impl Database {
 
         let logs = stmt
             .query_map(rusqlite::params![limit], |row| {
-                let op_str: String = row.get(2)?;
+                let op_str: String = row.get("operation")?;
                 let operation =
                     ReconcileOperation::from_str(&op_str).unwrap_or(ReconcileOperation::Check);
 
-                let adapter_str: Option<String> = row.get(4)?;
+                let adapter_str: Option<String> = row.get("adapter")?;
                 let adapter = adapter_str.and_then(|s| AdapterType::from_str(&s).ok());
 
-                let scope_str: Option<String> = row.get(5)?;
+                let scope_str: Option<String> = row.get("scope")?;
                 let scope = scope_str.and_then(|s| Scope::from_str(&s).ok());
 
-                let res_str: String = row.get(7)?;
+                let res_str: String = row.get("result")?;
                 let result =
                     ReconcileResultType::from_str(&res_str).unwrap_or(ReconcileResultType::Failed);
 
                 Ok(ReconciliationLogEntry {
-                    id: row.get(0)?,
-                    timestamp: parse_timestamp_or_now(row.get(1)?),
+                    id: row.get("id")?,
+                    timestamp: parse_timestamp_or_now(row.get("timestamp")?),
                     operation,
-                    artifact_type: row.get(3)?,
+                    artifact_type: row.get("artifact_type")?,
                     adapter,
                     scope,
-                    path: row.get(6)?,
+                    path: row.get("path")?,
                     result,
-                    error_message: row.get(8)?,
+                    error_message: row.get("error_message")?,
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -1841,14 +1841,14 @@ impl Database {
         )?;
 
         let rows = stmt.query_map([], |row| {
-            let path: String = row.get(0)?;
-            let operation: String = row.get(1)?;
-            let timestamp: DateTime<Utc> = parse_timestamp_or_now(row.get(2)?);
-            Ok((path, operation, timestamp))
+            let path: String = row.get("path")?;
+            let operation: String = row.get("operation")?;
+            let timestamp: DateTime<Utc> = parse_timestamp_or_now(row.get("timestamp")?);
+            Ok((path, (operation, timestamp)))
         })?;
 
         let mut ops = std::collections::HashMap::new();
-        for (path, operation, timestamp) in rows.flatten() {
+        for (path, (operation, timestamp)) in rows.flatten() {
             ops.insert(path, (operation, timestamp));
         }
 
