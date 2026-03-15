@@ -567,7 +567,6 @@ mod tests {
                 description: "Deploy app".into(),
                 script: "echo %PROJECT_API_KEY%".into(),
                 arguments: vec![],
-                expose_via_mcp: true,
                 is_placeholder: false,
                 generate_slash_commands: false,
                 slash_command_adapters: vec![],

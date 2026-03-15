@@ -445,7 +445,7 @@ impl Database {
     pub async fn get_all_commands(&self) -> Result<Vec<Command>> {
         let conn = self.0.lock().await;
         let mut stmt = conn.prepare(
-            "SELECT id, name, description, script, arguments, expose_via_mcp, is_placeholder, generate_slash_commands, slash_command_adapters, target_paths, created_at, updated_at, timeout_ms, max_retries, base_path
+            "SELECT id, name, description, script, arguments, is_placeholder, generate_slash_commands, slash_command_adapters, target_paths, created_at, updated_at, timeout_ms, max_retries, base_path
              FROM commands
              ORDER BY updated_at DESC",
         )?;
@@ -457,16 +457,15 @@ impl Database {
                 let description: String = row.get(2)?;
                 let script: String = row.get(3)?;
                 let arguments_json: String = row.get(4)?;
-                let expose_via_mcp: bool = row.get(5)?;
-                let is_placeholder: bool = row.get(6)?;
-                let generate_slash_commands: bool = row.get(7)?;
-                let slash_adapters_json: String = row.get(8)?;
-                let target_paths_json: String = row.get(9)?;
-                let created_at: i64 = row.get(10)?;
-                let updated_at: i64 = row.get(11)?;
-                let timeout_ms: Option<i64> = row.get(12)?;
-                let max_retries: Option<i32> = row.get(13)?;
-                let base_path: Option<String> = row.get(14)?;
+                let is_placeholder: bool = row.get(5)?;
+                let generate_slash_commands: bool = row.get(6)?;
+                let slash_adapters_json: String = row.get(7)?;
+                let target_paths_json: String = row.get(8)?;
+                let created_at: i64 = row.get(9)?;
+                let updated_at: i64 = row.get(10)?;
+                let timeout_ms: Option<i64> = row.get(11)?;
+                let max_retries: Option<i32> = row.get(12)?;
+                let base_path: Option<String> = row.get(13)?;
 
                 let arguments: Vec<CommandArgument> = serde_json::from_str(&arguments_json)
                     .map_err(|e| {
@@ -501,7 +500,6 @@ impl Database {
                     description,
                     script,
                     arguments,
-                    expose_via_mcp,
                     is_placeholder,
                     generate_slash_commands,
                     slash_command_adapters,
@@ -521,7 +519,7 @@ impl Database {
     pub async fn get_command_by_id(&self, id: &str) -> Result<Command> {
         let conn = self.0.lock().await;
         let mut stmt = conn.prepare(
-            "SELECT id, name, description, script, arguments, expose_via_mcp, is_placeholder, generate_slash_commands, slash_command_adapters, target_paths, created_at, updated_at, timeout_ms, max_retries, base_path
+            "SELECT id, name, description, script, arguments, is_placeholder, generate_slash_commands, slash_command_adapters, target_paths, created_at, updated_at, timeout_ms, max_retries, base_path
              FROM commands
              WHERE id = ?",
         )?;
@@ -533,16 +531,15 @@ impl Database {
                 let description: String = row.get(2)?;
                 let script: String = row.get(3)?;
                 let arguments_json: String = row.get(4)?;
-                let expose_via_mcp: bool = row.get(5)?;
-                let is_placeholder: bool = row.get(6)?;
-                let generate_slash_commands: bool = row.get(7)?;
-                let slash_adapters_json: String = row.get(8)?;
-                let target_paths_json: String = row.get(9)?;
-                let created_at: i64 = row.get(10)?;
-                let updated_at: i64 = row.get(11)?;
-                let timeout_ms: Option<i64> = row.get(12)?;
-                let max_retries: Option<i32> = row.get(13)?;
-                let base_path: Option<String> = row.get(14)?;
+                let is_placeholder: bool = row.get(5)?;
+                let generate_slash_commands: bool = row.get(6)?;
+                let slash_adapters_json: String = row.get(7)?;
+                let target_paths_json: String = row.get(8)?;
+                let created_at: i64 = row.get(9)?;
+                let updated_at: i64 = row.get(10)?;
+                let timeout_ms: Option<i64> = row.get(11)?;
+                let max_retries: Option<i32> = row.get(12)?;
+                let base_path: Option<String> = row.get(13)?;
 
                 let arguments: Vec<CommandArgument> = serde_json::from_str(&arguments_json)
                     .map_err(|e| {
@@ -577,7 +574,6 @@ impl Database {
                     description,
                     script,
                     arguments,
-                    expose_via_mcp,
                     is_placeholder,
                     generate_slash_commands,
                     slash_command_adapters,
@@ -608,15 +604,14 @@ impl Database {
         let target_paths_json = serde_json::to_string(&input.target_paths)?;
 
         conn.execute(
-            "INSERT INTO commands (id, name, description, script, arguments, expose_via_mcp, is_placeholder, generate_slash_commands, slash_command_adapters, target_paths, created_at, updated_at, timeout_ms, max_retries, base_path)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO commands (id, name, description, script, arguments, is_placeholder, generate_slash_commands, slash_command_adapters, target_paths, created_at, updated_at, timeout_ms, max_retries, base_path)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             params![
                 id,
                 input.name,
                 input.description,
                 input.script,
                 arguments_json,
-                input.expose_via_mcp,
                 input.is_placeholder,
                 input.generate_slash_commands,
                 slash_adapters_json,
@@ -641,7 +636,6 @@ impl Database {
         let description = input.description.unwrap_or(existing.description);
         let script = input.script.unwrap_or(existing.script);
         let arguments = input.arguments.unwrap_or(existing.arguments);
-        let expose_via_mcp = input.expose_via_mcp.unwrap_or(existing.expose_via_mcp);
         let is_placeholder = input.is_placeholder.unwrap_or(existing.is_placeholder);
         let generate_slash_commands = input
             .generate_slash_commands
@@ -659,14 +653,13 @@ impl Database {
         let target_paths_json = serde_json::to_string(&target_paths)?;
 
         conn.execute(
-            "UPDATE commands SET name = ?, description = ?, script = ?, arguments = ?, expose_via_mcp = ?, is_placeholder = ?, generate_slash_commands = ?, slash_command_adapters = ?, target_paths = ?, updated_at = ?, timeout_ms = ?, max_retries = ?, base_path = ?
+            "UPDATE commands SET name = ?, description = ?, script = ?, arguments = ?, is_placeholder = ?, generate_slash_commands = ?, slash_command_adapters = ?, target_paths = ?, updated_at = ?, timeout_ms = ?, max_retries = ?, base_path = ?
              WHERE id = ?",
             params![
                 name,
                 description,
                 script,
                 arguments_json,
-                expose_via_mcp,
                 is_placeholder,
                 generate_slash_commands,
                 slash_adapters_json,
@@ -1667,12 +1660,12 @@ impl Database {
         let sql = match mode {
             crate::models::ImportMode::Overwrite => {
                 log::info!("Import: Overwriting command {}", command.id);
-                "INSERT OR REPLACE INTO commands (id, name, description, script, arguments, expose_via_mcp, is_placeholder, generate_slash_commands, slash_command_adapters, target_paths, created_at, updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                "INSERT OR REPLACE INTO commands (id, name, description, script, arguments, is_placeholder, generate_slash_commands, slash_command_adapters, target_paths, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             }
             crate::models::ImportMode::Skip => {
-                "INSERT OR IGNORE INTO commands (id, name, description, script, arguments, expose_via_mcp, is_placeholder, generate_slash_commands, slash_command_adapters, target_paths, created_at, updated_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                "INSERT OR IGNORE INTO commands (id, name, description, script, arguments, is_placeholder, generate_slash_commands, slash_command_adapters, target_paths, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             }
         };
 
@@ -1684,7 +1677,6 @@ impl Database {
                 command.description,
                 command.script,
                 arguments_json,
-                command.expose_via_mcp,
                 command.is_placeholder,
                 command.generate_slash_commands,
                 slash_adapters_json,
@@ -2271,7 +2263,18 @@ fn run_migrations(conn: &mut Connection) -> Result<()> {
         )?;
     }
 
-    transaction.execute("PRAGMA user_version = 20", [])?;
+    if current_version < 21 {
+        let mut stmt = transaction.prepare("PRAGMA table_info(commands)")?;
+        let cols: Vec<String> = stmt
+            .query_map([], |row| row.get(1))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+
+        if cols.iter().any(|c| c == "expose_via_mcp") {
+            transaction.execute("ALTER TABLE commands DROP COLUMN expose_via_mcp", [])?;
+        }
+    }
+
+    transaction.execute("PRAGMA user_version = 21", [])?;
     transaction.commit()?;
 
     Ok(())
@@ -2384,7 +2387,6 @@ mod tests {
                 description: "Run build".to_string(),
                 script: "npm run build".to_string(),
                 arguments: vec![],
-                expose_via_mcp: true,
                 is_placeholder: false,
                 generate_slash_commands: false,
                 slash_command_adapters: vec![],

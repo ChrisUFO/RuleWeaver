@@ -36,7 +36,7 @@ impl CommandAdapter for GeminiAdapter {
         }
 
         let mut stubs = Vec::new();
-        for cmd in commands.iter().filter(|c| c.expose_via_mcp) {
+        for cmd in commands.iter() {
             let mut args = HashMap::new();
             for arg in &cmd.arguments {
                 args.insert(
@@ -139,7 +139,7 @@ fn format_markdown(commands: &[Command], title: &str) -> String {
 
 ",
     );
-    for cmd in commands.iter().filter(|c| c.expose_via_mcp) {
+    for cmd in commands.iter() {
         out.push_str(&format!(
             "## {}
 
