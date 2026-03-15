@@ -10,7 +10,10 @@ use crate::constants::{
 use crate::database::Database;
 use crate::error::Result;
 use crate::models::registry::{ArtifactType, REGISTRY};
-use crate::models::{AdapterType, Conflict, DiffSummary, Rule, Scope, SyncError, SyncResult};
+use crate::models::{
+    AdapterType, Conflict, CreateSyncManifestInput, DiffSummary, Rule, Scope, SyncError,
+    SyncResult, ToolSyncPreferences,
+};
 use crate::path_resolver::path_resolver;
 
 fn registry_entry(adapter: &AdapterType) -> &'static crate::models::registry::ToolEntry {
@@ -540,16 +543,50 @@ impl<'a> SyncEngine<'a> {
         }
     }
 
+    async fn get_tool_sync_preferences(&self) -> HashMap<AdapterType, ToolSyncPreferences> {
+        match self.db.get_all_tool_sync_preferences().await {
+            Ok(prefs) => prefs.into_iter().map(|p| (p.tool_id, p)).collect(),
+            Err(e) => {
+                log::warn!("Failed to load tool sync preferences: {}", e);
+                HashMap::new()
+            }
+        }
+    }
+
+    fn should_sync_artifact(
+        prefs: &HashMap<AdapterType, ToolSyncPreferences>,
+        adapter: &AdapterType,
+        artifact_type: &ArtifactType,
+    ) -> bool {
+        match prefs.get(adapter) {
+            Some(pref) => match artifact_type {
+                ArtifactType::Rule => pref.sync_rules,
+                ArtifactType::CommandStub | ArtifactType::SlashCommand => pref.sync_commands,
+                ArtifactType::Skill => pref.sync_skills,
+            },
+            None => true,
+        }
+    }
+
     pub async fn sync_all(&self, rules: Vec<Rule>) -> SyncResult {
         let mut files_written = Vec::new();
         let mut errors = Vec::new();
         let conflicts = Vec::new();
 
         let disabled_adapters = self.get_disabled_adapters().await;
+        let tool_prefs = self.get_tool_sync_preferences().await;
         let adapters = get_all_adapters();
 
         for adapter in &adapters {
             if disabled_adapters.contains(&adapter.id()) {
+                continue;
+            }
+
+            if !Self::should_sync_artifact(&tool_prefs, &adapter.id(), &ArtifactType::Rule) {
+                log::debug!(
+                    "Skipping {} - rules sync disabled in preferences",
+                    adapter.name()
+                );
                 continue;
             }
 
@@ -661,6 +698,7 @@ impl<'a> SyncEngine<'a> {
         let conflicts = Vec::new();
 
         let disabled_adapters = self.get_disabled_adapters().await;
+        let tool_prefs = self.get_tool_sync_preferences().await;
         let adapters = get_all_adapters();
 
         let all_rules = match self.db.get_all_rules().await {
@@ -685,6 +723,7 @@ impl<'a> SyncEngine<'a> {
                 || REGISTRY
                     .validate_support(&adapter.id(), &rule.scope, ArtifactType::Rule)
                     .is_err()
+                || !Self::should_sync_artifact(&tool_prefs, &adapter.id(), &ArtifactType::Rule)
             {
                 continue;
             }
@@ -938,6 +977,31 @@ impl<'a> SyncEngine<'a> {
         self.db
             .set_file_hash(&path.to_string_lossy(), &hash)
             .await?;
+
+        let scope = rules.first().map(|r| r.scope).unwrap_or(Scope::Global);
+        if let Err(e) = self
+            .db
+            .upsert_sync_manifest(CreateSyncManifestInput {
+                id: None,
+                path: path.to_string_lossy().to_string(),
+                artifact_id: rules
+                    .iter()
+                    .map(|r| r.id.clone())
+                    .collect::<Vec<_>>()
+                    .join(","),
+                artifact_type: ArtifactType::Rule,
+                adapter: adapter.id(),
+                scope,
+                content_hash: hash,
+            })
+            .await
+        {
+            log::warn!(
+                "Failed to update sync manifest for {}: {}",
+                path.display(),
+                e
+            );
+        }
 
         Ok(())
     }

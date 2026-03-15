@@ -2941,4 +2941,165 @@ mod tests {
         assert!(export_body.contains("\"eventCount\": 1"));
         assert!(export_body.contains("\"isRedacted\": true"));
     }
+
+    #[tokio::test]
+    async fn test_sync_manifest_crud() {
+        let db = Database::new_in_memory().await.unwrap();
+
+        let input = CreateSyncManifestInput {
+            id: None,
+            path: "/home/user/.gemini/GEMINI.md".to_string(),
+            artifact_id: "rule-123".to_string(),
+            artifact_type: crate::models::registry::ArtifactType::Rule,
+            adapter: AdapterType::Gemini,
+            scope: Scope::Global,
+            content_hash: "abc123hash".to_string(),
+        };
+
+        let created = db.upsert_sync_manifest(input.clone()).await.unwrap();
+        assert_eq!(created.path, "/home/user/.gemini/GEMINI.md");
+        assert_eq!(created.adapter, AdapterType::Gemini);
+        assert_eq!(created.scope, Scope::Global);
+
+        let fetched = db
+            .get_sync_manifest_by_path("/home/user/.gemini/GEMINI.md")
+            .await
+            .unwrap();
+        assert!(fetched.is_some());
+        let fetched = fetched.unwrap();
+        assert_eq!(fetched.id, created.id);
+        assert_eq!(fetched.content_hash, "abc123hash");
+
+        let all = db
+            .list_sync_manifest(SyncManifestFilter::default())
+            .await
+            .unwrap();
+        assert_eq!(all.len(), 1);
+
+        let filtered = db
+            .list_sync_manifest(SyncManifestFilter {
+                adapter: Some(AdapterType::Gemini),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        assert_eq!(filtered.len(), 1);
+
+        let filtered_none = db
+            .list_sync_manifest(SyncManifestFilter {
+                adapter: Some(AdapterType::ClaudeCode),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        assert_eq!(filtered_none.len(), 0);
+
+        db.delete_sync_manifest_by_path("/home/user/.gemini/GEMINI.md")
+            .await
+            .unwrap();
+        assert!(db
+            .get_sync_manifest_by_path("/home/user/.gemini/GEMINI.md")
+            .await
+            .unwrap()
+            .is_none());
+    }
+
+    #[tokio::test]
+    async fn test_sync_manifest_upsert_updates_existing() {
+        let db = Database::new_in_memory().await.unwrap();
+
+        let input1 = CreateSyncManifestInput {
+            id: None,
+            path: "/home/user/.gemini/GEMINI.md".to_string(),
+            artifact_id: "rule-123".to_string(),
+            artifact_type: crate::models::registry::ArtifactType::Rule,
+            adapter: AdapterType::Gemini,
+            scope: Scope::Global,
+            content_hash: "hash1".to_string(),
+        };
+
+        db.upsert_sync_manifest(input1).await.unwrap();
+
+        let input2 = CreateSyncManifestInput {
+            id: None,
+            path: "/home/user/.gemini/GEMINI.md".to_string(),
+            artifact_id: "rule-456".to_string(),
+            artifact_type: crate::models::registry::ArtifactType::Rule,
+            adapter: AdapterType::Gemini,
+            scope: Scope::Global,
+            content_hash: "hash2".to_string(),
+        };
+
+        let created2 = db.upsert_sync_manifest(input2).await.unwrap();
+
+        assert_eq!(created2.artifact_id, "rule-456");
+        assert_eq!(created2.content_hash, "hash2");
+
+        let fetched = db
+            .get_sync_manifest_by_path("/home/user/.gemini/GEMINI.md")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(fetched.artifact_id, "rule-456");
+        assert_eq!(fetched.content_hash, "hash2");
+
+        let all = db
+            .list_sync_manifest(SyncManifestFilter::default())
+            .await
+            .unwrap();
+        assert_eq!(all.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_tool_sync_preferences_crud() {
+        let db = Database::new_in_memory().await.unwrap();
+
+        let input = UpsertToolSyncPreferencesInput {
+            tool_id: AdapterType::Gemini,
+            sync_rules: Some(true),
+            sync_commands: Some(false),
+            sync_skills: Some(true),
+        };
+
+        let created = db.upsert_tool_sync_preferences(input).await.unwrap();
+        assert_eq!(created.tool_id, AdapterType::Gemini);
+        assert!(created.sync_rules);
+        assert!(!created.sync_commands);
+        assert!(created.sync_skills);
+
+        let fetched = db
+            .get_tool_sync_preferences(&AdapterType::Gemini)
+            .await
+            .unwrap();
+        assert!(fetched.is_some());
+        let fetched = fetched.unwrap();
+        assert_eq!(fetched.tool_id, AdapterType::Gemini);
+        assert!(!fetched.sync_commands);
+
+        let all = db.get_all_tool_sync_preferences().await.unwrap();
+        assert_eq!(all.len(), 1);
+
+        let not_found = db
+            .get_tool_sync_preferences(&AdapterType::ClaudeCode)
+            .await
+            .unwrap();
+        assert!(not_found.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_tool_sync_preferences_defaults() {
+        let db = Database::new_in_memory().await.unwrap();
+
+        let input = UpsertToolSyncPreferencesInput {
+            tool_id: AdapterType::Gemini,
+            sync_rules: None,
+            sync_commands: None,
+            sync_skills: None,
+        };
+
+        let created = db.upsert_tool_sync_preferences(input).await.unwrap();
+        assert!(created.sync_rules);
+        assert!(created.sync_commands);
+        assert!(created.sync_skills);
+    }
 }
