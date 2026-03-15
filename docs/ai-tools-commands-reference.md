@@ -37,8 +37,6 @@ A comprehensive guide to how each AI coding tool handles **rules**, **custom com
 
 ---
 
----
-
 ## Portable Configuration
 
 RuleWeaver provides features to make command and skill configurations fully portable:
