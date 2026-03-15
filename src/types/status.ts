@@ -31,6 +31,20 @@ export interface UpsertToolSyncPreferencesInput {
   syncSkills?: boolean;
 }
 
+export interface SyncManifestFilter {
+  adapter?: AdapterType;
+  artifactType?: ArtifactType;
+  artifactId?: string;
+  scope?: Scope;
+}
+
+export interface CleanupResult {
+  filesRemoved: number;
+  filesSkipped: number;
+  errors: string[];
+  removedPaths: string[];
+}
+
 export interface ArtifactStatusEntry {
   id: string;
   artifactId: string;

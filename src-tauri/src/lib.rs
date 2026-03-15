@@ -473,6 +473,7 @@ pub fn run() {
             commands::get_all_tool_sync_preferences,
             commands::get_tool_sync_preferences,
             commands::upsert_tool_sync_preferences,
+            commands::cleanup_synced_files,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

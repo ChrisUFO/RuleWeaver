@@ -25,10 +25,12 @@ import type {
 import type { CreateSkillInput, Skill, UpdateSkillInput, TemplateSkill } from "@/types/skill";
 import type {
   ArtifactStatusEntry,
+  CleanupResult,
   InstalledToolInfo,
   RepairResult,
   StatusFilter,
   StatusSummary,
+  SyncManifestFilter,
   ToolSyncPreferences,
   UpsertToolSyncPreferencesInput,
 } from "@/types/status";
@@ -274,6 +276,8 @@ export const api = {
       invoke<ToolSyncPreferences | null>("get_tool_sync_preferences", { toolId }),
     upsertToolSyncPreferences: (input: UpsertToolSyncPreferencesInput) =>
       invoke<ToolSyncPreferences>("upsert_tool_sync_preferences", { input }),
+    cleanupSyncedFiles: (filter: SyncManifestFilter) =>
+      invoke<CleanupResult>("cleanup_synced_files", { filter }),
   },
 
   status: {

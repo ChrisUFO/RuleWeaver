@@ -33,6 +33,7 @@ import { AdapterSettingsCard } from "@/components/settings/AdapterSettingsCard";
 import { RepositorySettingsCard } from "@/components/settings/RepositorySettingsCard";
 import { ScopedSecretsCard } from "@/components/settings/ScopedSecretsCard";
 import { SettingsTabs } from "@/components/settings/SettingsTabs";
+import { ToolSyncPreferencesMatrix } from "@/components/settings/ToolSyncPreferencesMatrix";
 
 const SETTINGS_TABS = [
   { id: "general", label: "General", icon: SettingsIcon },
@@ -248,6 +249,8 @@ export function Settings({ onNavigate: _onNavigate }: { onNavigate?: (view: stri
                 isLoading={isLoading}
                 onToggle={handlers.toggleAdapter}
               />
+
+              <ToolSyncPreferencesMatrix />
 
               <Card className="glass-card premium-shadow border-none overflow-hidden">
                 <CardHeader className="bg-white/5 pb-4">

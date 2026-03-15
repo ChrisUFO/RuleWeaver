@@ -8,9 +8,10 @@ use crate::database::{get_app_data_path, Database};
 use crate::error::Result;
 use crate::models::registry::REGISTRY;
 use crate::models::{
-    AdapterType, DeleteScopedSecretInput, EffectiveSecret, ExecutionLog, InstalledToolInfo,
-    ResolveScopedSecretsInput, ScopedSecret, SecretStorageStatus, SyncHistoryEntry,
-    ToolSyncPreferences, UpsertScopedSecretInput, UpsertToolSyncPreferencesInput,
+    AdapterType, CleanupResult, DeleteScopedSecretInput, EffectiveSecret, ExecutionLog,
+    InstalledToolInfo, ResolveScopedSecretsInput, ScopedSecret, SecretStorageStatus,
+    SyncHistoryEntry, SyncManifestFilter, ToolSyncPreferences, UpsertScopedSecretInput,
+    UpsertToolSyncPreferencesInput,
 };
 use crate::secrets;
 
@@ -216,4 +217,54 @@ pub async fn upsert_tool_sync_preferences(
     db: State<'_, Arc<Database>>,
 ) -> Result<ToolSyncPreferences> {
     db.upsert_tool_sync_preferences(input).await
+}
+
+#[tauri::command]
+pub async fn cleanup_synced_files(
+    filter: SyncManifestFilter,
+    db: State<'_, Arc<Database>>,
+) -> Result<CleanupResult> {
+    let entries = db.list_sync_manifest(filter).await?;
+
+    let mut files_removed = 0;
+    let mut files_skipped = 0;
+    let mut errors = Vec::new();
+    let mut removed_paths = Vec::new();
+
+    for entry in entries {
+        let path = PathBuf::from(&entry.path);
+        if path.exists() {
+            match tokio::fs::remove_file(&path).await {
+                Ok(()) => {
+                    files_removed += 1;
+                    removed_paths.push(entry.path.clone());
+                    if let Err(e) = db.delete_sync_manifest_by_path(&entry.path).await {
+                        errors.push(format!(
+                            "Failed to delete manifest entry for {}: {}",
+                            entry.path, e
+                        ));
+                    }
+                }
+                Err(e) => {
+                    files_skipped += 1;
+                    errors.push(format!("Failed to remove {}: {}", entry.path, e));
+                }
+            }
+        } else {
+            files_skipped += 1;
+            if let Err(e) = db.delete_sync_manifest_by_path(&entry.path).await {
+                errors.push(format!(
+                    "Failed to delete stale manifest entry for {}: {}",
+                    entry.path, e
+                ));
+            }
+        }
+    }
+
+    Ok(CleanupResult {
+        files_removed,
+        files_skipped,
+        errors,
+        removed_paths,
+    })
 }

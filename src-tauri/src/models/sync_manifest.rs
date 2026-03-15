@@ -53,3 +53,41 @@ pub struct SyncManifestFilter {
     pub artifact_id: Option<String>,
     pub scope: Option<Scope>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CleanupResult {
+    pub files_removed: usize,
+    pub files_skipped: usize,
+    pub errors: Vec<String>,
+    pub removed_paths: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum ReconciliationMode {
+    #[default]
+    Automatic,
+    Interactive,
+}
+
+impl ReconciliationMode {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ReconciliationMode::Automatic => "automatic",
+            ReconciliationMode::Interactive => "interactive",
+        }
+    }
+}
+
+impl std::str::FromStr for ReconciliationMode {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "automatic" | "auto" => Ok(ReconciliationMode::Automatic),
+            "interactive" => Ok(ReconciliationMode::Interactive),
+            _ => Err(format!("Invalid reconciliation mode: {}", s)),
+        }
+    }
+}
