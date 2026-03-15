@@ -24,11 +24,11 @@ fn parse_timestamp_or_now(timestamp: i64) -> DateTime<Utc> {
 }
 
 fn parse_observability_event_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ObservabilityEvent> {
-    let timestamp: i64 = row.get(1)?;
-    let event_type_raw: String = row.get(2)?;
-    let status_raw: String = row.get(3)?;
+    let timestamp: i64 = row.get("timestamp")?;
+    let event_type_raw: String = row.get("event_type")?;
+    let status_raw: String = row.get("status")?;
     Ok(ObservabilityEvent {
-        id: row.get(0)?,
+        id: row.get("id")?,
         timestamp: parse_timestamp_or_now(timestamp),
         event_type: event_type_raw.parse().map_err(|error: AppError| {
             rusqlite::Error::FromSqlConversionFailure(
@@ -44,20 +44,24 @@ fn parse_observability_event_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Ob
                 Box::new(error),
             )
         })?,
-        source: row.get(4)?,
-        entity_kind: row.get(5)?,
-        entity_id: row.get(6)?,
-        entity_name: row.get(7)?,
-        workspace_path: row.get(8)?,
-        summary: row.get(9)?,
-        metadata: row.get(10)?,
-        stdout_excerpt: row.get(11)?,
-        stderr_excerpt: row.get(12)?,
-        duration_ms: row.get::<_, Option<i64>>(13)?.map(|value| value as u64),
-        exit_code: row.get(14)?,
-        failure_class: row.get(15)?,
-        attempt_number: row.get::<_, Option<i64>>(16)?.map(|value| value as u8),
-        is_redacted: row.get::<_, i32>(17)? != 0,
+        source: row.get("source")?,
+        entity_kind: row.get("entity_kind")?,
+        entity_id: row.get("entity_id")?,
+        entity_name: row.get("entity_name")?,
+        workspace_path: row.get("workspace_path")?,
+        summary: row.get("summary")?,
+        metadata: row.get("metadata")?,
+        stdout_excerpt: row.get("stdout_excerpt")?,
+        stderr_excerpt: row.get("stderr_excerpt")?,
+        duration_ms: row
+            .get::<_, Option<i64>>("duration_ms")?
+            .map(|value| value as u64),
+        exit_code: row.get("exit_code")?,
+        failure_class: row.get("failure_class")?,
+        attempt_number: row
+            .get::<_, Option<i64>>("attempt_number")?
+            .map(|value| value as u8),
+        is_redacted: row.get::<_, i32>("is_redacted")? != 0,
     })
 }
 
@@ -217,16 +221,16 @@ impl Database {
 
         let rules = stmt
             .query_map([], |row| {
-                let id: String = row.get(0)?;
-                let name: String = row.get(1)?;
-                let description: String = row.get(2)?;
-                let content: String = row.get(3)?;
-                let scope_str: String = row.get(4)?;
-                let target_paths_json: Option<String> = row.get(5)?;
-                let enabled_adapters_json: String = row.get(6)?;
-                let enabled: bool = row.get(7)?;
-                let created_at: i64 = row.get(8)?;
-                let updated_at: i64 = row.get(9)?;
+                let id: String = row.get("id")?;
+                let name: String = row.get("name")?;
+                let description: String = row.get("description")?;
+                let content: String = row.get("content")?;
+                let scope_str: String = row.get("scope")?;
+                let target_paths_json: Option<String> = row.get("target_paths")?;
+                let enabled_adapters_json: String = row.get("enabled_adapters")?;
+                let enabled: bool = row.get("enabled")?;
+                let created_at: i64 = row.get("created_at")?;
+                let updated_at: i64 = row.get("updated_at")?;
 
                 let scope = Scope::from_str(&scope_str).map_err(|_| {
                     rusqlite::Error::FromSqlConversionFailure(
@@ -242,7 +246,7 @@ impl Database {
                 let target_paths: Option<Vec<String>> = match target_paths_json {
                     Some(j) => Some(serde_json::from_str(&j).map_err(|e| {
                         rusqlite::Error::FromSqlConversionFailure(
-                            4,
+                            5,
                             rusqlite::types::Type::Text,
                             Box::new(e),
                         )
@@ -253,7 +257,7 @@ impl Database {
                 let enabled_adapters: Vec<AdapterType> =
                     serde_json::from_str(&enabled_adapters_json).map_err(|e| {
                         rusqlite::Error::FromSqlConversionFailure(
-                            5,
+                            6,
                             rusqlite::types::Type::Text,
                             Box::new(e),
                         )
@@ -287,16 +291,16 @@ impl Database {
 
         let rule = stmt
             .query_row(params![id], |row| {
-                let id: String = row.get(0)?;
-                let name: String = row.get(1)?;
-                let description: String = row.get(2)?;
-                let content: String = row.get(3)?;
-                let scope_str: String = row.get(4)?;
-                let target_paths_json: Option<String> = row.get(5)?;
-                let enabled_adapters_json: String = row.get(6)?;
-                let enabled: bool = row.get(7)?;
-                let created_at: i64 = row.get(8)?;
-                let updated_at: i64 = row.get(9)?;
+                let id: String = row.get("id")?;
+                let name: String = row.get("name")?;
+                let description: String = row.get("description")?;
+                let content: String = row.get("content")?;
+                let scope_str: String = row.get("scope")?;
+                let target_paths_json: Option<String> = row.get("target_paths")?;
+                let enabled_adapters_json: String = row.get("enabled_adapters")?;
+                let enabled: bool = row.get("enabled")?;
+                let created_at: i64 = row.get("created_at")?;
+                let updated_at: i64 = row.get("updated_at")?;
 
                 let scope = Scope::from_str(&scope_str).map_err(|_| {
                     rusqlite::Error::FromSqlConversionFailure(
@@ -312,17 +316,18 @@ impl Database {
                 let target_paths: Option<Vec<String>> = match target_paths_json {
                     Some(j) => Some(serde_json::from_str(&j).map_err(|e| {
                         rusqlite::Error::FromSqlConversionFailure(
-                            4,
+                            5,
                             rusqlite::types::Type::Text,
                             Box::new(e),
                         )
                     })?),
                     None => None,
                 };
+
                 let enabled_adapters: Vec<AdapterType> =
                     serde_json::from_str(&enabled_adapters_json).map_err(|e| {
                         rusqlite::Error::FromSqlConversionFailure(
-                            5,
+                            6,
                             rusqlite::types::Type::Text,
                             Box::new(e),
                         )
@@ -452,20 +457,20 @@ impl Database {
 
         let commands = stmt
             .query_map([], |row| {
-                let id: String = row.get(0)?;
-                let name: String = row.get(1)?;
-                let description: String = row.get(2)?;
-                let script: String = row.get(3)?;
-                let arguments_json: String = row.get(4)?;
-                let is_placeholder: bool = row.get(5)?;
-                let generate_slash_commands: bool = row.get(6)?;
-                let slash_adapters_json: String = row.get(7)?;
-                let target_paths_json: String = row.get(8)?;
-                let created_at: i64 = row.get(9)?;
-                let updated_at: i64 = row.get(10)?;
-                let timeout_ms: Option<i64> = row.get(11)?;
-                let max_retries: Option<i32> = row.get(12)?;
-                let base_path: Option<String> = row.get(13)?;
+                let id: String = row.get("id")?;
+                let name: String = row.get("name")?;
+                let description: String = row.get("description")?;
+                let script: String = row.get("script")?;
+                let arguments_json: String = row.get("arguments")?;
+                let is_placeholder: bool = row.get("is_placeholder")?;
+                let generate_slash_commands: bool = row.get("generate_slash_commands")?;
+                let slash_adapters_json: String = row.get("slash_command_adapters")?;
+                let target_paths_json: String = row.get("target_paths")?;
+                let created_at: i64 = row.get("created_at")?;
+                let updated_at: i64 = row.get("updated_at")?;
+                let timeout_ms: Option<i64> = row.get("timeout_ms")?;
+                let max_retries: Option<i32> = row.get("max_retries")?;
+                let base_path: Option<String> = row.get("base_path")?;
 
                 let arguments: Vec<CommandArgument> = serde_json::from_str(&arguments_json)
                     .map_err(|e| {
@@ -526,20 +531,20 @@ impl Database {
 
         let command = stmt
             .query_row(params![id], |row| {
-                let id: String = row.get(0)?;
-                let name: String = row.get(1)?;
-                let description: String = row.get(2)?;
-                let script: String = row.get(3)?;
-                let arguments_json: String = row.get(4)?;
-                let is_placeholder: bool = row.get(5)?;
-                let generate_slash_commands: bool = row.get(6)?;
-                let slash_adapters_json: String = row.get(7)?;
-                let target_paths_json: String = row.get(8)?;
-                let created_at: i64 = row.get(9)?;
-                let updated_at: i64 = row.get(10)?;
-                let timeout_ms: Option<i64> = row.get(11)?;
-                let max_retries: Option<i32> = row.get(12)?;
-                let base_path: Option<String> = row.get(13)?;
+                let id: String = row.get("id")?;
+                let name: String = row.get("name")?;
+                let description: String = row.get("description")?;
+                let script: String = row.get("script")?;
+                let arguments_json: String = row.get("arguments")?;
+                let is_placeholder: bool = row.get("is_placeholder")?;
+                let generate_slash_commands: bool = row.get("generate_slash_commands")?;
+                let slash_adapters_json: String = row.get("slash_command_adapters")?;
+                let target_paths_json: String = row.get("target_paths")?;
+                let created_at: i64 = row.get("created_at")?;
+                let updated_at: i64 = row.get("updated_at")?;
+                let timeout_ms: Option<i64> = row.get("timeout_ms")?;
+                let max_retries: Option<i32> = row.get("max_retries")?;
+                let base_path: Option<String> = row.get("base_path")?;
 
                 let arguments: Vec<CommandArgument> = serde_json::from_str(&arguments_json)
                     .map_err(|e| {
@@ -693,12 +698,12 @@ impl Database {
         let skills = stmt
             .query_map([], |row| {
                 Ok(Skill {
-                    id: row.get(0)?,
-                    name: row.get(1)?,
-                    description: row.get(2)?,
-                    instructions: row.get(3)?,
+                    id: row.get("id")?,
+                    name: row.get("name")?,
+                    description: row.get("description")?,
+                    instructions: row.get("instructions")?,
                     input_schema: {
-                        let raw: String = row.get(4)?;
+                        let raw: String = row.get("input_schema")?;
                         serde_json::from_str(&raw).map_err(|e| {
                             rusqlite::Error::FromSqlConversionFailure(
                                 4,
@@ -707,12 +712,12 @@ impl Database {
                             )
                         })?
                     },
-                    enabled: row.get(5)?,
-                    created_at: parse_timestamp_or_now(row.get(6)?),
-                    updated_at: parse_timestamp_or_now(row.get(7)?),
-                    directory_path: row.get(8)?,
-                    entry_point: row.get(9)?,
-                    scope: Scope::from_str(&row.get::<_, String>(10)?).map_err(|_| {
+                    enabled: row.get("enabled")?,
+                    created_at: parse_timestamp_or_now(row.get("created_at")?),
+                    updated_at: parse_timestamp_or_now(row.get("updated_at")?),
+                    directory_path: row.get("directory_path")?,
+                    entry_point: row.get("entry_point")?,
+                    scope: Scope::from_str(&row.get::<_, String>("scope")?).map_err(|_| {
                         rusqlite::Error::FromSqlConversionFailure(
                             10,
                             rusqlite::types::Type::Text,
@@ -723,20 +728,20 @@ impl Database {
                         )
                     })?,
                     target_adapters: {
-                        let raw: String = row.get(11)?;
+                        let raw: String = row.get("target_adapters")?;
                         serde_json::from_str(&raw).unwrap_or_else(|e| {
                             log::warn!("Failed to parse skill JSON: {}. Falling back to empty.", e);
                             Vec::new()
                         })
                     },
                     target_paths: {
-                        let raw: String = row.get(12)?;
+                        let raw: String = row.get("target_paths")?;
                         serde_json::from_str(&raw).unwrap_or_else(|e| {
                             log::warn!("Failed to parse skill JSON: {}. Falling back to empty.", e);
                             Vec::new()
                         })
                     },
-                    base_path: row.get(13)?,
+                    base_path: row.get("base_path")?,
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -754,12 +759,12 @@ impl Database {
         let skill = stmt
             .query_row(params![id], |row| {
                 Ok(Skill {
-                    id: row.get(0)?,
-                    name: row.get(1)?,
-                    description: row.get(2)?,
-                    instructions: row.get(3)?,
+                    id: row.get("id")?,
+                    name: row.get("name")?,
+                    description: row.get("description")?,
+                    instructions: row.get("instructions")?,
                     input_schema: {
-                        let raw: String = row.get(4)?;
+                        let raw: String = row.get("input_schema")?;
                         serde_json::from_str(&raw).map_err(|e| {
                             rusqlite::Error::FromSqlConversionFailure(
                                 4,
@@ -768,12 +773,12 @@ impl Database {
                             )
                         })?
                     },
-                    enabled: row.get(5)?,
-                    created_at: parse_timestamp_or_now(row.get(6)?),
-                    updated_at: parse_timestamp_or_now(row.get(7)?),
-                    directory_path: row.get(8)?,
-                    entry_point: row.get(9)?,
-                    scope: Scope::from_str(&row.get::<_, String>(10)?).map_err(|_| {
+                    enabled: row.get("enabled")?,
+                    created_at: parse_timestamp_or_now(row.get("created_at")?),
+                    updated_at: parse_timestamp_or_now(row.get("updated_at")?),
+                    directory_path: row.get("directory_path")?,
+                    entry_point: row.get("entry_point")?,
+                    scope: Scope::from_str(&row.get::<_, String>("scope")?).map_err(|_| {
                         rusqlite::Error::FromSqlConversionFailure(
                             10,
                             rusqlite::types::Type::Text,
@@ -784,20 +789,20 @@ impl Database {
                         )
                     })?,
                     target_adapters: {
-                        let raw: String = row.get(11)?;
+                        let raw: String = row.get("target_adapters")?;
                         serde_json::from_str(&raw).unwrap_or_else(|e| {
                             log::warn!("Failed to parse skill JSON: {}. Falling back to empty.", e);
                             Vec::new()
                         })
                     },
                     target_paths: {
-                        let raw: String = row.get(12)?;
+                        let raw: String = row.get("target_paths")?;
                         serde_json::from_str(&raw).unwrap_or_else(|e| {
                             log::warn!("Failed to parse skill JSON: {}. Falling back to empty.", e);
                             Vec::new()
                         })
                     },
-                    base_path: row.get(13)?,
+                    base_path: row.get("base_path")?,
                 })
             })
             .map_err(|e| match e {
@@ -1146,22 +1151,22 @@ impl Database {
 
         let rows = stmt
             .query_map(params![limit], |row| {
-                let timestamp: i64 = row.get(8)?;
+                let timestamp: i64 = row.get("executed_at")?;
                 Ok(ExecutionLog {
-                    id: row.get(0)?,
-                    command_id: row.get(1)?,
-                    command_name: row.get(2)?,
-                    arguments: row.get(3)?,
-                    stdout: row.get(4)?,
-                    stderr: row.get(5)?,
-                    exit_code: row.get(6)?,
-                    duration_ms: row.get::<_, i64>(7)? as u64,
+                    id: row.get("id")?,
+                    command_id: row.get("command_id")?,
+                    command_name: row.get("command_name")?,
+                    arguments: row.get("arguments")?,
+                    stdout: row.get("stdout")?,
+                    stderr: row.get("stderr")?,
+                    exit_code: row.get("exit_code")?,
+                    duration_ms: row.get::<_, i64>("duration_ms")? as u64,
                     executed_at: parse_timestamp_or_now(timestamp),
-                    triggered_by: row.get(9)?,
-                    failure_class: row.get(10)?,
-                    adapter_context: row.get(11)?,
-                    is_redacted: row.get::<_, i32>(12)? != 0,
-                    attempt_number: row.get::<_, i32>(13)? as u8,
+                    triggered_by: row.get("triggered_by")?,
+                    failure_class: row.get("failure_class")?,
+                    adapter_context: row.get("adapter_context")?,
+                    is_redacted: row.get::<_, i32>("is_redacted")? != 0,
+                    attempt_number: row.get::<_, i32>("attempt_number")? as u8,
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -1209,22 +1214,22 @@ impl Database {
 
         let rows = stmt
             .query_map(params_refs.as_slice(), |row| {
-                let timestamp: i64 = row.get(8)?;
+                let timestamp: i64 = row.get("executed_at")?;
                 Ok(ExecutionLog {
-                    id: row.get(0)?,
-                    command_id: row.get(1)?,
-                    command_name: row.get(2)?,
-                    arguments: row.get(3)?,
-                    stdout: row.get(4)?,
-                    stderr: row.get(5)?,
-                    exit_code: row.get(6)?,
-                    duration_ms: row.get::<_, i64>(7)? as u64,
+                    id: row.get("id")?,
+                    command_id: row.get("command_id")?,
+                    command_name: row.get("command_name")?,
+                    arguments: row.get("arguments")?,
+                    stdout: row.get("stdout")?,
+                    stderr: row.get("stderr")?,
+                    exit_code: row.get("exit_code")?,
+                    duration_ms: row.get::<_, i64>("duration_ms")? as u64,
                     executed_at: parse_timestamp_or_now(timestamp),
-                    triggered_by: row.get(9)?,
-                    failure_class: row.get(10)?,
-                    adapter_context: row.get(11)?,
-                    is_redacted: row.get::<_, i32>(12)? != 0,
-                    attempt_number: row.get::<_, i32>(13)? as u8,
+                    triggered_by: row.get("triggered_by")?,
+                    failure_class: row.get("failure_class")?,
+                    adapter_context: row.get("adapter_context")?,
+                    is_redacted: row.get::<_, i32>("is_redacted")? != 0,
+                    attempt_number: row.get::<_, i32>("attempt_number")? as u8,
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -1288,11 +1293,11 @@ impl Database {
 
         let entries = stmt
             .query_map(params![limit], |row| {
-                let id: String = row.get(0)?;
-                let timestamp: i64 = row.get(1)?;
-                let files_written: u32 = row.get(2)?;
-                let status: String = row.get(3)?;
-                let triggered_by: String = row.get(4)?;
+                let id: String = row.get("id")?;
+                let timestamp: i64 = row.get("timestamp")?;
+                let files_written: u32 = row.get("files_written")?;
+                let status: String = row.get("status")?;
+                let triggered_by: String = row.get("triggered_by")?;
 
                 Ok(SyncHistoryEntry {
                     id,
@@ -1376,8 +1381,8 @@ impl Database {
 
         let settings = stmt
             .query_map([], |row| {
-                let key: String = row.get(0)?;
-                let value: String = row.get(1)?;
+                let key: String = row.get("key")?;
+                let value: String = row.get("value")?;
                 Ok((key, value))
             })?
             .collect::<std::result::Result<std::collections::HashMap<String, String>, _>>()?;
@@ -1395,7 +1400,7 @@ impl Database {
 
         let secrets = stmt
             .query_map([], |row| {
-                let scope_raw: String = row.get(3)?;
+                let scope_raw: String = row.get("scope")?;
                 let scope = SecretScope::from_str(&scope_raw).map_err(|err| {
                     rusqlite::Error::FromSqlConversionFailure(
                         3,
@@ -1408,14 +1413,14 @@ impl Database {
                 })?;
 
                 Ok(ScopedSecretRecord {
-                    id: row.get(0)?,
-                    key: row.get(1)?,
-                    value: row.get(2)?,
+                    id: row.get("id")?,
+                    key: row.get("key")?,
+                    value: row.get("value")?,
                     scope,
-                    workspace_path: row.get(4)?,
-                    artifact_id: row.get(5)?,
-                    created_at: parse_timestamp_or_now(row.get(6)?),
-                    updated_at: parse_timestamp_or_now(row.get(7)?),
+                    workspace_path: row.get("workspace_path")?,
+                    artifact_id: row.get("artifact_id")?,
+                    created_at: parse_timestamp_or_now(row.get("created_at")?),
+                    updated_at: parse_timestamp_or_now(row.get("updated_at")?),
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -2536,13 +2541,13 @@ mod tests {
         db.add_observability_event(&ObservabilityEventInput {
             event_type: ObservabilityEventType::SkillRun,
             status: ObservabilityEventStatus::Success,
-            source: "mcp-skill",
+            source: "skill-runner",
             entity_kind: Some("skill"),
             entity_id: Some("skill-1"),
             entity_name: Some("Summarize Repo"),
             workspace_path: Some("c:/repos/app"),
             summary: "Skill execution succeeded",
-            metadata: Some("{\"triggeredBy\":\"mcp-skill\"}"),
+            metadata: Some("{\"triggeredBy\":\"skill-runner\"}"),
             stdout_excerpt: Some("token=***REDACTED***"),
             stderr_excerpt: None,
             duration_ms: Some(220),

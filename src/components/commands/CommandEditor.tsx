@@ -119,7 +119,7 @@ export function CommandEditor({
             Select a Command
           </CardTitle>
           <CardDescription>
-            Define script-based commands and expose them to MCP clients.
+            Define script-based commands for native slash command execution.
           </CardDescription>
         </CardHeader>
         <CardContent className="pt-6">
@@ -138,7 +138,7 @@ export function CommandEditor({
           {form.name || "Select a Command"}
         </CardTitle>
         <CardDescription>
-          Define script-based commands and expose them to MCP clients.
+          Define script-based commands for native slash command execution.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6 pt-6">

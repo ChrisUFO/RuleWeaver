@@ -31,10 +31,6 @@ pub enum AppError {
     #[allow(dead_code)]
     Auth(String),
 
-    #[error("MCP server error: {0}")]
-    #[allow(dead_code)]
-    Mcp(String),
-
     #[error("Invalid input: {message}")]
     InvalidInput { message: String },
 

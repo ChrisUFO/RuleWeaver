@@ -155,7 +155,7 @@ RuleWeaver provides features to make command and skill configurations fully port
   - Step-by-step task automation
   - Natural language instructions
   - XML tool syntax for precise control
-  - MCP tool integration
+  - Tool integration via slash commands
 - **Example:**
 
   ````markdown
@@ -502,8 +502,8 @@ Cursor has its own skills-like feature in its UI, but it is not interoperable wi
     allow_implicit_invocation: true
   dependencies:
     tools:
-      - type: "mcp"
-        value: "server-name"
+      - type: "api"
+        value: "external-service"
   ```
 
 **Documentation:** https://developers.openai.com/codex/skills

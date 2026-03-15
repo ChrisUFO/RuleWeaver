@@ -684,7 +684,7 @@ export function Skills({ initialSelectedId, onClearInitialId }: SkillsProps) {
                 <div className="space-y-0.5">
                   <div className="text-sm font-medium">Enable Skill</div>
                   <div className="text-xs text-muted-foreground">
-                    Allow this skill to be used by the MCP server
+                    Enable this skill for distribution to AI tools
                   </div>
                 </div>
                 <Switch checked={enabled} onCheckedChange={setEnabled} />

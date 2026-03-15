@@ -34,8 +34,8 @@ Cursor does not expose a markdown command stub format or a skills directory conv
 - Slash commands are supported via `.md` extension in `.cursor/commands/`.
 - Rules are written to `~/.cursorrules` (global) or `.cursorrules` (local).
 - No command stub file (`COMMANDS.md`) is written.
-- MCP fallback applies for commands that have Cursor in their adapter list (command is exposed via MCP only).
-- MCP fallback execution uses the same scoped-secret resolution path as standalone MCP commands in the desktop app.
+
+- Commands are distributed via native slash command files only
 
 ### Kilo Code — Skills Capability Flag Set but Paths Not Configured
 
