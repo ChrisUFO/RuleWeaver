@@ -892,12 +892,6 @@ impl Database {
         Ok(())
     }
 
-    pub async fn get_mcp_data(&self) -> Result<(Vec<Command>, Vec<Skill>)> {
-        let commands = self.get_all_commands().await?;
-        let skills = self.get_all_skills().await?;
-        Ok((commands, skills))
-    }
-
     pub async fn rule_exists_with_name(&self, name: &str) -> Result<bool> {
         let conn = self.0.lock().await;
         let count: i64 = conn.query_row(
