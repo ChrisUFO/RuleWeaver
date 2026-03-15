@@ -439,42 +439,6 @@ impl ToolRegistry {
             },
         );
 
-        // 11. Copilot
-        entries.insert(
-            AdapterType::Copilot,
-            ToolEntry {
-                id: AdapterType::Copilot,
-                name: "GitHub Copilot",
-                description: "GitHub Copilot AI coding assistant",
-                icon: "copilot",
-                capabilities: ToolCapabilities {
-                    supports_rules: true,
-                    supports_command_stubs: false,
-                    supports_slash_commands: true,
-                    supports_skills: false,
-                    supports_global_scope: true,
-                    supports_local_scope: true,
-                },
-                paths: PathTemplates {
-                    global_path: "~/.copilot/instructions.md",
-                    local_path_template: ".github/copilot-instructions.md",
-                    global_rules_dir: None,
-                    local_rules_dir_template: None,
-                    global_rule_file_model: RuleFileModel::SingleFile,
-                    local_rule_file_model: RuleFileModel::SingleFile,
-                    global_commands_dir: Some("~/.copilot/commands"),
-                    local_commands_dir: Some(".github/copilot-commands"),
-                    command_stub_filename: "COMMANDS.md",
-                    global_skills_dir: None,
-                    local_skills_dir: None,
-                    skill_filename: "SKILL.md",
-                },
-                file_format: "markdown",
-                slash_command_extension: Some("md"),
-                slash_command_argument_pattern: None,
-            },
-        );
-
         Self { entries }
     }
 
@@ -686,14 +650,13 @@ mod tests {
         assert!(registry.get(&AdapterType::Cursor).is_some());
         assert!(registry.get(&AdapterType::RooCode).is_some());
         assert!(registry.get(&AdapterType::Augment).is_some());
-        assert!(registry.get(&AdapterType::Copilot).is_some());
     }
 
     #[test]
-    fn test_registry_returns_all_eleven_adapters() {
+    fn test_registry_returns_all_ten_adapters() {
         let registry = get_registry();
         let all = registry.all();
-        assert_eq!(all.len(), 11);
+        assert_eq!(all.len(), 10);
     }
 
     #[test]
@@ -801,7 +764,6 @@ mod tests {
             AdapterType::ClaudeCode,
             AdapterType::Gemini,
             AdapterType::Cursor,
-            AdapterType::Copilot,
         ];
         for adapter in single_file {
             let entry = registry.get(&adapter).unwrap();
@@ -956,10 +918,6 @@ mod tests {
         assert!(matrix.contains("Cline"), "Matrix must contain Cline");
         assert!(matrix.contains("Codex"), "Matrix must contain Codex");
         assert!(matrix.contains("Roo Code"), "Matrix must contain Roo Code");
-        assert!(
-            matrix.contains("GitHub Copilot"),
-            "Matrix must contain GitHub Copilot"
-        );
     }
 
     #[test]
@@ -973,20 +931,6 @@ mod tests {
             cursor_line.contains("❌"),
             "Cursor row must contain ❌ for unsupported capabilities: {}",
             cursor_line
-        );
-    }
-
-    #[test]
-    fn test_generate_support_matrix_copilot_shows_no_skills() {
-        let matrix = generate_support_matrix();
-        let copilot_line = matrix
-            .lines()
-            .find(|l| l.starts_with("| GitHub Copilot"))
-            .expect("GitHub Copilot row must be in matrix");
-        assert!(
-            copilot_line.contains("❌"),
-            "GitHub Copilot row must contain ❌ for unsupported capabilities: {}",
-            copilot_line
         );
     }
 }

@@ -158,29 +158,6 @@ fn test_roocode_has_rule_path_and_skill_path() {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Test 5: Copilot has rule path but no skill path (supports_skills: false)
-// ──────────────────────────────────────────────────────────────────────────────
-#[test]
-fn test_copilot_has_rule_path_but_no_skill_path() {
-    let home = TempDir::new().unwrap();
-    let resolver = PathResolver::new_with_home(home.path().to_path_buf(), vec![]);
-
-    let rule_path = resolver.global_path(AdapterType::Copilot, ArtifactType::Rule);
-    assert!(
-        rule_path.is_ok(),
-        "Copilot should have a valid rule path: {:?}",
-        rule_path
-    );
-
-    let skill_path = resolver.skill_path(AdapterType::Copilot, "a-skill");
-    assert!(
-        skill_path.is_err(),
-        "Copilot should NOT have a skill path (supports_skills: false): {:?}",
-        skill_path
-    );
-}
-
-// ──────────────────────────────────────────────────────────────────────────────
 // Test 5: Kilo Code has rule path but no skill path (paths not configured)
 // ──────────────────────────────────────────────────────────────────────────────
 #[test]

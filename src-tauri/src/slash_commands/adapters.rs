@@ -557,63 +557,6 @@ impl SlashCommandAdapter for CodexSlashAdapter {
     }
 }
 
-/// GitHub Copilot slash command adapter
-/// Format: Markdown with YAML frontmatter
-/// Arguments: Hint only, no argument substitution
-pub struct CopilotSlashAdapter;
-
-impl SlashCommandAdapter for CopilotSlashAdapter {
-    fn name(&self) -> &'static str {
-        AdapterType::Copilot.as_str()
-    }
-
-    fn file_extension(&self) -> &'static str {
-        registry_entry(&AdapterType::Copilot)
-            .slash_command_extension
-            .unwrap_or("md")
-    }
-
-    fn global_dir(&self) -> &'static str {
-        registry_entry(&AdapterType::Copilot)
-            .paths
-            .global_commands_dir
-            .unwrap_or("")
-    }
-
-    fn local_dir(&self) -> &'static str {
-        registry_entry(&AdapterType::Copilot)
-            .paths
-            .local_commands_dir
-            .unwrap_or("")
-    }
-
-    fn format_command(&self, command: &Command) -> String {
-        let argument_hint = if command.arguments.is_empty() {
-            None
-        } else {
-            Some(
-                command
-                    .arguments
-                    .iter()
-                    .map(|arg| format!("[{}]", arg.name))
-                    .collect::<Vec<_>>()
-                    .join(" "),
-            )
-        };
-
-        let frontmatter = AugmentFrontmatter {
-            description: Cow::from(&command.description),
-            argument_hint: argument_hint.as_deref().map(Cow::from),
-        };
-
-        format_with_leading_frontmatter(&frontmatter, &command.script)
-    }
-
-    fn supports_argument_substitution(&self) -> bool {
-        false
-    }
-}
-
 /// Factory function to get adapter by name
 pub fn get_adapter(name: &str) -> Option<Box<dyn SlashCommandAdapter>> {
     match name {
@@ -626,7 +569,6 @@ pub fn get_adapter(name: &str) -> Option<Box<dyn SlashCommandAdapter>> {
         "antigravity" => Some(Box::new(AntigravitySlashAdapter)),
         "augment" => Some(Box::new(AugmentSlashAdapter)),
         "codex" => Some(Box::new(CodexSlashAdapter)),
-        "copilot" => Some(Box::new(CopilotSlashAdapter)),
         // Kilo Code has no slash command directory in the registry
         // (slash_command_extension: None) so it is intentionally unsupported here.
         "kilo" => None,
@@ -646,7 +588,6 @@ pub fn get_all_adapters() -> Vec<Box<dyn SlashCommandAdapter>> {
         Box::new(AntigravitySlashAdapter),
         Box::new(AugmentSlashAdapter),
         Box::new(CodexSlashAdapter),
-        Box::new(CopilotSlashAdapter),
     ]
 }
 

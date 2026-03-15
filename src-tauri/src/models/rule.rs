@@ -48,7 +48,6 @@ pub enum AdapterType {
     Cursor,
     RooCode,
     Augment,
-    Copilot,
 }
 
 impl AdapterType {
@@ -64,7 +63,6 @@ impl AdapterType {
             AdapterType::Cursor => "cursor",
             AdapterType::RooCode => "roocode",
             AdapterType::Augment => "augment",
-            AdapterType::Copilot => "copilot",
         }
     }
 
@@ -81,7 +79,6 @@ impl AdapterType {
             AdapterType::Cursor,
             AdapterType::RooCode,
             AdapterType::Augment,
-            AdapterType::Copilot,
         ]
     }
 }
@@ -101,7 +98,6 @@ impl FromStr for AdapterType {
             "cursor" => Ok(AdapterType::Cursor),
             "roocode" => Ok(AdapterType::RooCode),
             "augment" => Ok(AdapterType::Augment),
-            "copilot" => Ok(AdapterType::Copilot),
             _ => Err(ParseEnumError),
         }
     }
@@ -343,7 +339,7 @@ mod tests {
     #[test]
     fn test_adapter_type_all() {
         let all = AdapterType::all();
-        assert_eq!(all.len(), 11);
+        assert_eq!(all.len(), 10);
         assert!(all.contains(&AdapterType::Antigravity));
         assert!(all.contains(&AdapterType::Gemini));
         assert!(all.contains(&AdapterType::OpenCode));
@@ -354,7 +350,6 @@ mod tests {
         assert!(all.contains(&AdapterType::Cursor));
         assert!(all.contains(&AdapterType::RooCode));
         assert!(all.contains(&AdapterType::Augment));
-        assert!(all.contains(&AdapterType::Copilot));
     }
 
     #[test]

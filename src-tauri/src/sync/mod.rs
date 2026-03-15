@@ -416,43 +416,6 @@ impl SyncAdapter for CursorAdapter {
     }
 }
 
-pub struct CopilotAdapter;
-
-impl SyncAdapter for CopilotAdapter {
-    fn id(&self) -> AdapterType {
-        AdapterType::Copilot
-    }
-
-    fn name(&self) -> &str {
-        registry_entry(&self.id()).name
-    }
-
-    fn file_name(&self) -> &str {
-        let entry = registry_entry(&self.id());
-        Path::new(entry.paths.local_path_template)
-            .file_name()
-            .and_then(|s| s.to_str())
-            .unwrap_or("copilot-instructions.md")
-    }
-
-    fn description(&self) -> &str {
-        registry_entry(&self.id()).description
-    }
-
-    fn global_path(&self) -> Result<PathBuf> {
-        let entry = registry_entry(&self.id());
-        resolve_registry_path(entry.paths.global_path)
-    }
-
-    fn format_content(&self, rules: &[Rule], _enabled_rules_only: bool) -> String {
-        format_markdown_sync_helper(rules, 2, true, false)
-    }
-
-    fn format_rule(&self, rule: &Rule) -> String {
-        format!("## {}\n{}", rule.name, rule.content)
-    }
-}
-
 pub struct RooCodeAdapter;
 
 impl SyncAdapter for RooCodeAdapter {
@@ -537,7 +500,6 @@ pub fn get_all_adapters() -> Vec<Box<dyn SyncAdapter>> {
         Box::new(CodexAdapter),
         Box::new(KiloAdapter),
         Box::new(CursorAdapter),
-        Box::new(CopilotAdapter),
         Box::new(RooCodeAdapter),
         Box::new(AugmentAdapter),
     ]

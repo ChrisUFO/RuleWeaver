@@ -10,8 +10,8 @@ pub mod skill_commands;
 pub mod system_commands;
 
 use adapters::{
-    ClaudeAdapter, CommandAdapter, CopilotAdapter, CursorAdapter, GeminiAdapter, KiloAdapter,
-    OpenCodeAdapter, RooCodeAdapter,
+    ClaudeAdapter, CommandAdapter, CursorAdapter, GeminiAdapter, KiloAdapter, OpenCodeAdapter,
+    RooCodeAdapter,
 };
 pub use command_commands::*;
 pub use import_commands::*;
@@ -34,9 +34,7 @@ use crate::constants::limits::{
     MAX_COMMAND_NAME_LENGTH, MAX_COMMAND_SCRIPT_LENGTH, MAX_RULE_CONTENT_LENGTH,
     MAX_RULE_NAME_LENGTH,
 };
-use crate::constants::{
-    NEW_COPILOT_DIR, NEW_CURSOR_DIR, NEW_GEMINI_DIR, NEW_KILO_DIR, NEW_ROO_CODE_DIR,
-};
+use crate::constants::{NEW_CURSOR_DIR, NEW_GEMINI_DIR, NEW_KILO_DIR, NEW_ROO_CODE_DIR};
 use crate::database::Database;
 use crate::error::{AppError, Result};
 use crate::file_storage;
@@ -181,7 +179,6 @@ fn command_adapters() -> &'static Vec<Arc<dyn CommandAdapter>> {
             Arc::new(ClaudeAdapter),
             Arc::new(KiloAdapter),
             Arc::new(CursorAdapter),
-            Arc::new(CopilotAdapter),
             Arc::new(RooCodeAdapter),
         ]
     })
@@ -194,7 +191,6 @@ fn command_target_path_for_adapter(root: &Path, adapter_name: &str) -> Option<St
         "claude" => root.join(".claude").join("COMMANDS.md"),
         "kilo" => root.join(NEW_KILO_DIR).join("rules").join("COMMANDS.md"),
         "cursor" => root.join(NEW_CURSOR_DIR).join("COMMANDS.md"),
-        "copilot" => root.join(NEW_COPILOT_DIR).join("COMMANDS.md"),
         "roo" => root.join(NEW_ROO_CODE_DIR).join("COMMANDS.md"),
         _ => return None,
     };

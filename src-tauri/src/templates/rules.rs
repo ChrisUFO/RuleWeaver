@@ -1,6 +1,6 @@
 use crate::models::{AdapterType, CreateRuleInput, Scope};
 use crate::templates::{
-    THEME_ADMIN, THEME_DATA, THEME_ENGINEERING, THEME_MARKETING, THEME_PM, THEME_WRITING,
+    THEME_ADMIN, THEME_DATA, THEME_ENGINEERING, THEME_MARKETING, THEME_WRITING,
 };
 use serde::{Deserialize, Serialize};
 
@@ -36,20 +36,6 @@ pub fn get_bundled_rule_templates() -> Vec<TemplateRule> {
                 name: "Author Persona".to_string(),
                 description: "Set a specific tone and persona for the AI assistant, focusing on clarity, impact, and a professional editing style.".to_string(),
                 content: "## Persona\n- Act as a seasoned business book editor.\n- Focus on clarity and impact.\n- Use active voice.".to_string(),
-                scope: Scope::Global,
-                target_paths: None,
-                enabled_adapters: vec![AdapterType::Gemini],
-                enabled: true,
-            },
-        },
-        TemplateRule {
-            template_id: "tmpl_pm_copilot".to_string(),
-            theme: THEME_PM.to_string(),
-            metadata: CreateRuleInput {
-                id: None,
-                name: "PM Copilot".to_string(),
-                description: "Collaborate with a Senior Product Manager persona for strategic planning, documentation, and product discovery.".to_string(),
-                content: "# Senior PM Persona\n- **Role**: Act as a Senior Product Manager...\n- **Tone**: Professional, concise...".to_string(),
                 scope: Scope::Global,
                 target_paths: None,
                 enabled_adapters: vec![AdapterType::Gemini],

@@ -14,7 +14,6 @@ Generated from `src-tauri/src/models/registry.rs`. Any change to adapter capabil
 | Claude Code | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Cline | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Codex | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| GitHub Copilot | ✅ | ❌ | ✅ | ❌ | ✅ | ✅ |
 | Cursor | ✅ | ❌ | ✅ | ❌ | ✅ | ✅ |
 | Gemini | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Kilo Code | ✅ | ❌ | ❌ | ❌ | ✅ | ✅ |
@@ -34,7 +33,6 @@ Paths prefixed with `~/` expand to the user home directory at runtime.
 | Claude Code | `~/.claude/CLAUDE.md` | `.claude/CLAUDE.md` | `single_file` | `single_file` | — | — | .claude/commands | .claude/commands | .claude/skills | .claude/skills |
 | Cline | `~/Documents/Cline/Rules` | `.clinerules` | `per_rule_dir` | `per_rule_dir` | ~/Documents/Cline/Rules | .clinerules | Documents/Cline/Workflows | .clinerules/workflows | Documents/Cline/Skills | .clinerules/skills |
 | Codex | `~/.codex/rules` | `.codex/rules` | `per_rule_dir` | `per_rule_dir` | ~/.codex/rules | .codex/rules | .agents/skills | .agents/skills | .codex/skills | .codex/skills |
-| GitHub Copilot | `~/.copilot/instructions.md` | `.github/copilot-instructions.md` | `single_file` | `single_file` | — | — | ~/.copilot/commands | .github/copilot-commands | — | — |
 | Cursor | `~/.cursorrules` | `.cursorrules` | `single_file` | `single_file` | — | — | .cursor/commands | .cursor/commands | — | — |
 | Gemini | `~/.gemini/GEMINI.md` | `.gemini/GEMINI.md` | `single_file` | `single_file` | — | — | .gemini/commands | .gemini/commands | .gemini/skills | .gemini/skills |
 | Kilo Code | `~/.kilocode/rules` | `.kilocode/rules` | `per_rule_dir` | `per_rule_dir` | ~/.kilocode/rules | .kilocode/rules | — | — | — | — |
@@ -52,7 +50,6 @@ Paths prefixed with `~/` expand to the user home directory at runtime.
 | Claude Code | `md` | `$ARGUMENTS` |
 | Cline | `md` | `—` |
 | Codex | `md` | `—` |
-| GitHub Copilot | `md` | `—` |
 | Cursor | `md` | `—` |
 | Gemini | `toml` | `{{args}}` |
 | Kilo Code | `—` | `—` |

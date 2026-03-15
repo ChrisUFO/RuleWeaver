@@ -107,16 +107,6 @@ impl CommandAdapter for CursorAdapter {
     }
 }
 
-pub struct CopilotAdapter;
-impl CommandAdapter for CopilotAdapter {
-    fn name(&self) -> &'static str {
-        "copilot"
-    }
-    fn format(&self, commands: &[Command]) -> String {
-        format_markdown(commands, "RuleWeaver Commands (GitHub Copilot)")
-    }
-}
-
 pub struct RooCodeAdapter;
 impl CommandAdapter for RooCodeAdapter {
     fn name(&self) -> &'static str {

@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { useRegistryStore } from "@/stores/registryStore";
 import { api } from "@/lib/tauri";
 import { useToast } from "@/components/ui/toast";
-import type { ToolSyncPreferences } from "@/types/status";
+import type { InstalledToolInfo, ToolSyncPreferences } from "@/types/status";
 import type { AdapterType } from "@/types/rule";
 
 const ARTIFACT_TYPES = [
@@ -24,15 +24,19 @@ export function ToolSyncPreferencesMatrix() {
   const [preferences, setPreferences] = useState<Record<AdapterType, ToolSyncPreferences>>(
     {} as Record<AdapterType, ToolSyncPreferences>
   );
+  const [installedTools, setInstalledTools] = useState<InstalledToolInfo[]>([]);
 
   useEffect(() => {
-    loadPreferences();
+    loadData();
   }, []);
 
-  const loadPreferences = async () => {
+  const loadData = async () => {
     setIsLoading(true);
     try {
-      const prefs = await api.registry.getAllToolSyncPreferences();
+      const [prefs, installed] = await Promise.all([
+        api.registry.getAllToolSyncPreferences(),
+        api.registry.detectInstalledTools(),
+      ]);
       const prefMap = prefs.reduce(
         (acc, pref) => {
           acc[pref.toolId] = pref;
@@ -41,11 +45,17 @@ export function ToolSyncPreferencesMatrix() {
         {} as Record<AdapterType, ToolSyncPreferences>
       );
       setPreferences(prefMap);
+      setInstalledTools(installed);
     } catch (error) {
       console.error("Failed to load tool sync preferences", error);
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const isToolInstalled = (toolId: AdapterType): boolean => {
+    const tool = installedTools.find((t) => t.adapter === toolId);
+    return tool?.isInstalled ?? false;
   };
 
   const handleToggle = async (toolId: AdapterType, artifactType: ArtifactTypeKey) => {
@@ -94,6 +104,119 @@ export function ToolSyncPreferencesMatrix() {
     }
   };
 
+  const handleToggleRow = async (toolId: AdapterType) => {
+    const tool = tools.find((t) => t.id === toolId);
+    if (!tool) return;
+
+    const currentPref = preferences[toolId] || {
+      toolId,
+      syncRules: true,
+      syncCommands: true,
+      syncSkills: true,
+    };
+
+    const allEnabled = [
+      tool.capabilities.supportsRules ? currentPref.syncRules : true,
+      tool.capabilities.supportsSlashCommands ? currentPref.syncCommands : true,
+      tool.capabilities.supportsSkills ? currentPref.syncSkills : true,
+    ].every(Boolean);
+
+    const newPref: ToolSyncPreferences = {
+      ...currentPref,
+      syncRules: tool.capabilities.supportsRules ? !allEnabled : currentPref.syncRules,
+      syncCommands: tool.capabilities.supportsSlashCommands
+        ? !allEnabled
+        : currentPref.syncCommands,
+      syncSkills: tool.capabilities.supportsSkills ? !allEnabled : currentPref.syncSkills,
+    };
+
+    setPreferences((prev) => ({ ...prev, [toolId]: newPref }));
+    setIsSaving(true);
+
+    try {
+      await api.registry.upsertToolSyncPreferences({
+        toolId: newPref.toolId,
+        syncRules: newPref.syncRules,
+        syncCommands: newPref.syncCommands,
+        syncSkills: newPref.syncSkills,
+      });
+      addToast({
+        title: "Preferences Saved",
+        description: `${allEnabled ? "Disabled" : "Enabled"} all for ${tool.name}`,
+        variant: "success",
+      });
+    } catch {
+      addToast({
+        title: "Error",
+        description: `Failed to save preferences`,
+        variant: "error",
+      });
+      setPreferences((prev) => ({ ...prev, [toolId]: currentPref }));
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleToggleColumn = async (artifactType: ArtifactTypeKey) => {
+    const key =
+      artifactType === "rules"
+        ? "syncRules"
+        : artifactType === "commands"
+          ? "syncCommands"
+          : "syncSkills";
+    const capability =
+      artifactType === "rules"
+        ? "supportsRules"
+        : artifactType === "commands"
+          ? "supportsSlashCommands"
+          : "supportsSkills";
+
+    const supportedTools = tools.filter((t) => t.capabilities[capability]);
+    const allEnabled = supportedTools.every((t) => {
+      const pref = preferences[t.id];
+      return pref ? pref[key] : true;
+    });
+
+    const updates: Promise<ToolSyncPreferences>[] = supportedTools.map(async (tool) => {
+      const currentPref = preferences[tool.id] || {
+        toolId: tool.id,
+        syncRules: true,
+        syncCommands: true,
+        syncSkills: true,
+      };
+      const newPref: ToolSyncPreferences = {
+        ...currentPref,
+        [key]: !allEnabled,
+      };
+      setPreferences((prev) => ({ ...prev, [tool.id]: newPref }));
+      return api.registry.upsertToolSyncPreferences({
+        toolId: newPref.toolId,
+        syncRules: newPref.syncRules,
+        syncCommands: newPref.syncCommands,
+        syncSkills: newPref.syncSkills,
+      });
+    });
+
+    setIsSaving(true);
+    try {
+      await Promise.all(updates);
+      addToast({
+        title: "Preferences Saved",
+        description: `${allEnabled ? "Disabled" : "Enabled"} ${artifactType} for all tools`,
+        variant: "success",
+      });
+    } catch {
+      addToast({
+        title: "Error",
+        description: `Failed to save preferences`,
+        variant: "error",
+      });
+      loadData();
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const getPrefValue = (toolId: AdapterType, artifactType: ArtifactTypeKey): boolean => {
     const pref = preferences[toolId];
     if (!pref) return true;
@@ -112,7 +235,9 @@ export function ToolSyncPreferencesMatrix() {
         <CardTitle className="text-sm font-semibold tracking-wide uppercase text-muted-foreground/80">
           Tool Sync Preferences
         </CardTitle>
-        <CardDescription>Control which artifact types sync to each AI tool</CardDescription>
+        <CardDescription>
+          Control which artifact types sync to each AI tool. Click headers to toggle all.
+        </CardDescription>
       </CardHeader>
       <CardContent className="pt-6">
         {isLoading ? (
@@ -128,7 +253,9 @@ export function ToolSyncPreferencesMatrix() {
                   {ARTIFACT_TYPES.map((type) => (
                     <th
                       key={type.key}
-                      className="text-center py-2 px-3 text-xs font-semibold uppercase text-muted-foreground"
+                      className="text-center py-2 px-3 text-xs font-semibold uppercase text-muted-foreground cursor-pointer hover:text-foreground transition-colors"
+                      onClick={() => handleToggleColumn(type.key)}
+                      title={`Click to toggle all ${type.label.toLowerCase()}`}
                     >
                       {type.label}
                     </th>
@@ -136,32 +263,51 @@ export function ToolSyncPreferencesMatrix() {
                 </tr>
               </thead>
               <tbody>
-                {tools.map((tool) => (
-                  <tr key={tool.id} className="border-b border-white/5 hover:bg-white/5">
-                    <td className="py-3 px-3">
-                      <div className="font-medium text-sm">{tool.name}</div>
-                    </td>
-                    {ARTIFACT_TYPES.map((type) => {
-                      const supported = tool.capabilities[type.capability];
-                      const enabled = getPrefValue(tool.id, type.key);
-                      return (
-                        <td key={type.key} className="text-center py-3 px-3">
-                          {supported ? (
-                            <Switch
-                              checked={enabled}
-                              onCheckedChange={() => handleToggle(tool.id, type.key)}
-                              disabled={isSaving}
-                            />
-                          ) : (
-                            <Badge variant="outline" className="text-xs opacity-50">
-                              N/A
+                {tools.map((tool) => {
+                  const installed = isToolInstalled(tool.id);
+                  return (
+                    <tr key={tool.id} className="border-b border-white/5 hover:bg-white/5">
+                      <td
+                        className="py-3 px-3 cursor-pointer"
+                        onClick={() => handleToggleRow(tool.id)}
+                        title={`Click to toggle all for ${tool.name}`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-sm hover:text-foreground transition-colors">
+                            {tool.name}
+                          </span>
+                          {!installed && (
+                            <Badge
+                              variant="outline"
+                              className="text-[10px] px-1.5 py-0.5 border-amber-500/30 text-amber-500"
+                            >
+                              Not Installed
                             </Badge>
                           )}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
+                        </div>
+                      </td>
+                      {ARTIFACT_TYPES.map((type) => {
+                        const supported = tool.capabilities[type.capability];
+                        const enabled = getPrefValue(tool.id, type.key);
+                        return (
+                          <td key={type.key} className="text-center py-3 px-3">
+                            {supported ? (
+                              <Switch
+                                checked={enabled}
+                                onCheckedChange={() => handleToggle(tool.id, type.key)}
+                                disabled={isSaving}
+                              />
+                            ) : (
+                              <Badge variant="outline" className="text-xs opacity-50">
+                                N/A
+                              </Badge>
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

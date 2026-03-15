@@ -191,7 +191,6 @@ fn get_tool_config_path(adapter: &AdapterType, home: &Path) -> Option<PathBuf> {
         AdapterType::RooCode => home.join(".roo"),
         AdapterType::Augment => home.join(".augment"),
         AdapterType::Antigravity => home.join(".gemini").join("antigravity"),
-        AdapterType::Copilot => home.join(".copilot"),
     };
     Some(path)
 }
