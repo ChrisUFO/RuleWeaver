@@ -1,14 +1,17 @@
+use crate::execution::slugify;
 use crate::models::{registry::REGISTRY, AdapterType, Command, Skill, SkillParameterType};
 use std::collections::HashMap;
 
 #[derive(serde::Serialize)]
 struct CommandStubArg {
+    #[serde(rename = "type")]
     arg_type: String,
     required: bool,
 }
 
 #[derive(serde::Serialize)]
 struct CommandStub {
+    name: String,
     description: String,
     script: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -45,6 +48,7 @@ pub fn format_command_stub_content(adapter: &AdapterType, commands: &[Command]) 
             }
 
             CommandStub {
+                name: slugify(&cmd.name),
                 description: cmd.description.clone(),
                 script: cmd.script.clone(),
                 arguments: if args.is_empty() { None } else { Some(args) },
@@ -71,7 +75,7 @@ pub fn format_command_stub_content(adapter: &AdapterType, commands: &[Command]) 
         for stub in stubs {
             md.push_str(&format!(
                 "## {}\n\n{}\n\n**Script**: `{}`\n",
-                stub.description, stub.description, stub.script
+                stub.name, stub.description, stub.script
             ));
             if let Some(args) = stub.arguments {
                 md.push_str("\n**Arguments**:\n\n");
