@@ -2469,7 +2469,7 @@ mod tests {
         db.add_observability_event(&ObservabilityEventInput {
             event_type: ObservabilityEventType::CommandRun,
             status: ObservabilityEventStatus::Error,
-            source: "mcp",
+            source: "command-test",
             entity_kind: Some("command"),
             entity_id: Some("cmd-1"),
             entity_name: Some("Deploy docs"),

@@ -522,9 +522,8 @@ impl ReconciliationEngine {
     /// Compute desired state for skills.
     ///
     /// Respects per-skill `target_adapters`: when non-empty only those adapters
-    /// are included; unsupported adapters are silently skipped (MCP-only fallback
-    /// is handled by the MCP layer). When `target_adapters` is empty all registry-
-    /// supported adapters are used (existing behaviour).
+    /// are included; unsupported adapters are silently skipped. When `target_adapters`
+    /// is empty all registry-supported adapters are used (existing behaviour).
     ///
     /// For local-scope skills, `target_paths` on the skill take priority over the
     /// global repository roots when non-empty.
