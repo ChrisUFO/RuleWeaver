@@ -34,6 +34,7 @@ import { RepositorySettingsCard } from "@/components/settings/RepositorySettings
 import { ScopedSecretsCard } from "@/components/settings/ScopedSecretsCard";
 import { SettingsTabs } from "@/components/settings/SettingsTabs";
 import { ToolSyncPreferencesMatrix } from "@/components/settings/ToolSyncPreferencesMatrix";
+import { ReconciliationModeCard } from "@/components/settings/ReconciliationModeCard";
 
 const SETTINGS_TABS = [
   { id: "general", label: "General", icon: SettingsIcon },
@@ -251,6 +252,8 @@ export function Settings({ onNavigate: _onNavigate }: { onNavigate?: (view: stri
               />
 
               <ToolSyncPreferencesMatrix />
+
+              <ReconciliationModeCard />
 
               <Card className="glass-card premium-shadow border-none overflow-hidden">
                 <CardHeader className="bg-white/5 pb-4">

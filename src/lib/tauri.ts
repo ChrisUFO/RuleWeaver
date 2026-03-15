@@ -266,6 +266,8 @@ export const api = {
     getAppDataPath: () => invoke<string>("get_app_data_path_cmd"),
     openInExplorer: (path: string) => invoke<void>("open_in_explorer", { path }),
     getVersion: () => invoke<string>("get_app_version"),
+    getSetting: (key: string) => invoke<string | null>("get_setting", { key }),
+    setSetting: (key: string, value: string) => invoke<void>("set_setting", { key, value }),
   },
 
   registry: {
