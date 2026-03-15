@@ -1923,15 +1923,36 @@ impl Database {
                     artifact_type: row
                         .get::<_, String>("artifact_type")?
                         .parse()
-                        .unwrap_or(crate::models::registry::ArtifactType::Rule),
-                    adapter: row
-                        .get::<_, String>("adapter")?
-                        .parse()
-                        .unwrap_or(crate::models::AdapterType::Gemini),
-                    scope: row
-                        .get::<_, String>("scope")?
-                        .parse()
-                        .unwrap_or(crate::models::Scope::Global),
+                        .map_err(|e| {
+                            rusqlite::Error::FromSqlConversionFailure(
+                                3,
+                                rusqlite::types::Type::Text,
+                                Box::new(std::io::Error::new(
+                                    std::io::ErrorKind::InvalidData,
+                                    format!("Invalid artifact_type: {}", e),
+                                )),
+                            )
+                        })?,
+                    adapter: row.get::<_, String>("adapter")?.parse().map_err(|e| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            4,
+                            rusqlite::types::Type::Text,
+                            Box::new(std::io::Error::new(
+                                std::io::ErrorKind::InvalidData,
+                                format!("Invalid adapter: {}", e),
+                            )),
+                        )
+                    })?,
+                    scope: row.get::<_, String>("scope")?.parse().map_err(|e| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            5,
+                            rusqlite::types::Type::Text,
+                            Box::new(std::io::Error::new(
+                                std::io::ErrorKind::InvalidData,
+                                format!("Invalid scope: {}", e),
+                            )),
+                        )
+                    })?,
                     written_at: parse_timestamp_or_now(row.get("written_at")?),
                     content_hash: row.get("content_hash")?,
                 })
@@ -1979,15 +2000,36 @@ impl Database {
                     artifact_type: row
                         .get::<_, String>("artifact_type")?
                         .parse()
-                        .unwrap_or(crate::models::registry::ArtifactType::Rule),
-                    adapter: row
-                        .get::<_, String>("adapter")?
-                        .parse()
-                        .unwrap_or(crate::models::AdapterType::Gemini),
-                    scope: row
-                        .get::<_, String>("scope")?
-                        .parse()
-                        .unwrap_or(crate::models::Scope::Global),
+                        .map_err(|e| {
+                            rusqlite::Error::FromSqlConversionFailure(
+                                3,
+                                rusqlite::types::Type::Text,
+                                Box::new(std::io::Error::new(
+                                    std::io::ErrorKind::InvalidData,
+                                    format!("Invalid artifact_type: {}", e),
+                                )),
+                            )
+                        })?,
+                    adapter: row.get::<_, String>("adapter")?.parse().map_err(|e| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            4,
+                            rusqlite::types::Type::Text,
+                            Box::new(std::io::Error::new(
+                                std::io::ErrorKind::InvalidData,
+                                format!("Invalid adapter: {}", e),
+                            )),
+                        )
+                    })?,
+                    scope: row.get::<_, String>("scope")?.parse().map_err(|e| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            5,
+                            rusqlite::types::Type::Text,
+                            Box::new(std::io::Error::new(
+                                std::io::ErrorKind::InvalidData,
+                                format!("Invalid scope: {}", e),
+                            )),
+                        )
+                    })?,
                     written_at: parse_timestamp_or_now(row.get("written_at")?),
                     content_hash: row.get("content_hash")?,
                 })
@@ -2047,7 +2089,16 @@ impl Database {
         let prefs = stmt
             .query_map([], |row| {
                 let tool_id_str: String = row.get("tool_id")?;
-                let tool_id = AdapterType::from_str(&tool_id_str).unwrap_or(AdapterType::Gemini);
+                let tool_id = AdapterType::from_str(&tool_id_str).map_err(|e| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        0,
+                        rusqlite::types::Type::Text,
+                        Box::new(std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            format!("Invalid tool_id: {}", e),
+                        )),
+                    )
+                })?;
                 Ok(ToolSyncPreferences {
                     tool_id,
                     sync_rules: row.get::<_, i32>("sync_rules")? != 0,
@@ -2072,7 +2123,16 @@ impl Database {
         let result = stmt
             .query_row(rusqlite::params![tool_id.as_str()], |row| {
                 let tool_id_str: String = row.get("tool_id")?;
-                let tool_id = AdapterType::from_str(&tool_id_str).unwrap_or(AdapterType::Gemini);
+                let tool_id = AdapterType::from_str(&tool_id_str).map_err(|e| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        0,
+                        rusqlite::types::Type::Text,
+                        Box::new(std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            format!("Invalid tool_id: {}", e),
+                        )),
+                    )
+                })?;
                 Ok(ToolSyncPreferences {
                     tool_id,
                     sync_rules: row.get::<_, i32>("sync_rules")? != 0,
