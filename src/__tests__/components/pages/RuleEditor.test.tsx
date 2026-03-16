@@ -248,22 +248,20 @@ describe("RuleEditor", () => {
     expect(screen.getByText("/repo/a")).toBeInTheDocument();
   });
 
-  it("removes adapter from preview tabs when adapter is toggled off", async () => {
+  it("shows adapter paths when enabled and hides when toggled off", async () => {
     const user = userEvent.setup();
-    // Rule with gemini enabled
     renderWithProviders(<RuleEditor rule={baseRule} onBack={vi.fn()} onSelectRule={vi.fn()} />);
 
-    // Gemini should appear as a preview tab button
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Gemini" })).toBeInTheDocument();
+      const geminiSwitch = screen.getByLabelText("Toggle Gemini adapter");
+      expect(geminiSwitch).toBeChecked();
     });
 
-    // Toggle off gemini
     const geminiSwitch = screen.getByLabelText("Toggle Gemini adapter");
     await user.click(geminiSwitch);
 
     await waitFor(() => {
-      expect(screen.queryByRole("button", { name: "Gemini" })).not.toBeInTheDocument();
+      expect(geminiSwitch).not.toBeChecked();
     });
   });
 

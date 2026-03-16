@@ -4,6 +4,7 @@ version = "0.0.38-163"
 description = "A unified desktop app for managing AI coding assistant rules and configurations"
 authors = ["ChrisUFO"]
 edition = "2021"
+default-run = "ruleweaver"
 
 [[bin]]
 name = "ruleweaver"

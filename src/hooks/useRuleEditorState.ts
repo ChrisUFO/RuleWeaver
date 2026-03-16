@@ -9,15 +9,28 @@ import { type Rule, type Scope, type AdapterType, type ToolEntry } from "@/types
 import { api } from "@/lib/tauri";
 import { featureManager, FEATURE_FLAGS } from "@/lib/featureManager";
 
+const AUTO_SAVE_DELAY_MS = 3000;
+
+function formatRelativeTime(date: Date): string {
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffSeconds = Math.floor(diffMs / 1000);
+  if (diffSeconds < 60) return "just now";
+  const diffMinutes = Math.floor(diffSeconds / 60);
+  if (diffMinutes < 60) return `${diffMinutes}m ago`;
+  const diffHours = Math.floor(diffMinutes / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+  const diffDays = Math.floor(diffHours / 24);
+  return `${diffDays}d ago`;
+}
+
 interface UseRuleEditorStateProps {
   rule: Rule | null;
   isNew: boolean;
-  onBack: () => void;
   onSelectRule: (rule: Rule) => void;
 }
 
 export interface RuleEditorState {
-  // Form fields
   name: string;
   description: string;
   content: string;
@@ -25,24 +38,18 @@ export interface RuleEditorState {
   targetPaths: string[];
   enabledAdapters: AdapterType[];
   previewAdapter: AdapterType;
-  // Derived
-  wordCount: number;
-  characterCount: number;
-  // Save state
   saving: boolean;
   lastSaved: Date | null;
   hasUnsavedChanges: boolean;
-  // External data
+  autoSaveError: string | null;
   tools: ToolEntry[];
   availableRepos: string[];
-  // Setters
   setName: (v: string) => void;
   setDescription: (v: string) => void;
   setContent: (v: string) => void;
   setScope: (v: Scope) => void;
   setPreviewAdapter: (v: AdapterType) => void;
-  // Handlers
-  handleSave: () => Promise<void>;
+  handleSave: () => Promise<boolean>;
   handleDuplicate: () => Promise<void>;
   toggleAdapter: (adapter: AdapterType) => void;
   toggleTargetPath: (path: string, checked: boolean) => void;
@@ -50,14 +57,16 @@ export interface RuleEditorState {
   getAdapterPath: (adapter: AdapterType) => string;
   handleOpenFolder: (adapter: AdapterType) => Promise<void>;
   getSaveStatus: () => React.ReactNode;
+  cancelPendingAutoSave: () => void;
 }
 
-function getWordCount(text: string): number {
-  return text.trim() ? text.trim().split(/\s+/).length : 0;
-}
-
-function getCharacterCount(text: string): number {
-  return text.length;
+interface InitialSnapshot {
+  name: string;
+  description: string;
+  content: string;
+  scope: Scope;
+  targetPaths: string[];
+  enabledAdapters: AdapterType[];
 }
 
 function slugRuleName(ruleName: string): string {
@@ -71,7 +80,6 @@ function slugRuleName(ruleName: string): string {
 export function useRuleEditorState({
   rule,
   isNew,
-  onBack,
   onSelectRule,
 }: UseRuleEditorStateProps): RuleEditorState {
   const { createRule, updateRule, duplicateRule } = useRulesStore();
@@ -92,13 +100,12 @@ export function useRuleEditorState({
   const [isOpeningFolder, setIsOpeningFolder] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [autoSaveError, setAutoSaveError] = useState<string | null>(null);
   const [previewAdapter, setPreviewAdapter] = useState<AdapterType>("gemini");
   const isInitialized = useRef(false);
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const initialSnapshotRef = useRef<InitialSnapshot | null>(null);
 
-  const wordCount = getWordCount(content);
-  const characterCount = getCharacterCount(content);
-
-  // Load default adapters from database settings
   useEffect(() => {
     const loadDefaultAdapters = async () => {
       try {
@@ -128,116 +135,224 @@ export function useRuleEditorState({
       setTargetPaths(rule.targetPaths || []);
       setEnabledAdapters(rule.enabledAdapters);
       setPreviewAdapter(rule.enabledAdapters[0] || "gemini");
+      initialSnapshotRef.current = {
+        name: rule.name,
+        description: rule.description,
+        content: rule.content,
+        scope: rule.scope,
+        targetPaths: rule.targetPaths || [],
+        enabledAdapters: rule.enabledAdapters,
+      };
       isInitialized.current = true;
     } else if (isNew && defaultAdapters.length > 0) {
       setEnabledAdapters(defaultAdapters);
       setPreviewAdapter(defaultAdapters[0]);
+      initialSnapshotRef.current = {
+        name: "",
+        description: "",
+        content: "",
+        scope: "global",
+        targetPaths: [],
+        enabledAdapters: defaultAdapters,
+      };
       isInitialized.current = true;
     }
   }, [rule, isNew, defaultAdapters]);
 
   useEffect(() => {
-    if (isInitialized.current) {
-      setHasUnsavedChanges(true);
+    if (!isInitialized.current || !initialSnapshotRef.current) return;
+
+    const currentSnapshot: InitialSnapshot = {
+      name,
+      description,
+      content,
+      scope,
+      targetPaths,
+      enabledAdapters,
+    };
+
+    const hasChanges =
+      JSON.stringify(currentSnapshot) !== JSON.stringify(initialSnapshotRef.current);
+    setHasUnsavedChanges(hasChanges);
+    if (hasChanges) {
+      setAutoSaveError(null);
     }
   }, [name, description, content, scope, targetPaths, enabledAdapters]);
 
-  const handleSave = useCallback(async () => {
-    if (!name.trim()) {
-      addToast({
-        title: "Validation Error",
-        description: "Rule name is required",
-        variant: "error",
-      });
-      return;
-    }
-    if (enabledAdapters.length === 0) {
-      addToast({
-        title: "Validation Error",
-        description: "At least one adapter must be selected",
-        variant: "error",
-      });
-      return;
-    }
-    if (scope === "local" && targetPaths.length === 0) {
-      addToast({
-        title: "Validation Error",
-        description: "Local rules require at least one target path",
-        variant: "error",
-      });
-      return;
-    }
-    if (content.trim().length === 0) {
-      addToast({
-        title: "Validation Error",
-        description: "Rule content cannot be empty",
-        variant: "error",
-      });
-      return;
-    }
-
-    setSaving(true);
-    try {
-      if (isNew) {
-        await createRule({
-          name: name.trim(),
-          description: description.trim(),
-          content,
-          scope,
-          targetPaths: scope === "local" ? targetPaths : undefined,
-          enabledAdapters,
-        });
-        addToast({
-          title: "Rule Created",
-          description: `"${name}" has been created`,
-          variant: "success",
-        });
-      } else if (rule) {
-        await updateRule(rule.id, {
-          name: name.trim(),
-          description: description.trim(),
-          content,
-          scope,
-          targetPaths: scope === "local" ? targetPaths : undefined,
-          enabledAdapters,
-        });
-        addToast({
-          title: "Rule Saved",
-          description: `"${name}" has been updated`,
-          variant: "success",
-        });
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (hasUnsavedChanges) {
+        e.preventDefault();
+        e.returnValue = "";
       }
-      setLastSaved(new Date());
-      setHasUnsavedChanges(false);
-      onBack();
-    } catch (error) {
-      addToast({
-        title: "Save Failed",
-        description:
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [hasUnsavedChanges]);
+
+  const performSave = useCallback(
+    async (silent = false): Promise<boolean> => {
+      if (!name.trim()) {
+        if (!silent) {
+          addToast({
+            title: "Validation Error",
+            description: "Rule name is required",
+            variant: "error",
+          });
+        }
+        return false;
+      }
+      if (enabledAdapters.length === 0) {
+        if (!silent) {
+          addToast({
+            title: "Validation Error",
+            description: "At least one adapter must be selected",
+            variant: "error",
+          });
+        }
+        return false;
+      }
+      if (scope === "local" && targetPaths.length === 0) {
+        if (!silent) {
+          addToast({
+            title: "Validation Error",
+            description: "Local rules require at least one target path",
+            variant: "error",
+          });
+        }
+        return false;
+      }
+      if (content.trim().length === 0) {
+        if (!silent) {
+          addToast({
+            title: "Validation Error",
+            description: "Rule content cannot be empty",
+            variant: "error",
+          });
+        }
+        return false;
+      }
+
+      setSaving(true);
+      if (silent) {
+        setAutoSaveError(null);
+      }
+      try {
+        if (isNew) {
+          const newRule = await createRule({
+            name: name.trim(),
+            description: description.trim(),
+            content,
+            scope,
+            targetPaths: scope === "local" ? targetPaths : undefined,
+            enabledAdapters,
+          });
+          if (!silent) {
+            addToast({
+              title: "Rule Created",
+              description: `"${name}" has been created`,
+              variant: "success",
+            });
+          }
+          onSelectRule(newRule);
+          return true;
+        } else if (rule) {
+          await updateRule(rule.id, {
+            name: name.trim(),
+            description: description.trim(),
+            content,
+            scope,
+            targetPaths: scope === "local" ? targetPaths : undefined,
+            enabledAdapters,
+          });
+          if (!silent) {
+            addToast({
+              title: "Rule Saved",
+              description: `"${name}" has been updated`,
+              variant: "success",
+            });
+          }
+        }
+        setLastSaved(new Date());
+        setHasUnsavedChanges(false);
+        initialSnapshotRef.current = {
+          name: name.trim(),
+          description: description.trim(),
+          content,
+          scope,
+          targetPaths: scope === "local" ? targetPaths : [],
+          enabledAdapters,
+        };
+        return true;
+      } catch (error) {
+        const errorMessage =
           typeof error === "string"
             ? error
             : error instanceof Error
               ? error.message
-              : "Unknown error",
-        variant: "error",
-      });
-    } finally {
-      setSaving(false);
+              : "Unknown error";
+        if (silent) {
+          setAutoSaveError(errorMessage);
+        }
+        addToast({
+          title: silent ? "Auto-save Failed" : "Save Failed",
+          description: errorMessage,
+          variant: "error",
+        });
+        return false;
+      } finally {
+        setSaving(false);
+      }
+    },
+    [
+      name,
+      description,
+      content,
+      scope,
+      targetPaths,
+      enabledAdapters,
+      isNew,
+      rule,
+      createRule,
+      updateRule,
+      addToast,
+      onSelectRule,
+    ]
+  );
+
+  useEffect(() => {
+    if (!hasUnsavedChanges || isNew || !isInitialized.current) return;
+
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
     }
-  }, [
-    name,
-    description,
-    content,
-    scope,
-    targetPaths,
-    enabledAdapters,
-    isNew,
-    rule,
-    createRule,
-    updateRule,
-    addToast,
-    onBack,
-  ]);
+
+    autoSaveTimerRef.current = setTimeout(() => {
+      performSave(true);
+    }, AUTO_SAVE_DELAY_MS);
+
+    return () => {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+      }
+    };
+  }, [hasUnsavedChanges, isNew, performSave]);
+
+  const handleSave = useCallback(async (): Promise<boolean> => {
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+      autoSaveTimerRef.current = null;
+    }
+    return performSave(false);
+  }, [performSave]);
+
+  const cancelPendingAutoSave = useCallback(() => {
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+      autoSaveTimerRef.current = null;
+    }
+  }, []);
 
   const handleDuplicate = useCallback(async () => {
     if (!rule) return;
@@ -399,7 +514,7 @@ export function useRuleEditorState({
         "span",
         { className: "flex items-center gap-1 text-muted-foreground text-sm" },
         React.createElement(Check, { className: "h-3 w-3 text-success" }),
-        "Saved"
+        `Saved ${formatRelativeTime(lastSaved)}`
       );
     }
     return null;
@@ -413,11 +528,10 @@ export function useRuleEditorState({
     targetPaths,
     enabledAdapters,
     previewAdapter,
-    wordCount,
-    characterCount,
     saving,
     lastSaved,
     hasUnsavedChanges,
+    autoSaveError,
     tools,
     availableRepos,
     setName,
@@ -433,5 +547,6 @@ export function useRuleEditorState({
     getAdapterPath,
     handleOpenFolder,
     getSaveStatus,
+    cancelPendingAutoSave,
   };
 }
