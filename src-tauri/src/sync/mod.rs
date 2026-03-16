@@ -12,7 +12,7 @@ use crate::error::Result;
 use crate::models::registry::{ArtifactType, REGISTRY};
 use crate::models::{
     AdapterType, Conflict, CreateSyncManifestInput, DiffSummary, Rule, Scope, SyncError,
-    SyncResult, ToolSyncPreferences,
+    SyncResult, ToolSyncPreferences, WslConfig,
 };
 use crate::path_resolver::path_resolver;
 
@@ -37,6 +37,32 @@ fn resolve_registry_path(path: &str) -> Result<PathBuf> {
 /// This is a convenience wrapper for backward compatibility.
 fn validate_target_path(base_path: &str) -> Result<PathBuf> {
     crate::path_resolver::validate_target_path(base_path)
+}
+
+/// Resolve a registry path for a specific adapter with WSL awareness.
+///
+/// If the adapter is configured for WSL, uses the WSL home directory.
+async fn resolve_registry_path_for_adapter(
+    path: &str,
+    adapter: AdapterType,
+    db: &Database,
+) -> Result<PathBuf> {
+    let wsl_config_json = db.get_setting("wsl_config").await?;
+    let wsl_config: WslConfig = match wsl_config_json {
+        Some(json) => serde_json::from_str(&json).unwrap_or_default(),
+        None => WslConfig::default(),
+    };
+
+    if let Some(wsl_home) = wsl_config.get_wsl_home_dir(adapter) {
+        if path == "~" {
+            return Ok(wsl_home);
+        }
+        if let Some(suffix) = path.strip_prefix("~/") {
+            return Ok(wsl_home.join(suffix));
+        }
+        return Ok(PathBuf::from(path));
+    }
+    resolve_registry_path(path)
 }
 
 fn normalize_path_for_compare(path: &Path) -> String {
@@ -517,6 +543,11 @@ impl<'a> SyncEngine<'a> {
         Self { db }
     }
 
+    async fn get_adapter_global_path(&self, adapter: &AdapterType) -> Result<PathBuf> {
+        let entry = registry_entry(adapter);
+        resolve_registry_path_for_adapter(entry.paths.global_path, *adapter, self.db).await
+    }
+
     async fn get_disabled_adapters(&self) -> HashSet<AdapterType> {
         match self.db.get_setting("adapter_settings").await {
             Ok(Some(settings_json)) => {
@@ -612,7 +643,7 @@ impl<'a> SyncEngine<'a> {
                 .collect();
 
             if !global_rules.is_empty() {
-                let path = match adapter.global_path() {
+                let path = match self.get_adapter_global_path(&adapter.id()).await {
                     Ok(p) => p,
                     Err(e) => {
                         errors.push(SyncError {
@@ -732,7 +763,7 @@ impl<'a> SyncEngine<'a> {
             // This means re-collecting ALL rules for that target file to ensure its content is correct.
 
             if rule.scope == Scope::Global {
-                let path = match adapter.global_path() {
+                let path = match self.get_adapter_global_path(&adapter.id()).await {
                     Ok(p) => p,
                     Err(e) => {
                         errors.push(SyncError {
@@ -848,7 +879,7 @@ impl<'a> SyncEngine<'a> {
                 .collect();
 
             if !global_rules.is_empty() {
-                let path = match adapter.global_path() {
+                let path = match self.get_adapter_global_path(&adapter.id()).await {
                     Ok(p) => p,
                     Err(_) => continue,
                 };
@@ -1013,7 +1044,7 @@ impl<'a> SyncEngine<'a> {
         let adapters = get_all_adapters();
 
         for adapter in &adapters {
-            if let Ok(adapter_path) = adapter.global_path() {
+            if let Ok(adapter_path) = self.get_adapter_global_path(&adapter.id()).await {
                 if adapter_path == path {
                     let adapter_rules: Vec<Rule> = rules
                         .iter()
