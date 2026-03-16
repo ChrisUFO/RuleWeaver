@@ -126,60 +126,69 @@ export function RuleEditorSettingsPanel({
             />
           </CollapsibleTrigger>
           <CollapsibleContent className="pt-2 pb-1">
-            <p className="text-xs text-muted-foreground mb-2">
-              Select which AI tools should receive this rule
-            </p>
-            <div className="space-y-1">
-              {tools.map((adapter) => {
-                const isEnabled = enabledAdapters.includes(adapter.id);
-                const adapterPath = getAdapterPath(adapter.id);
-                const lastSep = Math.max(
-                  adapterPath.lastIndexOf("/"),
-                  adapterPath.lastIndexOf("\\")
-                );
-                const displayPath = lastSep >= 0 ? adapterPath.substring(lastSep + 1) : adapterPath;
+            {tools.length === 0 ? (
+              <p className="text-xs text-muted-foreground">
+                No adapters available. Configure AI tools in Settings to enable rule generation.
+              </p>
+            ) : (
+              <>
+                <p className="text-xs text-muted-foreground mb-2">
+                  Select which AI tools should receive this rule
+                </p>
+                <div className="space-y-1">
+                  {tools.map((adapter) => {
+                    const isEnabled = enabledAdapters.includes(adapter.id);
+                    const adapterPath = getAdapterPath(adapter.id);
+                    const lastSep = Math.max(
+                      adapterPath.lastIndexOf("/"),
+                      adapterPath.lastIndexOf("\\")
+                    );
+                    const displayPath =
+                      lastSep >= 0 ? adapterPath.substring(lastSep + 1) : adapterPath;
 
-                return (
-                  <div
-                    key={adapter.id}
-                    className="flex items-center justify-between p-2 rounded-md hover:bg-white/5 transition-colors"
-                  >
-                    <div
-                      className="flex items-center gap-2 flex-1 cursor-pointer"
-                      onClick={() => onToggleAdapter(adapter.id)}
-                    >
-                      <Switch
-                        checked={isEnabled}
-                        onCheckedChange={() => onToggleAdapter(adapter.id)}
-                        aria-label={`Toggle ${adapter.name} adapter`}
-                      />
-                      <div className="min-w-0">
-                        <div className="text-sm font-medium">{adapter.name}</div>
-                        {isEnabled && adapterPath && (
-                          <div className="text-[10px] text-muted-foreground/60 truncate">
-                            {displayPath}
+                    return (
+                      <div
+                        key={adapter.id}
+                        className="flex items-center justify-between p-2 rounded-md hover:bg-white/5 transition-colors"
+                      >
+                        <div
+                          className="flex items-center gap-2 flex-1 cursor-pointer"
+                          onClick={() => onToggleAdapter(adapter.id)}
+                        >
+                          <Switch
+                            checked={isEnabled}
+                            onCheckedChange={() => onToggleAdapter(adapter.id)}
+                            aria-label={`Toggle ${adapter.name} adapter`}
+                          />
+                          <div className="min-w-0">
+                            <div className="text-sm font-medium">{adapter.name}</div>
+                            {isEnabled && adapterPath && (
+                              <div className="text-[10px] text-muted-foreground/60 truncate">
+                                {displayPath}
+                              </div>
+                            )}
                           </div>
+                        </div>
+                        {isEnabled && adapterPath && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 shrink-0"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onOpenFolder(adapter.id);
+                            }}
+                            title="Open in Explorer"
+                          >
+                            <ExternalLink className="h-3 w-3" />
+                          </Button>
                         )}
                       </div>
-                    </div>
-                    {isEnabled && adapterPath && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6 shrink-0"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onOpenFolder(adapter.id);
-                        }}
-                        title="Open in Explorer"
-                      >
-                        <ExternalLink className="h-3 w-3" />
-                      </Button>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
           </CollapsibleContent>
         </Collapsible>
       </CardContent>

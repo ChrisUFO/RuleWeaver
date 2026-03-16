@@ -28,6 +28,7 @@ export interface RuleEditorState {
   saving: boolean;
   lastSaved: Date | null;
   hasUnsavedChanges: boolean;
+  autoSaveError: string | null;
   tools: ToolEntry[];
   availableRepos: string[];
   setName: (v: string) => void;
@@ -43,6 +44,7 @@ export interface RuleEditorState {
   getAdapterPath: (adapter: AdapterType) => string;
   handleOpenFolder: (adapter: AdapterType) => Promise<void>;
   getSaveStatus: () => React.ReactNode;
+  cancelPendingAutoSave: () => void;
 }
 
 function slugRuleName(ruleName: string): string {
@@ -76,6 +78,7 @@ export function useRuleEditorState({
   const [isOpeningFolder, setIsOpeningFolder] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [autoSaveError, setAutoSaveError] = useState<string | null>(null);
   const [previewAdapter, setPreviewAdapter] = useState<AdapterType>("gemini");
   const isInitialized = useRef(false);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -120,6 +123,7 @@ export function useRuleEditorState({
   useEffect(() => {
     if (isInitialized.current) {
       setHasUnsavedChanges(true);
+      setAutoSaveError(null);
     }
   }, [name, description, content, scope, targetPaths, enabledAdapters]);
 
@@ -179,6 +183,9 @@ export function useRuleEditorState({
       }
 
       setSaving(true);
+      if (silent) {
+        setAutoSaveError(null);
+      }
       try {
         if (isNew) {
           await createRule({
@@ -205,7 +212,13 @@ export function useRuleEditorState({
             targetPaths: scope === "local" ? targetPaths : undefined,
             enabledAdapters,
           });
-          if (!silent) {
+          if (silent) {
+            addToast({
+              title: "Auto-saved",
+              description: `"${name}" saved automatically`,
+              variant: "success",
+            });
+          } else {
             addToast({
               title: "Rule Saved",
               description: `"${name}" has been updated`,
@@ -217,14 +230,18 @@ export function useRuleEditorState({
         setHasUnsavedChanges(false);
         return true;
       } catch (error) {
+        const errorMessage =
+          typeof error === "string"
+            ? error
+            : error instanceof Error
+              ? error.message
+              : "Unknown error";
+        if (silent) {
+          setAutoSaveError(errorMessage);
+        }
         addToast({
           title: silent ? "Auto-save Failed" : "Save Failed",
-          description:
-            typeof error === "string"
-              ? error
-              : error instanceof Error
-                ? error.message
-                : "Unknown error",
+          description: errorMessage,
           variant: "error",
         });
         return false;
@@ -266,8 +283,19 @@ export function useRuleEditorState({
   }, [hasUnsavedChanges, isNew, performSave]);
 
   const handleSave = useCallback(async () => {
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+      autoSaveTimerRef.current = null;
+    }
     await performSave(false);
   }, [performSave]);
+
+  const cancelPendingAutoSave = useCallback(() => {
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+      autoSaveTimerRef.current = null;
+    }
+  }, []);
 
   const handleDuplicate = useCallback(async () => {
     if (!rule) return;
@@ -408,6 +436,19 @@ export function useRuleEditorState({
     [getAdapterPath, addToast, isOpeningFolder]
   );
 
+  const formatRelativeTime = (date: Date): string => {
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffSeconds = Math.floor(diffMs / 1000);
+    if (diffSeconds < 60) return "just now";
+    const diffMinutes = Math.floor(diffSeconds / 60);
+    if (diffMinutes < 60) return `${diffMinutes}m ago`;
+    const diffHours = Math.floor(diffMinutes / 60);
+    if (diffHours < 24) return `${diffHours}h ago`;
+    const diffDays = Math.floor(diffHours / 24);
+    return `${diffDays}d ago`;
+  };
+
   const getSaveStatus = useCallback((): React.ReactNode => {
     if (saving) {
       return React.createElement(
@@ -429,7 +470,7 @@ export function useRuleEditorState({
         "span",
         { className: "flex items-center gap-1 text-muted-foreground text-sm" },
         React.createElement(Check, { className: "h-3 w-3 text-success" }),
-        "Saved"
+        `Saved ${formatRelativeTime(lastSaved)}`
       );
     }
     return null;
@@ -446,6 +487,7 @@ export function useRuleEditorState({
     saving,
     lastSaved,
     hasUnsavedChanges,
+    autoSaveError,
     tools,
     availableRepos,
     setName,
@@ -461,5 +503,6 @@ export function useRuleEditorState({
     getAdapterPath,
     handleOpenFolder,
     getSaveStatus,
+    cancelPendingAutoSave,
   };
 }

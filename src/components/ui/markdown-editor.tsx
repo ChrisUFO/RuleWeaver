@@ -1,10 +1,18 @@
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, ReactNode } from "react";
 import MDEditor from "@uiw/react-md-editor";
-import { Maximize2, Minimize2, WrapText } from "lucide-react";
+import { Maximize2, Minimize2, WrapText, Save, Loader2, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 type EditorMode = "edit" | "preview" | "split";
+
+export interface FullscreenSaveState {
+  saving: boolean;
+  hasUnsavedChanges: boolean;
+  lastSaved: Date | null;
+  autoSaveError: string | null;
+  onSave: () => Promise<void>;
+}
 
 interface MarkdownEditorProps {
   value: string;
@@ -14,6 +22,9 @@ interface MarkdownEditorProps {
   defaultMode?: EditorMode;
   onFullscreenChange?: (isFullscreen: boolean) => void;
   isFullscreen?: boolean;
+  fullscreenSaveState?: FullscreenSaveState;
+  fullscreenTitle?: string;
+  fullscreenSaveStatus?: ReactNode;
 }
 
 export function MarkdownEditor({
@@ -24,6 +35,9 @@ export function MarkdownEditor({
   defaultMode = "edit",
   onFullscreenChange,
   isFullscreen = false,
+  fullscreenSaveState,
+  fullscreenTitle,
+  fullscreenSaveStatus,
 }: MarkdownEditorProps) {
   const [mode, setMode] = useState<EditorMode>(defaultMode);
   const [wordWrap, setWordWrap] = useState(true);
@@ -57,6 +71,14 @@ export function MarkdownEditor({
 
   const toolbar = (
     <div className="flex items-center gap-1 px-2 py-1.5 border-b border-white/10 bg-muted/30">
+      {isFullscreen && fullscreenTitle && (
+        <>
+          <span className="text-sm font-medium truncate max-w-[200px]" title={fullscreenTitle}>
+            {fullscreenTitle}
+          </span>
+          <div className="w-px h-5 bg-border mx-1" />
+        </>
+      )}
       <div className="flex items-center gap-0.5 p-0.5 glass border border-white/5 rounded-md">
         <Button
           variant={mode === "edit" ? "default" : "ghost"}
@@ -64,6 +86,7 @@ export function MarkdownEditor({
           onClick={() => handleModeChange("edit")}
           className="h-7 px-2 text-xs"
           type="button"
+          aria-pressed={mode === "edit"}
         >
           &lt;/&gt; MD
         </Button>
@@ -73,6 +96,7 @@ export function MarkdownEditor({
           onClick={() => handleModeChange("split")}
           className="h-7 px-2 text-xs"
           type="button"
+          aria-pressed={mode === "split"}
         >
           Split
         </Button>
@@ -82,6 +106,7 @@ export function MarkdownEditor({
           onClick={() => handleModeChange("preview")}
           className="h-7 px-2 text-xs"
           type="button"
+          aria-pressed={mode === "preview"}
         >
           Preview
         </Button>
@@ -96,11 +121,39 @@ export function MarkdownEditor({
         title={wordWrap ? "Disable word wrap" : "Enable word wrap"}
         className="h-7 w-7"
         type="button"
+        aria-pressed={wordWrap}
       >
         <WrapText className="h-3.5 w-3.5" />
       </Button>
 
       <div className="flex-1" />
+
+      {isFullscreen && fullscreenSaveState && (
+        <>
+          {fullscreenSaveState.autoSaveError && (
+            <span className="flex items-center gap-1 text-xs text-destructive mr-2">
+              <AlertCircle className="h-3 w-3" />
+              Auto-save failed
+            </span>
+          )}
+          {fullscreenSaveStatus}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={fullscreenSaveState.onSave}
+            disabled={fullscreenSaveState.saving}
+            className="h-7 px-2 text-xs mr-1"
+            type="button"
+          >
+            {fullscreenSaveState.saving ? (
+              <Loader2 className="h-3 w-3 animate-spin mr-1" />
+            ) : (
+              <Save className="h-3 w-3 mr-1" />
+            )}
+            {fullscreenSaveState.saving ? "Saving..." : "Save"}
+          </Button>
+        </>
+      )}
 
       <Button
         variant="ghost"

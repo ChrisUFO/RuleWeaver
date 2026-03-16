@@ -3,7 +3,7 @@ import { ArrowLeft, Save, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardHeader } from "@/components/ui/card";
-import { MarkdownEditor } from "@/components/ui/markdown-editor";
+import { MarkdownEditor, type FullscreenSaveState } from "@/components/ui/markdown-editor";
 import { useKeyboardShortcuts, SHORTCUTS } from "@/hooks/useKeyboardShortcuts";
 import { type Rule } from "@/types/rule";
 import { useRuleEditorState } from "@/hooks/useRuleEditorState";
@@ -27,6 +27,9 @@ export function RuleEditor({ rule, onBack, onSelectRule, isNew = false }: RuleEd
     targetPaths,
     enabledAdapters,
     saving,
+    lastSaved,
+    hasUnsavedChanges,
+    autoSaveError,
     tools,
     availableRepos,
     setName,
@@ -41,6 +44,16 @@ export function RuleEditor({ rule, onBack, onSelectRule, isNew = false }: RuleEd
     handleOpenFolder,
     getSaveStatus,
   } = state;
+
+  const fullscreenSaveState: FullscreenSaveState = {
+    saving,
+    hasUnsavedChanges,
+    lastSaved,
+    autoSaveError,
+    onSave: handleSave,
+  };
+
+  const ruleTitle = name || rule?.name || "Untitled";
 
   useKeyboardShortcuts({
     shortcuts: [
@@ -137,6 +150,9 @@ export function RuleEditor({ rule, onBack, onSelectRule, isNew = false }: RuleEd
           className="flex-1"
           isFullscreen={isFullscreen}
           onFullscreenChange={setIsFullscreen}
+          fullscreenSaveState={fullscreenSaveState}
+          fullscreenTitle={ruleTitle}
+          fullscreenSaveStatus={getSaveStatus()}
         />
       )}
     </div>
