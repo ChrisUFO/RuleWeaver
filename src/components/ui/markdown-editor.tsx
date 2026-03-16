@@ -11,7 +11,7 @@ export interface FullscreenSaveState {
   hasUnsavedChanges: boolean;
   lastSaved: Date | null;
   autoSaveError: string | null;
-  onSave: () => Promise<void>;
+  onSave: () => Promise<boolean>;
 }
 
 interface MarkdownEditorProps {

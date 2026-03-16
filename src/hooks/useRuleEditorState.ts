@@ -11,6 +11,19 @@ import { featureManager, FEATURE_FLAGS } from "@/lib/featureManager";
 
 const AUTO_SAVE_DELAY_MS = 3000;
 
+function formatRelativeTime(date: Date): string {
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffSeconds = Math.floor(diffMs / 1000);
+  if (diffSeconds < 60) return "just now";
+  const diffMinutes = Math.floor(diffSeconds / 60);
+  if (diffMinutes < 60) return `${diffMinutes}m ago`;
+  const diffHours = Math.floor(diffMinutes / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+  const diffDays = Math.floor(diffHours / 24);
+  return `${diffDays}d ago`;
+}
+
 interface UseRuleEditorStateProps {
   rule: Rule | null;
   isNew: boolean;
@@ -36,7 +49,7 @@ export interface RuleEditorState {
   setContent: (v: string) => void;
   setScope: (v: Scope) => void;
   setPreviewAdapter: (v: AdapterType) => void;
-  handleSave: () => Promise<void>;
+  handleSave: () => Promise<boolean>;
   handleDuplicate: () => Promise<void>;
   toggleAdapter: (adapter: AdapterType) => void;
   toggleTargetPath: (path: string, checked: boolean) => void;
@@ -282,12 +295,12 @@ export function useRuleEditorState({
     };
   }, [hasUnsavedChanges, isNew, performSave]);
 
-  const handleSave = useCallback(async () => {
+  const handleSave = useCallback(async (): Promise<boolean> => {
     if (autoSaveTimerRef.current) {
       clearTimeout(autoSaveTimerRef.current);
       autoSaveTimerRef.current = null;
     }
-    await performSave(false);
+    return performSave(false);
   }, [performSave]);
 
   const cancelPendingAutoSave = useCallback(() => {
@@ -435,19 +448,6 @@ export function useRuleEditorState({
     },
     [getAdapterPath, addToast, isOpeningFolder]
   );
-
-  const formatRelativeTime = (date: Date): string => {
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffSeconds = Math.floor(diffMs / 1000);
-    if (diffSeconds < 60) return "just now";
-    const diffMinutes = Math.floor(diffSeconds / 60);
-    if (diffMinutes < 60) return `${diffMinutes}m ago`;
-    const diffHours = Math.floor(diffMinutes / 60);
-    if (diffHours < 24) return `${diffHours}h ago`;
-    const diffDays = Math.floor(diffHours / 24);
-    return `${diffDays}d ago`;
-  };
 
   const getSaveStatus = useCallback((): React.ReactNode => {
     if (saving) {

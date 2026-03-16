@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { ArrowLeft, Save, Copy } from "lucide-react";
+import { confirm } from "@tauri-apps/plugin-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -55,6 +56,21 @@ export function RuleEditor({ rule, onBack, onSelectRule, isNew = false }: RuleEd
 
   const ruleTitle = name || rule?.name || "Untitled";
 
+  const handleBackNavigation = async () => {
+    if (hasUnsavedChanges) {
+      const confirmed = await confirm(
+        "You have unsaved changes that will be lost. Are you sure you want to leave?",
+        { title: "Unsaved Changes", kind: "warning" }
+      );
+      if (confirmed) {
+        state.cancelPendingAutoSave();
+        onBack();
+      }
+    } else {
+      onBack();
+    }
+  };
+
   useKeyboardShortcuts({
     shortcuts: [
       { ...SHORTCUTS.SAVE, action: handleSave },
@@ -68,7 +84,12 @@ export function RuleEditor({ rule, onBack, onSelectRule, isNew = false }: RuleEd
         <>
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-4">
-              <Button variant="ghost" size="icon" onClick={onBack} aria-label="Go back">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleBackNavigation}
+                aria-label="Go back"
+              >
                 <ArrowLeft className="h-4 w-4" />
               </Button>
               <h1 className="text-xl font-bold">{isNew ? "Create Rule" : `Edit: ${rule?.name}`}</h1>
