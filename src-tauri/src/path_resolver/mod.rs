@@ -11,6 +11,7 @@
 //! - **Pure Functions**: Path resolution functions are deterministic and testable.
 //! - **Artifact-Agnostic**: Handles all artifact types uniformly via `ArtifactType` enum.
 //! - **Platform-Aware**: Normalizes paths for Windows and Unix platforms.
+//! - **WSL-Aware**: Supports alternate home directories per adapter for WSL paths.
 //!
 //! # Status
 //!
@@ -19,6 +20,7 @@
 
 #![allow(dead_code)]
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
@@ -170,9 +172,16 @@ pub struct ArtifactSpec {
 ///
 /// For the reconciliation engine to detect local artifacts, repository roots must
 /// be configured before calling `scan_actual_state`.
+///
+/// # WSL Support
+///
+/// The `wsl_home_dirs` field contains UNC paths to WSL distributions' home directories
+/// keyed by adapter type. When an adapter is configured for WSL mode, path resolution
+/// will use the WSL home directory instead of the Windows home directory.
 pub struct PathResolver {
     home_dir: PathBuf,
     repository_roots: Vec<PathBuf>,
+    wsl_home_dirs: HashMap<AdapterType, PathBuf>,
 }
 
 impl PathResolver {
@@ -188,6 +197,7 @@ impl PathResolver {
         Ok(Self {
             home_dir,
             repository_roots: Vec::new(),
+            wsl_home_dirs: HashMap::new(),
         })
     }
 
@@ -203,6 +213,7 @@ impl PathResolver {
         Ok(Self {
             home_dir,
             repository_roots,
+            wsl_home_dirs: HashMap::new(),
         })
     }
 
@@ -221,12 +232,42 @@ impl PathResolver {
         self.repository_roots.push(root);
     }
 
+    /// Set the WSL home directory for a specific adapter.
+    ///
+    /// When set, path resolution for this adapter will use the WSL home
+    /// directory instead of the Windows home directory.
+    pub fn set_wsl_home_dir(&mut self, adapter: AdapterType, home_dir: PathBuf) {
+        self.wsl_home_dirs.insert(adapter, home_dir);
+    }
+
+    /// Clear the WSL home directory for a specific adapter.
+    pub fn clear_wsl_home_dir(&mut self, adapter: AdapterType) {
+        self.wsl_home_dirs.remove(&adapter);
+    }
+
+    /// Get the effective home directory for an adapter.
+    ///
+    /// Returns the WSL home directory if configured for this adapter,
+    /// otherwise returns the Windows home directory.
+    pub fn home_dir_for_adapter(&self, adapter: AdapterType) -> &Path {
+        self.wsl_home_dirs
+            .get(&adapter)
+            .map(|p| p.as_path())
+            .unwrap_or(&self.home_dir)
+    }
+
+    /// Check if an adapter is configured for WSL mode.
+    pub fn is_wsl_adapter(&self, adapter: AdapterType) -> bool {
+        self.wsl_home_dirs.contains_key(&adapter)
+    }
+
     /// Create a PathResolver with an explicit home directory (for tests only).
     #[cfg(any(test, feature = "test-helpers"))]
     pub fn new_with_home(home_dir: PathBuf, repository_roots: Vec<PathBuf>) -> Self {
         Self {
             home_dir,
             repository_roots,
+            wsl_home_dirs: HashMap::new(),
         }
     }
 
@@ -251,8 +292,12 @@ impl PathResolver {
                 message: format!("Unknown adapter: {}", adapter.as_str()),
             })?;
 
+        let home_dir = self.home_dir_for_adapter(adapter);
+
         let path = match artifact {
-            ArtifactType::Rule => self.resolve_template(entry.paths.global_path, None)?,
+            ArtifactType::Rule => {
+                self.resolve_template_for_adapter(entry.paths.global_path, None, adapter)?
+            }
             ArtifactType::CommandStub => {
                 let commands_dir =
                     entry
@@ -264,7 +309,7 @@ impl PathResolver {
                                 adapter.as_str()
                             ),
                         })?;
-                self.home_dir
+                home_dir
                     .join(commands_dir)
                     .join(entry.paths.command_stub_filename)
             }
@@ -286,7 +331,7 @@ impl PathResolver {
                                 adapter.as_str()
                             ),
                         })?;
-                self.home_dir.join(skills_dir)
+                home_dir.join(skills_dir)
             }
         };
 
@@ -546,7 +591,7 @@ impl PathResolver {
         let filename = format!("{}.{}", command_name, extension);
 
         let path = if is_global {
-            self.home_dir.join(dir).join(&filename)
+            self.home_dir_for_adapter(adapter).join(dir).join(&filename)
         } else {
             // For local, we need a repo root - this is handled differently
             // The caller must provide the repo root context
@@ -645,7 +690,7 @@ impl PathResolver {
                 message: format!("Adapter {} does not support skills", adapter.as_str()),
             })?;
 
-        let path = self.home_dir.join(skills_dir);
+        let path = self.home_dir_for_adapter(adapter).join(skills_dir);
         let exists = path.exists();
 
         Ok(ResolvedPath {
@@ -715,7 +760,7 @@ impl PathResolver {
         let filename = entry.paths.skill_filename;
         let safe_name = sanitize_skill_name(skill_name);
         let path = self
-            .home_dir
+            .home_dir_for_adapter(adapter)
             .join(skills_dir)
             .join(&safe_name)
             .join(filename);
@@ -779,8 +824,15 @@ impl PathResolver {
     ///
     /// Returns an error if:
     /// - The path is relative
-    /// - The path is not within the user's home directory
-    /// - The path contains invalid characters
+    /// - The path is not within the user's home directory (for Windows paths)
+    /// - The path is not absolute (for WSL UNC paths)
+    /// - The path contains path traversal sequences
+    ///
+    /// # WSL Support
+    ///
+    /// WSL UNC paths (e.g., `\\wsl$\Ubuntu\home\user`) are accepted without the
+    /// home directory check, as they point to a different filesystem. The path
+    /// must still be absolute and cannot contain traversal sequences.
     ///
     /// # Limitations
     ///
@@ -795,10 +847,25 @@ impl PathResolver {
             });
         }
 
-        // Normalize the path without requiring it to exist (no filesystem I/O)
         let normalized = normalize_path(path)?;
 
-        // Check for traversal by comparing against home directory after normalization
+        #[cfg(target_os = "windows")]
+        {
+            if crate::wsl::WslPathTranslator::is_wsl_unc(&normalized) {
+                if normalized.components().any(|c| {
+                    matches!(
+                        c,
+                        std::path::Component::ParentDir | std::path::Component::CurDir
+                    )
+                }) {
+                    return Err(AppError::InvalidInput {
+                        message: "WSL path contains invalid traversal sequences".to_string(),
+                    });
+                }
+                return Ok(normalized);
+            }
+        }
+
         let canonical_home =
             normalize_path(&self.home_dir).unwrap_or_else(|_| self.home_dir.clone());
 
@@ -884,6 +951,39 @@ impl PathResolver {
         }
 
         // Non-home template (e.g., local "{repo}/..." paths)
+        let mut result = template.to_string();
+        if let Some(root) = repo_root {
+            result = result.replace("{repo}", &root.to_string_lossy());
+        }
+        Ok(PathBuf::from(result))
+    }
+
+    /// Resolve a path template with adapter-specific home directory.
+    ///
+    /// This method uses the WSL home directory if configured for the adapter,
+    /// otherwise uses the Windows home directory.
+    fn resolve_template_for_adapter(
+        &self,
+        template: &str,
+        repo_root: Option<&Path>,
+        adapter: AdapterType,
+    ) -> Result<PathBuf> {
+        let home = self.home_dir_for_adapter(adapter);
+
+        if template == "~" {
+            return Ok(home.to_path_buf());
+        }
+        if let Some(suffix) = template.strip_prefix("~/") {
+            let mut path = home.join(suffix);
+            if let Some(root) = repo_root {
+                let s = path
+                    .to_string_lossy()
+                    .replace("{repo}", &root.to_string_lossy());
+                path = PathBuf::from(s);
+            }
+            return Ok(path);
+        }
+
         let mut result = template.to_string();
         if let Some(root) = repo_root {
             result = result.replace("{repo}", &root.to_string_lossy());
@@ -1639,5 +1739,98 @@ mod tests {
             .unwrap();
         assert!(local_dir.path.to_string_lossy().contains(".opencode"));
         assert!(local_dir.path.to_string_lossy().contains("rules"));
+    }
+
+    #[test]
+    fn test_wsl_home_dir_configuration() {
+        let mut resolver = PathResolver::new().unwrap();
+        let wsl_home = PathBuf::from(r"\\wsl$\Ubuntu\home\user");
+
+        resolver.set_wsl_home_dir(AdapterType::ClaudeCode, wsl_home.clone());
+        assert!(resolver.is_wsl_adapter(AdapterType::ClaudeCode));
+        assert_eq!(
+            resolver.home_dir_for_adapter(AdapterType::ClaudeCode),
+            wsl_home
+        );
+
+        resolver.clear_wsl_home_dir(AdapterType::ClaudeCode);
+        assert!(!resolver.is_wsl_adapter(AdapterType::ClaudeCode));
+    }
+
+    #[test]
+    fn test_global_path_uses_wsl_home() {
+        let mut resolver = PathResolver::new().unwrap();
+        let wsl_home = PathBuf::from(r"\\wsl$\Ubuntu\home\user");
+
+        resolver.set_wsl_home_dir(AdapterType::ClaudeCode, wsl_home.clone());
+
+        let result = resolver.global_path(AdapterType::ClaudeCode, ArtifactType::Rule);
+        assert!(result.is_ok());
+
+        let resolved = result.unwrap();
+        let path_str = resolved.path.to_string_lossy();
+        assert!(path_str.contains("wsl$") || path_str.contains("wsl.localhost"));
+        assert!(path_str.contains("CLAUDE.md"));
+    }
+
+    #[test]
+    fn test_skill_path_uses_wsl_home() {
+        let mut resolver = PathResolver::new().unwrap();
+        let wsl_home = PathBuf::from(r"\\wsl$\Ubuntu\home\user");
+
+        resolver.set_wsl_home_dir(AdapterType::ClaudeCode, wsl_home.clone());
+
+        let result = resolver.skill_path(AdapterType::ClaudeCode, "test-skill");
+        assert!(result.is_ok());
+
+        let resolved = result.unwrap();
+        let path_str = resolved.path.to_string_lossy();
+        assert!(path_str.contains("wsl$") || path_str.contains("wsl.localhost"));
+        assert!(path_str.contains("test-skill"));
+        assert!(path_str.contains("SKILL.md"));
+    }
+
+    #[test]
+    fn test_slash_command_path_uses_wsl_home() {
+        let mut resolver = PathResolver::new().unwrap();
+        let wsl_home = PathBuf::from(r"\\wsl$\Ubuntu\home\user");
+
+        resolver.set_wsl_home_dir(AdapterType::ClaudeCode, wsl_home.clone());
+
+        let result = resolver.slash_command_path(AdapterType::ClaudeCode, "my-cmd", true);
+        assert!(result.is_ok());
+
+        let resolved = result.unwrap();
+        let path_str = resolved.path.to_string_lossy();
+        assert!(path_str.contains("wsl$") || path_str.contains("wsl.localhost"));
+        assert!(path_str.contains("my-cmd"));
+    }
+
+    #[test]
+    fn test_different_adapters_can_have_different_homes() {
+        let mut resolver = PathResolver::new().unwrap();
+        let wsl_home_ubuntu = PathBuf::from(r"\\wsl$\Ubuntu\home\user");
+        let wsl_home_debian = PathBuf::from(r"\\wsl$\Debian\home\user");
+
+        resolver.set_wsl_home_dir(AdapterType::ClaudeCode, wsl_home_ubuntu.clone());
+        resolver.set_wsl_home_dir(AdapterType::Cursor, wsl_home_debian.clone());
+
+        assert!(resolver.is_wsl_adapter(AdapterType::ClaudeCode));
+        assert!(resolver.is_wsl_adapter(AdapterType::Cursor));
+        assert!(!resolver.is_wsl_adapter(AdapterType::OpenCode));
+
+        let claude_path = resolver
+            .global_path(AdapterType::ClaudeCode, ArtifactType::Rule)
+            .unwrap();
+        let cursor_path = resolver
+            .global_path(AdapterType::Cursor, ArtifactType::Rule)
+            .unwrap();
+        let opencode_path = resolver
+            .global_path(AdapterType::OpenCode, ArtifactType::Rule)
+            .unwrap();
+
+        assert!(claude_path.path.to_string_lossy().contains("Ubuntu"));
+        assert!(cursor_path.path.to_string_lossy().contains("Debian"));
+        assert!(!opencode_path.path.to_string_lossy().contains("wsl$"));
     }
 }

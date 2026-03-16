@@ -11,6 +11,7 @@ mod skill;
 mod sync_manifest;
 pub mod timestamp;
 mod tool_preferences;
+mod wsl;
 
 pub use command::*;
 pub use config::*;
@@ -24,3 +25,4 @@ pub use secret::*;
 pub use skill::*;
 pub use sync_manifest::*;
 pub use tool_preferences::*;
+pub use wsl::*;

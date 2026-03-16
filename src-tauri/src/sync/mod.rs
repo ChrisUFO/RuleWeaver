@@ -12,9 +12,9 @@ use crate::error::Result;
 use crate::models::registry::{ArtifactType, REGISTRY};
 use crate::models::{
     AdapterType, Conflict, CreateSyncManifestInput, DiffSummary, Rule, Scope, SyncError,
-    SyncResult, ToolSyncPreferences,
+    SyncResult, ToolSyncPreferences, WslConfig,
 };
-use crate::path_resolver::path_resolver;
+use crate::path_resolver::{path_resolver, PathResolver};
 
 fn registry_entry(adapter: &AdapterType) -> &'static crate::models::registry::ToolEntry {
     REGISTRY.get(adapter).unwrap_or_else(|| {
@@ -517,6 +517,28 @@ impl<'a> SyncEngine<'a> {
         Self { db }
     }
 
+    async fn create_path_resolver(&self) -> Result<PathResolver> {
+        let mut resolver = PathResolver::new().map_err(|e| {
+            log::error!("Failed to create PathResolver: {}", e);
+            e
+        })?;
+
+        let wsl_config_json = self.db.get_setting("wsl_config").await.ok().flatten();
+        let wsl_config: WslConfig = wsl_config_json
+            .and_then(|json| serde_json::from_str(&json).ok())
+            .unwrap_or_default();
+
+        if wsl_config.enabled {
+            for adapter in AdapterType::all() {
+                if let Some(home_dir) = wsl_config.get_wsl_home_dir(adapter) {
+                    resolver.set_wsl_home_dir(adapter, home_dir);
+                }
+            }
+        }
+
+        Ok(resolver)
+    }
+
     async fn get_disabled_adapters(&self) -> HashSet<AdapterType> {
         match self.db.get_setting("adapter_settings").await {
             Ok(Some(settings_json)) => {
@@ -573,6 +595,21 @@ impl<'a> SyncEngine<'a> {
         let mut errors = Vec::new();
         let conflicts = Vec::new();
 
+        let path_resolver = match self.create_path_resolver().await {
+            Ok(resolver) => resolver,
+            Err(e) => {
+                return SyncResult {
+                    success: false,
+                    files_written: vec![],
+                    errors: vec![SyncError {
+                        file_path: String::new(),
+                        adapter_name: String::new(),
+                        message: format!("Failed to initialize path resolver: {}", e),
+                    }],
+                    conflicts: vec![],
+                };
+            }
+        };
         let disabled_adapters = self.get_disabled_adapters().await;
         let tool_prefs = self.get_tool_sync_preferences().await;
         let adapters = get_all_adapters();
@@ -612,8 +649,8 @@ impl<'a> SyncEngine<'a> {
                 .collect();
 
             if !global_rules.is_empty() {
-                let path = match adapter.global_path() {
-                    Ok(p) => p,
+                let path = match path_resolver.global_path(adapter.id(), ArtifactType::Rule) {
+                    Ok(resolved) => resolved.path,
                     Err(e) => {
                         errors.push(SyncError {
                             file_path: String::new(),
@@ -697,6 +734,21 @@ impl<'a> SyncEngine<'a> {
         let mut errors = Vec::new();
         let conflicts = Vec::new();
 
+        let path_resolver = match self.create_path_resolver().await {
+            Ok(resolver) => resolver,
+            Err(e) => {
+                return SyncResult {
+                    success: false,
+                    files_written: vec![],
+                    errors: vec![SyncError {
+                        file_path: String::new(),
+                        adapter_name: String::new(),
+                        message: format!("Failed to initialize path resolver: {}", e),
+                    }],
+                    conflicts: vec![],
+                };
+            }
+        };
         let disabled_adapters = self.get_disabled_adapters().await;
         let tool_prefs = self.get_tool_sync_preferences().await;
         let adapters = get_all_adapters();
@@ -732,8 +784,8 @@ impl<'a> SyncEngine<'a> {
             // This means re-collecting ALL rules for that target file to ensure its content is correct.
 
             if rule.scope == Scope::Global {
-                let path = match adapter.global_path() {
-                    Ok(p) => p,
+                let path = match path_resolver.global_path(adapter.id(), ArtifactType::Rule) {
+                    Ok(resolved) => resolved.path,
                     Err(e) => {
                         errors.push(SyncError {
                             file_path: String::new(),
@@ -818,6 +870,21 @@ impl<'a> SyncEngine<'a> {
         let mut files_written = Vec::new();
         let mut conflicts = Vec::new();
 
+        let path_resolver = match self.create_path_resolver().await {
+            Ok(resolver) => resolver,
+            Err(e) => {
+                return SyncResult {
+                    success: false,
+                    files_written: vec![],
+                    errors: vec![SyncError {
+                        file_path: String::new(),
+                        adapter_name: String::new(),
+                        message: format!("Failed to initialize path resolver: {}", e),
+                    }],
+                    conflicts: vec![],
+                };
+            }
+        };
         let disabled_adapters = self.get_disabled_adapters().await;
         let adapters = get_all_adapters();
 
@@ -848,8 +915,8 @@ impl<'a> SyncEngine<'a> {
                 .collect();
 
             if !global_rules.is_empty() {
-                let path = match adapter.global_path() {
-                    Ok(p) => p,
+                let path = match path_resolver.global_path(adapter.id(), ArtifactType::Rule) {
+                    Ok(resolved) => resolved.path,
                     Err(_) => continue,
                 };
                 files_written.push(path.to_string_lossy().to_string());
@@ -1009,12 +1076,13 @@ impl<'a> SyncEngine<'a> {
     pub async fn sync_file_by_path(&self, rules: &[Rule], file_path: &str) -> Result<()> {
         validate_target_path(file_path)?;
 
+        let path_resolver = self.create_path_resolver().await?;
         let path = PathBuf::from(file_path);
         let adapters = get_all_adapters();
 
         for adapter in &adapters {
-            if let Ok(adapter_path) = adapter.global_path() {
-                if adapter_path == path {
+            if let Ok(resolved) = path_resolver.global_path(adapter.id(), ArtifactType::Rule) {
+                if resolved.path == path {
                     let adapter_rules: Vec<Rule> = rules
                         .iter()
                         .filter(|r| {

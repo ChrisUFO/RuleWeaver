@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::sync::Arc;
 use tauri::State;
 
@@ -11,11 +12,75 @@ use crate::models::{
     AdapterType, CleanupResult, DeleteScopedSecretInput, EffectiveSecret, ExecutionLog,
     InstalledToolInfo, ResolveScopedSecretsInput, ScopedSecret, SecretStorageStatus,
     SyncHistoryEntry, SyncManifestFilter, ToolSyncPreferences, UpsertScopedSecretInput,
-    UpsertToolSyncPreferencesInput,
+    UpsertToolSyncPreferencesInput, WslAdapterConfig, WslConfig, WslDistribution,
 };
 use crate::secrets;
 
 use super::validate_path;
+
+fn parse_wsl_config_with_recovery(json: &str) -> WslConfig {
+    match serde_json::from_str::<WslConfig>(json) {
+        Ok(config) => config,
+        Err(e) => {
+            log::warn!(
+                "Failed to deserialize WSL config: {}. Attempting partial recovery...",
+                e
+            );
+
+            match serde_json::from_str::<serde_json::Value>(json) {
+                Ok(value) => {
+                    let mut config = WslConfig::default();
+                    let mut recovered_fields: Vec<String> = Vec::new();
+
+                    if let Some(enabled) = value.get("enabled").and_then(|v| v.as_bool()) {
+                        config.enabled = enabled;
+                        recovered_fields.push("enabled".to_string());
+                    }
+
+                    if let Some(dist) = value.get("defaultDistribution").and_then(|v| v.as_str()) {
+                        config.default_distribution = Some(dist.to_string());
+                        recovered_fields.push("defaultDistribution".to_string());
+                    }
+
+                    if let Some(adapters) = value.get("adapters").and_then(|v| v.as_object()) {
+                        let mut valid_adapters = 0;
+                        for (key, adapter_value) in adapters {
+                            if let Ok(adapter_type) = AdapterType::from_str(key.as_str()) {
+                                if let Ok(adapter_config) = serde_json::from_value::<WslAdapterConfig>(
+                                    adapter_value.clone(),
+                                ) {
+                                    config.adapters.insert(adapter_type, adapter_config);
+                                    valid_adapters += 1;
+                                }
+                            }
+                        }
+                        if valid_adapters > 0 {
+                            recovered_fields.push(format!("{} adapter(s)", valid_adapters));
+                        }
+                    }
+
+                    if recovered_fields.is_empty() {
+                        log::warn!("WSL config recovery: no fields could be recovered");
+                    } else {
+                        log::info!(
+                            "WSL config recovery: recovered [{}]",
+                            recovered_fields.join(", ")
+                        );
+                    }
+
+                    config
+                }
+                Err(e2) => {
+                    log::warn!(
+                        "WSL config recovery failed (not valid JSON): {}. Using default config.",
+                        e2
+                    );
+                    WslConfig::default()
+                }
+            }
+        }
+    }
+}
 
 #[tauri::command]
 pub async fn get_execution_history(
@@ -285,4 +350,88 @@ pub async fn cleanup_synced_files(
         errors,
         removed_paths,
     })
+}
+
+#[tauri::command]
+pub async fn get_wsl_config(db: State<'_, Arc<Database>>) -> Result<WslConfig> {
+    let config_json = db.get_setting("wsl_config").await?;
+    match config_json {
+        Some(json) => Ok(parse_wsl_config_with_recovery(&json)),
+        None => Ok(WslConfig::default()),
+    }
+}
+
+#[tauri::command]
+pub async fn set_wsl_config(config: WslConfig, db: State<'_, Arc<Database>>) -> Result<()> {
+    let config_json =
+        serde_json::to_string(&config).map_err(|e| crate::error::AppError::InvalidInput {
+            message: format!("Failed to serialize WSL config: {}", e),
+        })?;
+    db.set_setting("wsl_config", &config_json).await
+}
+
+#[tauri::command]
+pub async fn set_wsl_adapter_config(
+    adapter: AdapterType,
+    adapter_config: WslAdapterConfig,
+    db: State<'_, Arc<Database>>,
+) -> Result<WslConfig> {
+    let mut config = match db.get_setting("wsl_config").await? {
+        Some(json) => parse_wsl_config_with_recovery(&json),
+        None => WslConfig::default(),
+    };
+    config.set_adapter_config(adapter, adapter_config);
+    let config_json =
+        serde_json::to_string(&config).map_err(|e| crate::error::AppError::InvalidInput {
+            message: format!("Failed to serialize WSL config: {}", e),
+        })?;
+    db.set_setting("wsl_config", &config_json).await?;
+    Ok(config)
+}
+
+#[tauri::command]
+pub async fn set_wsl_enabled(enabled: bool, db: State<'_, Arc<Database>>) -> Result<WslConfig> {
+    let mut config = match db.get_setting("wsl_config").await? {
+        Some(json) => parse_wsl_config_with_recovery(&json),
+        None => WslConfig::default(),
+    };
+    config.enabled = enabled;
+    let config_json =
+        serde_json::to_string(&config).map_err(|e| crate::error::AppError::InvalidInput {
+            message: format!("Failed to serialize WSL config: {}", e),
+        })?;
+    db.set_setting("wsl_config", &config_json).await?;
+    Ok(config)
+}
+
+#[tauri::command]
+#[cfg(target_os = "windows")]
+pub fn is_wsl_installed() -> bool {
+    crate::wsl::WslDetection::is_wsl_installed()
+}
+
+#[tauri::command]
+#[cfg(not(target_os = "windows"))]
+pub fn is_wsl_installed() -> bool {
+    false
+}
+
+#[tauri::command]
+#[cfg(target_os = "windows")]
+pub fn list_wsl_distributions() -> Result<Vec<WslDistribution>> {
+    if !crate::wsl::WslDetection::is_wsl_installed() {
+        return Ok(Vec::new());
+    }
+    let distros = crate::wsl::WslDetection::list_distributions().map_err(|e| {
+        crate::error::AppError::InvalidInput {
+            message: e.to_string(),
+        }
+    })?;
+    Ok(distros)
+}
+
+#[tauri::command]
+#[cfg(not(target_os = "windows"))]
+pub fn list_wsl_distributions() -> Result<Vec<WslDistribution>> {
+    Ok(Vec::new())
 }

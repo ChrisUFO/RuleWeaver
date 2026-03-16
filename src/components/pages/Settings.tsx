@@ -36,6 +36,7 @@ import { SettingsTabs } from "@/components/settings/SettingsTabs";
 import { ToolSyncPreferencesMatrix } from "@/components/settings/ToolSyncPreferencesMatrix";
 import { ReconciliationModeCard } from "@/components/settings/ReconciliationModeCard";
 import { CleanupCard } from "@/components/settings/CleanupCard";
+import { WslSettingsCard } from "@/components/settings/WslSettingsCard";
 
 const SETTINGS_TABS = [
   { id: "general", label: "General", icon: SettingsIcon },
@@ -305,6 +306,8 @@ export function Settings({ onNavigate: _onNavigate }: { onNavigate?: (view: stri
               exit="exit"
               className="space-y-6"
             >
+              <WslSettingsCard addToast={addToast} />
+
               <StorageSettingsCard
                 storageMode={storageMode}
                 storageInfo={storageInfo}
