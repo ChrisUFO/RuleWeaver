@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { ArrowLeft, Save, Copy } from "lucide-react";
+import { ArrowLeft, Save, Copy, Sparkles } from "lucide-react";
 import { confirm } from "@tauri-apps/plugin-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,6 +9,7 @@ import { useKeyboardShortcuts, SHORTCUTS } from "@/hooks/useKeyboardShortcuts";
 import { type Rule } from "@/types/rule";
 import { useRuleEditorState } from "@/hooks/useRuleEditorState";
 import { RuleEditorSettingsPanel } from "@/components/rules/RuleEditorSettingsPanel";
+import { AiImproveRuleDialog } from "@/components/rules/AiImproveRuleDialog";
 
 interface RuleEditorProps {
   rule: Rule | null;
@@ -19,6 +20,7 @@ interface RuleEditorProps {
 
 export function RuleEditor({ rule, onBack, onSelectRule, isNew = false }: RuleEditorProps) {
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isAiImproveDialogOpen, setIsAiImproveDialogOpen] = useState(false);
   const state = useRuleEditorState({ rule, isNew, onSelectRule });
   const {
     name,
@@ -119,6 +121,16 @@ export function RuleEditor({ rule, onBack, onSelectRule, isNew = false }: RuleEd
               Duplicate
             </Button>
           )}
+          <Button
+            variant="outline"
+            onClick={() => setIsAiImproveDialogOpen(true)}
+            disabled={saving || !content.trim()}
+            title="Improve with AI"
+            className="glass border-white/5 hover:bg-white/5"
+          >
+            <Sparkles className="mr-2 h-4 w-4" />
+            Improve
+          </Button>
           <Button onClick={handleSave} disabled={saving} className="glow-primary">
             <Save className="mr-2 h-4 w-4" />
             {saving ? "Saving..." : "Save"}
@@ -172,6 +184,14 @@ export function RuleEditor({ rule, onBack, onSelectRule, isNew = false }: RuleEd
           />
         </div>
       </div>
+
+      <AiImproveRuleDialog
+        open={isAiImproveDialogOpen}
+        onOpenChange={setIsAiImproveDialogOpen}
+        ruleContent={content}
+        ruleName={name}
+        onApply={(improvedContent) => setContent(improvedContent)}
+      />
     </div>
   );
 }
