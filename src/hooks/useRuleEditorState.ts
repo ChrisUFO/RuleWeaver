@@ -14,7 +14,6 @@ const AUTO_SAVE_DELAY_MS = 3000;
 interface UseRuleEditorStateProps {
   rule: Rule | null;
   isNew: boolean;
-  onBack: () => void;
   onSelectRule: (rule: Rule) => void;
 }
 
@@ -26,9 +25,6 @@ export interface RuleEditorState {
   targetPaths: string[];
   enabledAdapters: AdapterType[];
   previewAdapter: AdapterType;
-  wordCount: number;
-  characterCount: number;
-  lineCount: number;
   saving: boolean;
   lastSaved: Date | null;
   hasUnsavedChanges: boolean;
@@ -49,18 +45,6 @@ export interface RuleEditorState {
   getSaveStatus: () => React.ReactNode;
 }
 
-function getWordCount(text: string): number {
-  return text.trim() ? text.trim().split(/\s+/).length : 0;
-}
-
-function getCharacterCount(text: string): number {
-  return text.length;
-}
-
-function getLineCount(text: string): number {
-  return text.split("\n").length;
-}
-
 function slugRuleName(ruleName: string): string {
   return ruleName
     .toLowerCase()
@@ -72,7 +56,6 @@ function slugRuleName(ruleName: string): string {
 export function useRuleEditorState({
   rule,
   isNew,
-  onBack,
   onSelectRule,
 }: UseRuleEditorStateProps): RuleEditorState {
   const { createRule, updateRule, duplicateRule } = useRulesStore();
@@ -96,10 +79,6 @@ export function useRuleEditorState({
   const [previewAdapter, setPreviewAdapter] = useState<AdapterType>("gemini");
   const isInitialized = useRef(false);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const wordCount = getWordCount(content);
-  const characterCount = getCharacterCount(content);
-  const lineCount = getLineCount(content);
 
   useEffect(() => {
     const loadDefaultAdapters = async () => {
@@ -226,23 +205,28 @@ export function useRuleEditorState({
             targetPaths: scope === "local" ? targetPaths : undefined,
             enabledAdapters,
           });
+          if (!silent) {
+            addToast({
+              title: "Rule Saved",
+              description: `"${name}" has been updated`,
+              variant: "success",
+            });
+          }
         }
         setLastSaved(new Date());
         setHasUnsavedChanges(false);
         return true;
       } catch (error) {
-        if (!silent) {
-          addToast({
-            title: "Save Failed",
-            description:
-              typeof error === "string"
-                ? error
-                : error instanceof Error
-                  ? error.message
-                  : "Unknown error",
-            variant: "error",
-          });
-        }
+        addToast({
+          title: silent ? "Auto-save Failed" : "Save Failed",
+          description:
+            typeof error === "string"
+              ? error
+              : error instanceof Error
+                ? error.message
+                : "Unknown error",
+          variant: "error",
+        });
         return false;
       } finally {
         setSaving(false);
@@ -282,11 +266,8 @@ export function useRuleEditorState({
   }, [hasUnsavedChanges, isNew, performSave]);
 
   const handleSave = useCallback(async () => {
-    const success = await performSave(false);
-    if (success) {
-      onBack();
-    }
-  }, [performSave, onBack]);
+    await performSave(false);
+  }, [performSave]);
 
   const handleDuplicate = useCallback(async () => {
     if (!rule) return;
@@ -462,9 +443,6 @@ export function useRuleEditorState({
     targetPaths,
     enabledAdapters,
     previewAdapter,
-    wordCount,
-    characterCount,
-    lineCount,
     saving,
     lastSaved,
     hasUnsavedChanges,

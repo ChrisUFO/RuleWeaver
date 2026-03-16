@@ -18,7 +18,7 @@ interface RuleEditorProps {
 
 export function RuleEditor({ rule, onBack, onSelectRule, isNew = false }: RuleEditorProps) {
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const state = useRuleEditorState({ rule, isNew, onBack, onSelectRule });
+  const state = useRuleEditorState({ rule, isNew, onSelectRule });
   const {
     name,
     description,
