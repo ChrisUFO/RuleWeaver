@@ -36,6 +36,9 @@ pub fn validate_distribution_name(name: &str) -> Result<()> {
 /// Provides methods for detecting WSL installations.
 pub struct WslDetection;
 
+/// Provides methods for translating paths between WSL and Windows formats.
+pub struct WslPathTranslator;
+
 impl WslDetection {
     /// Check if WSL is installed on the system.
     pub fn is_wsl_installed() -> bool {
@@ -122,9 +125,6 @@ impl WslDetection {
         ))
     }
 }
-
-/// Provides methods for translating between Windows UNC and WSL paths.
-pub struct WslPathTranslator;
 
 impl WslPathTranslator {
     /// Convert a WSL path to a Windows UNC path.

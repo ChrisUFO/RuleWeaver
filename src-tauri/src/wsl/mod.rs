@@ -27,6 +27,27 @@ pub struct WslDetection;
 pub struct WslPathTranslator;
 
 #[cfg(not(target_os = "windows"))]
+pub fn validate_distribution_name(name: &str) -> crate::error::Result<()> {
+    if name.is_empty() {
+        return Err(crate::error::AppError::InvalidInput {
+            message: "Distribution name cannot be empty".to_string(),
+        });
+    }
+    let valid = name
+        .chars()
+        .all(|c| c.is_alphanumeric() || c == '-' || c == '_');
+    if !valid {
+        return Err(crate::error::AppError::InvalidInput {
+            message: format!(
+                "Invalid distribution name '{}': must contain only alphanumeric characters, hyphens, or underscores",
+                name
+            ),
+        });
+    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
 impl WslDetection {
     pub fn is_wsl_installed() -> bool {
         false
