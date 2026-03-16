@@ -8,8 +8,18 @@ import { useToast } from "@/components/ui/toast";
 import type { InstalledToolInfo, ToolSyncPreferences } from "@/types/status";
 import type { AdapterType } from "@/types/rule";
 
+// Commands column uses supportsSlashCommands because the sync engine maps both
+// CommandStub and SlashCommand artifacts to the sync_commands preference field.
+// All tools that support command_stubs also support slash_commands, so this
+// capability check correctly covers both artifact types.
 const ARTIFACT_TYPES = [
   { key: "rules", label: "Rules", capability: "supportsRules" as const },
+  // Commands includes both CommandStub and SlashCommand artifacts.
+  // The sync engine maps both types to `sync_commands` (see sync/mod.rs).
+  // Using supportsSlashCommands as the capability indicator works because:
+  // - All tools supporting command_stubs also support slash_commands
+  // - Tools supporting only slash_commands (Cursor, Augment) correctly show the toggle
+  // - Tools supporting neither type show "N/A" badge
   { key: "commands", label: "Commands", capability: "supportsSlashCommands" as const },
   { key: "skills", label: "Skills", capability: "supportsSkills" as const },
 ] as const;
@@ -77,6 +87,9 @@ export function ToolSyncPreferencesMatrix() {
       [key]: !currentPref[key],
     };
 
+    const toolName = tools.find((t) => t.id === toolId)?.name ?? toolId;
+    const enabled = currentPref[key];
+
     setPreferences((prev) => ({ ...prev, [toolId]: newPref }));
     setIsSaving(true);
 
@@ -89,7 +102,7 @@ export function ToolSyncPreferencesMatrix() {
       });
       addToast({
         title: "Preference Saved",
-        description: `Updated sync preference`,
+        description: `${artifactType} sync ${enabled ? "enabled" : "disabled"} for ${toolName}`,
         variant: "success",
       });
     } catch {
