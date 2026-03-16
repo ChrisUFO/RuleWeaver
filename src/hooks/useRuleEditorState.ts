@@ -60,6 +60,15 @@ export interface RuleEditorState {
   cancelPendingAutoSave: () => void;
 }
 
+interface InitialSnapshot {
+  name: string;
+  description: string;
+  content: string;
+  scope: Scope;
+  targetPaths: string[];
+  enabledAdapters: AdapterType[];
+}
+
 function slugRuleName(ruleName: string): string {
   return ruleName
     .toLowerCase()
@@ -95,6 +104,7 @@ export function useRuleEditorState({
   const [previewAdapter, setPreviewAdapter] = useState<AdapterType>("gemini");
   const isInitialized = useRef(false);
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const initialSnapshotRef = useRef<InitialSnapshot | null>(null);
 
   useEffect(() => {
     const loadDefaultAdapters = async () => {
@@ -125,17 +135,46 @@ export function useRuleEditorState({
       setTargetPaths(rule.targetPaths || []);
       setEnabledAdapters(rule.enabledAdapters);
       setPreviewAdapter(rule.enabledAdapters[0] || "gemini");
+      initialSnapshotRef.current = {
+        name: rule.name,
+        description: rule.description,
+        content: rule.content,
+        scope: rule.scope,
+        targetPaths: rule.targetPaths || [],
+        enabledAdapters: rule.enabledAdapters,
+      };
       isInitialized.current = true;
     } else if (isNew && defaultAdapters.length > 0) {
       setEnabledAdapters(defaultAdapters);
       setPreviewAdapter(defaultAdapters[0]);
+      initialSnapshotRef.current = {
+        name: "",
+        description: "",
+        content: "",
+        scope: "global",
+        targetPaths: [],
+        enabledAdapters: defaultAdapters,
+      };
       isInitialized.current = true;
     }
   }, [rule, isNew, defaultAdapters]);
 
   useEffect(() => {
-    if (isInitialized.current) {
-      setHasUnsavedChanges(true);
+    if (!isInitialized.current || !initialSnapshotRef.current) return;
+
+    const currentSnapshot: InitialSnapshot = {
+      name,
+      description,
+      content,
+      scope,
+      targetPaths,
+      enabledAdapters,
+    };
+
+    const hasChanges =
+      JSON.stringify(currentSnapshot) !== JSON.stringify(initialSnapshotRef.current);
+    setHasUnsavedChanges(hasChanges);
+    if (hasChanges) {
       setAutoSaveError(null);
     }
   }, [name, description, content, scope, targetPaths, enabledAdapters]);
@@ -225,13 +264,7 @@ export function useRuleEditorState({
             targetPaths: scope === "local" ? targetPaths : undefined,
             enabledAdapters,
           });
-          if (silent) {
-            addToast({
-              title: "Auto-saved",
-              description: `"${name}" saved automatically`,
-              variant: "success",
-            });
-          } else {
+          if (!silent) {
             addToast({
               title: "Rule Saved",
               description: `"${name}" has been updated`,
@@ -241,6 +274,14 @@ export function useRuleEditorState({
         }
         setLastSaved(new Date());
         setHasUnsavedChanges(false);
+        initialSnapshotRef.current = {
+          name: name.trim(),
+          description: description.trim(),
+          content,
+          scope,
+          targetPaths: scope === "local" ? targetPaths : [],
+          enabledAdapters,
+        };
         return true;
       } catch (error) {
         const errorMessage =
