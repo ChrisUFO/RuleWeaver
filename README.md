@@ -16,6 +16,7 @@ Different types of AI configurations require different management strategies:
 - **Standalone GUI:** A fast, native desktop application (built with Tauri).
 - **Scope Management:** Clearly define if a Configuration is "Global" (applied everywhere) or "Local" (applied only when the AI is operating within specific defined repository paths).
 - **Workspace-Scoped Secrets:** Store shared credentials globally, override them per repository root, and reuse the resolved values in command tests and skills without leaking raw secrets into logs. Values are kept in OS secure storage and never included in configuration exports.
+- **WSL Support:** Sync rules, commands, and skills to WSL (Windows Subsystem for Linux) distributions. Per-adapter configuration allows mixing Windows and WSL paths for AI tools running in different environments.
 - **Observability Logs:** A dedicated Logs page captures command and skill runs, with filters and redaction-safe JSON export.
 - **Command Manager:** CRUD commands, test runs, and execution history.
 - **Native Slash Commands:** Generate native `/commandname` triggers for 9 AI tools with automatic file generation and incremental sync.
