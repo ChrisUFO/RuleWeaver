@@ -17,6 +17,7 @@ pub struct ChatCompletionRequest {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
 pub struct ChatCompletionChoice {
     pub index: u32,
     pub message: ChatMessage,
@@ -24,6 +25,7 @@ pub struct ChatCompletionChoice {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
 pub struct ChatCompletionUsage {
     pub prompt_tokens: u32,
     pub completion_tokens: u32,
@@ -31,6 +33,7 @@ pub struct ChatCompletionUsage {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
 pub struct ChatCompletionResponse {
     pub id: String,
     pub object: String,
@@ -50,6 +53,7 @@ pub struct OpenAiModel {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
 pub struct OpenAiModelsResponse {
     pub object: String,
     pub data: Vec<OpenAiModel>,
@@ -78,6 +82,7 @@ pub struct AnthropicContentBlock {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
 pub struct AnthropicResponse {
     pub id: String,
     #[serde(rename = "type")]
@@ -151,11 +156,6 @@ impl From<AnthropicResponse> for ChatCompletionResponse {
             .collect::<Vec<_>>()
             .join("\n");
 
-        let tokens_used = anthropic
-            .usage
-            .as_ref()
-            .map(|u| u.input_tokens + u.output_tokens);
-
         Self {
             id: anthropic.id,
             object: "chat.completion".to_string(),
@@ -179,18 +179,4 @@ impl From<AnthropicResponse> for ChatCompletionResponse {
             }),
         }
     }
-}
-
-pub fn parse_openai_error(response_text: &str, status: u16) -> String {
-    if let Ok(error_response) = serde_json::from_str::<serde_json::Value>(response_text) {
-        if let Some(error) = error_response.get("error") {
-            if let Some(message) = error.get("message").and_then(|m| m.as_str()) {
-                return message.to_string();
-            }
-            if let Some(message) = error.get("error").and_then(|m| m.as_str()) {
-                return message.to_string();
-            }
-        }
-    }
-    format!("HTTP {} error", status)
 }

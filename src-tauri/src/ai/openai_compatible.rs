@@ -141,6 +141,7 @@ impl OpenAiCompatibleClient {
         Ok(response.status().is_success())
     }
 
+    #[allow(dead_code)]
     pub async fn test_model(&self) -> AiResult<bool> {
         let request = ChatCompletionRequest {
             model: self.model.clone(),

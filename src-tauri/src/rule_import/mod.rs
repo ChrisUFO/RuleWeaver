@@ -2083,7 +2083,7 @@ enabledAdapters:
     fn import_rule_failure_path_invalid_utf8() {
         let temp_dir = tempfile::TempDir::new().unwrap();
         let rule_file = temp_dir.path().join("binary.md");
-        fs::write(&rule_file, &[0xFF, 0xFE, 0x00, 0x01]).unwrap();
+        fs::write(&rule_file, [0xFF, 0xFE, 0x00, 0x01]).unwrap();
 
         let result = scan_directory_to_candidates(temp_dir.path(), 1024 * 1024, None);
 

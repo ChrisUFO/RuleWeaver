@@ -317,8 +317,8 @@ async fn get_api_key_for_provider(provider: &str) -> Result<Option<String>> {
 fn extract_title_from_content(content: &str) -> Option<String> {
     for line in content.lines() {
         let trimmed = line.trim();
-        if trimmed.starts_with("# ") {
-            return Some(trimmed[2..].to_string());
+        if let Some(stripped) = trimmed.strip_prefix("# ") {
+            return Some(stripped.to_string());
         }
     }
     None

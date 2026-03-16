@@ -14,7 +14,7 @@ use adapters::{
     ClaudeAdapter, CommandAdapter, CursorAdapter, GeminiAdapter, KiloAdapter, OpenCodeAdapter,
     RooCodeAdapter,
 };
-pub use ai_commands::*;
+
 pub use command_commands::*;
 pub use import_commands::*;
 pub use migration_commands::*;
