@@ -1,6 +1,7 @@
 import { useState, useCallback } from "react";
 import { api } from "@/lib/tauri";
 import type { GenerateRuleOutput } from "@/types/ai";
+import { getAiErrorMessage } from "@/types/ai";
 
 interface UseAiGenerationOptions {
   onSuccess?: (result: GenerateRuleOutput) => void;
@@ -53,8 +54,7 @@ export function useAiGeneration(options: UseAiGenerationOptions = {}): UseAiGene
         options.onSuccess?.(result);
         return result;
       } catch (err) {
-        const errorMessage =
-          err instanceof Error ? err.message : typeof err === "string" ? err : "Unknown error";
+        const errorMessage = getAiErrorMessage(err);
         setError(errorMessage);
         options.onError?.(err);
         return null;

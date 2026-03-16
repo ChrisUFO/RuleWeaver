@@ -62,6 +62,7 @@ impl From<crate::error::AiError> for AiClientError {
             crate::error::AiError::BaseUrlRequired => AiClientError::BaseUrlRequired,
             crate::error::AiError::ModelRequired => AiClientError::ModelRequired,
             crate::error::AiError::RequestFailed(msg) => AiClientError::RequestFailed(msg),
+            crate::error::AiError::SecureStorage(msg) => AiClientError::SecureStorage(msg),
         }
     }
 }
@@ -89,7 +90,7 @@ impl From<AiClientError> for crate::error::AiError {
             AiClientError::BaseUrlRequired => crate::error::AiError::BaseUrlRequired,
             AiClientError::ModelRequired => crate::error::AiError::ModelRequired,
             AiClientError::RequestFailed(msg) => crate::error::AiError::RequestFailed(msg),
-            AiClientError::SecureStorage(msg) => crate::error::AiError::RequestFailed(msg),
+            AiClientError::SecureStorage(msg) => crate::error::AiError::SecureStorage(msg),
         }
     }
 }

@@ -127,3 +127,60 @@ export const AI_PROVIDER_INFO: Record<
     requiresBaseUrl: true,
   },
 };
+
+export const AI_VALIDATION = {
+  MAX_DESCRIPTION_LENGTH: 2000,
+  MAX_CONTEXT_LENGTH: 2000,
+  MAX_RULE_CONTENT_LENGTH: 50000,
+  LARGE_CONTENT_WARNING_THRESHOLD: 30000,
+} as const;
+
+export function getRuleContentSizeWarning(contentLength: number): string | null {
+  if (contentLength > AI_VALIDATION.MAX_RULE_CONTENT_LENGTH) {
+    return `Rule content exceeds ${Math.round(AI_VALIDATION.MAX_RULE_CONTENT_LENGTH / 1000)}k characters and may be too long for some AI models.`;
+  }
+  if (contentLength > AI_VALIDATION.LARGE_CONTENT_WARNING_THRESHOLD) {
+    return `Rule content is large (${Math.round(contentLength / 1000)}k chars). Processing may take longer.`;
+  }
+  return null;
+}
+
+export function getAiErrorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+
+  if (message.includes("API key not configured") || message.includes("ApiKeyNotSet")) {
+    return "AI API key is not configured. Please set up your API key in Settings.";
+  }
+  if (message.includes("Invalid API key") || message.includes("InvalidApiKey")) {
+    return "The API key is invalid. Please check your API key in Settings.";
+  }
+  if (message.includes("Rate limited") || message.includes("RateLimited")) {
+    return "The AI service is rate limiting requests. Please wait a moment and try again.";
+  }
+  if (message.includes("Context too long") || message.includes("ContextTooLong")) {
+    return "The content is too long for the AI model to process. Please try with shorter content.";
+  }
+  if (message.includes("Model not available") || message.includes("ModelNotAvailable")) {
+    return "The selected AI model is not available. Please choose a different model in Settings.";
+  }
+  if (message.includes("timeout") || message.includes("Timeout")) {
+    return "The AI request timed out. Please try again.";
+  }
+  if (message.includes("Network error") || message.includes("NetworkError")) {
+    return "A network error occurred. Please check your internet connection and try again.";
+  }
+  if (message.includes("Secure storage")) {
+    return "Failed to access secure storage. Please try restarting the application.";
+  }
+  if (message.includes("Base URL is required")) {
+    return "Base URL is required for custom providers. Please configure it in Settings.";
+  }
+  if (message.includes("Model name is required")) {
+    return "Please select or enter a model name in Settings.";
+  }
+  if (message.includes("AI feature not enabled")) {
+    return "AI features are not enabled. Please enable them in Settings.";
+  }
+
+  return message || "An unexpected error occurred. Please try again.";
+}

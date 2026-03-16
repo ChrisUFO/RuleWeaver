@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { Sparkles, Loader2, Check, X, Wand2 } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import { Sparkles, Loader2, Check, X, Wand2, RefreshCw } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
 import { useAiGeneration } from "@/hooks/useAiGeneration";
+import { useKeyboardShortcuts, SHORTCUTS } from "@/hooks/useKeyboardShortcuts";
 
 interface AiGenerateRuleDialogProps {
   open: boolean;
@@ -75,6 +76,20 @@ export function AiGenerateRuleDialog({ open, onOpenChange, onApply }: AiGenerate
       onOpenChange(false);
     }
   };
+
+  const handleRegenerate = useCallback(() => {
+    clearResult();
+    generate(description.trim(), ruleName.trim() || undefined, context.trim() || undefined);
+  }, [clearResult, generate, description, ruleName, context]);
+
+  const handleCancel = useCallback(() => {
+    onOpenChange(false);
+  }, [onOpenChange]);
+
+  useKeyboardShortcuts({
+    shortcuts: [{ ...SHORTCUTS.ESCAPE, action: handleCancel }],
+    enabled: open,
+  });
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -165,7 +180,7 @@ export function AiGenerateRuleDialog({ open, onOpenChange, onApply }: AiGenerate
         <DialogFooter>
           {!generatedContent ? (
             <>
-              <Button variant="outline" onClick={() => onOpenChange(false)}>
+              <Button variant="outline" onClick={handleCancel}>
                 <X className="mr-2 h-4 w-4" />
                 Cancel
               </Button>
@@ -185,10 +200,17 @@ export function AiGenerateRuleDialog({ open, onOpenChange, onApply }: AiGenerate
             </>
           ) : (
             <>
-              <Button variant="outline" onClick={() => clearResult()}>
+              <Button
+                variant="outline"
+                onClick={handleRegenerate}
+                disabled={isGenerating}
+                title="Try again with the same input"
+              >
+                <RefreshCw className="mr-2 h-4 w-4" />
                 Regenerate
               </Button>
-              <Button variant="outline" onClick={() => onOpenChange(false)}>
+              <Button variant="outline" onClick={handleCancel}>
+                <X className="mr-2 h-4 w-4" />
                 Cancel
               </Button>
               <Button onClick={handleApply}>

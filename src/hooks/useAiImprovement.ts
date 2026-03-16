@@ -1,6 +1,7 @@
 import { useState, useCallback } from "react";
 import { api } from "@/lib/tauri";
 import type { ImproveRuleOutput } from "@/types/ai";
+import { getAiErrorMessage } from "@/types/ai";
 
 interface UseAiImprovementOptions {
   onSuccess?: (result: ImproveRuleOutput) => void;
@@ -40,8 +41,7 @@ export function useAiImprovement(options: UseAiImprovementOptions = {}): UseAiIm
         options.onSuccess?.(result);
         return result;
       } catch (err) {
-        const errorMessage =
-          err instanceof Error ? err.message : typeof err === "string" ? err : "Unknown error";
+        const errorMessage = getAiErrorMessage(err);
         setError(errorMessage);
         options.onError?.(err);
         return null;

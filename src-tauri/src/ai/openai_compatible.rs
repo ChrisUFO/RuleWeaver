@@ -202,3 +202,109 @@ impl OpenAiCompatibleClient {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn create_test_client() -> OpenAiCompatibleClient {
+        OpenAiCompatibleClient::new(
+            AiProvider::OpenAi,
+            "https://api.openai.com/v1",
+            "test-key",
+            "gpt-4",
+        )
+    }
+
+    #[test]
+    fn test_parse_error_invalid_api_key() {
+        let client = create_test_client();
+        let response = r#"{"error": {"type": "invalid_api_key", "message": "Invalid API key"}}"#;
+        let error = client.parse_error(response, 401);
+        assert!(matches!(error, AiClientError::InvalidApiKey));
+    }
+
+    #[test]
+    fn test_parse_error_authentication_error() {
+        let client = create_test_client();
+        let response = r#"{"error": {"type": "authentication_error", "message": "Unauthorized"}}"#;
+        let error = client.parse_error(response, 401);
+        assert!(matches!(error, AiClientError::InvalidApiKey));
+    }
+
+    #[test]
+    fn test_parse_error_rate_limited() {
+        let client = create_test_client();
+        let response =
+            r#"{"error": {"type": "rate_limit_exceeded", "message": "Too many requests"}}"#;
+        let error = client.parse_error(response, 429);
+        assert!(matches!(error, AiClientError::RateLimited(_)));
+    }
+
+    #[test]
+    fn test_parse_error_context_too_long() {
+        let client = create_test_client();
+        let response =
+            r#"{"error": {"type": "context_length_exceeded", "message": "Context too long"}}"#;
+        let error = client.parse_error(response, 400);
+        assert!(matches!(error, AiClientError::ContextTooLong(_)));
+    }
+
+    #[test]
+    fn test_parse_error_model_not_found() {
+        let client = create_test_client();
+        let response =
+            r#"{"error": {"type": "model_not_found", "message": "The model does not exist"}}"#;
+        let error = client.parse_error(response, 404);
+        assert!(matches!(error, AiClientError::ModelNotAvailable(_)));
+    }
+
+    #[test]
+    fn test_parse_error_http_401() {
+        let client = create_test_client();
+        let response = r#"{}"#;
+        let error = client.parse_error(response, 401);
+        assert!(matches!(error, AiClientError::InvalidApiKey));
+    }
+
+    #[test]
+    fn test_parse_error_http_429() {
+        let client = create_test_client();
+        let response = r#"{}"#;
+        let error = client.parse_error(response, 429);
+        assert!(matches!(error, AiClientError::RateLimited(_)));
+    }
+
+    #[test]
+    fn test_parse_error_message_contains_api_key() {
+        let client = create_test_client();
+        let response = r#"{"message": "Invalid API key provided"}"#;
+        let error = client.parse_error(response, 400);
+        assert!(matches!(error, AiClientError::InvalidApiKey));
+    }
+
+    #[test]
+    fn test_parse_error_message_contains_rate_limit() {
+        let client = create_test_client();
+        let response = r#"{"message": "You exceeded the rate limit"}"#;
+        let error = client.parse_error(response, 400);
+        assert!(matches!(error, AiClientError::RateLimited(_)));
+    }
+
+    #[test]
+    fn test_client_new_with_empty_base_url() {
+        let client = OpenAiCompatibleClient::new(AiProvider::OpenAi, "", "test-key", "gpt-4");
+        assert_eq!(client.base_url, "https://api.openai.com/v1");
+    }
+
+    #[test]
+    fn test_client_new_with_trailing_slash() {
+        let client = OpenAiCompatibleClient::new(
+            AiProvider::OpenAiCompatible,
+            "https://custom.api.com/v1/",
+            "test-key",
+            "model",
+        );
+        assert_eq!(client.base_url, "https://custom.api.com/v1");
+    }
+}

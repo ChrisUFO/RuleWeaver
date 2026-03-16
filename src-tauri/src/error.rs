@@ -107,6 +107,9 @@ pub enum AiError {
 
     #[error("Request failed: {0}")]
     RequestFailed(String),
+
+    #[error("Secure storage error: {0}")]
+    SecureStorage(String),
 }
 
 impl<T> From<PoisonError<T>> for AppError {

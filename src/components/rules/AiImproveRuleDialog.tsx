@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo } from "react";
-import { Sparkles, Loader2, Check, X } from "lucide-react";
+import { useState, useEffect, useMemo, useCallback } from "react";
+import { Sparkles, Loader2, Check, X, RefreshCw, AlertTriangle } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -11,6 +11,18 @@ import {
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { useAiImprovement } from "@/hooks/useAiImprovement";
+import { useKeyboardShortcuts, SHORTCUTS } from "@/hooks/useKeyboardShortcuts";
+import { AI_VALIDATION } from "@/types/ai";
+
+const getRuleContentSizeWarning = (contentLength: number): string | null => {
+  if (contentLength > AI_VALIDATION.MAX_RULE_CONTENT_LENGTH) {
+    return `Rule content exceeds ${Math.round(AI_VALIDATION.MAX_RULE_CONTENT_LENGTH / 1000)}k characters and may be too long for some AI models.`;
+  }
+  if (contentLength > AI_VALIDATION.LARGE_CONTENT_WARNING_THRESHOLD) {
+    return `Rule content is large (${Math.round(contentLength / 1000)}k chars). Processing may take longer.`;
+  }
+  return null;
+};
 
 interface AiImproveRuleDialogProps {
   open: boolean;
@@ -85,6 +97,12 @@ export function AiImproveRuleDialog({
   const { addToast } = useToast();
   const [viewMode, setViewMode] = useState<"diff" | "original" | "improved">("diff");
 
+  const contentSizeWarning = useMemo(
+    () => getRuleContentSizeWarning(ruleContent.length),
+    [ruleContent]
+  );
+  const isContentTooLarge = ruleContent.length > AI_VALIDATION.MAX_RULE_CONTENT_LENGTH;
+
   const { isImproving, improvedContent, modelUsed, error, improve, clearResult } = useAiImprovement(
     {
       onError: (err) => {
@@ -98,21 +116,33 @@ export function AiImproveRuleDialog({
   );
 
   useEffect(() => {
-    if (open && ruleContent) {
+    if (open && ruleContent && !isContentTooLarge) {
       improve(ruleContent, ruleName);
     }
     if (!open) {
       clearResult();
       setViewMode("diff");
     }
-  }, [open, ruleContent, ruleName, improve, clearResult]);
+  }, [open, ruleContent, ruleName, improve, clearResult, isContentTooLarge]);
 
   const diffLines = useMemo(() => {
     if (!improvedContent) return [];
     return computeDiffLines(ruleContent, improvedContent);
   }, [ruleContent, improvedContent]);
 
-  const handleApply = () => {
+  const hasChanges = improvedContent && improvedContent !== ruleContent;
+  const changeCount = diffLines.filter((l) => l.type === "added" || l.type === "removed").length;
+
+  const handleRegenerate = useCallback(() => {
+    clearResult();
+    improve(ruleContent, ruleName);
+  }, [clearResult, improve, ruleContent, ruleName]);
+
+  const handleReject = useCallback(() => {
+    onOpenChange(false);
+  }, [onOpenChange]);
+
+  const handleAccept = useCallback(() => {
     if (improvedContent) {
       onApply(improvedContent);
       addToast({
@@ -122,10 +152,15 @@ export function AiImproveRuleDialog({
       });
       onOpenChange(false);
     }
-  };
+  }, [improvedContent, onApply, addToast, onOpenChange]);
 
-  const hasChanges = improvedContent && improvedContent !== ruleContent;
-  const changeCount = diffLines.filter((l) => l.type === "added" || l.type === "removed").length;
+  useKeyboardShortcuts({
+    shortcuts: [
+      { ...SHORTCUTS.ESCAPE, action: handleReject },
+      ...(hasChanges && !isImproving ? [{ ...SHORTCUTS.SAVE, action: handleAccept }] : []),
+    ],
+    enabled: open,
+  });
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -151,6 +186,13 @@ export function AiImproveRuleDialog({
           {error && (
             <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 mb-3 text-sm text-destructive">
               {error}
+            </div>
+          )}
+
+          {contentSizeWarning && !error && !improvedContent && (
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 mb-3 text-sm text-amber-200 flex items-start gap-2">
+              <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+              <span>{contentSizeWarning}</span>
             </div>
           )}
 
@@ -248,11 +290,22 @@ export function AiImproveRuleDialog({
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          {improvedContent && !isImproving && (
+            <Button
+              variant="outline"
+              onClick={handleRegenerate}
+              disabled={isImproving}
+              title="Try again with the same input"
+            >
+              <RefreshCw className="mr-2 h-4 w-4" />
+              Regenerate
+            </Button>
+          )}
+          <Button variant="outline" onClick={handleReject}>
             <X className="mr-2 h-4 w-4" />
             Cancel
           </Button>
-          <Button onClick={handleApply} disabled={!hasChanges || isImproving}>
+          <Button onClick={handleAccept} disabled={!hasChanges || isImproving}>
             <Check className="mr-2 h-4 w-4" />
             Apply Changes
           </Button>

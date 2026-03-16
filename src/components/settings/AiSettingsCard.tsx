@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Sparkles, RefreshCw, Eye, EyeOff, Loader2, Check, ChevronDown } from "lucide-react";
+import { Sparkles, RefreshCw, Eye, EyeOff, Loader2, Check, ChevronDown, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
@@ -200,6 +200,17 @@ export function AiSettingsCard({ addToast }: AiSettingsCardProps) {
 
         {formState.enabled && (
           <>
+            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200 flex items-start gap-2">
+              <Info className="h-4 w-4 mt-0.5 flex-shrink-0" />
+              <div>
+                <p className="font-medium">Usage Notice</p>
+                <p className="text-xs text-amber-200/80 mt-1">
+                  API calls may incur costs depending on your provider. Your rule content will be
+                  sent to the configured AI provider for processing.
+                </p>
+              </div>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">

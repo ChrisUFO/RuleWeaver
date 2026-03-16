@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { ArrowLeft, Save, Copy, Sparkles } from "lucide-react";
 import { confirm } from "@tauri-apps/plugin-dialog";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,8 @@ import { type Rule } from "@/types/rule";
 import { useRuleEditorState } from "@/hooks/useRuleEditorState";
 import { RuleEditorSettingsPanel } from "@/components/rules/RuleEditorSettingsPanel";
 import { AiImproveRuleDialog } from "@/components/rules/AiImproveRuleDialog";
+import { api } from "@/lib/tauri";
+import type { AiSettings } from "@/types/ai";
 
 interface RuleEditorProps {
   rule: Rule | null;
@@ -21,6 +23,7 @@ interface RuleEditorProps {
 export function RuleEditor({ rule, onBack, onSelectRule, isNew = false }: RuleEditorProps) {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isAiImproveDialogOpen, setIsAiImproveDialogOpen] = useState(false);
+  const [aiSettings, setAiSettings] = useState<AiSettings | null>(null);
   const state = useRuleEditorState({ rule, isNew, onSelectRule });
   const {
     name,
@@ -60,6 +63,20 @@ export function RuleEditor({ rule, onBack, onSelectRule, isNew = false }: RuleEd
   );
 
   const ruleTitle = name || rule?.name || "Untitled";
+
+  useEffect(() => {
+    api.ai
+      .getSettings()
+      .then(setAiSettings)
+      .catch(() => {});
+  }, []);
+
+  const aiConfigured = aiSettings?.enabled && aiSettings?.hasApiKey;
+  const aiDisabledReason = !aiSettings?.enabled
+    ? "AI integration is disabled. Enable it in Settings."
+    : !aiSettings?.hasApiKey
+      ? "Configure your AI API key in Settings first."
+      : null;
 
   const handleBackNavigation = async () => {
     if (hasUnsavedChanges) {
@@ -124,8 +141,8 @@ export function RuleEditor({ rule, onBack, onSelectRule, isNew = false }: RuleEd
           <Button
             variant="outline"
             onClick={() => setIsAiImproveDialogOpen(true)}
-            disabled={saving || !content.trim()}
-            title="Improve with AI"
+            disabled={saving || !content.trim() || !aiConfigured}
+            title={aiDisabledReason || "Improve with AI"}
             className="glass border-white/5 hover:bg-white/5"
           >
             <Sparkles className="mr-2 h-4 w-4" />
