@@ -211,9 +211,7 @@ pub async fn improve_rule_with_ai(
         &settings.model,
     );
 
-    let improved_content = client.complete(&prompt, &user_message).await.map_err(|e| {
-        crate::error::AppError::Ai(crate::error::AiError::RequestFailed(e.to_string()))
-    })?;
+    let improved_content = client.complete(&prompt, &user_message).await?;
 
     Ok(ImproveRuleOutput {
         improved_content,
@@ -284,9 +282,7 @@ pub async fn generate_rule_with_ai(
         &settings.model,
     );
 
-    let rule_content = client.complete(&prompt, &user_message).await.map_err(|e| {
-        crate::error::AppError::Ai(crate::error::AiError::RequestFailed(e.to_string()))
-    })?;
+    let rule_content = client.complete(&prompt, &user_message).await?;
 
     let suggested_name = input
         .rule_name

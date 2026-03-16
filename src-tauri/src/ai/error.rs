@@ -45,28 +45,6 @@ pub enum AiClientError {
 
 pub type AiResult<T> = Result<T, AiClientError>;
 
-impl From<crate::error::AiError> for AiClientError {
-    fn from(err: crate::error::AiError) -> Self {
-        match err {
-            crate::error::AiError::ApiKeyNotSet => AiClientError::ApiKeyNotSet,
-            crate::error::AiError::InvalidApiKey => AiClientError::InvalidApiKey,
-            crate::error::AiError::RateLimited(msg) => AiClientError::RateLimited(msg),
-            crate::error::AiError::ContextTooLong(tokens) => AiClientError::ContextTooLong(tokens),
-            crate::error::AiError::ModelNotAvailable(model) => {
-                AiClientError::ModelNotAvailable(model)
-            }
-            crate::error::AiError::NetworkError(msg) => AiClientError::NetworkError(msg),
-            crate::error::AiError::Timeout => AiClientError::Timeout,
-            crate::error::AiError::InvalidResponse(msg) => AiClientError::InvalidResponse(msg),
-            crate::error::AiError::NotEnabled => AiClientError::NotEnabled,
-            crate::error::AiError::BaseUrlRequired => AiClientError::BaseUrlRequired,
-            crate::error::AiError::ModelRequired => AiClientError::ModelRequired,
-            crate::error::AiError::RequestFailed(msg) => AiClientError::RequestFailed(msg),
-            crate::error::AiError::SecureStorage(msg) => AiClientError::SecureStorage(msg),
-        }
-    }
-}
-
 impl From<AiClientError> for crate::error::AppError {
     fn from(err: AiClientError) -> Self {
         crate::error::AppError::Ai(crate::error::AiError::from(err))

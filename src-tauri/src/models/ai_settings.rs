@@ -141,7 +141,7 @@ impl AiProvider {
     }
 
     pub fn supports_model_listing(&self) -> bool {
-        !matches!(self, AiProvider::Anthropic | AiProvider::OpenAiCompatible)
+        !matches!(self, AiProvider::Anthropic)
     }
 
     pub fn uses_native_anthropic_api(&self) -> bool {
@@ -345,7 +345,8 @@ mod tests {
     fn test_ai_provider_supports_model_listing() {
         assert!(AiProvider::OpenAi.supports_model_listing());
         assert!(!AiProvider::Anthropic.supports_model_listing());
-        assert!(!AiProvider::OpenAiCompatible.supports_model_listing());
+        assert!(AiProvider::OpenAiCompatible.supports_model_listing());
+        assert!(AiProvider::OpenRouter.supports_model_listing());
     }
 
     #[test]

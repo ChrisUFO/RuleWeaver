@@ -2143,7 +2143,7 @@ impl Database {
                 [],
                 |row| {
                     let provider_str: String = row.get("provider")?;
-                    let _provider = crate::models::AiProvider::from_str(&provider_str).map_err(|e| {
+                    crate::models::AiProvider::from_str(&provider_str).map_err(|e| {
                         rusqlite::Error::FromSqlConversionFailure(
                             0,
                             rusqlite::types::Type::Text,
