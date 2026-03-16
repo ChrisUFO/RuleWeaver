@@ -299,8 +299,8 @@ export const api = {
     getConfig: () => invoke<WslConfig>("get_wsl_config"),
     setConfig: (config: WslConfig) => invoke<void>("set_wsl_config", { config }),
     setAdapterConfig: (adapter: AdapterType, adapterConfig: WslAdapterConfig) =>
-      invoke<void>("set_wsl_adapter_config", { adapter, adapterConfig }),
-    setEnabled: (enabled: boolean) => invoke<void>("set_wsl_enabled", { enabled }),
+      invoke<WslConfig>("set_wsl_adapter_config", { adapter, adapterConfig }),
+    setEnabled: (enabled: boolean) => invoke<WslConfig>("set_wsl_enabled", { enabled }),
     isInstalled: () => invoke<boolean>("is_wsl_installed"),
     listDistributions: () => invoke<WslDistribution[]>("list_wsl_distributions"),
   },

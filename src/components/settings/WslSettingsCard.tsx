@@ -61,6 +61,16 @@ export function WslSettingsCard({ addToast }: WslSettingsCardProps) {
 
   const handleSetDefaultDistribution = async (distribution: string) => {
     if (!config) return;
+
+    const distroExists = distributions.some((d) => d.name === distribution);
+    if (!distroExists) {
+      toast.error(addToast, {
+        title: "Invalid Distribution",
+        description: `Distribution "${distribution}" is not installed. Please select a valid distribution.`,
+      });
+      return;
+    }
+
     setIsSaving(true);
     try {
       const newConfig = { ...config, defaultDistribution: distribution };

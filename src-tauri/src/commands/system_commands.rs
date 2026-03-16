@@ -356,11 +356,7 @@ pub async fn cleanup_synced_files(
 pub async fn get_wsl_config(db: State<'_, Arc<Database>>) -> Result<WslConfig> {
     let config_json = db.get_setting("wsl_config").await?;
     match config_json {
-        Some(json) => {
-            serde_json::from_str(&json).map_err(|e| crate::error::AppError::InvalidInput {
-                message: format!("Failed to parse WSL config: {}", e),
-            })
-        }
+        Some(json) => Ok(parse_wsl_config_with_recovery(&json)),
         None => Ok(WslConfig::default()),
     }
 }

@@ -6,6 +6,33 @@ use std::process::Command;
 use crate::error::{AppError, Result};
 use crate::models::WslDistribution;
 
+/// Validates a WSL distribution name.
+///
+/// Distribution names should only contain alphanumeric characters,
+/// hyphens, and underscores to prevent any potential issues.
+pub fn validate_distribution_name(name: &str) -> Result<()> {
+    if name.is_empty() {
+        return Err(AppError::InvalidInput {
+            message: "Distribution name cannot be empty".to_string(),
+        });
+    }
+
+    let valid = name
+        .chars()
+        .all(|c| c.is_alphanumeric() || c == '-' || c == '_');
+
+    if !valid {
+        return Err(AppError::InvalidInput {
+            message: format!(
+                "Invalid distribution name '{}': must contain only alphanumeric characters, hyphens, or underscores",
+                name
+            ),
+        });
+    }
+
+    Ok(())
+}
+
 /// Provides methods for detecting WSL installations.
 pub struct WslDetection;
 
@@ -59,6 +86,8 @@ impl WslDetection {
     ///
     /// Returns an error if the home directory cannot be determined.
     pub fn get_home_dir(distribution: &str) -> Result<PathBuf> {
+        validate_distribution_name(distribution)?;
+
         let output = Command::new("wsl.exe")
             .args(["-d", distribution, "--exec", "echo $HOME"])
             .output()

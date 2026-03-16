@@ -517,8 +517,11 @@ impl<'a> SyncEngine<'a> {
         Self { db }
     }
 
-    async fn create_path_resolver(&self) -> PathResolver {
-        let mut resolver = PathResolver::new().expect("Failed to create PathResolver");
+    async fn create_path_resolver(&self) -> Result<PathResolver> {
+        let mut resolver = PathResolver::new().map_err(|e| {
+            log::error!("Failed to create PathResolver: {}", e);
+            e
+        })?;
 
         let wsl_config_json = self.db.get_setting("wsl_config").await.ok().flatten();
         let wsl_config: WslConfig = wsl_config_json
@@ -533,7 +536,7 @@ impl<'a> SyncEngine<'a> {
             }
         }
 
-        resolver
+        Ok(resolver)
     }
 
     async fn get_disabled_adapters(&self) -> HashSet<AdapterType> {
@@ -592,7 +595,21 @@ impl<'a> SyncEngine<'a> {
         let mut errors = Vec::new();
         let conflicts = Vec::new();
 
-        let path_resolver = self.create_path_resolver().await;
+        let path_resolver = match self.create_path_resolver().await {
+            Ok(resolver) => resolver,
+            Err(e) => {
+                return SyncResult {
+                    success: false,
+                    files_written: vec![],
+                    errors: vec![SyncError {
+                        file_path: String::new(),
+                        adapter_name: String::new(),
+                        message: format!("Failed to initialize path resolver: {}", e),
+                    }],
+                    conflicts: vec![],
+                };
+            }
+        };
         let disabled_adapters = self.get_disabled_adapters().await;
         let tool_prefs = self.get_tool_sync_preferences().await;
         let adapters = get_all_adapters();
@@ -717,7 +734,21 @@ impl<'a> SyncEngine<'a> {
         let mut errors = Vec::new();
         let conflicts = Vec::new();
 
-        let path_resolver = self.create_path_resolver().await;
+        let path_resolver = match self.create_path_resolver().await {
+            Ok(resolver) => resolver,
+            Err(e) => {
+                return SyncResult {
+                    success: false,
+                    files_written: vec![],
+                    errors: vec![SyncError {
+                        file_path: String::new(),
+                        adapter_name: String::new(),
+                        message: format!("Failed to initialize path resolver: {}", e),
+                    }],
+                    conflicts: vec![],
+                };
+            }
+        };
         let disabled_adapters = self.get_disabled_adapters().await;
         let tool_prefs = self.get_tool_sync_preferences().await;
         let adapters = get_all_adapters();
@@ -839,7 +870,21 @@ impl<'a> SyncEngine<'a> {
         let mut files_written = Vec::new();
         let mut conflicts = Vec::new();
 
-        let path_resolver = self.create_path_resolver().await;
+        let path_resolver = match self.create_path_resolver().await {
+            Ok(resolver) => resolver,
+            Err(e) => {
+                return SyncResult {
+                    success: false,
+                    files_written: vec![],
+                    errors: vec![SyncError {
+                        file_path: String::new(),
+                        adapter_name: String::new(),
+                        message: format!("Failed to initialize path resolver: {}", e),
+                    }],
+                    conflicts: vec![],
+                };
+            }
+        };
         let disabled_adapters = self.get_disabled_adapters().await;
         let adapters = get_all_adapters();
 
@@ -1031,7 +1076,7 @@ impl<'a> SyncEngine<'a> {
     pub async fn sync_file_by_path(&self, rules: &[Rule], file_path: &str) -> Result<()> {
         validate_target_path(file_path)?;
 
-        let path_resolver = self.create_path_resolver().await;
+        let path_resolver = self.create_path_resolver().await?;
         let path = PathBuf::from(file_path);
         let adapters = get_all_adapters();
 
