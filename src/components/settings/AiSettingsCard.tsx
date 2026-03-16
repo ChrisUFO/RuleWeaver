@@ -35,6 +35,18 @@ export function AiSettingsCard({ addToast }: AiSettingsCardProps) {
     generationPrompt: "" as string | null,
   });
 
+  const loadModels = useCallback(async () => {
+    try {
+      setIsLoadingModels(true);
+      const result = await api.ai.listModels();
+      setModels(result);
+    } catch {
+      setModels([]);
+    } finally {
+      setIsLoadingModels(false);
+    }
+  }, []);
+
   const loadSettings = useCallback(async () => {
     try {
       setIsLoading(true);
@@ -56,19 +68,7 @@ export function AiSettingsCard({ addToast }: AiSettingsCardProps) {
     } finally {
       setIsLoading(false);
     }
-  }, [addToast]);
-
-  const loadModels = useCallback(async () => {
-    try {
-      setIsLoadingModels(true);
-      const result = await api.ai.listModels();
-      setModels(result);
-    } catch {
-      setModels([]);
-    } finally {
-      setIsLoadingModels(false);
-    }
-  }, []);
+  }, [addToast, loadModels]);
 
   useEffect(() => {
     loadSettings();
