@@ -1,4 +1,5 @@
 pub mod adapters;
+pub mod ai_commands;
 pub mod command_commands;
 pub mod import_commands;
 pub mod migration_commands;
@@ -13,6 +14,7 @@ use adapters::{
     ClaudeAdapter, CommandAdapter, CursorAdapter, GeminiAdapter, KiloAdapter, OpenCodeAdapter,
     RooCodeAdapter,
 };
+pub use ai_commands::*;
 pub use command_commands::*;
 pub use import_commands::*;
 pub use migration_commands::*;

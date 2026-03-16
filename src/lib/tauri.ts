@@ -43,6 +43,16 @@ import type {
   UpsertScopedSecretInput,
 } from "@/types/secret";
 import type { ObservabilityEvent, ObservabilityEventFilter } from "@/types/observability";
+import type {
+  AiSettings,
+  SaveAiSettingsInput,
+  ModelInfo,
+  TestConnectionOutput,
+  ImproveRuleInput,
+  ImproveRuleOutput,
+  GenerateRuleInput,
+  GenerateRuleOutput,
+} from "@/types/ai";
 
 export const api = {
   rules: {
@@ -303,5 +313,17 @@ export const api = {
     setEnabled: (enabled: boolean) => invoke<WslConfig>("set_wsl_enabled", { enabled }),
     isInstalled: () => invoke<boolean>("is_wsl_installed"),
     listDistributions: () => invoke<WslDistribution[]>("list_wsl_distributions"),
+  },
+
+  ai: {
+    getSettings: () => invoke<AiSettings>("get_ai_settings"),
+    saveSettings: (input: SaveAiSettingsInput) => invoke<AiSettings>("save_ai_settings", { input }),
+    testConnection: () => invoke<TestConnectionOutput>("test_ai_connection"),
+    listModels: () => invoke<ModelInfo[]>("list_ai_models"),
+    improveRule: (input: ImproveRuleInput) =>
+      invoke<ImproveRuleOutput>("improve_rule_with_ai", { input }),
+    generateRule: (input: GenerateRuleInput) =>
+      invoke<GenerateRuleOutput>("generate_rule_with_ai", { input }),
+    getDefaultPrompts: () => invoke<[string, string]>("get_default_ai_prompts"),
   },
 };

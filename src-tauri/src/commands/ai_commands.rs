@@ -1,0 +1,325 @@
+use std::str::FromStr;
+use std::sync::Arc;
+use tauri::State;
+
+use crate::ai::AiClient;
+use crate::database::Database;
+use crate::error::Result;
+use crate::models::{
+    AiProvider, AiSettings, GenerateRuleInput, GenerateRuleOutput, ImproveRuleInput,
+    ImproveRuleOutput, ModelInfo, SaveAiSettingsInput, TestConnectionOutput, UpsertAiSettingsInput,
+    DEFAULT_GENERATION_PROMPT, DEFAULT_IMPROVEMENT_PROMPT,
+};
+use crate::secure_storage::SecretStorage;
+
+#[tauri::command]
+pub async fn get_ai_settings(db: State<'_, Arc<Database>>) -> Result<AiSettings> {
+    let record = db.get_ai_settings().await?;
+
+    let provider = AiProvider::from_str(&record.provider).unwrap_or_default();
+
+    Ok(AiSettings {
+        provider,
+        base_url: record.base_url,
+        model: record.model,
+        has_api_key: record.api_key_set,
+        improvement_prompt: record.improvement_prompt,
+        generation_prompt: record.generation_prompt,
+        enabled: record.enabled,
+    })
+}
+
+#[tauri::command]
+pub async fn save_ai_settings(
+    db: State<'_, Arc<Database>>,
+    input: SaveAiSettingsInput,
+) -> Result<AiSettings> {
+    let has_api_key = input.api_key.is_some() && !input.api_key.as_ref().unwrap().is_empty();
+
+    if let Some(ref api_key) = input.api_key {
+        if !api_key.is_empty() {
+            let key_id = format!("{}-api-key", input.provider.as_str());
+            let storage = SecretStorage::global();
+            storage.set_secret(&key_id, api_key).await?;
+        }
+    }
+
+    let base_url = if input.provider == AiProvider::OpenAiCompatible {
+        input.base_url.clone()
+    } else {
+        let default = input.provider.default_base_url().to_string();
+        if input.base_url.as_deref() == Some(&default) || input.base_url.is_none() {
+            None
+        } else {
+            input.base_url
+        }
+    };
+
+    let upsert_input = UpsertAiSettingsInput {
+        provider: input.provider,
+        base_url,
+        model: input.model,
+        api_key_set: has_api_key,
+        improvement_prompt: input.improvement_prompt,
+        generation_prompt: input.generation_prompt,
+        enabled: input.enabled,
+    };
+
+    db.upsert_ai_settings(&upsert_input).await?;
+
+    get_ai_settings(db).await
+}
+
+#[tauri::command]
+pub async fn test_ai_connection(db: State<'_, Arc<Database>>) -> Result<TestConnectionOutput> {
+    let settings = db.get_ai_settings().await?;
+
+    if !settings.enabled {
+        return Ok(TestConnectionOutput {
+            success: false,
+            model_available: false,
+            error: Some("AI feature is not enabled".to_string()),
+        });
+    }
+
+    let provider = match AiProvider::from_str(&settings.provider) {
+        Ok(p) => p,
+        Err(_) => {
+            return Ok(TestConnectionOutput {
+                success: false,
+                model_available: false,
+                error: Some(format!("Invalid provider: {}", settings.provider)),
+            });
+        }
+    };
+
+    let api_key = match get_api_key_for_provider(&settings.provider).await? {
+        Some(key) => key,
+        None => {
+            return Ok(TestConnectionOutput {
+                success: false,
+                model_available: false,
+                error: Some("API key not configured".to_string()),
+            });
+        }
+    };
+
+    let client = AiClient::new(
+        provider,
+        settings.base_url.as_deref(),
+        &api_key,
+        &settings.model,
+    );
+
+    match client.test_connection().await {
+        Ok(true) => Ok(TestConnectionOutput {
+            success: true,
+            model_available: true,
+            error: None,
+        }),
+        Ok(false) => Ok(TestConnectionOutput {
+            success: false,
+            model_available: false,
+            error: Some("Connection test failed".to_string()),
+        }),
+        Err(e) => Ok(TestConnectionOutput {
+            success: false,
+            model_available: false,
+            error: Some(e.to_string()),
+        }),
+    }
+}
+
+#[tauri::command]
+pub async fn list_ai_models(db: State<'_, Arc<Database>>) -> Result<Vec<ModelInfo>> {
+    let settings = db.get_ai_settings().await?;
+
+    if !settings.enabled {
+        return Ok(vec![]);
+    }
+
+    let provider = match AiProvider::from_str(&settings.provider) {
+        Ok(p) => p,
+        Err(_) => return Ok(vec![]),
+    };
+
+    let api_key = match get_api_key_for_provider(&settings.provider).await? {
+        Some(key) => key,
+        None => return Ok(vec![]),
+    };
+
+    let client = AiClient::new(
+        provider,
+        settings.base_url.as_deref(),
+        &api_key,
+        &settings.model,
+    );
+
+    match client.list_models().await {
+        Ok(models) => Ok(models),
+        Err(_) => Ok(vec![]),
+    }
+}
+
+#[tauri::command]
+pub async fn improve_rule_with_ai(
+    db: State<'_, Arc<Database>>,
+    input: ImproveRuleInput,
+) -> Result<ImproveRuleOutput> {
+    let settings = db.get_ai_settings().await?;
+
+    if !settings.enabled {
+        return Err(crate::error::AppError::Ai(
+            crate::error::AiError::NotEnabled,
+        ));
+    }
+
+    let provider = AiProvider::from_str(&settings.provider).map_err(|_| {
+        crate::error::AppError::Ai(crate::error::AiError::RequestFailed(format!(
+            "Invalid provider: {}",
+            settings.provider
+        )))
+    })?;
+
+    let api_key =
+        get_api_key_for_provider(&settings.provider)
+            .await?
+            .ok_or(crate::error::AppError::Ai(
+                crate::error::AiError::ApiKeyNotSet,
+            ))?;
+
+    let prompt = settings
+        .improvement_prompt
+        .unwrap_or_else(|| DEFAULT_IMPROVEMENT_PROMPT.to_string());
+
+    let user_message = if let Some(ref name) = input.rule_name {
+        format!(
+            "Improve this rule named '{}' by applying the guidelines.\n\n# Rule Content\n\n{}",
+            name, input.rule_content
+        )
+    } else {
+        format!(
+            "Improve the following rule by applying the guidelines.\n\n# Rule Content\n\n{}",
+            input.rule_content
+        )
+    };
+
+    let client = AiClient::new(
+        provider,
+        settings.base_url.as_deref(),
+        &api_key,
+        &settings.model,
+    );
+
+    let improved_content = client.complete(&prompt, &user_message).await.map_err(|e| {
+        crate::error::AppError::Ai(crate::error::AiError::RequestFailed(e.to_string()))
+    })?;
+
+    Ok(ImproveRuleOutput {
+        improved_content,
+        model_used: settings.model,
+        tokens_used: None,
+    })
+}
+
+#[tauri::command]
+pub async fn generate_rule_with_ai(
+    db: State<'_, Arc<Database>>,
+    input: GenerateRuleInput,
+) -> Result<GenerateRuleOutput> {
+    let settings = db.get_ai_settings().await?;
+
+    if !settings.enabled {
+        return Err(crate::error::AppError::Ai(
+            crate::error::AiError::NotEnabled,
+        ));
+    }
+
+    let provider = AiProvider::from_str(&settings.provider).map_err(|_| {
+        crate::error::AppError::Ai(crate::error::AiError::RequestFailed(format!(
+            "Invalid provider: {}",
+            settings.provider
+        )))
+    })?;
+
+    let api_key =
+        get_api_key_for_provider(&settings.provider)
+            .await?
+            .ok_or(crate::error::AppError::Ai(
+                crate::error::AiError::ApiKeyNotSet,
+            ))?;
+
+    let prompt = settings
+        .generation_prompt
+        .unwrap_or_else(|| DEFAULT_GENERATION_PROMPT.to_string());
+
+    let user_message = if let Some(ref name) = input.rule_name {
+        if let Some(ref context) = input.context {
+            format!(
+                "Create a rule named '{}' with the following description and context.\n\n# Description\n\n{}\n\n# Context\n\n{}",
+                name, input.description, context
+            )
+        } else {
+            format!(
+                "Create a rule named '{}' with the following description.\n\n# Description\n\n{}",
+                name, input.description
+            )
+        }
+    } else if let Some(ref context) = input.context {
+        format!(
+            "Create a rule with the following description and context.\n\n# Description\n\n{}\n\n# Context\n\n{}",
+            input.description, context
+        )
+    } else {
+        format!(
+            "Create a rule with the following description.\n\n# Description\n\n{}",
+            input.description
+        )
+    };
+
+    let client = AiClient::new(
+        provider,
+        settings.base_url.as_deref(),
+        &api_key,
+        &settings.model,
+    );
+
+    let rule_content = client.complete(&prompt, &user_message).await.map_err(|e| {
+        crate::error::AppError::Ai(crate::error::AiError::RequestFailed(e.to_string()))
+    })?;
+
+    let suggested_name = input
+        .rule_name
+        .or_else(|| extract_title_from_content(&rule_content));
+
+    Ok(GenerateRuleOutput {
+        rule_content,
+        suggested_name,
+        model_used: settings.model,
+        tokens_used: None,
+    })
+}
+
+#[tauri::command]
+pub async fn get_default_ai_prompts() -> Result<(String, String)> {
+    Ok((
+        DEFAULT_IMPROVEMENT_PROMPT.to_string(),
+        DEFAULT_GENERATION_PROMPT.to_string(),
+    ))
+}
+
+async fn get_api_key_for_provider(provider: &str) -> Result<Option<String>> {
+    let key_id = format!("{}-api-key", provider);
+    let storage = SecretStorage::global();
+    storage.get_secret(&key_id).await
+}
+
+fn extract_title_from_content(content: &str) -> Option<String> {
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("# ") {
+            return Some(trimmed[2..].to_string());
+        }
+    }
+    None
+}

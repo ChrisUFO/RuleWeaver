@@ -1,3 +1,4 @@
+mod ai;
 mod commands;
 mod constants;
 pub mod database;
@@ -481,6 +482,13 @@ pub fn run() {
             commands::set_wsl_enabled,
             commands::is_wsl_installed,
             commands::list_wsl_distributions,
+            commands::ai_commands::get_ai_settings,
+            commands::ai_commands::save_ai_settings,
+            commands::ai_commands::test_ai_connection,
+            commands::ai_commands::list_ai_models,
+            commands::ai_commands::improve_rule_with_ai,
+            commands::ai_commands::generate_rule_with_ai,
+            commands::ai_commands::get_default_ai_prompts,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
