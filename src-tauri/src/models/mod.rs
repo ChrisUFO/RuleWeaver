@@ -1,3 +1,4 @@
+mod ai_settings;
 mod command;
 mod config;
 mod import;
@@ -13,6 +14,7 @@ pub mod timestamp;
 mod tool_preferences;
 mod wsl;
 
+pub use ai_settings::*;
 pub use command::*;
 pub use config::*;
 pub use import::*;

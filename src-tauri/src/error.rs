@@ -65,6 +65,48 @@ pub enum AppError {
     #[error("Secure storage error: {message}")]
     #[allow(dead_code)]
     SecureStorage { message: String },
+
+    #[error("AI error: {0}")]
+    Ai(#[from] AiError),
+}
+
+#[derive(Debug, Error)]
+pub enum AiError {
+    #[error("API key not configured")]
+    ApiKeyNotSet,
+
+    #[error("Invalid API key")]
+    InvalidApiKey,
+
+    #[error("Rate limited: {0}")]
+    RateLimited(String),
+
+    #[error("Context too long: {0} tokens")]
+    ContextTooLong(u32),
+
+    #[error("Model not available: {0}")]
+    ModelNotAvailable(String),
+
+    #[error("Network error: {0}")]
+    NetworkError(String),
+
+    #[error("Timeout")]
+    Timeout,
+
+    #[error("Invalid response: {0}")]
+    InvalidResponse(String),
+
+    #[error("AI not enabled in settings")]
+    NotEnabled,
+
+    #[error("Base URL is required for custom provider")]
+    BaseUrlRequired,
+
+    #[error("Model name is required")]
+    ModelRequired,
+
+    #[error("Request failed: {0}")]
+    RequestFailed(String),
 }
 
 impl<T> From<PoisonError<T>> for AppError {

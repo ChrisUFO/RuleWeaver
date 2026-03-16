@@ -27,6 +27,26 @@ interface MarkdownEditorProps {
   fullscreenSaveStatus?: ReactNode;
 }
 
+function useColorMode(): "dark" | "light" {
+  const [colorMode, setColorMode] = useState<"dark" | "light">(() => {
+    if (typeof window !== "undefined") {
+      return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    }
+    return "light";
+  });
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    const handleChange = (e: MediaQueryListEvent) => {
+      setColorMode(e.matches ? "dark" : "light");
+    };
+    mediaQuery.addEventListener("change", handleChange);
+    return () => mediaQuery.removeEventListener("change", handleChange);
+  }, []);
+
+  return colorMode;
+}
+
 export function MarkdownEditor({
   value,
   onChange,
@@ -42,6 +62,7 @@ export function MarkdownEditor({
   const [mode, setMode] = useState<EditorMode>(defaultMode);
   const [wordWrap, setWordWrap] = useState(true);
   const containerRef = useRef<HTMLDivElement>(null);
+  const colorMode = useColorMode();
 
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
@@ -196,16 +217,13 @@ export function MarkdownEditor({
       ref={containerRef}
       className={cn(
         "flex flex-col h-full bg-background",
-        isFullscreen && "fixed inset-0 z-50",
+        isFullscreen && "fixed inset-0 z-50 bg-background",
         className
       )}
     >
       {toolbar}
 
-      <div
-        className="flex-1 overflow-hidden"
-        data-color-mode={document.documentElement.classList.contains("dark") ? "dark" : "light"}
-      >
+      <div className="flex-1 overflow-hidden" data-color-mode={colorMode}>
         <MDEditor
           value={value}
           onChange={(val) => onChange(val || "")}
