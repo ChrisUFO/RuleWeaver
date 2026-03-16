@@ -1622,20 +1622,6 @@ mod tests {
             .path
             .to_string_lossy()
             .ends_with("my-rule.md"));
-
-        let windsurf_local = resolver
-            .rule_file_path(
-                AdapterType::Windsurf,
-                "My Rule",
-                Some("r1"),
-                Scope::Local,
-                Some(&repo_root),
-            )
-            .unwrap();
-        assert!(windsurf_local
-            .path
-            .to_string_lossy()
-            .ends_with(".windsurfrules"));
     }
 
     #[test]

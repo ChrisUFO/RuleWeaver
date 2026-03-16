@@ -549,7 +549,6 @@ impl SlashCommandAdapter for CodexSlashAdapter {
     }
 
     fn get_filename(&self, command_name: &str) -> String {
-        // Skills use a directory structure: {name}/SKILL.md
         format!("{}/{}", command_name, "SKILL.md")
     }
 
@@ -570,9 +569,9 @@ pub fn get_adapter(name: &str) -> Option<Box<dyn SlashCommandAdapter>> {
         "antigravity" => Some(Box::new(AntigravitySlashAdapter)),
         "augment" => Some(Box::new(AugmentSlashAdapter)),
         "codex" => Some(Box::new(CodexSlashAdapter)),
-        // Kilo Code and Windsurf have no slash command directory in the registry
-        // (slash_command_extension: None) so they are intentionally unsupported here.
-        "kilo" | "windsurf" => None,
+        // Kilo Code has no slash command directory in the registry
+        // (slash_command_extension: None) so it is intentionally unsupported here.
+        "kilo" => None,
         _ => None,
     }
 }

@@ -10,6 +10,41 @@ export type ArtifactSyncStatus =
   | "unsupported"
   | "error";
 
+export interface InstalledToolInfo {
+  adapter: AdapterType;
+  name: string;
+  isInstalled: boolean;
+  configPath: string | null;
+}
+
+export interface ToolSyncPreferences {
+  toolId: AdapterType;
+  syncRules: boolean;
+  syncCommands: boolean;
+  syncSkills: boolean;
+}
+
+export interface UpsertToolSyncPreferencesInput {
+  toolId: AdapterType;
+  syncRules?: boolean;
+  syncCommands?: boolean;
+  syncSkills?: boolean;
+}
+
+export interface SyncManifestFilter {
+  adapter?: AdapterType;
+  artifactType?: ArtifactType;
+  artifactId?: string;
+  scope?: Scope;
+}
+
+export interface CleanupResult {
+  filesRemoved: number;
+  filesSkipped: number;
+  errors: string[];
+  removedPaths: string[];
+}
+
 export interface ArtifactStatusEntry {
   id: string;
   artifactId: string;

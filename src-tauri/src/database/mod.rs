@@ -10,17 +10,28 @@ use crate::error::{AppError, Result};
 use crate::file_storage::StorageLocation;
 use crate::models::{
     AdapterType, Command, CommandArgument, CreateCommandInput, CreateRuleInput, CreateSkillInput,
-    DeleteScopedSecretInput, ExecutionLog, ObservabilityEvent, ObservabilityEventFilter,
-    ObservabilityEventStatus, ObservabilityEventType, ReconcileOperation, ReconcileResultType,
-    Rule, Scope, ScopedSecret, SecretScope, Skill, SyncHistoryEntry, UpdateCommandInput,
-    UpdateRuleInput, UpdateSkillInput, UpsertScopedSecretInput,
+    CreateSyncManifestInput, DeleteScopedSecretInput, ExecutionLog, ObservabilityEvent,
+    ObservabilityEventFilter, ObservabilityEventStatus, ObservabilityEventType, ReconcileOperation,
+    ReconcileResultType, Rule, Scope, ScopedSecret, SecretScope, Skill, SyncHistoryEntry,
+    SyncManifestEntry, SyncManifestFilter, ToolSyncPreferences, UpdateCommandInput,
+    UpdateRuleInput, UpdateSkillInput, UpsertScopedSecretInput, UpsertToolSyncPreferencesInput,
 };
 
 fn parse_timestamp_or_now(timestamp: i64) -> DateTime<Utc> {
-    chrono::Utc
-        .timestamp_opt(timestamp, 0)
+    Utc.timestamp_opt(timestamp, 0)
         .single()
-        .unwrap_or_else(chrono::Utc::now)
+        .unwrap_or_else(Utc::now)
+}
+
+fn make_sql_conversion_error(column_index: usize, msg: impl Into<String>) -> rusqlite::Error {
+    rusqlite::Error::FromSqlConversionFailure(
+        column_index,
+        rusqlite::types::Type::Text,
+        Box::new(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            msg.into(),
+        )),
+    )
 }
 
 fn parse_observability_event_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ObservabilityEvent> {
@@ -1860,6 +1871,268 @@ impl Database {
         conn.execute("DELETE FROM reconciliation_logs", [])?;
         Ok(())
     }
+
+    pub async fn upsert_sync_manifest(
+        &self,
+        input: CreateSyncManifestInput,
+    ) -> Result<SyncManifestEntry> {
+        let conn = self.0.lock().await;
+        let id = input
+            .id
+            .clone()
+            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+        let now = chrono::Utc::now().timestamp();
+
+        conn.execute(
+            "INSERT INTO sync_manifest (id, path, artifact_id, artifact_type, adapter, scope, written_at, content_hash)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+             ON CONFLICT(path) DO UPDATE SET
+                 artifact_id = excluded.artifact_id,
+                 artifact_type = excluded.artifact_type,
+                 adapter = excluded.adapter,
+                 scope = excluded.scope,
+                 written_at = excluded.written_at,
+                 content_hash = excluded.content_hash",
+            rusqlite::params![
+                id,
+                input.path,
+                input.artifact_id,
+                input.artifact_type.as_str(),
+                input.adapter.as_str(),
+                input.scope.as_str(),
+                now,
+                input.content_hash
+            ],
+        )?;
+
+        Ok(SyncManifestEntry {
+            id,
+            path: input.path,
+            artifact_id: input.artifact_id,
+            artifact_type: input.artifact_type,
+            adapter: input.adapter,
+            scope: input.scope,
+            written_at: chrono::Utc::now(),
+            content_hash: input.content_hash,
+        })
+    }
+
+    fn parse_sync_manifest_row(
+        row: &rusqlite::Row,
+    ) -> std::result::Result<SyncManifestEntry, rusqlite::Error> {
+        Ok(SyncManifestEntry {
+            id: row.get("id")?,
+            path: row.get("path")?,
+            artifact_id: row.get("artifact_id")?,
+            artifact_type: row
+                .get::<_, String>("artifact_type")?
+                .parse()
+                .map_err(|e| {
+                    make_sql_conversion_error(3, format!("Invalid artifact_type: {}", e))
+                })?,
+            adapter: row
+                .get::<_, String>("adapter")?
+                .parse()
+                .map_err(|e| make_sql_conversion_error(4, format!("Invalid adapter: {}", e)))?,
+            scope: row
+                .get::<_, String>("scope")?
+                .parse()
+                .map_err(|e| make_sql_conversion_error(5, format!("Invalid scope: {}", e)))?,
+            written_at: parse_timestamp_or_now(row.get("written_at")?),
+            content_hash: row.get("content_hash")?,
+        })
+    }
+
+    pub async fn get_sync_manifest_by_path(&self, path: &str) -> Result<Option<SyncManifestEntry>> {
+        let conn = self.0.lock().await;
+        let mut stmt = conn.prepare(
+            "SELECT id, path, artifact_id, artifact_type, adapter, scope, written_at, content_hash
+             FROM sync_manifest WHERE path = ?1",
+        )?;
+
+        let result = stmt
+            .query_row(rusqlite::params![path], |row| {
+                Self::parse_sync_manifest_row(row)
+            })
+            .optional()?;
+
+        Ok(result)
+    }
+
+    pub async fn list_sync_manifest(
+        &self,
+        filter: SyncManifestFilter,
+    ) -> Result<Vec<SyncManifestEntry>> {
+        let conn = self.0.lock().await;
+
+        let mut sql = "SELECT id, path, artifact_id, artifact_type, adapter, scope, written_at, content_hash FROM sync_manifest WHERE 1=1".to_string();
+        let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+
+        if let Some(adapter) = &filter.adapter {
+            sql.push_str(" AND adapter = ?");
+            params_vec.push(Box::new(adapter.as_str().to_string()));
+        }
+        if let Some(artifact_type) = &filter.artifact_type {
+            sql.push_str(" AND artifact_type = ?");
+            params_vec.push(Box::new(artifact_type.as_str().to_string()));
+        }
+        if let Some(artifact_id) = &filter.artifact_id {
+            sql.push_str(" AND artifact_id = ?");
+            params_vec.push(Box::new(artifact_id.clone()));
+        }
+        if let Some(scope) = &filter.scope {
+            sql.push_str(" AND scope = ?");
+            params_vec.push(Box::new(scope.as_str().to_string()));
+        }
+
+        let params: Vec<&dyn rusqlite::ToSql> = params_vec.iter().map(|p| p.as_ref()).collect();
+
+        let mut stmt = conn.prepare(&sql)?;
+        let entries = stmt
+            .query_map(params.as_slice(), Self::parse_sync_manifest_row)?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+
+        Ok(entries)
+    }
+
+    pub async fn delete_sync_manifest_by_path(&self, path: &str) -> Result<()> {
+        let conn = self.0.lock().await;
+        conn.execute(
+            "DELETE FROM sync_manifest WHERE path = ?1",
+            rusqlite::params![path],
+        )?;
+        Ok(())
+    }
+
+    pub async fn delete_sync_manifest_by_filter(
+        &self,
+        filter: SyncManifestFilter,
+    ) -> Result<usize> {
+        let conn = self.0.lock().await;
+
+        let mut sql = "DELETE FROM sync_manifest WHERE 1=1".to_string();
+        let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+
+        if let Some(adapter) = &filter.adapter {
+            sql.push_str(" AND adapter = ?");
+            params_vec.push(Box::new(adapter.as_str().to_string()));
+        }
+        if let Some(artifact_type) = &filter.artifact_type {
+            sql.push_str(" AND artifact_type = ?");
+            params_vec.push(Box::new(artifact_type.as_str().to_string()));
+        }
+        if let Some(artifact_id) = &filter.artifact_id {
+            sql.push_str(" AND artifact_id = ?");
+            params_vec.push(Box::new(artifact_id.clone()));
+        }
+        if let Some(scope) = &filter.scope {
+            sql.push_str(" AND scope = ?");
+            params_vec.push(Box::new(scope.as_str().to_string()));
+        }
+
+        let params: Vec<&dyn rusqlite::ToSql> = params_vec.iter().map(|p| p.as_ref()).collect();
+        let count = conn.execute(&sql, params.as_slice())?;
+
+        Ok(count)
+    }
+
+    pub async fn get_all_tool_sync_preferences(&self) -> Result<Vec<ToolSyncPreferences>> {
+        let conn = self.0.lock().await;
+        let mut stmt = conn.prepare(
+            "SELECT tool_id, sync_rules, sync_commands, sync_skills FROM tool_sync_preferences",
+        )?;
+
+        let prefs = stmt
+            .query_map([], |row| {
+                let tool_id_str: String = row.get("tool_id")?;
+                let tool_id = AdapterType::from_str(&tool_id_str).map_err(|e| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        0,
+                        rusqlite::types::Type::Text,
+                        Box::new(std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            format!("Invalid tool_id: {}", e),
+                        )),
+                    )
+                })?;
+                Ok(ToolSyncPreferences {
+                    tool_id,
+                    sync_rules: row.get::<_, i32>("sync_rules")? != 0,
+                    sync_commands: row.get::<_, i32>("sync_commands")? != 0,
+                    sync_skills: row.get::<_, i32>("sync_skills")? != 0,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+
+        Ok(prefs)
+    }
+
+    pub async fn get_tool_sync_preferences(
+        &self,
+        tool_id: &AdapterType,
+    ) -> Result<Option<ToolSyncPreferences>> {
+        let conn = self.0.lock().await;
+        let mut stmt = conn.prepare(
+            "SELECT tool_id, sync_rules, sync_commands, sync_skills FROM tool_sync_preferences WHERE tool_id = ?1",
+        )?;
+
+        let result = stmt
+            .query_row(rusqlite::params![tool_id.as_str()], |row| {
+                let tool_id_str: String = row.get("tool_id")?;
+                let tool_id = AdapterType::from_str(&tool_id_str).map_err(|e| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        0,
+                        rusqlite::types::Type::Text,
+                        Box::new(std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            format!("Invalid tool_id: {}", e),
+                        )),
+                    )
+                })?;
+                Ok(ToolSyncPreferences {
+                    tool_id,
+                    sync_rules: row.get::<_, i32>("sync_rules")? != 0,
+                    sync_commands: row.get::<_, i32>("sync_commands")? != 0,
+                    sync_skills: row.get::<_, i32>("sync_skills")? != 0,
+                })
+            })
+            .optional()?;
+
+        Ok(result)
+    }
+
+    pub async fn upsert_tool_sync_preferences(
+        &self,
+        input: UpsertToolSyncPreferencesInput,
+    ) -> Result<ToolSyncPreferences> {
+        let conn = self.0.lock().await;
+
+        let sync_rules = input.sync_rules.unwrap_or(true) as i32;
+        let sync_commands = input.sync_commands.unwrap_or(true) as i32;
+        let sync_skills = input.sync_skills.unwrap_or(true) as i32;
+
+        conn.execute(
+            "INSERT INTO tool_sync_preferences (tool_id, sync_rules, sync_commands, sync_skills)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(tool_id) DO UPDATE SET
+                 sync_rules = excluded.sync_rules,
+                 sync_commands = excluded.sync_commands,
+                 sync_skills = excluded.sync_skills",
+            rusqlite::params![
+                input.tool_id.as_str(),
+                sync_rules,
+                sync_commands,
+                sync_skills
+            ],
+        )?;
+
+        Ok(ToolSyncPreferences {
+            tool_id: input.tool_id,
+            sync_rules: sync_rules != 0,
+            sync_commands: sync_commands != 0,
+            sync_skills: sync_skills != 0,
+        })
+    }
 }
 
 fn run_migrations(conn: &mut Connection) -> Result<()> {
@@ -2273,7 +2546,47 @@ fn run_migrations(conn: &mut Connection) -> Result<()> {
         }
     }
 
-    transaction.execute("PRAGMA user_version = 21", [])?;
+    if current_version < 22 {
+        transaction.execute(
+            "CREATE TABLE IF NOT EXISTS sync_manifest (
+                id TEXT PRIMARY KEY NOT NULL,
+                path TEXT NOT NULL UNIQUE,
+                artifact_id TEXT NOT NULL,
+                artifact_type TEXT NOT NULL,
+                adapter TEXT NOT NULL,
+                scope TEXT NOT NULL,
+                written_at INTEGER NOT NULL,
+                content_hash TEXT NOT NULL
+            )",
+            [],
+        )?;
+        transaction.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sync_manifest_path ON sync_manifest(path)",
+            [],
+        )?;
+        transaction.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sync_manifest_artifact_id ON sync_manifest(artifact_id)",
+            [],
+        )?;
+        transaction.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sync_manifest_adapter ON sync_manifest(adapter)",
+            [],
+        )?;
+    }
+
+    if current_version < 23 {
+        transaction.execute(
+            "CREATE TABLE IF NOT EXISTS tool_sync_preferences (
+                tool_id TEXT PRIMARY KEY NOT NULL,
+                sync_rules INTEGER NOT NULL DEFAULT 1,
+                sync_commands INTEGER NOT NULL DEFAULT 1,
+                sync_skills INTEGER NOT NULL DEFAULT 1
+            )",
+            [],
+        )?;
+    }
+
+    transaction.execute("PRAGMA user_version = 23", [])?;
     transaction.commit()?;
 
     Ok(())
@@ -2583,5 +2896,166 @@ mod tests {
         assert!(export_body.contains("***REDACTED***"));
         assert!(export_body.contains("\"eventCount\": 1"));
         assert!(export_body.contains("\"isRedacted\": true"));
+    }
+
+    #[tokio::test]
+    async fn test_sync_manifest_crud() {
+        let db = Database::new_in_memory().await.unwrap();
+
+        let input = CreateSyncManifestInput {
+            id: None,
+            path: "/home/user/.gemini/GEMINI.md".to_string(),
+            artifact_id: "rule-123".to_string(),
+            artifact_type: crate::models::registry::ArtifactType::Rule,
+            adapter: AdapterType::Gemini,
+            scope: Scope::Global,
+            content_hash: "abc123hash".to_string(),
+        };
+
+        let created = db.upsert_sync_manifest(input.clone()).await.unwrap();
+        assert_eq!(created.path, "/home/user/.gemini/GEMINI.md");
+        assert_eq!(created.adapter, AdapterType::Gemini);
+        assert_eq!(created.scope, Scope::Global);
+
+        let fetched = db
+            .get_sync_manifest_by_path("/home/user/.gemini/GEMINI.md")
+            .await
+            .unwrap();
+        assert!(fetched.is_some());
+        let fetched = fetched.unwrap();
+        assert_eq!(fetched.id, created.id);
+        assert_eq!(fetched.content_hash, "abc123hash");
+
+        let all = db
+            .list_sync_manifest(SyncManifestFilter::default())
+            .await
+            .unwrap();
+        assert_eq!(all.len(), 1);
+
+        let filtered = db
+            .list_sync_manifest(SyncManifestFilter {
+                adapter: Some(AdapterType::Gemini),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        assert_eq!(filtered.len(), 1);
+
+        let filtered_none = db
+            .list_sync_manifest(SyncManifestFilter {
+                adapter: Some(AdapterType::ClaudeCode),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        assert_eq!(filtered_none.len(), 0);
+
+        db.delete_sync_manifest_by_path("/home/user/.gemini/GEMINI.md")
+            .await
+            .unwrap();
+        assert!(db
+            .get_sync_manifest_by_path("/home/user/.gemini/GEMINI.md")
+            .await
+            .unwrap()
+            .is_none());
+    }
+
+    #[tokio::test]
+    async fn test_sync_manifest_upsert_updates_existing() {
+        let db = Database::new_in_memory().await.unwrap();
+
+        let input1 = CreateSyncManifestInput {
+            id: None,
+            path: "/home/user/.gemini/GEMINI.md".to_string(),
+            artifact_id: "rule-123".to_string(),
+            artifact_type: crate::models::registry::ArtifactType::Rule,
+            adapter: AdapterType::Gemini,
+            scope: Scope::Global,
+            content_hash: "hash1".to_string(),
+        };
+
+        db.upsert_sync_manifest(input1).await.unwrap();
+
+        let input2 = CreateSyncManifestInput {
+            id: None,
+            path: "/home/user/.gemini/GEMINI.md".to_string(),
+            artifact_id: "rule-456".to_string(),
+            artifact_type: crate::models::registry::ArtifactType::Rule,
+            adapter: AdapterType::Gemini,
+            scope: Scope::Global,
+            content_hash: "hash2".to_string(),
+        };
+
+        let created2 = db.upsert_sync_manifest(input2).await.unwrap();
+
+        assert_eq!(created2.artifact_id, "rule-456");
+        assert_eq!(created2.content_hash, "hash2");
+
+        let fetched = db
+            .get_sync_manifest_by_path("/home/user/.gemini/GEMINI.md")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(fetched.artifact_id, "rule-456");
+        assert_eq!(fetched.content_hash, "hash2");
+
+        let all = db
+            .list_sync_manifest(SyncManifestFilter::default())
+            .await
+            .unwrap();
+        assert_eq!(all.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_tool_sync_preferences_crud() {
+        let db = Database::new_in_memory().await.unwrap();
+
+        let input = UpsertToolSyncPreferencesInput {
+            tool_id: AdapterType::Gemini,
+            sync_rules: Some(true),
+            sync_commands: Some(false),
+            sync_skills: Some(true),
+        };
+
+        let created = db.upsert_tool_sync_preferences(input).await.unwrap();
+        assert_eq!(created.tool_id, AdapterType::Gemini);
+        assert!(created.sync_rules);
+        assert!(!created.sync_commands);
+        assert!(created.sync_skills);
+
+        let fetched = db
+            .get_tool_sync_preferences(&AdapterType::Gemini)
+            .await
+            .unwrap();
+        assert!(fetched.is_some());
+        let fetched = fetched.unwrap();
+        assert_eq!(fetched.tool_id, AdapterType::Gemini);
+        assert!(!fetched.sync_commands);
+
+        let all = db.get_all_tool_sync_preferences().await.unwrap();
+        assert_eq!(all.len(), 1);
+
+        let not_found = db
+            .get_tool_sync_preferences(&AdapterType::ClaudeCode)
+            .await
+            .unwrap();
+        assert!(not_found.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_tool_sync_preferences_defaults() {
+        let db = Database::new_in_memory().await.unwrap();
+
+        let input = UpsertToolSyncPreferencesInput {
+            tool_id: AdapterType::Gemini,
+            sync_rules: None,
+            sync_commands: None,
+            sync_skills: None,
+        };
+
+        let created = db.upsert_tool_sync_preferences(input).await.unwrap();
+        assert!(created.sync_rules);
+        assert!(created.sync_commands);
+        assert!(created.sync_skills);
     }
 }

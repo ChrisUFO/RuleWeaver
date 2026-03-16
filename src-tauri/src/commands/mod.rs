@@ -11,7 +11,7 @@ pub mod system_commands;
 
 use adapters::{
     ClaudeAdapter, CommandAdapter, CursorAdapter, GeminiAdapter, KiloAdapter, OpenCodeAdapter,
-    RooCodeAdapter, WindsurfAdapter,
+    RooCodeAdapter,
 };
 pub use command_commands::*;
 pub use import_commands::*;
@@ -34,9 +34,7 @@ use crate::constants::limits::{
     MAX_COMMAND_NAME_LENGTH, MAX_COMMAND_SCRIPT_LENGTH, MAX_RULE_CONTENT_LENGTH,
     MAX_RULE_NAME_LENGTH,
 };
-use crate::constants::{
-    NEW_CURSOR_DIR, NEW_GEMINI_DIR, NEW_KILO_DIR, NEW_ROO_CODE_DIR, NEW_WINDSURF_DIR,
-};
+use crate::constants::{NEW_CURSOR_DIR, NEW_GEMINI_DIR, NEW_KILO_DIR, NEW_ROO_CODE_DIR};
 use crate::database::Database;
 use crate::error::{AppError, Result};
 use crate::file_storage;
@@ -181,7 +179,6 @@ fn command_adapters() -> &'static Vec<Arc<dyn CommandAdapter>> {
             Arc::new(ClaudeAdapter),
             Arc::new(KiloAdapter),
             Arc::new(CursorAdapter),
-            Arc::new(WindsurfAdapter),
             Arc::new(RooCodeAdapter),
         ]
     })
@@ -194,10 +191,6 @@ fn command_target_path_for_adapter(root: &Path, adapter_name: &str) -> Option<St
         "claude" => root.join(".claude").join("COMMANDS.md"),
         "kilo" => root.join(NEW_KILO_DIR).join("rules").join("COMMANDS.md"),
         "cursor" => root.join(NEW_CURSOR_DIR).join("COMMANDS.md"),
-        "windsurf" => root
-            .join(NEW_WINDSURF_DIR)
-            .join("rules")
-            .join("COMMANDS.md"),
         "roo" => root.join(NEW_ROO_CODE_DIR).join("COMMANDS.md"),
         _ => return None,
     };
@@ -359,7 +352,17 @@ pub async fn validate_local_rule_paths(
 
 /// Helper function to run reconciliation after mutations.
 /// This cleans up stale artifacts that may have been orphaned.
+/// Respects the "reconciliation_mode" setting - skips auto-reconciliation if set to "interactive".
 pub async fn reconcile_after_mutation(db: Arc<Database>) {
+    const RECONCILIATION_MODE_KEY: &str = "reconciliation_mode";
+
+    if let Ok(Some(mode)) = db.get_setting(RECONCILIATION_MODE_KEY).await {
+        if mode == "interactive" {
+            log::debug!("Skipping automatic reconciliation - interactive mode enabled");
+            return;
+        }
+    }
+
     use crate::reconciliation::ReconciliationEngine;
     match ReconciliationEngine::new(db) {
         Ok(engine) => match engine.reconcile(false, None).await {

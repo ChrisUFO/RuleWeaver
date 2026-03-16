@@ -13,13 +13,10 @@ A comprehensive guide to how each AI coding tool handles **rules**, **custom com
 | Cursor      | ✅ Global + Local | ✅ Global + Local   | ✅ Global + Local | ❌ No             | ❌ No             | `~/.cursor/`, `.cursor/`               |
 | Roo Code    | ✅ Global + Local | ✅ Global + Local   | ✅ Global + Local | ✅ Global + Local | ✅ Global + Local | `~/.roo/`, `.roo/`                     |
 | Antigravity | ✅ Global + Local | ✅ Global + Local   | ✅ Global + Local | ✅ Global + Local | ✅ Global + Local | `~/.gemini/antigravity/`, `.agents/`   |
-| Windsurf    | ✅ Global + Local | ✅ Global + Local   | ❌ No¹            | ❌ No             | ✅ Global + Local | `.windsurfrules`, `~/.windsurf/`       |
-| Kilo Code   | ✅ Global + Local | ✅ Global + Local   | ❌ No             | ❌ No²            | ❌ No²            | `~/.kilocode/`, `.kilocode/`           |
+| Kilo Code   | ✅ Global + Local | ✅ Global + Local   | ❌ No             | ❌ No¹            | ❌ No¹            | `~/.kilocode/`, `.kilocode/`           |
 | Codex       | ✅ Global + Local | ✅ Global + Local   | ✅ Global + Local | ✅ Global + Local | ✅ Global + Local | `~/.agents/skills/`, `.agents/skills/` |
 
-¹ Windsurf has `supports_slash_commands: true` in the registry capability flags, but no slash command directory path is configured. No slash command files are distributed until Windsurf publishes their spec. See [Windsurf](#windsurf) for details.
-
-² Kilo Code has `supports_command_stubs: true` and `supports_skills: true` in registry capability flags, but neither command stub paths nor skill directory paths are configured. Nothing is distributed until Kilo Code publishes their directory spec. See [Kilo Code](#kilo-code) for details.
+¹ Kilo Code has `supports_command_stubs: true` and `supports_skills: true` in registry capability flags, but neither command stub paths nor skill directory paths are configured. Nothing is distributed until Kilo Code publishes their directory spec. See [Kilo Code](#kilo-code) for details.
 
 ---
 
@@ -396,34 +393,6 @@ Cursor has its own skills-like feature in its UI, but it is not interoperable wi
 
 ---
 
-## Windsurf
-
-### Rules
-
-- **Global Rules:** `~/.windsurf/rules/*.md` or similar
-- **Local Rules:** `.windsurfrules` or `.windsurf/rules/*.md`
-- **Format:** Markdown files
-- **Behavior:** Local rules override global rules
-
-### Custom Commands (Slash Commands) — Windsurf
-
-- **Status:** Not currently distributed by RuleWeaver.
-- Windsurf has `supports_slash_commands: true` in the registry capability flags, but no slash command directory path or file extension is configured. No slash command files are written until Windsurf publishes their slash command directory spec.
-- **Alternative:** Use Cascade AI panel with natural language.
-
-### Skills
-
-- **Global Skills:** `~/.windsurf/skills/<skill-name>/SKILL.md`
-- **Local Skills:** `.windsurf/skills/<skill-name>/SKILL.md`
-- **Format:** Markdown with YAML frontmatter (Agent Skills standard)
-- **Frontmatter:**
-  - `name`: Required, skill identifier
-  - `description`: Required, used by agent to determine relevance
-- **Distribution:** RuleWeaver writes `SKILL.md` files to Windsurf's global and local skill directories. Skills with default targeting (`target_adapters: []`) are distributed to Windsurf automatically. Skills with explicit adapter targeting must include `windsurf` to be distributed here.
-- **Invocation:** Windsurf loads skills from the configured skill directories and activates them based on context.
-
----
-
 ## Kilo Code
 
 ### Rules
@@ -689,7 +658,6 @@ Title: $PR_TITLE
 | Cursor      | `~/.cursorrules` or `~/.cursor/rules/*.mdc` | `.cursorrules` or `.cursor/rules/*.mdc` | Markdown/MDC    |
 | Roo Code    | `~/.roo/rules/*.md`                         | `.roo/rules/*.md`                       | Markdown        |
 | Antigravity | `~/.gemini/antigravity/rules/*.md`          | `.agents/rules/*.md`                    | Markdown        |
-| Windsurf    | `~/.windsurf/rules/*.md`                    | `.windsurfrules`                        | Markdown        |
 | Codex       | Config-based                                | `.codex/rules/` or AGENTS.md            | Markdown/Config |
 
 ### Custom Commands Handling
@@ -703,7 +671,6 @@ Title: $PR_TITLE
 | Cursor      | `~/.cursor/commands/*.md`                     | `.cursor/commands/*.md`      | Markdown        | Text after command       |
 | Roo Code    | `~/.roo/commands/*.md`                        | `.roo/commands/*.md`         | Markdown + YAML | Via frontmatter          |
 | Antigravity | `~/.gemini/antigravity/global_workflows/*.md` | `.agents/workflows/*.md`     | Markdown + YAML | None (natural language)  |
-| Windsurf    | ❌ Not Supported                              | ❌ Not Supported             | N/A             | N/A                      |
 | Codex       | ❌ Deprecated                                 | ❌ Deprecated                | N/A             | N/A                      |
 
 ### Skills Handling
@@ -717,7 +684,6 @@ Title: $PR_TITLE
 | Cursor      | ❌ No (not distributed) | N/A                                       | N/A                           | N/A          |
 | Roo Code    | ✅ Yes                  | `~/.roo/skills/*/SKILL.md`                | `.roo/skills/*/SKILL.md`      | Agent Skills |
 | Antigravity | ✅ Yes                  | `~/.gemini/antigravity/skills/*/SKILL.md` | `.agents/skills/*/SKILL.md`   | Agent Skills |
-| Windsurf    | ✅ Yes                  | `~/.windsurf/skills/*/SKILL.md`           | `.windsurf/skills/*/SKILL.md` | Agent Skills |
 | Kilo Code   | ❌ No (paths pending)   | N/A                                       | N/A                           | N/A          |
 | Codex       | ✅ Yes                  | `~/.agents/skills/*/SKILL.md`             | `.agents/skills/*/SKILL.md`   | Agent Skills |
 
@@ -728,7 +694,7 @@ Title: $PR_TITLE
 1. **Universal Pattern:** Most tools follow the same pattern: global config in home directory, local config in project root
 2. **Precedence:** Local configurations always override global configurations
 3. **Agent Skills Standard:** Claude Code, Roo Code, Codex, Cursor, OpenCode, Cline, Gemini, and Antigravity all use the Agent Skills standard
-4. **No Command Stubs:** Cursor, Windsurf, and Kilo Code do not receive `COMMANDS.md` command stub files. Cursor supports slash command files (`.md` in `.cursor/commands/`) but not the `COMMANDS.md` format. Windsurf and Kilo Code have no configured command paths at this time.
+4. **No Command Stubs:** Cursor and Kilo Code do not receive `COMMANDS.md` command stub files. Cursor supports slash command files (`.md` in `.cursor/commands/`) but not the `COMMANDS.md` format. Kilo Code has no configured command paths at this time.
 5. **Skills Preferred:** Codex has deprecated custom prompts in favor of Skills
 6. **TOML Exception:** Gemini CLI uniquely uses TOML files for commands instead of Markdown
 7. **Argument Substitution:**
@@ -737,4 +703,4 @@ Title: $PR_TITLE
    - **Natural Language:** Cline, Cursor, Roo Code, Antigravity (no substitution)
 8. **Shell Injection:** OpenCode (``!`cmd` ``), Gemini CLI (`!{cmd}`)
 9. **File References:** OpenCode supports `@filename` for file content injection
-10. **Most Tools Support Skills:** 8 out of 10 tools have skills distributed by RuleWeaver. Cursor does not support the Agent Skills standard for distribution (`supports_skills: false`). Kilo Code has the capability flag set but no paths configured yet — will be enabled when they publish their directory spec.
+10. **Most Tools Support Skills:** 7 out of 9 tools have skills distributed by RuleWeaver. Cursor does not support the Agent Skills standard for distribution (`supports_skills: false`). Kilo Code has the capability flag set but no paths configured yet — will be enabled when they publish their directory spec.

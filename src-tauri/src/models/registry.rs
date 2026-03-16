@@ -2,6 +2,9 @@ use crate::models::rule::{AdapterType, Scope};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::str::FromStr;
+
+use super::parse_error::ParseEnumError;
 
 /// Global tool registry singleton.
 ///
@@ -36,6 +39,20 @@ impl ArtifactType {
             ArtifactType::CommandStub => "command_stub",
             ArtifactType::SlashCommand => "slash_command",
             ArtifactType::Skill => "skill",
+        }
+    }
+}
+
+impl FromStr for ArtifactType {
+    type Err = ParseEnumError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "rule" => Ok(ArtifactType::Rule),
+            "command_stub" => Ok(ArtifactType::CommandStub),
+            "slash_command" => Ok(ArtifactType::SlashCommand),
+            "skill" => Ok(ArtifactType::Skill),
+            _ => Err(ParseEnumError),
         }
     }
 }
@@ -357,45 +374,7 @@ impl ToolRegistry {
             },
         );
 
-        // 9. Windsurf
-        entries.insert(
-            AdapterType::Windsurf,
-            ToolEntry {
-                id: AdapterType::Windsurf,
-                name: "Windsurf",
-                description: "Windsurf AI assistant",
-                icon: "windsurf",
-                // Windsurf supports rules and skills. Command stubs and slash commands are not
-                // distributed because no path or extension is configured.
-                capabilities: ToolCapabilities {
-                    supports_rules: true,
-                    supports_command_stubs: false,
-                    supports_slash_commands: false,
-                    supports_skills: true,
-                    supports_global_scope: true,
-                    supports_local_scope: true,
-                },
-                paths: PathTemplates {
-                    global_path: "~/.windsurf/rules",
-                    local_path_template: ".windsurfrules",
-                    global_rules_dir: Some("~/.windsurf/rules"),
-                    local_rules_dir_template: None,
-                    global_rule_file_model: RuleFileModel::PerRuleDir,
-                    local_rule_file_model: RuleFileModel::SingleFile,
-                    global_commands_dir: None,
-                    local_commands_dir: None,
-                    command_stub_filename: "COMMANDS.md",
-                    global_skills_dir: Some(".windsurf/skills"),
-                    local_skills_dir: Some(".windsurf/skills"),
-                    skill_filename: "SKILL.md",
-                },
-                file_format: "markdown",
-                slash_command_extension: None,
-                slash_command_argument_pattern: None,
-            },
-        );
-
-        // 10. RooCode
+        // 9. RooCode
         entries.insert(
             AdapterType::RooCode,
             ToolEntry {
@@ -424,7 +403,7 @@ impl ToolRegistry {
             },
         );
 
-        // 11. Augment
+        // 10. Augment
         entries.insert(
             AdapterType::Augment,
             ToolEntry {
@@ -447,10 +426,10 @@ impl ToolRegistry {
                     local_rules_dir_template: Some(".augment/rules"),
                     global_rule_file_model: RuleFileModel::PerRuleDir,
                     local_rule_file_model: RuleFileModel::PerRuleDir,
-                    global_commands_dir: Some(".augment/commands"),
+                    global_commands_dir: Some("~/.augment/commands"),
                     local_commands_dir: Some(".augment/commands"),
                     command_stub_filename: "COMMANDS.md",
-                    global_skills_dir: Some(".augment/skills"),
+                    global_skills_dir: Some("~/.augment/skills"),
                     local_skills_dir: Some(".augment/skills"),
                     skill_filename: "SKILL.md",
                 },
@@ -669,16 +648,15 @@ mod tests {
         assert!(registry.get(&AdapterType::Codex).is_some());
         assert!(registry.get(&AdapterType::Kilo).is_some());
         assert!(registry.get(&AdapterType::Cursor).is_some());
-        assert!(registry.get(&AdapterType::Windsurf).is_some());
         assert!(registry.get(&AdapterType::RooCode).is_some());
         assert!(registry.get(&AdapterType::Augment).is_some());
     }
 
     #[test]
-    fn test_registry_returns_all_eleven_adapters() {
+    fn test_registry_returns_all_ten_adapters() {
         let registry = get_registry();
         let all = registry.all();
-        assert_eq!(all.len(), 11);
+        assert_eq!(all.len(), 10);
     }
 
     #[test]
@@ -802,7 +780,6 @@ mod tests {
             AdapterType::Cline,
             AdapterType::Codex,
             AdapterType::Kilo,
-            AdapterType::Windsurf,
             AdapterType::RooCode,
             AdapterType::Augment,
         ];
@@ -814,12 +791,6 @@ mod tests {
             );
             assert!(entry.paths.global_rules_dir.is_some());
         }
-
-        let windsurf = registry.get(&AdapterType::Windsurf).unwrap();
-        assert_eq!(
-            windsurf.rule_file_model(Scope::Local),
-            RuleFileModel::SingleFile
-        );
     }
 
     #[test]
@@ -934,7 +905,6 @@ mod tests {
             "Matrix must contain Claude Code"
         );
         assert!(matrix.contains("Cursor"), "Matrix must contain Cursor");
-        assert!(matrix.contains("Windsurf"), "Matrix must contain Windsurf");
         assert!(
             matrix.contains("Kilo Code"),
             "Matrix must contain Kilo Code"
@@ -953,7 +923,6 @@ mod tests {
     #[test]
     fn test_generate_support_matrix_cursor_shows_no_skills() {
         let matrix = generate_support_matrix();
-        // Find Cursor row and verify it has ❌ in the Skills column (4th ❌/✅ in the row)
         let cursor_line = matrix
             .lines()
             .find(|l| l.starts_with("| Cursor"))
@@ -962,20 +931,6 @@ mod tests {
             cursor_line.contains("❌"),
             "Cursor row must contain ❌ for unsupported capabilities: {}",
             cursor_line
-        );
-    }
-
-    #[test]
-    fn test_generate_support_matrix_windsurf_has_skill_paths() {
-        let matrix = generate_support_matrix();
-        // Windsurf's path row should contain the windsurf/skills path
-        let windsurf_path_line = matrix
-            .lines()
-            .find(|l| l.starts_with("| Windsurf") && l.contains("windsurf/skills"))
-            .is_some();
-        assert!(
-            windsurf_path_line,
-            "Windsurf must have windsurf/skills paths in the matrix"
         );
     }
 }

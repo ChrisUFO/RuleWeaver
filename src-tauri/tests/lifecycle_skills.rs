@@ -265,24 +265,24 @@ async fn test_cursor_gets_no_skill_files() {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Test 6: Windsurf DOES get SKILL.md (supports_skills: true, paths configured)
+// Test 6: RooCode DOES get SKILL.md (supports_skills: true, paths configured)
 // ──────────────────────────────────────────────────────────────────────────────
 #[tokio::test]
-async fn test_windsurf_gets_skill_files() {
+async fn test_roocode_gets_skill_files() {
     let db = common::make_db().await;
     let home_dir = TempDir::new().unwrap();
 
     db.create_skill(CreateSkillInput {
         id: None,
-        name: "windsurf-skill".into(),
-        description: "Windsurf skill".into(),
-        instructions: "Instructions for windsurf.".into(),
+        name: "roocode-skill".into(),
+        description: "RooCode skill".into(),
+        instructions: "Instructions for RooCode.".into(),
         scope: Scope::Global,
         input_schema: vec![],
         directory_path: "".into(),
         entry_point: "".into(),
         enabled: true,
-        target_adapters: vec!["windsurf".into()],
+        target_adapters: vec!["roocode".into()],
         target_paths: vec![],
         base_path: None,
     })
@@ -301,13 +301,12 @@ async fn test_windsurf_gets_skill_files() {
 
     assert!(
         !skill_paths.is_empty(),
-        "Windsurf should receive skill files but got no paths"
+        "RooCode should receive skill files but got no paths"
     );
 
-    // Verify the path contains windsurf
     assert!(
-        skill_paths.iter().any(|p| p.contains("windsurf")),
-        "Skill path should be under windsurf directory: {:?}",
+        skill_paths.iter().any(|p| p.contains("roo")),
+        "Skill path should be under roo directory: {:?}",
         skill_paths
     );
 }

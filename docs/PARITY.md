@@ -2,7 +2,7 @@
 
 This document is the source of truth for capability divergence between AI tool adapters supported by RuleWeaver. It is updated per release and reflects the registry definitions in `src-tauri/src/models/registry.rs`.
 
-Last updated: 2026-03-11 (release: feat/17-secrets-observability-foundations)
+Last updated: 2026-03-15 (release: feature/saddle-features-milestone-20)
 
 ---
 
@@ -19,7 +19,6 @@ Last updated: 2026-03-11 (release: feat/17-secrets-observability-foundations)
 | Kilo Code   |  ✅   |      ✅       |       ✅       |  ✅\*  |      ✅      |     ✅      |
 | OpenCode    |  ✅   |      ✅       |       ✅       |   ✅   |      ✅      |     ✅      |
 | Roo Code    |  ✅   |      ✅       |       ✅       |   ✅   |      ✅      |     ✅      |
-| Windsurf    |  ✅   |      ✅       |      ✅\*      |   ✅   |      ✅      |     ✅      |
 
 ---
 
@@ -50,19 +49,6 @@ Kilo Code has `supports_skills: true` in its capability flags, but both `global_
 - Similarly, `global_commands_dir` and `local_commands_dir` are `None`, so no command stubs are written for Kilo Code despite `supports_command_stubs: true`.
 
 **Action required when Kilo Code publishes their skills directory spec:** update `PathTemplates` in `registry.rs` to set `global_skills_dir` and `local_skills_dir`.
-
-### Windsurf — Slash Commands Capability Flag Set but Paths Not Configured
-
-**Capability flags:** `supports_slash_commands: true`
-**Path config:** `slash_command_extension: None`, `global_commands_dir: None`, `local_commands_dir: None`
-
-Windsurf has `supports_slash_commands: true` but no slash command extension, global commands directory, or local commands directory is configured. This means:
-
-- No slash command files (e.g., `command.md`) are written to any Windsurf directory.
-- The slash command generation UI will not offer Windsurf as a target adapter.
-- Skills are supported and written to `~/.windsurf/skills/` (global) and `.windsurf/skills/` (local).
-
-**Action required when Windsurf publishes their slash command spec:** update `PathTemplates` to set `slash_command_extension`, `global_commands_dir`, and `local_commands_dir`.
 
 ---
 

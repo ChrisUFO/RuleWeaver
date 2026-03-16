@@ -128,32 +128,31 @@ fn test_cursor_has_rule_path_but_no_skill_path() {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Test 4: Windsurf has both rule path AND skill path
+// Test 4: RooCode has both rule path AND skill path
 // ──────────────────────────────────────────────────────────────────────────────
 #[test]
-fn test_windsurf_has_rule_path_and_skill_path() {
+fn test_roocode_has_rule_path_and_skill_path() {
     let home = TempDir::new().unwrap();
     let resolver = PathResolver::new_with_home(home.path().to_path_buf(), vec![]);
 
-    let rule_path = resolver.global_path(AdapterType::Windsurf, ArtifactType::Rule);
+    let rule_path = resolver.global_path(AdapterType::RooCode, ArtifactType::Rule);
     assert!(
         rule_path.is_ok(),
-        "Windsurf should have a valid rule path: {:?}",
+        "RooCode should have a valid rule path: {:?}",
         rule_path
     );
 
-    let skill_path = resolver.skill_path(AdapterType::Windsurf, "a-skill");
+    let skill_path = resolver.skill_path(AdapterType::RooCode, "a-skill");
     assert!(
         skill_path.is_ok(),
-        "Windsurf should have a valid skill path (supports_skills: true, dir configured): {:?}",
+        "RooCode should have a valid skill path (supports_skills: true, dir configured): {:?}",
         skill_path
     );
 
-    // Verify it's in the windsurf directory
     let skill_path_str = skill_path.unwrap().path.to_string_lossy().to_string();
     assert!(
-        skill_path_str.contains("windsurf"),
-        "Windsurf skill path must contain 'windsurf': {}",
+        skill_path_str.contains("roo"),
+        "RooCode skill path must contain 'roo': {}",
         skill_path_str
     );
 }

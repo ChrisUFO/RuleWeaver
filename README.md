@@ -1,6 +1,6 @@
 # RuleWeaver
 
-RuleWeaver is a unified, standalone desktop application designed to centrally manage configurations, rules, commands, and skills for various AI coding assistants (Antigravity, Gemini CLI, OpenCode, Cline, Claude Code, Codex, Kilo Code, Cursor, Windsurf, Roo Code).
+RuleWeaver is a unified, standalone desktop application designed to centrally manage configurations, rules, commands, and skills for various AI coding assistants (Antigravity, Gemini CLI, OpenCode, Cline, Claude Code, Codex, Kilo Code, Cursor, Roo Code, Augment).
 
 Managing different file formats and local/global settings across 10+ AI tools is a nightmare. RuleWeaver solves this by acting as a single source of truth using a **Hybrid Synchronization Model**.
 
@@ -19,7 +19,12 @@ Different types of AI configurations require different management strategies:
 - **Observability Logs:** A dedicated Logs page captures command and skill runs, with filters and redaction-safe JSON export.
 - **Command Manager:** CRUD commands, test runs, and execution history.
 - **Native Slash Commands:** Generate native `/commandname` triggers for 9 AI tools with automatic file generation and incremental sync.
-- **Native Skills Distribution:** Skills are synced as `SKILL.md` files directly into each AI tool's skill directory (Claude Code, OpenCode, Cline, Gemini, Roo Code, Windsurf, Antigravity, Codex). Per-skill adapter targeting lets you control which tools receive each skill. Global and local scope both supported.
+- **Native Skills Distribution:** Skills are synced as `SKILL.md` files directly into each AI tool's skill directory (Claude Code, OpenCode, Cline, Gemini, Roo Code, Antigravity, Codex). Per-skill adapter targeting lets you control which tools receive each skill. Global and local scope both supported.
+- **Tool Installation Detection:** Detects which AI tools are installed on your system and shows "Not Installed" badges in the sync preferences matrix.
+- **Global Sync Preferences:** Per-tool toggle matrix to control which artifact types (rules, commands, skills) sync to each AI tool.
+- **Sync Preview:** Preview sync changes before applying with diff viewer and conflict resolution.
+- **Sync Manifest Tracking:** All synced files are tracked in a manifest for drift detection and clean uninstall.
+- **Reconciliation Mode:** Toggle between automatic (reconcile after every change) and interactive (manual reconciliation via Status page).
 - **Unified Status & Repair:** Single operator view across all artifact types (rules, commands, skills). Filter by adapter, artifact type, or sync status. One-click repair re-syncs drifted or missing artifacts.
 - **Priority Tiering:**
   1. Rules First (System Prompts, Code Standards)

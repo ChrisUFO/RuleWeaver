@@ -33,6 +33,9 @@ import { AdapterSettingsCard } from "@/components/settings/AdapterSettingsCard";
 import { RepositorySettingsCard } from "@/components/settings/RepositorySettingsCard";
 import { ScopedSecretsCard } from "@/components/settings/ScopedSecretsCard";
 import { SettingsTabs } from "@/components/settings/SettingsTabs";
+import { ToolSyncPreferencesMatrix } from "@/components/settings/ToolSyncPreferencesMatrix";
+import { ReconciliationModeCard } from "@/components/settings/ReconciliationModeCard";
+import { CleanupCard } from "@/components/settings/CleanupCard";
 
 const SETTINGS_TABS = [
   { id: "general", label: "General", icon: SettingsIcon },
@@ -249,6 +252,10 @@ export function Settings({ onNavigate: _onNavigate }: { onNavigate?: (view: stri
                 onToggle={handlers.toggleAdapter}
               />
 
+              <ToolSyncPreferencesMatrix />
+
+              <ReconciliationModeCard />
+
               <Card className="glass-card premium-shadow border-none overflow-hidden">
                 <CardHeader className="bg-white/5 pb-4">
                   <CardTitle className="text-sm font-bold uppercase tracking-widest text-muted-foreground/60">
@@ -362,6 +369,8 @@ export function Settings({ onNavigate: _onNavigate }: { onNavigate?: (view: stri
                   </div>
                 </CardContent>
               </Card>
+
+              <CleanupCard />
             </motion.div>
           )}
         </AnimatePresence>

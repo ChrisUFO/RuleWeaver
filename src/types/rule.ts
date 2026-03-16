@@ -11,7 +11,6 @@ export type AdapterType =
   | "codex"
   | "kilo"
   | "cursor"
-  | "windsurf"
   | "roocode"
   | "augment";
 

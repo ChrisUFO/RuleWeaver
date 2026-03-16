@@ -37,5 +37,4 @@ pub const NEW_GEMINI_DIR: &str = ".gemini";
 pub const NEW_OPENCODE_DIR: &str = ".config/opencode";
 pub const NEW_KILO_DIR: &str = ".kilocode";
 pub const NEW_CURSOR_DIR: &str = ".cursor";
-pub const NEW_WINDSURF_DIR: &str = ".windsurf";
 pub const NEW_ROO_CODE_DIR: &str = ".roo";

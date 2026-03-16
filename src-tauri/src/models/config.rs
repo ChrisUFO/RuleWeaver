@@ -1,4 +1,4 @@
-use crate::models::{Command, Rule, Skill};
+use crate::models::{AdapterType, Command, Rule, Skill};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
@@ -29,4 +29,13 @@ impl ExportConfiguration {
             skills,
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InstalledToolInfo {
+    pub adapter: AdapterType,
+    pub name: String,
+    pub is_installed: bool,
+    pub config_path: Option<String>,
 }
