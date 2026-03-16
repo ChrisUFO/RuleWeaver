@@ -18,6 +18,7 @@ mod slash_commands;
 mod status;
 mod sync;
 pub mod templates;
+pub mod wsl;
 
 use database::Database;
 use file_storage::RuleFileWatcher;
