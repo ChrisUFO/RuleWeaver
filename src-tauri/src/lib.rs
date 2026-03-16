@@ -475,6 +475,12 @@ pub fn run() {
             commands::get_tool_sync_preferences,
             commands::upsert_tool_sync_preferences,
             commands::cleanup_synced_files,
+            commands::get_wsl_config,
+            commands::set_wsl_config,
+            commands::set_wsl_adapter_config,
+            commands::set_wsl_enabled,
+            commands::is_wsl_installed,
+            commands::list_wsl_distributions,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

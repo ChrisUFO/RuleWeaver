@@ -11,7 +11,7 @@ use crate::models::{
     AdapterType, CleanupResult, DeleteScopedSecretInput, EffectiveSecret, ExecutionLog,
     InstalledToolInfo, ResolveScopedSecretsInput, ScopedSecret, SecretStorageStatus,
     SyncHistoryEntry, SyncManifestFilter, ToolSyncPreferences, UpsertScopedSecretInput,
-    UpsertToolSyncPreferencesInput,
+    UpsertToolSyncPreferencesInput, WslAdapterConfig, WslConfig, WslDistribution,
 };
 use crate::secrets;
 
@@ -285,4 +285,92 @@ pub async fn cleanup_synced_files(
         errors,
         removed_paths,
     })
+}
+
+#[tauri::command]
+pub async fn get_wsl_config(db: State<'_, Arc<Database>>) -> Result<WslConfig> {
+    let config_json = db.get_setting("wsl_config").await?;
+    match config_json {
+        Some(json) => {
+            serde_json::from_str(&json).map_err(|e| crate::error::AppError::InvalidInput {
+                message: format!("Failed to parse WSL config: {}", e),
+            })
+        }
+        None => Ok(WslConfig::default()),
+    }
+}
+
+#[tauri::command]
+pub async fn set_wsl_config(config: WslConfig, db: State<'_, Arc<Database>>) -> Result<()> {
+    let config_json =
+        serde_json::to_string(&config).map_err(|e| crate::error::AppError::InvalidInput {
+            message: format!("Failed to serialize WSL config: {}", e),
+        })?;
+    db.set_setting("wsl_config", &config_json).await
+}
+
+#[tauri::command]
+pub async fn set_wsl_adapter_config(
+    adapter: AdapterType,
+    adapter_config: WslAdapterConfig,
+    db: State<'_, Arc<Database>>,
+) -> Result<WslConfig> {
+    let mut config = match db.get_setting("wsl_config").await? {
+        Some(json) => serde_json::from_str(&json).unwrap_or_default(),
+        None => WslConfig::default(),
+    };
+    config.set_adapter_config(adapter, adapter_config);
+    let config_json =
+        serde_json::to_string(&config).map_err(|e| crate::error::AppError::InvalidInput {
+            message: format!("Failed to serialize WSL config: {}", e),
+        })?;
+    db.set_setting("wsl_config", &config_json).await?;
+    Ok(config)
+}
+
+#[tauri::command]
+pub async fn set_wsl_enabled(enabled: bool, db: State<'_, Arc<Database>>) -> Result<WslConfig> {
+    let mut config = match db.get_setting("wsl_config").await? {
+        Some(json) => serde_json::from_str(&json).unwrap_or_default(),
+        None => WslConfig::default(),
+    };
+    config.enabled = enabled;
+    let config_json =
+        serde_json::to_string(&config).map_err(|e| crate::error::AppError::InvalidInput {
+            message: format!("Failed to serialize WSL config: {}", e),
+        })?;
+    db.set_setting("wsl_config", &config_json).await?;
+    Ok(config)
+}
+
+#[tauri::command]
+#[cfg(target_os = "windows")]
+pub fn is_wsl_installed() -> bool {
+    crate::wsl::WslDetection::is_wsl_installed()
+}
+
+#[tauri::command]
+#[cfg(not(target_os = "windows"))]
+pub fn is_wsl_installed() -> bool {
+    false
+}
+
+#[tauri::command]
+#[cfg(target_os = "windows")]
+pub fn list_wsl_distributions() -> Result<Vec<WslDistribution>> {
+    if !crate::wsl::WslDetection::is_wsl_installed() {
+        return Ok(Vec::new());
+    }
+    let distros = crate::wsl::WslDetection::list_distributions().map_err(|e| {
+        crate::error::AppError::InvalidInput {
+            message: e.to_string(),
+        }
+    })?;
+    Ok(distros)
+}
+
+#[tauri::command]
+#[cfg(not(target_os = "windows"))]
+pub fn list_wsl_distributions() -> Result<Vec<WslDistribution>> {
+    Ok(Vec::new())
 }

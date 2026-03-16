@@ -3,21 +3,8 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use serde::{Deserialize, Serialize};
-
 use crate::error::{AppError, Result};
-
-/// Represents a WSL distribution installed on the system.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WslDistribution {
-    /// The name of the distribution (e.g., "Ubuntu", "Debian")
-    pub name: String,
-    /// Whether this is the default distribution
-    pub is_default: bool,
-    /// WSL version (1 or 2)
-    pub version: u8,
-}
+use crate::models::WslDistribution;
 
 /// Provides methods for detecting WSL installations.
 pub struct WslDetection;
