@@ -240,7 +240,7 @@ export function useRuleEditorState({
       }
       try {
         if (isNew) {
-          await createRule({
+          const newRule = await createRule({
             name: name.trim(),
             description: description.trim(),
             content,
@@ -255,6 +255,8 @@ export function useRuleEditorState({
               variant: "success",
             });
           }
+          onSelectRule(newRule);
+          return true;
         } else if (rule) {
           await updateRule(rule.id, {
             name: name.trim(),
@@ -315,6 +317,7 @@ export function useRuleEditorState({
       createRule,
       updateRule,
       addToast,
+      onSelectRule,
     ]
   );
 

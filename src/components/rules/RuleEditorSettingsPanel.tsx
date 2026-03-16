@@ -151,10 +151,7 @@ export function RuleEditorSettingsPanel({
                         key={adapter.id}
                         className="flex items-center justify-between p-2 rounded-md hover:bg-white/5 transition-colors"
                       >
-                        <div
-                          className="flex items-center gap-2 flex-1 cursor-pointer"
-                          onClick={() => onToggleAdapter(adapter.id)}
-                        >
+                        <div className="flex items-center gap-2 flex-1">
                           <Switch
                             checked={isEnabled}
                             onCheckedChange={() => onToggleAdapter(adapter.id)}
