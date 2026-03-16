@@ -61,6 +61,9 @@ vi.mock("../../../lib/tauri", () => ({
       set: vi.fn().mockResolvedValue(undefined),
     },
     app: { openInExplorer: vi.fn().mockResolvedValue(undefined) },
+    ai: {
+      getSettings: vi.fn().mockResolvedValue({ enabled: false, hasApiKey: false }),
+    },
   },
 }));
 
@@ -68,13 +71,13 @@ vi.mock("../../../hooks/useRepositoryRoots", () => ({
   useRepositoryRoots: () => ({ roots: ["/repo/a", "/repo/b"] }),
 }));
 
-vi.mock("../../../hooks/useKeyboardShortcuts", () => ({
-  useKeyboardShortcuts: vi.fn(),
-  SHORTCUTS: {
-    SAVE: { key: "s", ctrlKey: true },
-    DUPLICATE: { key: "d", ctrlKey: true },
-  },
-}));
+vi.mock("../../../hooks/useKeyboardShortcuts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../../hooks/useKeyboardShortcuts")>();
+  return {
+    useKeyboardShortcuts: vi.fn(),
+    SHORTCUTS: actual.SHORTCUTS,
+  };
+});
 
 // Minimal MarkdownEditor stub
 vi.mock("../../../components/ui/markdown-editor", () => ({
@@ -274,8 +277,14 @@ describe("RuleEditor", () => {
     });
 
     const calls = vi.mocked(useKeyboardShortcuts).mock.calls;
-    const lastCall = calls[calls.length - 1];
-    const saveShortcut = lastCall[0].shortcuts.find((s) => s.key === "s");
+    expect(calls.length).toBeGreaterThan(0);
+
+    // Find the call that includes the save shortcut (key: "s")
+    const ruleEditorCall = calls.find((call) =>
+      call[0].shortcuts.some((s: { key: string }) => s.key === "s")
+    );
+    expect(ruleEditorCall).toBeDefined();
+    const saveShortcut = ruleEditorCall![0].shortcuts.find((s: { key: string }) => s.key === "s");
 
     expect(saveShortcut).toBeDefined();
     await act(async () => {

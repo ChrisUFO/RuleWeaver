@@ -55,7 +55,7 @@ async fn test_rule_create_produces_desired_state() {
     // Per-rule adapters keep the rule name; single-file adapters use an aggregate name.
     let mut saw_rule_artifact = false;
     let mut saw_per_rule_name = false;
-    for (_path, artifact) in &desired.expected_paths {
+    for artifact in desired.expected_paths.values() {
         if artifact.artifact_type == ruleweaver_lib::models::registry::ArtifactType::Rule {
             saw_rule_artifact = true;
             assert!(

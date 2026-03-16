@@ -12,6 +12,7 @@ import {
   Layers,
   Database,
   Cpu,
+  Sparkles,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
@@ -37,9 +38,11 @@ import { ToolSyncPreferencesMatrix } from "@/components/settings/ToolSyncPrefere
 import { ReconciliationModeCard } from "@/components/settings/ReconciliationModeCard";
 import { CleanupCard } from "@/components/settings/CleanupCard";
 import { WslSettingsCard } from "@/components/settings/WslSettingsCard";
+import { AiSettingsCard } from "@/components/settings/AiSettingsCard";
 
 const SETTINGS_TABS = [
   { id: "general", label: "General", icon: SettingsIcon },
+  { id: "ai", label: "AI", icon: Sparkles },
   { id: "context", label: "Context", icon: Layers },
   { id: "capabilities", label: "Capabilities", icon: Cpu },
   { id: "infrastructure", label: "Infrastructure", icon: Database },
@@ -200,6 +203,19 @@ export function Settings({ onNavigate: _onNavigate }: { onNavigate?: (view: stri
                   </div>
                 </CardContent>
               </Card>
+            </motion.div>
+          )}
+
+          {activeTab === "ai" && (
+            <motion.div
+              key="ai"
+              variants={containerVariants}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
+              className="space-y-6"
+            >
+              <AiSettingsCard addToast={addToast} />
             </motion.div>
           )}
 

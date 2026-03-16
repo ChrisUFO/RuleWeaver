@@ -119,6 +119,15 @@ This layer handles all OS-level operations.
   - Emits redaction-safe observability records for command and skill runs so the Logs page can filter and export operational history without exposing raw secrets.
   - Only retryable failures (transient errors) trigger retries; validation/binary errors fail fast.
   - Logs all execution attempts with metadata (failure class, redaction flag, attempt number).
+  - **AI Integration Engine:**
+    - Provides AI-assisted rule improvement and generation capabilities.
+    - Supports multiple providers: OpenAI, Anthropic, Google AI Studio, OpenRouter, DeepSeek, Together AI, MiniMax, Z.ai, and custom OpenAI-compatible endpoints.
+    - API keys stored securely using OS-native credential storage (keyring on Windows/macOS, secret-service on Linux).
+    - Provider-aware client routing: Anthropic uses native `/messages` endpoint, others use OpenAI-compatible `/chat/completions`.
+    - Automatic model discovery for providers that support `/models` endpoint; static model lists for Anthropic.
+    - Exponential backoff retry logic (up to 3 retries) for transient errors (rate limits, network issues, timeouts).
+    - Configurable custom prompts for improvement and generation, with sensible defaults.
+    - User-friendly error mapping translates technical errors into actionable guidance.
 
 ### 3. The Target Layer (The AI Tools)
 

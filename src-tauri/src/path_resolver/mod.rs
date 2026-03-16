@@ -1355,8 +1355,7 @@ mod tests {
 
         for adapter in AdapterType::all() {
             let result = resolver.global_path(adapter, ArtifactType::CommandStub);
-            if result.is_ok() {
-                let resolved = result.unwrap();
+            if let Ok(resolved) = result {
                 assert_eq!(resolved.artifact, ArtifactType::CommandStub);
                 let path_str = resolved.path.to_string_lossy();
                 assert!(path_str.contains("COMMANDS.md") || path_str.contains("commands"));
@@ -1696,7 +1695,7 @@ mod tests {
     #[test]
     fn test_rule_file_path_uses_model_by_scope() {
         let resolver = PathResolver::new().unwrap();
-        let repo_root = PathBuf::from("/tmp/repo");
+        let _repo_root = PathBuf::from("/tmp/repo");
 
         let claude_global = resolver
             .rule_file_path(

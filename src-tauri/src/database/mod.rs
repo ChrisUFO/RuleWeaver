@@ -2133,6 +2133,90 @@ impl Database {
             sync_skills: sync_skills != 0,
         })
     }
+
+    pub async fn get_ai_settings(&self) -> Result<crate::models::AiSettingsRecord> {
+        let conn = self.0.lock().await;
+        let result = conn
+            .query_row(
+                "SELECT provider, base_url, model, api_key_set, improvement_prompt, generation_prompt, enabled, created_at, updated_at
+                 FROM ai_settings WHERE id = 1",
+                [],
+                |row| {
+                    let provider_str: String = row.get("provider")?;
+                    crate::models::AiProvider::from_str(&provider_str).map_err(|e| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            0,
+                            rusqlite::types::Type::Text,
+                            Box::new(std::io::Error::new(
+                                std::io::ErrorKind::InvalidData,
+                                format!("Invalid provider: {:?}", e),
+                            )),
+                        )
+                    })?;
+                    Ok(crate::models::AiSettingsRecord {
+                        provider: provider_str,
+                        base_url: row.get("base_url")?,
+                        model: row.get("model")?,
+                        api_key_set: row.get::<_, i32>("api_key_set")? != 0,
+                        improvement_prompt: row.get("improvement_prompt")?,
+                        generation_prompt: row.get("generation_prompt")?,
+                        enabled: row.get::<_, i32>("enabled")? != 0,
+                        created_at: parse_timestamp_or_now(row.get("created_at")?),
+                        updated_at: parse_timestamp_or_now(row.get("updated_at")?),
+                    })
+                },
+            )
+            .optional()?;
+
+        Ok(result.unwrap_or_default())
+    }
+
+    pub async fn upsert_ai_settings(
+        &self,
+        input: &crate::models::UpsertAiSettingsInput,
+    ) -> Result<()> {
+        let conn = self.0.lock().await;
+        let now = chrono::Utc::now().timestamp();
+
+        conn.execute(
+            "INSERT INTO ai_settings (id, provider, base_url, model, api_key_set, improvement_prompt, generation_prompt, enabled, created_at, updated_at)
+             VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+             ON CONFLICT(id) DO UPDATE SET
+                 provider = excluded.provider,
+                 base_url = excluded.base_url,
+                 model = excluded.model,
+                 api_key_set = excluded.api_key_set,
+                 improvement_prompt = excluded.improvement_prompt,
+                 generation_prompt = excluded.generation_prompt,
+                 enabled = excluded.enabled,
+                 updated_at = excluded.updated_at",
+            rusqlite::params![
+                input.provider.as_str(),
+                input.base_url,
+                input.model,
+                input.api_key_set as i32,
+                input.improvement_prompt,
+                input.generation_prompt,
+                input.enabled as i32,
+                now,
+                now
+            ],
+        )?;
+
+        Ok(())
+    }
+
+    pub async fn set_ai_api_key_set_flag(&self, has_key: bool) -> Result<()> {
+        let conn = self.0.lock().await;
+        let now = chrono::Utc::now().timestamp();
+
+        conn.execute(
+            "UPDATE ai_settings SET api_key_set = ?, updated_at = ? WHERE id = 1",
+            rusqlite::params![has_key as i32, now],
+        )?;
+
+        Ok(())
+    }
 }
 
 fn run_migrations(conn: &mut Connection) -> Result<()> {
@@ -2586,7 +2670,25 @@ fn run_migrations(conn: &mut Connection) -> Result<()> {
         )?;
     }
 
-    transaction.execute("PRAGMA user_version = 23", [])?;
+    if current_version < 24 {
+        transaction.execute(
+            "CREATE TABLE IF NOT EXISTS ai_settings (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                provider TEXT NOT NULL DEFAULT 'openai',
+                base_url TEXT,
+                model TEXT NOT NULL DEFAULT 'gpt-4.1-mini',
+                api_key_set INTEGER NOT NULL DEFAULT 0,
+                improvement_prompt TEXT,
+                generation_prompt TEXT,
+                enabled INTEGER NOT NULL DEFAULT 0,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            )",
+            [],
+        )?;
+    }
+
+    transaction.execute("PRAGMA user_version = 24", [])?;
     transaction.commit()?;
 
     Ok(())

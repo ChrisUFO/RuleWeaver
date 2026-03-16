@@ -1,6 +1,6 @@
 [package]
 name = "ruleweaver"
-version = "0.0.38-163"
+version = "0.0.40-163"
 description = "A unified desktop app for managing AI coding assistant rules and configurations"
 authors = ["ChrisUFO"]
 edition = "2021"
@@ -46,7 +46,7 @@ toml = "0.8"
 parking_lot = "0.12.5"
 tauri-plugin-notification = "2"
 tauri-plugin-dialog = "2"
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 url = "2"
 
 [features]
