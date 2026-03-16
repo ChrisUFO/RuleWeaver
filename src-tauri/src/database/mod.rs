@@ -18,10 +18,20 @@ use crate::models::{
 };
 
 fn parse_timestamp_or_now(timestamp: i64) -> DateTime<Utc> {
-    chrono::Utc
-        .timestamp_opt(timestamp, 0)
+    Utc.timestamp_opt(timestamp, 0)
         .single()
-        .unwrap_or_else(chrono::Utc::now)
+        .unwrap_or_else(Utc::now)
+}
+
+fn make_sql_conversion_error(column_index: usize, msg: impl Into<String>) -> rusqlite::Error {
+    rusqlite::Error::FromSqlConversionFailure(
+        column_index,
+        rusqlite::types::Type::Text,
+        Box::new(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            msg.into(),
+        )),
+    )
 }
 
 fn parse_observability_event_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ObservabilityEvent> {
@@ -1918,35 +1928,16 @@ impl Database {
                 .get::<_, String>("artifact_type")?
                 .parse()
                 .map_err(|e| {
-                    rusqlite::Error::FromSqlConversionFailure(
-                        3,
-                        rusqlite::types::Type::Text,
-                        Box::new(std::io::Error::new(
-                            std::io::ErrorKind::InvalidData,
-                            format!("Invalid artifact_type: {}", e),
-                        )),
-                    )
+                    make_sql_conversion_error(3, format!("Invalid artifact_type: {}", e))
                 })?,
-            adapter: row.get::<_, String>("adapter")?.parse().map_err(|e| {
-                rusqlite::Error::FromSqlConversionFailure(
-                    4,
-                    rusqlite::types::Type::Text,
-                    Box::new(std::io::Error::new(
-                        std::io::ErrorKind::InvalidData,
-                        format!("Invalid adapter: {}", e),
-                    )),
-                )
-            })?,
-            scope: row.get::<_, String>("scope")?.parse().map_err(|e| {
-                rusqlite::Error::FromSqlConversionFailure(
-                    5,
-                    rusqlite::types::Type::Text,
-                    Box::new(std::io::Error::new(
-                        std::io::ErrorKind::InvalidData,
-                        format!("Invalid scope: {}", e),
-                    )),
-                )
-            })?,
+            adapter: row
+                .get::<_, String>("adapter")?
+                .parse()
+                .map_err(|e| make_sql_conversion_error(4, format!("Invalid adapter: {}", e)))?,
+            scope: row
+                .get::<_, String>("scope")?
+                .parse()
+                .map_err(|e| make_sql_conversion_error(5, format!("Invalid scope: {}", e)))?,
             written_at: parse_timestamp_or_now(row.get("written_at")?),
             content_hash: row.get("content_hash")?,
         })
