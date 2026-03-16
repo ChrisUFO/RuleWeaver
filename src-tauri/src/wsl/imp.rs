@@ -36,13 +36,7 @@ impl WslDetection {
             return Ok(Vec::new());
         }
 
-        let stdout = String::from_utf16_lossy(
-            &output
-                .stdout
-                .chunks(2)
-                .map(|chunk| u16::from_le_bytes([chunk[0], *chunk.get(1).unwrap_or(&0)]))
-                .collect::<Vec<_>>(),
-        );
+        let stdout = decode_utf16_le(&output.stdout);
 
         parse_wsl_list_output(&stdout)
     }
@@ -185,6 +179,38 @@ impl WslPathTranslator {
         let path_lower = path_str.to_lowercase();
         path_lower.starts_with(r"\\wsl$\") || path_lower.starts_with(r"\\wsl.localhost\")
     }
+}
+
+/// Decode UTF-16LE bytes to a String.
+///
+/// WSL's `--list --verbose` outputs UTF-16LE on Windows. This function handles
+/// the conversion robustly, including edge cases like odd-length byte arrays.
+///
+/// # Arguments
+///
+/// * `bytes` - The UTF-16LE encoded bytes
+///
+/// # Returns
+///
+/// A String with invalid sequences replaced with the Unicode replacement character.
+fn decode_utf16_le(bytes: &[u8]) -> String {
+    if bytes.is_empty() {
+        return String::new();
+    }
+
+    let u16_vec: Vec<u16> = bytes
+        .chunks_exact(2)
+        .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
+        .collect();
+
+    if u16_vec.is_empty() {
+        if let Some(&last_byte) = bytes.last() {
+            return String::from_utf16_lossy(&[u16::from(last_byte)]);
+        }
+        return String::new();
+    }
+
+    String::from_utf16_lossy(&u16_vec)
 }
 
 /// Parse the output of `wsl.exe --list --verbose`.

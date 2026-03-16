@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::sync::Arc;
 use tauri::State;
 
@@ -16,6 +17,70 @@ use crate::models::{
 use crate::secrets;
 
 use super::validate_path;
+
+fn parse_wsl_config_with_recovery(json: &str) -> WslConfig {
+    match serde_json::from_str::<WslConfig>(json) {
+        Ok(config) => config,
+        Err(e) => {
+            log::warn!(
+                "Failed to deserialize WSL config: {}. Attempting partial recovery...",
+                e
+            );
+
+            match serde_json::from_str::<serde_json::Value>(json) {
+                Ok(value) => {
+                    let mut config = WslConfig::default();
+                    let mut recovered_fields: Vec<String> = Vec::new();
+
+                    if let Some(enabled) = value.get("enabled").and_then(|v| v.as_bool()) {
+                        config.enabled = enabled;
+                        recovered_fields.push("enabled".to_string());
+                    }
+
+                    if let Some(dist) = value.get("defaultDistribution").and_then(|v| v.as_str()) {
+                        config.default_distribution = Some(dist.to_string());
+                        recovered_fields.push("defaultDistribution".to_string());
+                    }
+
+                    if let Some(adapters) = value.get("adapters").and_then(|v| v.as_object()) {
+                        let mut valid_adapters = 0;
+                        for (key, adapter_value) in adapters {
+                            if let Ok(adapter_type) = AdapterType::from_str(key.as_str()) {
+                                if let Ok(adapter_config) = serde_json::from_value::<WslAdapterConfig>(
+                                    adapter_value.clone(),
+                                ) {
+                                    config.adapters.insert(adapter_type, adapter_config);
+                                    valid_adapters += 1;
+                                }
+                            }
+                        }
+                        if valid_adapters > 0 {
+                            recovered_fields.push(format!("{} adapter(s)", valid_adapters));
+                        }
+                    }
+
+                    if recovered_fields.is_empty() {
+                        log::warn!("WSL config recovery: no fields could be recovered");
+                    } else {
+                        log::info!(
+                            "WSL config recovery: recovered [{}]",
+                            recovered_fields.join(", ")
+                        );
+                    }
+
+                    config
+                }
+                Err(e2) => {
+                    log::warn!(
+                        "WSL config recovery failed (not valid JSON): {}. Using default config.",
+                        e2
+                    );
+                    WslConfig::default()
+                }
+            }
+        }
+    }
+}
 
 #[tauri::command]
 pub async fn get_execution_history(
@@ -316,13 +381,7 @@ pub async fn set_wsl_adapter_config(
     db: State<'_, Arc<Database>>,
 ) -> Result<WslConfig> {
     let mut config = match db.get_setting("wsl_config").await? {
-        Some(json) => serde_json::from_str(&json).unwrap_or_else(|e| {
-            log::warn!(
-                "Failed to deserialize existing WSL config, using default: {}",
-                e
-            );
-            WslConfig::default()
-        }),
+        Some(json) => parse_wsl_config_with_recovery(&json),
         None => WslConfig::default(),
     };
     config.set_adapter_config(adapter, adapter_config);
@@ -337,13 +396,7 @@ pub async fn set_wsl_adapter_config(
 #[tauri::command]
 pub async fn set_wsl_enabled(enabled: bool, db: State<'_, Arc<Database>>) -> Result<WslConfig> {
     let mut config = match db.get_setting("wsl_config").await? {
-        Some(json) => serde_json::from_str(&json).unwrap_or_else(|e| {
-            log::warn!(
-                "Failed to deserialize existing WSL config, using default: {}",
-                e
-            );
-            WslConfig::default()
-        }),
+        Some(json) => parse_wsl_config_with_recovery(&json),
         None => WslConfig::default(),
     };
     config.enabled = enabled;

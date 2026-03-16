@@ -824,8 +824,15 @@ impl PathResolver {
     ///
     /// Returns an error if:
     /// - The path is relative
-    /// - The path is not within the user's home directory
-    /// - The path contains invalid characters
+    /// - The path is not within the user's home directory (for Windows paths)
+    /// - The path is not absolute (for WSL UNC paths)
+    /// - The path contains path traversal sequences
+    ///
+    /// # WSL Support
+    ///
+    /// WSL UNC paths (e.g., `\\wsl$\Ubuntu\home\user`) are accepted without the
+    /// home directory check, as they point to a different filesystem. The path
+    /// must still be absolute and cannot contain traversal sequences.
     ///
     /// # Limitations
     ///
@@ -840,10 +847,25 @@ impl PathResolver {
             });
         }
 
-        // Normalize the path without requiring it to exist (no filesystem I/O)
         let normalized = normalize_path(path)?;
 
-        // Check for traversal by comparing against home directory after normalization
+        #[cfg(target_os = "windows")]
+        {
+            if crate::wsl::WslPathTranslator::is_wsl_unc(&normalized) {
+                if normalized.components().any(|c| {
+                    matches!(
+                        c,
+                        std::path::Component::ParentDir | std::path::Component::CurDir
+                    )
+                }) {
+                    return Err(AppError::InvalidInput {
+                        message: "WSL path contains invalid traversal sequences".to_string(),
+                    });
+                }
+                return Ok(normalized);
+            }
+        }
+
         let canonical_home =
             normalize_path(&self.home_dir).unwrap_or_else(|_| self.home_dir.clone());
 
