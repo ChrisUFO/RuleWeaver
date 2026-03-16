@@ -63,7 +63,7 @@ export function WslSettingsCard({ addToast }: WslSettingsCardProps) {
     if (!config) return;
     setIsSaving(true);
     try {
-      const newConfig = { ...config, default_distribution: distribution };
+      const newConfig = { ...config, defaultDistribution: distribution };
       await api.wsl.setConfig(newConfig);
       setConfig(newConfig);
       toast.success(addToast, {
@@ -83,7 +83,7 @@ export function WslSettingsCard({ addToast }: WslSettingsCardProps) {
 
   const distributionOptions = distributions.map((d) => ({
     value: d.name,
-    label: d.is_default ? `${d.name} (default)` : d.name,
+    label: d.isDefault ? `${d.name} (default)` : d.name,
   }));
 
   return (
@@ -119,7 +119,7 @@ export function WslSettingsCard({ addToast }: WslSettingsCardProps) {
           <div className="space-y-3">
             <div className="text-sm font-medium text-muted-foreground">Default Distribution</div>
             <Select
-              value={config.default_distribution ?? ""}
+              value={config.defaultDistribution ?? ""}
               options={distributionOptions}
               onChange={handleSetDefaultDistribution}
               placeholder="Select a distribution"

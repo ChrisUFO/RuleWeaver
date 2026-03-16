@@ -316,7 +316,13 @@ pub async fn set_wsl_adapter_config(
     db: State<'_, Arc<Database>>,
 ) -> Result<WslConfig> {
     let mut config = match db.get_setting("wsl_config").await? {
-        Some(json) => serde_json::from_str(&json).unwrap_or_default(),
+        Some(json) => serde_json::from_str(&json).unwrap_or_else(|e| {
+            log::warn!(
+                "Failed to deserialize existing WSL config, using default: {}",
+                e
+            );
+            WslConfig::default()
+        }),
         None => WslConfig::default(),
     };
     config.set_adapter_config(adapter, adapter_config);
@@ -331,7 +337,13 @@ pub async fn set_wsl_adapter_config(
 #[tauri::command]
 pub async fn set_wsl_enabled(enabled: bool, db: State<'_, Arc<Database>>) -> Result<WslConfig> {
     let mut config = match db.get_setting("wsl_config").await? {
-        Some(json) => serde_json::from_str(&json).unwrap_or_default(),
+        Some(json) => serde_json::from_str(&json).unwrap_or_else(|e| {
+            log::warn!(
+                "Failed to deserialize existing WSL config, using default: {}",
+                e
+            );
+            WslConfig::default()
+        }),
         None => WslConfig::default(),
     };
     config.enabled = enabled;

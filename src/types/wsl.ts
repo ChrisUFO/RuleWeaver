@@ -2,22 +2,20 @@ import type { AdapterType } from "./rule";
 
 export interface WslDistribution {
   name: string;
-  is_default: boolean;
-  state: string;
+  isDefault: boolean;
   version: number;
 }
 
-export interface WslAdapterConfig {
-  enabled: boolean;
-  distribution: string;
-  home_dir: string;
-}
+export type WslMode = "windows" | "wsl";
 
-export type WslMode = "disabled" | "auto" | "manual";
+export interface WslAdapterConfig {
+  mode: WslMode;
+  distribution?: string;
+  homeDir?: string;
+}
 
 export interface WslConfig {
   enabled: boolean;
-  mode: WslMode;
-  default_distribution: string | null;
-  adapters: Record<AdapterType, WslAdapterConfig>;
+  defaultDistribution: string | null;
+  adapters: Partial<Record<AdapterType, WslAdapterConfig>>;
 }

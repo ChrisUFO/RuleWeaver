@@ -14,7 +14,7 @@ use crate::models::{
     AdapterType, Conflict, CreateSyncManifestInput, DiffSummary, Rule, Scope, SyncError,
     SyncResult, ToolSyncPreferences, WslConfig,
 };
-use crate::path_resolver::path_resolver;
+use crate::path_resolver::{path_resolver, PathResolver};
 
 fn registry_entry(adapter: &AdapterType) -> &'static crate::models::registry::ToolEntry {
     REGISTRY.get(adapter).unwrap_or_else(|| {
@@ -37,32 +37,6 @@ fn resolve_registry_path(path: &str) -> Result<PathBuf> {
 /// This is a convenience wrapper for backward compatibility.
 fn validate_target_path(base_path: &str) -> Result<PathBuf> {
     crate::path_resolver::validate_target_path(base_path)
-}
-
-/// Resolve a registry path for a specific adapter with WSL awareness.
-///
-/// If the adapter is configured for WSL, uses the WSL home directory.
-async fn resolve_registry_path_for_adapter(
-    path: &str,
-    adapter: AdapterType,
-    db: &Database,
-) -> Result<PathBuf> {
-    let wsl_config_json = db.get_setting("wsl_config").await?;
-    let wsl_config: WslConfig = match wsl_config_json {
-        Some(json) => serde_json::from_str(&json).unwrap_or_default(),
-        None => WslConfig::default(),
-    };
-
-    if let Some(wsl_home) = wsl_config.get_wsl_home_dir(adapter) {
-        if path == "~" {
-            return Ok(wsl_home);
-        }
-        if let Some(suffix) = path.strip_prefix("~/") {
-            return Ok(wsl_home.join(suffix));
-        }
-        return Ok(PathBuf::from(path));
-    }
-    resolve_registry_path(path)
 }
 
 fn normalize_path_for_compare(path: &Path) -> String {
@@ -543,9 +517,23 @@ impl<'a> SyncEngine<'a> {
         Self { db }
     }
 
-    async fn get_adapter_global_path(&self, adapter: &AdapterType) -> Result<PathBuf> {
-        let entry = registry_entry(adapter);
-        resolve_registry_path_for_adapter(entry.paths.global_path, *adapter, self.db).await
+    async fn create_path_resolver(&self) -> PathResolver {
+        let mut resolver = PathResolver::new().expect("Failed to create PathResolver");
+
+        let wsl_config_json = self.db.get_setting("wsl_config").await.ok().flatten();
+        let wsl_config: WslConfig = wsl_config_json
+            .and_then(|json| serde_json::from_str(&json).ok())
+            .unwrap_or_default();
+
+        if wsl_config.enabled {
+            for adapter in AdapterType::all() {
+                if let Some(home_dir) = wsl_config.get_wsl_home_dir(adapter) {
+                    resolver.set_wsl_home_dir(adapter, home_dir);
+                }
+            }
+        }
+
+        resolver
     }
 
     async fn get_disabled_adapters(&self) -> HashSet<AdapterType> {
@@ -604,6 +592,7 @@ impl<'a> SyncEngine<'a> {
         let mut errors = Vec::new();
         let conflicts = Vec::new();
 
+        let path_resolver = self.create_path_resolver().await;
         let disabled_adapters = self.get_disabled_adapters().await;
         let tool_prefs = self.get_tool_sync_preferences().await;
         let adapters = get_all_adapters();
@@ -643,8 +632,8 @@ impl<'a> SyncEngine<'a> {
                 .collect();
 
             if !global_rules.is_empty() {
-                let path = match self.get_adapter_global_path(&adapter.id()).await {
-                    Ok(p) => p,
+                let path = match path_resolver.global_path(adapter.id(), ArtifactType::Rule) {
+                    Ok(resolved) => resolved.path,
                     Err(e) => {
                         errors.push(SyncError {
                             file_path: String::new(),
@@ -728,6 +717,7 @@ impl<'a> SyncEngine<'a> {
         let mut errors = Vec::new();
         let conflicts = Vec::new();
 
+        let path_resolver = self.create_path_resolver().await;
         let disabled_adapters = self.get_disabled_adapters().await;
         let tool_prefs = self.get_tool_sync_preferences().await;
         let adapters = get_all_adapters();
@@ -763,8 +753,8 @@ impl<'a> SyncEngine<'a> {
             // This means re-collecting ALL rules for that target file to ensure its content is correct.
 
             if rule.scope == Scope::Global {
-                let path = match self.get_adapter_global_path(&adapter.id()).await {
-                    Ok(p) => p,
+                let path = match path_resolver.global_path(adapter.id(), ArtifactType::Rule) {
+                    Ok(resolved) => resolved.path,
                     Err(e) => {
                         errors.push(SyncError {
                             file_path: String::new(),
@@ -849,6 +839,7 @@ impl<'a> SyncEngine<'a> {
         let mut files_written = Vec::new();
         let mut conflicts = Vec::new();
 
+        let path_resolver = self.create_path_resolver().await;
         let disabled_adapters = self.get_disabled_adapters().await;
         let adapters = get_all_adapters();
 
@@ -879,8 +870,8 @@ impl<'a> SyncEngine<'a> {
                 .collect();
 
             if !global_rules.is_empty() {
-                let path = match self.get_adapter_global_path(&adapter.id()).await {
-                    Ok(p) => p,
+                let path = match path_resolver.global_path(adapter.id(), ArtifactType::Rule) {
+                    Ok(resolved) => resolved.path,
                     Err(_) => continue,
                 };
                 files_written.push(path.to_string_lossy().to_string());
@@ -1040,12 +1031,13 @@ impl<'a> SyncEngine<'a> {
     pub async fn sync_file_by_path(&self, rules: &[Rule], file_path: &str) -> Result<()> {
         validate_target_path(file_path)?;
 
+        let path_resolver = self.create_path_resolver().await;
         let path = PathBuf::from(file_path);
         let adapters = get_all_adapters();
 
         for adapter in &adapters {
-            if let Ok(adapter_path) = self.get_adapter_global_path(&adapter.id()).await {
-                if adapter_path == path {
+            if let Ok(resolved) = path_resolver.global_path(adapter.id(), ArtifactType::Rule) {
+                if resolved.path == path {
                     let adapter_rules: Vec<Rule> = rules
                         .iter()
                         .filter(|r| {
