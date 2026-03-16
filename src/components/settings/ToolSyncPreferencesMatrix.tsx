@@ -108,7 +108,7 @@ export function ToolSyncPreferencesMatrix() {
     } catch {
       addToast({
         title: "Error",
-        description: `Failed to save preference`,
+        description: `Failed to save ${artifactType} sync preference for ${toolName}`,
         variant: "error",
       });
       setPreferences((prev) => ({ ...prev, [toolId]: currentPref }));
@@ -161,7 +161,7 @@ export function ToolSyncPreferencesMatrix() {
     } catch {
       addToast({
         title: "Error",
-        description: `Failed to save preferences`,
+        description: `Failed to save preferences for ${tool.name}`,
         variant: "error",
       });
       setPreferences((prev) => ({ ...prev, [toolId]: currentPref }));
@@ -221,7 +221,7 @@ export function ToolSyncPreferencesMatrix() {
     } catch {
       addToast({
         title: "Error",
-        description: `Failed to save preferences`,
+        description: `Failed to save ${artifactType} preferences for all tools`,
         variant: "error",
       });
       loadData();

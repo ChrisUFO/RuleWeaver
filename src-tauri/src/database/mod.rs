@@ -1907,6 +1907,51 @@ impl Database {
         })
     }
 
+    fn parse_sync_manifest_row(
+        row: &rusqlite::Row,
+    ) -> std::result::Result<SyncManifestEntry, rusqlite::Error> {
+        Ok(SyncManifestEntry {
+            id: row.get("id")?,
+            path: row.get("path")?,
+            artifact_id: row.get("artifact_id")?,
+            artifact_type: row
+                .get::<_, String>("artifact_type")?
+                .parse()
+                .map_err(|e| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        3,
+                        rusqlite::types::Type::Text,
+                        Box::new(std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            format!("Invalid artifact_type: {}", e),
+                        )),
+                    )
+                })?,
+            adapter: row.get::<_, String>("adapter")?.parse().map_err(|e| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    4,
+                    rusqlite::types::Type::Text,
+                    Box::new(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        format!("Invalid adapter: {}", e),
+                    )),
+                )
+            })?,
+            scope: row.get::<_, String>("scope")?.parse().map_err(|e| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    5,
+                    rusqlite::types::Type::Text,
+                    Box::new(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        format!("Invalid scope: {}", e),
+                    )),
+                )
+            })?,
+            written_at: parse_timestamp_or_now(row.get("written_at")?),
+            content_hash: row.get("content_hash")?,
+        })
+    }
+
     pub async fn get_sync_manifest_by_path(&self, path: &str) -> Result<Option<SyncManifestEntry>> {
         let conn = self.0.lock().await;
         let mut stmt = conn.prepare(
@@ -1916,46 +1961,7 @@ impl Database {
 
         let result = stmt
             .query_row(rusqlite::params![path], |row| {
-                Ok(SyncManifestEntry {
-                    id: row.get("id")?,
-                    path: row.get("path")?,
-                    artifact_id: row.get("artifact_id")?,
-                    artifact_type: row
-                        .get::<_, String>("artifact_type")?
-                        .parse()
-                        .map_err(|e| {
-                            rusqlite::Error::FromSqlConversionFailure(
-                                3,
-                                rusqlite::types::Type::Text,
-                                Box::new(std::io::Error::new(
-                                    std::io::ErrorKind::InvalidData,
-                                    format!("Invalid artifact_type: {}", e),
-                                )),
-                            )
-                        })?,
-                    adapter: row.get::<_, String>("adapter")?.parse().map_err(|e| {
-                        rusqlite::Error::FromSqlConversionFailure(
-                            4,
-                            rusqlite::types::Type::Text,
-                            Box::new(std::io::Error::new(
-                                std::io::ErrorKind::InvalidData,
-                                format!("Invalid adapter: {}", e),
-                            )),
-                        )
-                    })?,
-                    scope: row.get::<_, String>("scope")?.parse().map_err(|e| {
-                        rusqlite::Error::FromSqlConversionFailure(
-                            5,
-                            rusqlite::types::Type::Text,
-                            Box::new(std::io::Error::new(
-                                std::io::ErrorKind::InvalidData,
-                                format!("Invalid scope: {}", e),
-                            )),
-                        )
-                    })?,
-                    written_at: parse_timestamp_or_now(row.get("written_at")?),
-                    content_hash: row.get("content_hash")?,
-                })
+                Self::parse_sync_manifest_row(row)
             })
             .optional()?;
 
@@ -1992,48 +1998,7 @@ impl Database {
 
         let mut stmt = conn.prepare(&sql)?;
         let entries = stmt
-            .query_map(params.as_slice(), |row| {
-                Ok(SyncManifestEntry {
-                    id: row.get("id")?,
-                    path: row.get("path")?,
-                    artifact_id: row.get("artifact_id")?,
-                    artifact_type: row
-                        .get::<_, String>("artifact_type")?
-                        .parse()
-                        .map_err(|e| {
-                            rusqlite::Error::FromSqlConversionFailure(
-                                3,
-                                rusqlite::types::Type::Text,
-                                Box::new(std::io::Error::new(
-                                    std::io::ErrorKind::InvalidData,
-                                    format!("Invalid artifact_type: {}", e),
-                                )),
-                            )
-                        })?,
-                    adapter: row.get::<_, String>("adapter")?.parse().map_err(|e| {
-                        rusqlite::Error::FromSqlConversionFailure(
-                            4,
-                            rusqlite::types::Type::Text,
-                            Box::new(std::io::Error::new(
-                                std::io::ErrorKind::InvalidData,
-                                format!("Invalid adapter: {}", e),
-                            )),
-                        )
-                    })?,
-                    scope: row.get::<_, String>("scope")?.parse().map_err(|e| {
-                        rusqlite::Error::FromSqlConversionFailure(
-                            5,
-                            rusqlite::types::Type::Text,
-                            Box::new(std::io::Error::new(
-                                std::io::ErrorKind::InvalidData,
-                                format!("Invalid scope: {}", e),
-                            )),
-                        )
-                    })?,
-                    written_at: parse_timestamp_or_now(row.get("written_at")?),
-                    content_hash: row.get("content_hash")?,
-                })
-            })?
+            .query_map(params.as_slice(), Self::parse_sync_manifest_row)?
             .collect::<std::result::Result<Vec<_>, _>>()?;
 
         Ok(entries)
