@@ -358,11 +358,12 @@ pub async fn validate_local_rule_paths(
 pub async fn reconcile_after_mutation(db: Arc<Database>) {
     const RECONCILIATION_MODE_KEY: &str = "reconciliation_mode";
 
-    if let Ok(Some(mode)) = db.get_setting(RECONCILIATION_MODE_KEY).await {
-        if mode == "interactive" {
-            log::debug!("Skipping automatic reconciliation - interactive mode enabled");
-            return;
-        }
+    if !matches!(
+        db.get_setting(RECONCILIATION_MODE_KEY).await,
+        Ok(Some(mode)) if mode == "automatic"
+    ) {
+        log::debug!("Skipping automatic reconciliation - interactive mode is default");
+        return;
     }
 
     use crate::reconciliation::ReconciliationEngine;

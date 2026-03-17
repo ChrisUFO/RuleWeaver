@@ -9,7 +9,7 @@ export function ReconciliationModeCard() {
   const { addToast } = useToast();
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [isAutomatic, setIsAutomatic] = useState(true);
+  const [isAutomatic, setIsAutomatic] = useState(false);
 
   useEffect(() => {
     loadSetting();
@@ -19,9 +19,9 @@ export function ReconciliationModeCard() {
     setIsLoading(true);
     try {
       const value = await api.app.getSetting(SETTINGS_KEYS.RECONCILIATION_MODE);
-      setIsAutomatic(value !== RECONCILIATION_MODES.INTERACTIVE);
+      setIsAutomatic(value === RECONCILIATION_MODES.AUTOMATIC);
     } catch {
-      setIsAutomatic(true);
+      setIsAutomatic(false);
     } finally {
       setIsLoading(false);
     }

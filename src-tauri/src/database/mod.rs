@@ -1758,7 +1758,7 @@ impl Database {
 
     pub async fn get_storage_mode(&self) -> Result<String> {
         let mode = self.get_setting("storage_mode").await?;
-        Ok(mode.unwrap_or_else(|| "sqlite".to_string()))
+        Ok(mode.unwrap_or_else(|| "file".to_string()))
     }
 
     pub async fn set_storage_mode(&self, mode: &str) -> Result<()> {
