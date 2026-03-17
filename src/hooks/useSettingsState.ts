@@ -288,10 +288,11 @@ export function useSettingsState(
           setRepoPathsDirty(prev.length !== next.length);
           return next;
         });
-      } catch {
+      } catch (error) {
         toast.error(addToast, {
           title: "Remove Repository Failed",
-          description: "Could not check for artifact dependencies",
+          description:
+            error instanceof Error ? error.message : "Could not check for artifact dependencies",
         });
       }
     },
