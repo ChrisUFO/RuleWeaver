@@ -190,26 +190,23 @@ pub fn run() {
 
             let watcher = RuleFileWatcher::new();
 
-            let storage_mode = tauri::async_runtime::block_on(async {
+            tauri::async_runtime::block_on(async {
                 let min = db.get_setting(MINIMIZE_TO_TRAY_KEY).await.ok().flatten();
                 if min.is_none() {
                     db.set_setting(MINIMIZE_TO_TRAY_KEY, "true").await?;
                 }
-
-                db.get_storage_mode().await
+                Ok::<_, Box<dyn std::error::Error>>(())
             })?;
 
-            if storage_mode == "file" {
-                let app_handle = app.handle().clone();
-                let db_clone = Arc::clone(&db);
-                let watcher_clone = watcher.clone();
+            let app_handle = app.handle().clone();
+            let db_clone = Arc::clone(&db);
+            let watcher_clone = watcher.clone();
 
-                tauri::async_runtime::spawn(async move {
-                    if let Err(e) = setup_watcher(app_handle, db_clone, watcher_clone).await {
-                        log::error!("Failed to setup file watcher: {}", e);
-                    }
-                });
-            }
+            tauri::async_runtime::spawn(async move {
+                if let Err(e) = setup_watcher(app_handle, db_clone, watcher_clone).await {
+                    log::error!("Failed to setup file watcher: {}", e);
+                }
+            });
 
             let status_label = MenuItemBuilder::with_id("status", "Status: Idle")
                 .enabled(false)
@@ -400,12 +397,7 @@ pub fn run() {
             commands::upsert_scoped_secret,
             commands::delete_scoped_secret,
             commands::resolve_scoped_secrets_cmd,
-            commands::migrate_to_file_storage,
-            commands::rollback_file_migration,
-            commands::verify_file_migration,
-            commands::get_file_migration_progress,
             commands::get_storage_info,
-            commands::get_storage_mode,
             commands::scan_ai_tool_import_candidates,
             commands::import_ai_tool_rules,
             commands::import_ai_tool_commands,

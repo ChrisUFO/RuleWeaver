@@ -211,13 +211,6 @@ pub fn command_file_targets() -> Result<Vec<(String, Arc<dyn CommandAdapter>)>> 
     Ok(targets)
 }
 
-pub async fn use_file_storage(db: &Database) -> bool {
-    db.get_storage_mode()
-        .await
-        .map(|mode| mode == "file")
-        .unwrap_or(false)
-}
-
 pub const LOCAL_RULE_PATHS_KEY: &str = "local_rule_paths";
 
 pub async fn get_local_rule_roots(db: &Database) -> Result<Vec<PathBuf>> {

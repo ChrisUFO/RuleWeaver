@@ -12,7 +12,6 @@ use walkdir::WalkDir;
 
 use crate::commands::{
     reconcile_after_mutation, register_local_rule_paths, storage_location_for_rule,
-    use_file_storage,
 };
 use crate::database::Database;
 use crate::error::{AppError, Result};
@@ -882,34 +881,28 @@ async fn append_history(db: Arc<Database>, entry: ImportHistoryEntry) -> Result<
 }
 
 async fn persist_rule_to_file_if_needed(db: Arc<Database>, rule: &Rule) -> Result<()> {
-    if use_file_storage(&db).await {
-        let location = storage_location_for_rule(rule);
-        file_storage::save_rule_to_disk(rule, &location)?;
-        db.update_rule_file_index(&rule.id, &location).await?;
-        register_local_rule_paths(&db, rule).await?;
-    }
+    let location = storage_location_for_rule(rule);
+    file_storage::save_rule_to_disk(rule, &location)?;
+    db.update_rule_file_index(&rule.id, &location).await?;
+    register_local_rule_paths(&db, rule).await?;
     Ok(())
 }
 
-async fn persist_command_to_file_if_needed(db: Arc<Database>, command: &Command) -> Result<()> {
-    if use_file_storage(&db).await {
-        // Commands and skills are currently managed via reconciliation which handles periodic sync.
-        // For individual mutations, we trigger a global reconciliation at the end of execution.
-        log::debug!(
-            "Mutation for command {} recorded. Persistence will be handled by final reconciliation.",
-            command.id
-        );
-    }
+async fn persist_command_to_file_if_needed(_db: Arc<Database>, command: &Command) -> Result<()> {
+    // Commands and skills are currently managed via reconciliation which handles periodic sync.
+    // For individual mutations, we trigger a global reconciliation at the end of execution.
+    log::debug!(
+        "Mutation for command {} recorded. Persistence will be handled by final reconciliation.",
+        command.id
+    );
     Ok(())
 }
 
-async fn persist_skill_to_file_if_needed(db: Arc<Database>, skill: &Skill) -> Result<()> {
-    if use_file_storage(&db).await {
-        log::debug!(
-            "Mutation for skill {} recorded. Persistence will be handled by final reconciliation.",
-            skill.id
-        );
-    }
+async fn persist_skill_to_file_if_needed(_db: Arc<Database>, skill: &Skill) -> Result<()> {
+    log::debug!(
+        "Mutation for skill {} recorded. Persistence will be handled by final reconciliation.",
+        skill.id
+    );
     Ok(())
 }
 

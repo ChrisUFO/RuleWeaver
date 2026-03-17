@@ -1756,15 +1756,6 @@ impl Database {
         Ok(())
     }
 
-    pub async fn get_storage_mode(&self) -> Result<String> {
-        let mode = self.get_setting("storage_mode").await?;
-        Ok(mode.unwrap_or_else(|| "file".to_string()))
-    }
-
-    pub async fn set_storage_mode(&self, mode: &str) -> Result<()> {
-        self.set_setting("storage_mode", mode).await
-    }
-
     #[allow(clippy::too_many_arguments)]
     pub async fn log_reconciliation(
         &self,
