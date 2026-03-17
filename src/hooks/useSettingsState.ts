@@ -40,7 +40,6 @@ export interface UseSettingsStateReturn {
   selectedSecretWorkspace: string | null;
   isSecretsLoading: boolean;
   isSavingSecrets: boolean;
-  storageInfo: Record<string, string> | null;
   minimizeToTray: boolean;
   launchOnStartup: boolean;
   isExporting: boolean;
@@ -98,7 +97,6 @@ export function useSettingsState(
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
   const [importMode, setImportMode] = useState<"overwrite" | "skip">("overwrite");
   const [launchOnStartup, setLaunchOnStartup] = useState(false);
-  const [storageInfo, setStorageInfo] = useState<Record<string, string> | null>(null);
   const [minimizeToTray, setMinimizeToTray] = useState(true);
   const [repoPathsDirty, setRepoPathsDirty] = useState(false);
   const [isSavingRepos, setIsSavingRepos] = useState(false);
@@ -132,7 +130,6 @@ export function useSettingsState(
           path,
           version,
           settingsJson,
-          info,
           minimizeToTraySetting,
           autoStartEnabled,
           tools,
@@ -142,7 +139,6 @@ export function useSettingsState(
           api.app.getAppDataPath(),
           api.app.getVersion(),
           api.settings.get(ADAPTER_SETTINGS_KEY),
-          api.storage.getInfo(),
           api.settings.get("minimize_to_tray"),
           isEnabled(),
           api.registry.getTools(),
@@ -161,7 +157,6 @@ export function useSettingsState(
         } catch {
           setAppVersion(version);
         }
-        setStorageInfo(info);
         setMinimizeToTray(minimizeToTraySetting !== "false");
         setLaunchOnStartup(autoStartEnabled);
         setScopedSecrets(scopedSecretsRes);
@@ -575,7 +570,6 @@ export function useSettingsState(
     selectedSecretWorkspace,
     isSecretsLoading,
     isSavingSecrets,
-    storageInfo,
     minimizeToTray,
     launchOnStartup,
     isExporting,

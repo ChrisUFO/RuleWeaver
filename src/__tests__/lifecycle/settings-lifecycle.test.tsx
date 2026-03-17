@@ -117,7 +117,6 @@ function makeBaseState(overrides: Partial<UseSettingsStateReturn> = {}): UseSett
     selectedSecretWorkspace: null,
     isSecretsLoading: false,
     isSavingSecrets: false,
-    storageInfo: null,
     minimizeToTray: true,
     launchOnStartup: false,
     isExporting: false,

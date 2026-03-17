@@ -55,7 +55,7 @@ export function ReconciliationModeCard() {
     <Card className="glass-card premium-shadow border-none overflow-hidden">
       <CardHeader className="bg-white/5 pb-4">
         <CardTitle className="text-sm font-semibold tracking-wide uppercase text-muted-foreground/80">
-          Change Reconciliation
+          Reconciliation Mode
         </CardTitle>
         <CardDescription>Control how file changes are reconciled after edits</CardDescription>
       </CardHeader>
