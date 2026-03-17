@@ -9,7 +9,7 @@ import { useKeyboardShortcuts, SHORTCUTS } from "@/hooks/useKeyboardShortcuts";
 import { type Rule } from "@/types/rule";
 import { useRuleEditorState } from "@/hooks/useRuleEditorState";
 import { RuleEditorSettingsPanel } from "@/components/rules/RuleEditorSettingsPanel";
-import { AiImproveRuleDialog } from "@/components/rules/AiImproveRuleDialog";
+import { AiImproveRuleView } from "@/components/rules/AiImproveRuleView";
 import { api } from "@/lib/tauri";
 import type { AiSettings } from "@/types/ai";
 
@@ -201,13 +201,17 @@ export function RuleEditor({ rule, onBack, onSelectRule, isNew = false }: RuleEd
         </div>
       </div>
 
-      <AiImproveRuleDialog
-        open={isAiImproveDialogOpen}
-        onOpenChange={setIsAiImproveDialogOpen}
-        ruleContent={content}
-        ruleName={name}
-        onApply={(improvedContent) => setContent(improvedContent)}
-      />
+      {isAiImproveDialogOpen && (
+        <AiImproveRuleView
+          ruleContent={content}
+          ruleName={name}
+          onApply={(improvedContent) => {
+            setContent(improvedContent);
+            setIsAiImproveDialogOpen(false);
+          }}
+          onCancel={() => setIsAiImproveDialogOpen(false)}
+        />
+      )}
     </div>
   );
 }
