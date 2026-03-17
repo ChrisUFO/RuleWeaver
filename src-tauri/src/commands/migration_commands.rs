@@ -10,42 +10,6 @@ use crate::sync::SyncEngine;
 use super::{reconcile_after_mutation, validate_path};
 
 #[tauri::command]
-pub async fn migrate_to_file_storage(
-    db: State<'_, Arc<Database>>,
-) -> Result<file_storage::MigrationResult> {
-    let result = file_storage::migrate_to_file_storage(&db).await?;
-    if result.success {
-        db.set_storage_mode("file").await?;
-        if let Some(path) = &result.backup_path {
-            db.set_setting("file_storage_backup_path", path).await?;
-        }
-    }
-    Ok(result)
-}
-
-#[tauri::command]
-pub async fn rollback_file_migration(
-    backup_path: String,
-    db: State<'_, Arc<Database>>,
-) -> Result<()> {
-    file_storage::rollback_migration(&backup_path, Some(&db)).await?;
-    db.set_storage_mode("sqlite").await?;
-    db.set_setting("file_storage_backup_path", "").await
-}
-
-#[tauri::command]
-pub async fn verify_file_migration(
-    db: State<'_, Arc<Database>>,
-) -> Result<file_storage::VerificationResult> {
-    file_storage::verify_migration(&db).await
-}
-
-#[tauri::command]
-pub fn get_file_migration_progress() -> file_storage::MigrationProgress {
-    file_storage::get_migration_progress()
-}
-
-#[tauri::command]
 pub async fn resolve_conflict(
     file_path: String,
     resolution: String,
@@ -93,11 +57,6 @@ pub fn get_storage_info() -> Result<std::collections::HashMap<String, String>> {
         info.total_size_bytes.to_string(),
     );
     Ok(out)
-}
-
-#[tauri::command]
-pub async fn get_storage_mode(db: State<'_, Arc<Database>>) -> Result<String> {
-    db.get_storage_mode().await
 }
 
 #[tauri::command]
@@ -251,10 +210,8 @@ pub async fn import_configuration(
     validate_config_version(&config)?;
     validate_config_data(&config)?;
 
-    // DB operations are now async, so we can await them directly
     db.import_configuration(config, mode).await?;
 
-    // Trigger sync after import
     {
         if let Some(s) = app.try_state::<crate::GlobalStatus>() {
             *s.sync_status.lock() = "Syncing...".to_string();
@@ -273,7 +230,6 @@ pub async fn import_configuration(
         );
     }
 
-    // Run reconciliation to clean up any orphaned artifacts from the import
     reconcile_after_mutation(db.inner().clone()).await;
 
     {

@@ -9,7 +9,7 @@ export function ReconciliationModeCard() {
   const { addToast } = useToast();
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [isAutomatic, setIsAutomatic] = useState(true);
+  const [isAutomatic, setIsAutomatic] = useState(false);
 
   useEffect(() => {
     loadSetting();
@@ -19,9 +19,9 @@ export function ReconciliationModeCard() {
     setIsLoading(true);
     try {
       const value = await api.app.getSetting(SETTINGS_KEYS.RECONCILIATION_MODE);
-      setIsAutomatic(value !== RECONCILIATION_MODES.INTERACTIVE);
+      setIsAutomatic(value === RECONCILIATION_MODES.AUTOMATIC);
     } catch {
-      setIsAutomatic(true);
+      setIsAutomatic(false);
     } finally {
       setIsLoading(false);
     }
@@ -55,7 +55,7 @@ export function ReconciliationModeCard() {
     <Card className="glass-card premium-shadow border-none overflow-hidden">
       <CardHeader className="bg-white/5 pb-4">
         <CardTitle className="text-sm font-semibold tracking-wide uppercase text-muted-foreground/80">
-          Change Reconciliation
+          Reconciliation Mode
         </CardTitle>
         <CardDescription>Control how file changes are reconciled after edits</CardDescription>
       </CardHeader>

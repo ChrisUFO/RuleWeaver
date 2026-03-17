@@ -133,36 +133,7 @@ export const api = {
   },
 
   storage: {
-    getMode: () => invoke<string>("get_storage_mode"),
     getInfo: () => invoke<Record<string, string>>("get_storage_info"),
-    migrateToFileStorage: () =>
-      invoke<{
-        success: boolean;
-        rules_migrated: number;
-        rules_skipped: number;
-        errors: Array<{ rule_id: string; rule_name: string; error: string }>;
-        backup_path?: string;
-        storage_dir: string;
-      }>("migrate_to_file_storage"),
-    rollbackMigration: (backupPath: string) =>
-      invoke<void>("rollback_file_migration", { backupPath }),
-    verifyMigration: () =>
-      invoke<{
-        is_valid: boolean;
-        db_rule_count: number;
-        file_rule_count: number;
-        missing_rules: string[];
-        extra_rules: string[];
-        mismatched_rules: string[];
-        load_errors: number;
-      }>("verify_file_migration"),
-    getMigrationProgress: () =>
-      invoke<{
-        total: number;
-        migrated: number;
-        current_rule?: string;
-        status: "NotStarted" | "InProgress" | "Completed" | "Failed" | "RolledBack";
-      }>("get_file_migration_progress"),
     exportConfiguration: (path: string) => invoke<void>("export_configuration", { path }),
     importConfiguration: (path: string, mode: "overwrite" | "skip") =>
       invoke<void>("import_configuration", { path, mode }),

@@ -1,14 +1,8 @@
-mod migration;
 mod parser;
 mod serializer;
 pub mod skills;
 pub mod watcher;
 
-#[allow(unused_imports)]
-pub use migration::{
-    get_migration_progress, migrate_to_file_storage, rollback_migration, verify_migration,
-    MigrationError, MigrationProgress, MigrationResult, MigrationStatus, VerificationResult,
-};
 #[allow(unused_imports)]
 pub use parser::{parse_rule_file, ParsedRuleFile, RuleFrontmatter};
 #[allow(unused_imports)]
@@ -60,6 +54,7 @@ pub enum StorageLocation {
     Local(PathBuf),
 }
 
+#[allow(dead_code)]
 pub fn load_rules_from_disk() -> Result<RuleLoadResult> {
     load_rules_from_locations(&[])
 }

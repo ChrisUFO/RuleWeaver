@@ -211,13 +211,6 @@ pub fn command_file_targets() -> Result<Vec<(String, Arc<dyn CommandAdapter>)>> 
     Ok(targets)
 }
 
-pub async fn use_file_storage(db: &Database) -> bool {
-    db.get_storage_mode()
-        .await
-        .map(|mode| mode == "file")
-        .unwrap_or(false)
-}
-
 pub const LOCAL_RULE_PATHS_KEY: &str = "local_rule_paths";
 
 pub async fn get_local_rule_roots(db: &Database) -> Result<Vec<PathBuf>> {
@@ -358,11 +351,12 @@ pub async fn validate_local_rule_paths(
 pub async fn reconcile_after_mutation(db: Arc<Database>) {
     const RECONCILIATION_MODE_KEY: &str = "reconciliation_mode";
 
-    if let Ok(Some(mode)) = db.get_setting(RECONCILIATION_MODE_KEY).await {
-        if mode == "interactive" {
-            log::debug!("Skipping automatic reconciliation - interactive mode enabled");
-            return;
-        }
+    if !matches!(
+        db.get_setting(RECONCILIATION_MODE_KEY).await,
+        Ok(Some(mode)) if mode == "automatic"
+    ) {
+        log::debug!("Skipping automatic reconciliation - interactive mode is default");
+        return;
     }
 
     use crate::reconciliation::ReconciliationEngine;
