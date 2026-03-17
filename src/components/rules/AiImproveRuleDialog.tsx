@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { Sparkles, Loader2, Check, X, RefreshCw, AlertTriangle } from "lucide-react";
+import * as Diff from "diff";
 import {
   Dialog,
   DialogContent,
@@ -32,59 +33,99 @@ interface AiImproveRuleDialogProps {
   onApply: (improvedContent: string) => void;
 }
 
-function computeDiffLines(original: string, improved: string) {
-  const originalLines = original.split("\n");
-  const improvedLines = improved.split("\n");
+type DiffPart = {
+  type: "context" | "removed" | "added";
+  value: string;
+  added?: boolean;
+  removed?: boolean;
+};
 
-  const diffLines: Array<{
-    type: "context" | "removed" | "added";
-    original?: string;
-    improved?: string;
-    lineNum: number;
-  }> = [];
+type DiffLine = {
+  type: "context" | "removed" | "added";
+  content: string;
+  lineNum: number;
+  origLineNum?: number;
+  newLineNum?: number;
+  charDiff?: DiffPart[];
+};
 
-  let origIdx = 0;
-  let impIdx = 0;
+function computeDiffLines(original: string, improved: string): DiffLine[] {
+  const changes = Diff.diffLines(original, improved);
+  const diffLines: DiffLine[] = [];
+  let origLineNum = 0;
+  let newLineNum = 0;
 
-  while (origIdx < originalLines.length || impIdx < improvedLines.length) {
-    const origLine = originalLines[origIdx];
-    const impLine = improvedLines[impIdx];
+  for (const change of changes) {
+    const lines = change.value.split("\n");
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (i === lines.length - 1 && line === "" && change.value.endsWith("\n")) {
+        continue;
+      }
 
-    if (origIdx >= originalLines.length) {
-      diffLines.push({ type: "added", improved: impLine, lineNum: impIdx + 1 });
-      impIdx++;
-    } else if (impIdx >= improvedLines.length) {
-      diffLines.push({ type: "removed", original: origLine, lineNum: origIdx + 1 });
-      origIdx++;
-    } else if (origLine === impLine) {
-      diffLines.push({
-        type: "context",
-        original: origLine,
-        improved: impLine,
-        lineNum: origIdx + 1,
-      });
-      origIdx++;
-      impIdx++;
-    } else {
-      const origInFuture = improvedLines.slice(impIdx + 1).includes(origLine);
-      const impInFuture = originalLines.slice(origIdx + 1).includes(impLine);
-
-      if (!origInFuture && impInFuture) {
-        diffLines.push({ type: "added", improved: impLine, lineNum: impIdx + 1 });
-        impIdx++;
-      } else if (origInFuture && !impInFuture) {
-        diffLines.push({ type: "removed", original: origLine, lineNum: origIdx + 1 });
-        origIdx++;
+      if (change.added) {
+        newLineNum++;
+        diffLines.push({
+          type: "added",
+          content: line,
+          lineNum: newLineNum,
+          newLineNum,
+        });
+      } else if (change.removed) {
+        origLineNum++;
+        diffLines.push({
+          type: "removed",
+          content: line,
+          lineNum: origLineNum,
+          origLineNum,
+        });
       } else {
-        diffLines.push({ type: "removed", original: origLine, lineNum: origIdx + 1 });
-        diffLines.push({ type: "added", improved: impLine, lineNum: impIdx + 1 });
-        origIdx++;
-        impIdx++;
+        origLineNum++;
+        newLineNum++;
+        diffLines.push({
+          type: "context",
+          content: line,
+          lineNum: origLineNum,
+          origLineNum,
+          newLineNum,
+        });
       }
     }
   }
 
-  return diffLines;
+  const result: DiffLine[] = [];
+  for (let i = 0; i < diffLines.length; i++) {
+    const line = diffLines[i];
+
+    if (line.type === "removed" && i + 1 < diffLines.length && diffLines[i + 1].type === "added") {
+      const nextLine = diffLines[i + 1];
+      const charDiff = Diff.diffWords(line.content, nextLine.content);
+
+      result.push({
+        ...line,
+        charDiff: charDiff.map((part) => ({
+          type: part.added ? "added" : part.removed ? "removed" : "context",
+          value: part.value,
+          added: part.added,
+          removed: part.removed,
+        })),
+      });
+      result.push({
+        ...nextLine,
+        charDiff: charDiff.map((part) => ({
+          type: part.added ? "added" : part.removed ? "removed" : "context",
+          value: part.value,
+          added: part.added,
+          removed: part.removed,
+        })),
+      });
+      i++;
+    } else {
+      result.push(line);
+    }
+  }
+
+  return result;
 }
 
 export function AiImproveRuleDialog({
@@ -126,7 +167,7 @@ export function AiImproveRuleDialog({
       clearResult();
       setViewMode("diff");
     }
-  }, [open, ruleContent, ruleName, isContentTooLarge]);
+  }, [open, ruleContent, ruleName, isContentTooLarge, improve, clearResult]);
 
   const diffLines = useMemo(() => {
     if (!improvedContent) return [];
@@ -249,10 +290,10 @@ export function AiImproveRuleDialog({
                         }`}
                       >
                         <span className="w-12 px-2 py-0.5 text-right text-muted-foreground/50 border-r border-white/5 select-none">
-                          {line.type !== "added" ? line.lineNum : ""}
+                          {line.origLineNum ?? ""}
                         </span>
                         <span className="w-12 px-2 py-0.5 text-right text-muted-foreground/50 border-r border-white/5 select-none">
-                          {line.type !== "removed" ? line.lineNum : ""}
+                          {line.newLineNum ?? ""}
                         </span>
                         <span
                           className={`px-2 py-0.5 whitespace-pre ${
@@ -263,11 +304,23 @@ export function AiImproveRuleDialog({
                                 : "text-muted-foreground"
                           }`}
                         >
-                          {line.type === "removed"
-                            ? `- ${line.original}`
-                            : line.type === "added"
-                              ? `+ ${line.improved}`
-                              : `  ${line.original}`}
+                          {line.type === "removed" ? "- " : line.type === "added" ? "+ " : "  "}
+                          {line.charDiff
+                            ? line.charDiff.map((part, pidx) => (
+                                <span
+                                  key={pidx}
+                                  className={
+                                    part.added
+                                      ? "bg-green-500/30 text-green-300"
+                                      : part.removed
+                                        ? "bg-red-500/30 text-red-300 line-through"
+                                        : ""
+                                  }
+                                >
+                                  {part.value}
+                                </span>
+                              ))
+                            : line.content}
                         </span>
                       </div>
                     ))}
