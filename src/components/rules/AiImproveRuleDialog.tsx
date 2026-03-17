@@ -70,48 +70,58 @@ function computeDiffLines(original: string, improved: string): DiffLine[] {
       }
     } else if (change.removed) {
       if (nextChange?.added) {
+        // Here we have a combined edit block: some lines removed, some added.
+        // Instead of zipping them line-by-line, we output ALL removed lines first,
+        // then ALL added lines. We still want word-level diffing if possible.
+
         const removedLines = lines;
         const addedLines = nextChange.value.replace(/\n$/, "").split("\n");
-        const maxLen = Math.max(removedLines.length, addedLines.length);
 
-        for (let j = 0; j < maxLen; j++) {
+        // 1. Output all removed lines
+        for (let j = 0; j < removedLines.length; j++) {
+          origLineNum++;
           const remLine = removedLines[j];
+          // Try to find a corresponding added line for word-diffing
           const addLine = addedLines[j];
+          const charDiff = addLine !== undefined ? Diff.diffWords(remLine, addLine) : undefined;
 
-          if (remLine !== undefined) {
-            origLineNum++;
-            const charDiff = addLine !== undefined ? Diff.diffWords(remLine, addLine) : undefined;
-            result.push({
-              type: "removed",
-              content: remLine,
-              origLineNum,
-              charDiff: charDiff?.map((part) => ({
-                type: part.added ? "added" : part.removed ? "removed" : "context",
-                value: part.value,
-                added: part.added,
-                removed: part.removed,
-              })),
-            });
-          }
-          if (addLine !== undefined) {
-            newLineNum++;
-            const charDiff =
-              remLine !== undefined ? Diff.diffWords(remLine ?? "", addLine) : undefined;
-            result.push({
-              type: "added",
-              content: addLine,
-              newLineNum,
-              charDiff: charDiff?.map((part) => ({
-                type: part.added ? "added" : part.removed ? "removed" : "context",
-                value: part.value,
-                added: part.added,
-                removed: part.removed,
-              })),
-            });
-          }
+          result.push({
+            type: "removed",
+            content: remLine,
+            origLineNum,
+            charDiff: charDiff?.map((part) => ({
+              type: part.added ? "added" : part.removed ? "removed" : "context",
+              value: part.value,
+              added: part.added,
+              removed: part.removed,
+            })),
+          });
         }
-        i++;
+
+        // 2. Output all added lines
+        for (let j = 0; j < addedLines.length; j++) {
+          newLineNum++;
+          const addLine = addedLines[j];
+          // Try to find a corresponding removed line for word-diffing
+          const remLine = removedLines[j];
+          const charDiff = remLine !== undefined ? Diff.diffWords(remLine, addLine) : undefined;
+
+          result.push({
+            type: "added",
+            content: addLine,
+            newLineNum,
+            charDiff: charDiff?.map((part) => ({
+              type: part.added ? "added" : part.removed ? "removed" : "context",
+              value: part.value,
+              added: part.added,
+              removed: part.removed,
+            })),
+          });
+        }
+
+        i++; // Skip the next 'added' change since we processed it here
       } else {
+        // Just removed lines
         for (const line of lines) {
           origLineNum++;
           result.push({
@@ -122,6 +132,7 @@ function computeDiffLines(original: string, improved: string): DiffLine[] {
         }
       }
     } else {
+      // Unchanged lines (context)
       for (const line of lines) {
         origLineNum++;
         newLineNum++;
