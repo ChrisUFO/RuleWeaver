@@ -22,17 +22,19 @@ export function useAiImprovement(options: UseAiImprovementOptions = {}): UseAiIm
   const [improvedContent, setImprovedContent] = useState<string | null>(null);
   const [modelUsed, setModelUsed] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const inProgressRef = useRef(false);
 
   const optionsRef = useRef(options);
   optionsRef.current = options;
 
   const improve = useCallback(
     async (ruleContent: string, ruleName?: string): Promise<ImproveRuleOutput | null> => {
-      if (isImproving) {
+      if (inProgressRef.current) {
         console.log("[useAiImprovement] Already improving, skipping duplicate request");
         return null;
       }
 
+      inProgressRef.current = true;
       setIsImproving(true);
       setError(null);
       setImprovedContent(null);
@@ -70,10 +72,11 @@ export function useAiImprovement(options: UseAiImprovementOptions = {}): UseAiIm
         optionsRef.current.onError?.(err);
         return null;
       } finally {
+        inProgressRef.current = false;
         setIsImproving(false);
       }
     },
-    [isImproving]
+    []
   );
 
   const clearResult = useCallback(() => {
