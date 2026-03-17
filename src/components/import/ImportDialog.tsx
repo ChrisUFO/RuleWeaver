@@ -10,7 +10,6 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Select } from "@/components/ui/select";
@@ -28,7 +27,7 @@ import {
   type ImportArtifactType,
 } from "@/types/rule";
 
-export type ImportSourceMode = "ai" | "file" | "directory" | "url" | "clipboard";
+export type ImportSourceMode = "ai" | "file" | "directory";
 
 const DROP_SCAN_CONCURRENCY = 5;
 
@@ -73,9 +72,6 @@ export function ImportDialog({
   const [importSourceMode, setImportSourceMode] = useState<ImportSourceMode>("ai");
 
   const [importSourceValue, setImportSourceValue] = useState("");
-  const [clipboardImportName, setClipboardImportName] = useState<string | undefined>(undefined);
-  const [urlImportDialogOpen, setUrlImportDialogOpen] = useState(false);
-  const [urlImportValue, setUrlImportValue] = useState("");
   const [importScopeOverride, setImportScopeOverride] = useState<"source" | Scope>("source");
   const [useAdapterOverride, setUseAdapterOverride] = useState(false);
   const [adapterOverrideSet, setAdapterOverrideSet] = useState<Set<AdapterType>>(new Set());
@@ -114,9 +110,6 @@ export function ImportDialog({
     ) => {
       setImportSourceMode(mode);
       setImportSourceValue(sourceValue);
-      if (mode !== "clipboard") {
-        setClipboardImportName(undefined);
-      }
       setImportResult(null);
       setImportCandidates(candidates);
       setImportScanErrors(errors);
@@ -302,69 +295,9 @@ export function ImportDialog({
     }
   }, [artifactType, addToast, openImportPreview]);
 
-  const scanImportFromUrl = useCallback(
-    async (url: string) => {
-      if (!url.trim()) return;
-
-      setIsScanningImport(true);
-      try {
-        const scan = await api.ruleImport.scanFromUrl(url);
-        await openImportPreview("url", url, scan.candidates, scan.errors);
-      } catch (error) {
-        toast.error(addToast, { title: "Scan Failed", error });
-      } finally {
-        setIsScanningImport(false);
-      }
-    },
-    [addToast, openImportPreview]
-  );
-
-  const submitUrlImportScan = async () => {
-    const value = urlImportValue.trim();
-    if (!value) {
-      toast.error(addToast, {
-        title: "URL Required",
-        description: "Enter a URL to scan for import",
-      });
-      return;
-    }
-
-    setUrlImportDialogOpen(false);
-    await scanImportFromUrl(value);
-  };
-
-  const scanImportFromClipboard = useCallback(async () => {
-    try {
-      const text = await navigator.clipboard.readText();
-      if (!text.trim()) {
-        toast.error(addToast, {
-          title: "Clipboard Empty",
-          description: "No text found in clipboard",
-        });
-        return;
-      }
-
-      setIsScanningImport(true);
-      try {
-        const scan = await api.ruleImport.scanFromClipboard(text);
-        await openImportPreview("clipboard", text, scan.candidates, scan.errors);
-      } catch (error) {
-        toast.error(addToast, { title: "Scan Failed", error });
-      } finally {
-        setIsScanningImport(false);
-      }
-    } catch {
-      toast.error(addToast, {
-        title: "Clipboard Access Denied",
-        description: "Please allow clipboard permissions",
-      });
-    }
-  }, [addToast, openImportPreview]);
-
   useEffect(() => {
     if (initialSourceMode && isOpen) {
       setImportSourceMode(initialSourceMode);
-      // Trigger auto-scan for AI, File, or Directory if they are initial
       if (initialSourceMode === "ai") {
         void scanAiToolArtifacts();
       } else if (initialSourceMode === "file") {
@@ -375,8 +308,6 @@ export function ImportDialog({
         }
       } else if (initialSourceMode === "directory") {
         void scanImportFromDirectory();
-      } else if (initialSourceMode === "url") {
-        setUrlImportDialogOpen(true);
       }
     }
   }, [
@@ -422,7 +353,7 @@ export function ImportDialog({
     try {
       const options = getImportExecutionOptions();
 
-      let result: ImportExecutionResult;
+      let result!: ImportExecutionResult;
 
       if (importSourceMode === "directory") {
         if (artifactType === "command") {
@@ -433,9 +364,6 @@ export function ImportDialog({
           result = await api.ruleImport.importFromDirectory(importSourceValue, options);
         }
       } else {
-        // Fallback to legacy single-artifact paths which backend handles correctly now for Rules
-        // Backend generalized execute_import handles all types if candidates are passed correctly.
-        // However, scanFromFile/scanFromUrl currently defaults to Rule in legacy paths.
         if (importSourceMode === "ai") {
           if (artifactType === "command") {
             result = await api.ruleImport.importAiToolCommands(options);
@@ -446,22 +374,11 @@ export function ImportDialog({
           }
         } else if (importSourceMode === "file") {
           result = await api.ruleImport.importFromFile(importSourceValue, options);
-        } else if (importSourceMode === "url") {
-          result = await api.ruleImport.importFromUrl(importSourceValue, options);
-        } else {
-          result = await api.ruleImport.importFromClipboard(
-            importSourceValue,
-            clipboardImportName,
-            options
-          );
         }
       }
 
       setImportResult(result);
       await handleImportResult("Import Complete", result);
-      if (importSourceMode === "clipboard") {
-        setClipboardImportName(undefined);
-      }
     } catch (error) {
       toast.error(addToast, { title: "Import Failed", error });
     } finally {
@@ -485,10 +402,6 @@ export function ImportDialog({
       void scanImportFromFile();
     } else if (importSourceMode === "directory") {
       void scanImportFromDirectory();
-    } else if (importSourceMode === "url") {
-      setUrlImportDialogOpen(true);
-    } else {
-      void scanImportFromClipboard();
     }
   };
 
@@ -506,11 +419,7 @@ export function ImportDialog({
                   ? `Import Existing AI Tool ${artifactLabelPlural}`
                   : importSourceMode === "file"
                     ? `Import ${artifactLabelPlural} From File`
-                    : importSourceMode === "directory"
-                      ? `Import ${artifactLabelPlural} From Folder`
-                      : importSourceMode === "url"
-                        ? `Import ${artifactLabelPlural} From URL`
-                        : `Import ${artifactLabelPlural} From Clipboard`)}
+                    : `Import ${artifactLabelPlural} From Folder`)}
             </DialogTitle>
             <DialogDescription>
               Review discovered candidates, choose conflict handling, and import selected{" "}
@@ -522,7 +431,7 @@ export function ImportDialog({
             {importSourceMode !== "ai" && importSourceValue && (
               <div className="rounded-md border p-3 text-xs font-mono text-muted-foreground break-all bg-black/10">
                 <span className="font-bold mr-1 uppercase">Source: </span>
-                {importSourceMode === "clipboard" ? "Clipboard CONTENT" : importSourceValue}
+                {importSourceValue}
               </div>
             )}
 
@@ -795,33 +704,6 @@ export function ImportDialog({
                 {isImporting ? "Importing..." : "Process Import"}
               </Button>
             </div>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Helper Dialogs for Specific Sources */}
-      <Dialog open={urlImportDialogOpen} onOpenChange={setUrlImportDialogOpen}>
-        <DialogContent onClose={() => setUrlImportDialogOpen(false)} className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Import from URL</DialogTitle>
-            <DialogDescription>Enter a raw file or documentation URL to scan.</DialogDescription>
-          </DialogHeader>
-
-          <Input
-            value={urlImportValue}
-            onChange={(e) => setUrlImportValue(e.target.value)}
-            placeholder="https://example.com/artifacts.md"
-            aria-label="Import URL"
-            className="bg-black/20"
-          />
-
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setUrlImportDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={submitUrlImportScan} className="glow-primary">
-              Scan Remote Source
-            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
