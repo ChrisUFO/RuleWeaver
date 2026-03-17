@@ -192,15 +192,10 @@ pub async fn improve_rule_with_ai(
             p
         }
         Err(_) => {
-            log::error!(
-                "improve_rule_with_ai: Invalid provider: {}",
-                settings.provider
-            );
+            let error_message = format!("Invalid provider: {}", settings.provider);
+            log::error!("improve_rule_with_ai: {}", error_message);
             return Err(crate::error::AppError::Ai(
-                crate::error::AiError::RequestFailed(format!(
-                    "Invalid provider: {}",
-                    settings.provider
-                )),
+                crate::error::AiError::RequestFailed(error_message),
             ));
         }
     };
@@ -306,15 +301,10 @@ pub async fn generate_rule_with_ai(
             p
         }
         Err(_) => {
-            log::error!(
-                "generate_rule_with_ai: Invalid provider: {}",
-                settings.provider
-            );
+            let error_message = format!("Invalid provider: {}", settings.provider);
+            log::error!("generate_rule_with_ai: {}", error_message);
             return Err(crate::error::AppError::Ai(
-                crate::error::AiError::RequestFailed(format!(
-                    "Invalid provider: {}",
-                    settings.provider
-                )),
+                crate::error::AiError::RequestFailed(error_message),
             ));
         }
     };
