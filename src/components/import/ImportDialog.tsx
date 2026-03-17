@@ -353,7 +353,7 @@ export function ImportDialog({
     try {
       const options = getImportExecutionOptions();
 
-      let result!: ImportExecutionResult;
+      let result: ImportExecutionResult;
 
       if (importSourceMode === "directory") {
         if (artifactType === "command") {
@@ -363,18 +363,19 @@ export function ImportDialog({
         } else {
           result = await api.ruleImport.importFromDirectory(importSourceValue, options);
         }
-      } else {
-        if (importSourceMode === "ai") {
-          if (artifactType === "command") {
-            result = await api.ruleImport.importAiToolCommands(options);
-          } else if (artifactType === "skill") {
-            result = await api.ruleImport.importAiToolSkills(options);
-          } else {
-            result = await api.ruleImport.importAiToolRules(options);
-          }
-        } else if (importSourceMode === "file") {
-          result = await api.ruleImport.importFromFile(importSourceValue, options);
+      } else if (importSourceMode === "ai") {
+        if (artifactType === "command") {
+          result = await api.ruleImport.importAiToolCommands(options);
+        } else if (artifactType === "skill") {
+          result = await api.ruleImport.importAiToolSkills(options);
+        } else {
+          result = await api.ruleImport.importAiToolRules(options);
         }
+      } else if (importSourceMode === "file") {
+        result = await api.ruleImport.importFromFile(importSourceValue, options);
+      } else {
+        const _exhaustive: never = importSourceMode;
+        throw new Error(`Unknown import source mode: ${_exhaustive}`);
       }
 
       setImportResult(result);

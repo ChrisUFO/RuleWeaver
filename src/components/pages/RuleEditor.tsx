@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardHeader } from "@/components/ui/card";
 import { MarkdownEditor, type FullscreenSaveState } from "@/components/ui/markdown-editor";
+import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { useKeyboardShortcuts, SHORTCUTS } from "@/hooks/useKeyboardShortcuts";
 import { type Rule } from "@/types/rule";
 import { useRuleEditorState } from "@/hooks/useRuleEditorState";
@@ -202,15 +203,26 @@ export function RuleEditor({ rule, onBack, onSelectRule, isNew = false }: RuleEd
       </div>
 
       {isAiImproveDialogOpen && (
-        <AiImproveRuleView
-          ruleContent={content}
-          ruleName={name}
-          onApply={(improvedContent) => {
-            setContent(improvedContent);
-            setIsAiImproveDialogOpen(false);
-          }}
-          onCancel={() => setIsAiImproveDialogOpen(false)}
-        />
+        <ErrorBoundary
+          fallback={
+            <div className="fixed inset-0 z-[150] bg-background/95 flex items-center justify-center">
+              <div className="text-center p-8">
+                <p className="text-lg mb-4">The diff viewer encountered an error.</p>
+                <Button onClick={() => setIsAiImproveDialogOpen(false)}>Close</Button>
+              </div>
+            </div>
+          }
+        >
+          <AiImproveRuleView
+            ruleContent={content}
+            ruleName={name}
+            onApply={(improvedContent) => {
+              setContent(improvedContent);
+              setIsAiImproveDialogOpen(false);
+            }}
+            onCancel={() => setIsAiImproveDialogOpen(false)}
+          />
+        </ErrorBoundary>
       )}
     </div>
   );

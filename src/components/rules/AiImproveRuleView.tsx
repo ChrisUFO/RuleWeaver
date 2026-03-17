@@ -5,18 +5,8 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { useAiImprovement } from "@/hooks/useAiImprovement";
 import { useKeyboardShortcuts, SHORTCUTS } from "@/hooks/useKeyboardShortcuts";
-import { AI_VALIDATION } from "@/types/ai";
+import { AI_VALIDATION, getRuleContentSizeWarning } from "@/types/ai";
 import { cn } from "@/lib/utils";
-
-const getRuleContentSizeWarning = (contentLength: number): string | null => {
-  if (contentLength > AI_VALIDATION.MAX_RULE_CONTENT_LENGTH) {
-    return `Rule content exceeds ${Math.round(AI_VALIDATION.MAX_RULE_CONTENT_LENGTH / 1000)}k characters and may be too long for some AI models.`;
-  }
-  if (contentLength > AI_VALIDATION.LARGE_CONTENT_WARNING_THRESHOLD) {
-    return `Rule content is large (${Math.round(contentLength / 1000)}k chars). Processing may take longer.`;
-  }
-  return null;
-};
 
 interface AiImproveRuleViewProps {
   ruleContent: string;
