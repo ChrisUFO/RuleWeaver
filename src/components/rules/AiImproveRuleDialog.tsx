@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { Sparkles, Loader2, Check, X, RefreshCw, AlertTriangle } from "lucide-react";
-import * as Diff from "diff";
+import ReactDiffViewer, { DiffMethod } from "react-diff-viewer-continued";
 import {
   Dialog,
   DialogContent,
@@ -33,122 +33,6 @@ interface AiImproveRuleDialogProps {
   onApply: (improvedContent: string) => void;
 }
 
-type DiffPart = {
-  type: "context" | "removed" | "added";
-  value: string;
-  added?: boolean;
-  removed?: boolean;
-};
-
-type DiffLine = {
-  type: "context" | "removed" | "added";
-  content: string;
-  origLineNum?: number;
-  newLineNum?: number;
-  charDiff?: DiffPart[];
-};
-
-function computeDiffLines(original: string, improved: string): DiffLine[] {
-  const changes = Diff.diffLines(original, improved);
-  const result: DiffLine[] = [];
-  let origLineNum = 0;
-  let newLineNum = 0;
-
-  for (let i = 0; i < changes.length; i++) {
-    const change = changes[i];
-    const nextChange = changes[i + 1];
-    const lines = change.value.replace(/\n$/, "").split("\n");
-
-    if (change.added) {
-      for (const line of lines) {
-        newLineNum++;
-        result.push({
-          type: "added",
-          content: line,
-          newLineNum,
-        });
-      }
-    } else if (change.removed) {
-      if (nextChange?.added) {
-        // Here we have a combined edit block: some lines removed, some added.
-        // Instead of zipping them line-by-line, we output ALL removed lines first,
-        // then ALL added lines. We still want word-level diffing if possible.
-
-        const removedLines = lines;
-        const addedLines = nextChange.value.replace(/\n$/, "").split("\n");
-
-        // 1. Output all removed lines
-        for (let j = 0; j < removedLines.length; j++) {
-          origLineNum++;
-          const remLine = removedLines[j];
-          // Try to find a corresponding added line for word-diffing
-          const addLine = addedLines[j];
-          const charDiff = addLine !== undefined ? Diff.diffWords(remLine, addLine) : undefined;
-
-          result.push({
-            type: "removed",
-            content: remLine,
-            origLineNum,
-            charDiff: charDiff?.map((part) => ({
-              type: part.added ? "added" : part.removed ? "removed" : "context",
-              value: part.value,
-              added: part.added,
-              removed: part.removed,
-            })),
-          });
-        }
-
-        // 2. Output all added lines
-        for (let j = 0; j < addedLines.length; j++) {
-          newLineNum++;
-          const addLine = addedLines[j];
-          // Try to find a corresponding removed line for word-diffing
-          const remLine = removedLines[j];
-          const charDiff = remLine !== undefined ? Diff.diffWords(remLine, addLine) : undefined;
-
-          result.push({
-            type: "added",
-            content: addLine,
-            newLineNum,
-            charDiff: charDiff?.map((part) => ({
-              type: part.added ? "added" : part.removed ? "removed" : "context",
-              value: part.value,
-              added: part.added,
-              removed: part.removed,
-            })),
-          });
-        }
-
-        i++; // Skip the next 'added' change since we processed it here
-      } else {
-        // Just removed lines
-        for (const line of lines) {
-          origLineNum++;
-          result.push({
-            type: "removed",
-            content: line,
-            origLineNum,
-          });
-        }
-      }
-    } else {
-      // Unchanged lines (context)
-      for (const line of lines) {
-        origLineNum++;
-        newLineNum++;
-        result.push({
-          type: "context",
-          content: line,
-          origLineNum,
-          newLineNum,
-        });
-      }
-    }
-  }
-
-  return result;
-}
-
 export function AiImproveRuleDialog({
   open,
   onOpenChange,
@@ -158,6 +42,7 @@ export function AiImproveRuleDialog({
 }: AiImproveRuleDialogProps) {
   const { addToast } = useToast();
   const [viewMode, setViewMode] = useState<"diff" | "original" | "improved">("diff");
+
   const hasRequestedRef = useRef(false);
 
   const contentSizeWarning = useMemo(
@@ -190,14 +75,7 @@ export function AiImproveRuleDialog({
     }
   }, [open, ruleContent, ruleName, isContentTooLarge, improve, clearResult]);
 
-  const diffLines = useMemo(() => {
-    if (!improvedContent) return [];
-    return computeDiffLines(ruleContent, improvedContent);
-  }, [ruleContent, improvedContent]);
-
   const hasChanges = improvedContent && improvedContent !== ruleContent;
-  const changeCount = diffLines.filter((l) => l.type === "added" || l.type === "removed").length;
-
   const handleRegenerate = useCallback(() => {
     clearResult();
     improve(ruleContent, ruleName);
@@ -239,7 +117,7 @@ export function AiImproveRuleDialog({
             {isImproving
               ? "Analyzing and improving your rule..."
               : hasChanges
-                ? `Found ${changeCount} changes to apply`
+                ? "Found improvements to apply"
                 : "No improvements found"}
             {modelUsed && !isImproving && (
               <span className="ml-2 text-xs text-muted-foreground">via {modelUsed}</span>
@@ -296,56 +174,35 @@ export function AiImproveRuleDialog({
                 </Button>
               </div>
 
-              <div className="flex-1 overflow-auto rounded-lg border border-white/10 bg-black/20 font-mono text-xs">
+              <div className="flex-1 overflow-auto rounded-lg border border-white/10 bg-black/20 font-mono text-sm">
                 {viewMode === "diff" && (
-                  <div className="divide-y divide-white/5">
-                    {diffLines.map((line, idx) => (
-                      <div
-                        key={idx}
-                        className={`flex ${
-                          line.type === "removed"
-                            ? "bg-red-500/10"
-                            : line.type === "added"
-                              ? "bg-green-500/10"
-                              : ""
-                        }`}
-                      >
-                        <span className="w-10 shrink-0 px-2 py-0.5 text-right text-muted-foreground/50 border-r border-white/5 select-none">
-                          {line.origLineNum ?? ""}
-                        </span>
-                        <span className="w-10 shrink-0 px-2 py-0.5 text-right text-muted-foreground/50 border-r border-white/5 select-none">
-                          {line.newLineNum ?? ""}
-                        </span>
-                        <span
-                          className={`px-2 py-0.5 whitespace-pre-wrap break-words ${
-                            line.type === "removed"
-                              ? "text-red-400"
-                              : line.type === "added"
-                                ? "text-green-400"
-                                : "text-muted-foreground"
-                          }`}
-                        >
-                          {line.type === "removed" ? "- " : line.type === "added" ? "+ " : "  "}
-                          {line.charDiff
-                            ? line.charDiff.map((part, pidx) => (
-                                <span
-                                  key={pidx}
-                                  className={
-                                    part.added
-                                      ? "bg-green-500/30 text-green-300"
-                                      : part.removed
-                                        ? "bg-red-500/30 text-red-300 line-through"
-                                        : ""
-                                  }
-                                >
-                                  {part.value}
-                                </span>
-                              ))
-                            : line.content}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
+                  <ReactDiffViewer
+                    oldValue={ruleContent}
+                    newValue={improvedContent || ""}
+                    splitView={true}
+                    compareMethod={DiffMethod.WORDS}
+                    useDarkTheme={true}
+                    styles={{
+                      variables: {
+                        dark: {
+                          diffViewerBackground: "transparent",
+                          diffViewerTitleBackground: "transparent",
+                          addedBackground: "rgba(34, 197, 94, 0.1)",
+                          addedColor: "#4ade80",
+                          removedBackground: "rgba(239, 68, 68, 0.1)",
+                          removedColor: "#f87171",
+                          wordAddedBackground: "rgba(34, 197, 94, 0.3)",
+                          wordRemovedBackground: "rgba(239, 68, 68, 0.3)",
+                          addedGutterBackground: "rgba(34, 197, 94, 0.05)",
+                          removedGutterBackground: "rgba(239, 68, 68, 0.05)",
+                          emptyLineBackground: "transparent",
+                        },
+                      },
+                      line: {
+                        fontFamily: "inherit",
+                      },
+                    }}
+                  />
                 )}
 
                 {viewMode === "original" && (
