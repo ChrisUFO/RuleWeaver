@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { api } from "@/lib/tauri";
 import type { ImproveRuleOutput } from "@/types/ai";
 import { getAiErrorMessage } from "@/types/ai";
@@ -23,12 +23,25 @@ export function useAiImprovement(options: UseAiImprovementOptions = {}): UseAiIm
   const [modelUsed, setModelUsed] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const optionsRef = useRef(options);
+  optionsRef.current = options;
+
   const improve = useCallback(
     async (ruleContent: string, ruleName?: string): Promise<ImproveRuleOutput | null> => {
+      if (isImproving) {
+        console.log("[useAiImprovement] Already improving, skipping duplicate request");
+        return null;
+      }
+
       setIsImproving(true);
       setError(null);
       setImprovedContent(null);
       setModelUsed(null);
+
+      console.log("[useAiImprovement] Starting AI improvement request", {
+        contentLength: ruleContent.length,
+        ruleName,
+      });
 
       try {
         const result = await api.ai.improveRule({
@@ -36,20 +49,31 @@ export function useAiImprovement(options: UseAiImprovementOptions = {}): UseAiIm
           ruleName: ruleName || null,
         });
 
+        console.log("[useAiImprovement] AI improvement succeeded", {
+          modelUsed: result.modelUsed,
+          contentLength: result.improvedContent.length,
+        });
+
         setImprovedContent(result.improvedContent);
         setModelUsed(result.modelUsed);
-        options.onSuccess?.(result);
+        optionsRef.current.onSuccess?.(result);
         return result;
       } catch (err) {
         const errorMessage = getAiErrorMessage(err);
+        console.error("[useAiImprovement] AI improvement failed", {
+          error: err,
+          errorMessage,
+          errorType: err?.constructor?.name,
+          errorString: String(err),
+        });
         setError(errorMessage);
-        options.onError?.(err);
+        optionsRef.current.onError?.(err);
         return null;
       } finally {
         setIsImproving(false);
       }
     },
-    [options]
+    [isImproving]
   );
 
   const clearResult = useCallback(() => {

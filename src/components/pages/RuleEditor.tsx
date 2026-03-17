@@ -105,7 +105,6 @@ export function RuleEditor({ rule, onBack, onSelectRule, isNew = false }: RuleEd
       <MarkdownEditor
         value={content}
         onChange={setContent}
-        className="h-full"
         isFullscreen={true}
         onFullscreenChange={setIsFullscreen}
         fullscreenSaveState={fullscreenSaveState}
@@ -186,7 +185,7 @@ export function RuleEditor({ rule, onBack, onSelectRule, isNew = false }: RuleEd
           </Card>
         </div>
 
-        <div className="lg:col-span-1">
+        <div className="lg:col-span-1 flex flex-col min-h-0">
           <RuleEditorSettingsPanel
             scope={scope}
             onScopeChange={setScope}

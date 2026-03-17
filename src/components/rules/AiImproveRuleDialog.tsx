@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { Sparkles, Loader2, Check, X, RefreshCw, AlertTriangle } from "lucide-react";
 import {
   Dialog,
@@ -96,6 +96,7 @@ export function AiImproveRuleDialog({
 }: AiImproveRuleDialogProps) {
   const { addToast } = useToast();
   const [viewMode, setViewMode] = useState<"diff" | "original" | "improved">("diff");
+  const hasRequestedRef = useRef(false);
 
   const contentSizeWarning = useMemo(
     () => getRuleContentSizeWarning(ruleContent.length),
@@ -116,14 +117,16 @@ export function AiImproveRuleDialog({
   );
 
   useEffect(() => {
-    if (open && ruleContent && !isContentTooLarge) {
+    if (open && ruleContent && !isContentTooLarge && !hasRequestedRef.current) {
+      hasRequestedRef.current = true;
       improve(ruleContent, ruleName);
     }
     if (!open) {
+      hasRequestedRef.current = false;
       clearResult();
       setViewMode("diff");
     }
-  }, [open, ruleContent, ruleName, improve, clearResult, isContentTooLarge]);
+  }, [open, ruleContent, ruleName, isContentTooLarge]);
 
   const diffLines = useMemo(() => {
     if (!improvedContent) return [];
