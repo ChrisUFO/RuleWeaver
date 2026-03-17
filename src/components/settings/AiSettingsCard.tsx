@@ -150,7 +150,11 @@ export function AiSettingsCard({ addToast }: AiSettingsCardProps) {
     }
   };
 
-  const providerInfo = AI_PROVIDER_INFO[formState.provider];
+  const providerInfo = AI_PROVIDER_INFO[formState.provider] ?? {
+    name: formState.provider,
+    description: "",
+    requiresBaseUrl: false,
+  };
   const hasChanges =
     settings &&
     (formState.provider !== settings.provider ||
