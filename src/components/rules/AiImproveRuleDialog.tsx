@@ -43,7 +43,6 @@ type DiffPart = {
 type DiffLine = {
   type: "context" | "removed" | "added";
   content: string;
-  lineNum: number;
   origLineNum?: number;
   newLineNum?: number;
   charDiff?: DiffPart[];
@@ -51,77 +50,88 @@ type DiffLine = {
 
 function computeDiffLines(original: string, improved: string): DiffLine[] {
   const changes = Diff.diffLines(original, improved);
-  const diffLines: DiffLine[] = [];
+  const result: DiffLine[] = [];
   let origLineNum = 0;
   let newLineNum = 0;
 
-  for (const change of changes) {
-    const lines = change.value.split("\n");
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      if (i === lines.length - 1 && line === "" && change.value.endsWith("\n")) {
-        continue;
-      }
+  for (let i = 0; i < changes.length; i++) {
+    const change = changes[i];
+    const nextChange = changes[i + 1];
+    const lines = change.value.replace(/\n$/, "").split("\n");
 
-      if (change.added) {
+    if (change.added) {
+      for (const line of lines) {
         newLineNum++;
-        diffLines.push({
+        result.push({
           type: "added",
           content: line,
-          lineNum: newLineNum,
           newLineNum,
         });
-      } else if (change.removed) {
-        origLineNum++;
-        diffLines.push({
-          type: "removed",
-          content: line,
-          lineNum: origLineNum,
-          origLineNum,
-        });
+      }
+    } else if (change.removed) {
+      if (nextChange?.added) {
+        const removedLines = lines;
+        const addedLines = nextChange.value.replace(/\n$/, "").split("\n");
+        const maxLen = Math.max(removedLines.length, addedLines.length);
+
+        for (let j = 0; j < maxLen; j++) {
+          const remLine = removedLines[j];
+          const addLine = addedLines[j];
+
+          if (remLine !== undefined) {
+            origLineNum++;
+            const charDiff = addLine !== undefined ? Diff.diffWords(remLine, addLine) : undefined;
+            result.push({
+              type: "removed",
+              content: remLine,
+              origLineNum,
+              charDiff: charDiff?.map((part) => ({
+                type: part.added ? "added" : part.removed ? "removed" : "context",
+                value: part.value,
+                added: part.added,
+                removed: part.removed,
+              })),
+            });
+          }
+          if (addLine !== undefined) {
+            newLineNum++;
+            const charDiff =
+              remLine !== undefined ? Diff.diffWords(remLine ?? "", addLine) : undefined;
+            result.push({
+              type: "added",
+              content: addLine,
+              newLineNum,
+              charDiff: charDiff?.map((part) => ({
+                type: part.added ? "added" : part.removed ? "removed" : "context",
+                value: part.value,
+                added: part.added,
+                removed: part.removed,
+              })),
+            });
+          }
+        }
+        i++;
       } else {
+        for (const line of lines) {
+          origLineNum++;
+          result.push({
+            type: "removed",
+            content: line,
+            origLineNum,
+          });
+        }
+      }
+    } else {
+      for (const line of lines) {
         origLineNum++;
         newLineNum++;
-        diffLines.push({
+        result.push({
           type: "context",
           content: line,
-          lineNum: origLineNum,
           origLineNum,
           newLineNum,
         });
       }
-    }
-  }
-
-  const result: DiffLine[] = [];
-  for (let i = 0; i < diffLines.length; i++) {
-    const line = diffLines[i];
-
-    if (line.type === "removed" && i + 1 < diffLines.length && diffLines[i + 1].type === "added") {
-      const nextLine = diffLines[i + 1];
-      const charDiff = Diff.diffWords(line.content, nextLine.content);
-
-      result.push({
-        ...line,
-        charDiff: charDiff.map((part) => ({
-          type: part.added ? "added" : part.removed ? "removed" : "context",
-          value: part.value,
-          added: part.added,
-          removed: part.removed,
-        })),
-      });
-      result.push({
-        ...nextLine,
-        charDiff: charDiff.map((part) => ({
-          type: part.added ? "added" : part.removed ? "removed" : "context",
-          value: part.value,
-          added: part.added,
-          removed: part.removed,
-        })),
-      });
-      i++;
-    } else {
-      result.push(line);
     }
   }
 
@@ -208,7 +218,7 @@ export function AiImproveRuleDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[85vh] flex flex-col">
+      <DialogContent className="max-w-6xl w-[90vw] max-h-[90vh] flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Sparkles className="h-5 w-5 text-primary" />
@@ -289,14 +299,14 @@ export function AiImproveRuleDialog({
                               : ""
                         }`}
                       >
-                        <span className="w-12 px-2 py-0.5 text-right text-muted-foreground/50 border-r border-white/5 select-none">
+                        <span className="w-10 shrink-0 px-2 py-0.5 text-right text-muted-foreground/50 border-r border-white/5 select-none">
                           {line.origLineNum ?? ""}
                         </span>
-                        <span className="w-12 px-2 py-0.5 text-right text-muted-foreground/50 border-r border-white/5 select-none">
+                        <span className="w-10 shrink-0 px-2 py-0.5 text-right text-muted-foreground/50 border-r border-white/5 select-none">
                           {line.newLineNum ?? ""}
                         </span>
                         <span
-                          className={`px-2 py-0.5 whitespace-pre ${
+                          className={`px-2 py-0.5 whitespace-pre-wrap break-words ${
                             line.type === "removed"
                               ? "text-red-400"
                               : line.type === "added"
