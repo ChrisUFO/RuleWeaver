@@ -276,7 +276,7 @@ export function useSettingsState(
         ]);
         const allArtifacts = [...rulesRes, ...commandsRes, ...skillsRes];
         const artifactUsingPath = allArtifacts.find((a) => {
-          if ("target_paths" in a && a.target_paths) {
+          if ("target_paths" in a && Array.isArray(a.target_paths)) {
             return a.target_paths.includes(path);
           }
           return false;
@@ -306,18 +306,24 @@ export function useSettingsState(
   const saveRepositoryRoots = useCallback(async () => {
     setIsSavingRepos(true);
     try {
-      await saveRepositoryRootsSetting();
+      await saveRepositoryRootsSetting(repositoryRoots);
       setRepoPathsDirty(false);
       toast.success(addToast, {
         title: "Repository Roots Saved",
         description: "Local rule paths have been updated",
       });
     } catch (error) {
-      toast.error(addToast, { title: "Save Failed", error });
+      toast.error(addToast, {
+        title: "Save Failed",
+        error,
+        action: featureManager.isEnabled(FEATURE_FLAGS.ENHANCED_ERROR_UX)
+          ? { label: "Retry", onClick: () => saveRepositoryRoots() }
+          : undefined,
+      });
     } finally {
       setIsSavingRepos(false);
     }
-  }, [saveRepositoryRootsSetting, addToast]);
+  }, [saveRepositoryRootsSetting, repositoryRoots, addToast]);
 
   const saveGlobalSecret = useCallback(
     async (key: string, value: string) => {

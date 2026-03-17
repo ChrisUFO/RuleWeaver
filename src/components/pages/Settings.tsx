@@ -29,7 +29,6 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
 import { useSettingsState } from "@/hooks/useSettingsState";
-import { StorageSettingsCard } from "@/components/settings/StorageSettingsCard";
 import { AdapterSettingsCard } from "@/components/settings/AdapterSettingsCard";
 import { RepositorySettingsCard } from "@/components/settings/RepositorySettingsCard";
 import { ScopedSecretsCard } from "@/components/settings/ScopedSecretsCard";
@@ -67,13 +66,6 @@ export function Settings({ onNavigate: _onNavigate }: { onNavigate?: (view: stri
     selectedSecretWorkspace,
     isSecretsLoading,
     isSavingSecrets,
-    storageMode,
-    storageInfo,
-    isMigratingStorage,
-    backupPath,
-    migrationProgress,
-    isRollingBack,
-    isVerifyingMigration,
     isExporting,
     isImporting,
     importPreview,
@@ -323,20 +315,6 @@ export function Settings({ onNavigate: _onNavigate }: { onNavigate?: (view: stri
               className="space-y-6"
             >
               <WslSettingsCard addToast={addToast} />
-
-              <StorageSettingsCard
-                storageMode={storageMode}
-                storageInfo={storageInfo}
-                isMigratingStorage={isMigratingStorage}
-                backupPath={backupPath}
-                migrationProgress={migrationProgress}
-                isRollingBack={isRollingBack}
-                isVerifyingMigration={isVerifyingMigration}
-                isLoading={isLoading}
-                onMigrate={handlers.migrateToFileStorage}
-                onRollback={handlers.rollbackMigration}
-                onVerify={handlers.verifyMigration}
-              />
 
               <Card className="glass-card premium-shadow border-none overflow-hidden">
                 <CardHeader className="bg-white/5 pb-4">
