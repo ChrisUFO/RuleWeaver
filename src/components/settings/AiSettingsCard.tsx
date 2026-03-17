@@ -232,7 +232,7 @@ export function AiSettingsCard({ addToast }: AiSettingsCardProps) {
                         (typeof AI_PROVIDER_INFO)[AiProvider],
                       ][]
                     ).map(([id, info]) => (
-                      <option key={id} value={id}>
+                      <option key={id} value={id} className="bg-background text-foreground">
                         {info.name}
                       </option>
                     ))}
@@ -258,13 +258,21 @@ export function AiSettingsCard({ addToast }: AiSettingsCardProps) {
                       onChange={(e) => handleModelSelect(e.target.value)}
                       className="w-full h-10 rounded-lg border border-white/10 bg-white/5 px-3 text-sm appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/50"
                     >
-                      <option value="">Select a model</option>
+                      <option value="" className="bg-background text-muted-foreground">
+                        Select a model
+                      </option>
                       {models.map((model) => (
-                        <option key={model.id} value={model.id}>
+                        <option
+                          key={model.id}
+                          value={model.id}
+                          className="bg-background text-foreground"
+                        >
                           {model.name || model.id}
                         </option>
                       ))}
-                      <option value="__custom__">Custom model name...</option>
+                      <option value="__custom__" className="bg-background text-foreground">
+                        Custom model name...
+                      </option>
                     </select>
                     <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
                   </div>

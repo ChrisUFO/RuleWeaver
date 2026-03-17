@@ -79,7 +79,7 @@ export function SkillSchemaEditor({
                       }
                     >
                       {Object.values(SkillParameterType).map((t) => (
-                        <option key={t} value={t}>
+                        <option key={t} value={t} className="bg-background text-foreground">
                           {t}
                         </option>
                       ))}

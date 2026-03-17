@@ -469,13 +469,27 @@ export function CommandEditor({
               className="text-xs bg-transparent border border-white/10 rounded px-2 py-1 text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/40"
               aria-label="Filter execution history by result"
             >
-              <option value="all">All</option>
-              <option value="Success">Success</option>
-              <option value="Timeout">Timeout</option>
-              <option value="PermissionDenied">Permission Denied</option>
-              <option value="MissingBinary">Missing Binary</option>
-              <option value="NonZeroExit">Non-Zero Exit</option>
-              <option value="ValidationError">Validation Error</option>
+              <option value="all" className="bg-background text-foreground">
+                All
+              </option>
+              <option value="Success" className="bg-background text-foreground">
+                Success
+              </option>
+              <option value="Timeout" className="bg-background text-foreground">
+                Timeout
+              </option>
+              <option value="PermissionDenied" className="bg-background text-foreground">
+                Permission Denied
+              </option>
+              <option value="MissingBinary" className="bg-background text-foreground">
+                Missing Binary
+              </option>
+              <option value="NonZeroExit" className="bg-background text-foreground">
+                Non-Zero Exit
+              </option>
+              <option value="ValidationError" className="bg-background text-foreground">
+                Validation Error
+              </option>
             </select>
           </div>
           <div className="space-y-2 max-h-56 overflow-auto">
