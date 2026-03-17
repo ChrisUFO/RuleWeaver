@@ -216,21 +216,21 @@ export function MarkdownEditor({
     <div
       ref={containerRef}
       className={cn(
-        "flex flex-col h-full bg-background",
-        isFullscreen && "fixed inset-0 z-50 bg-background",
+        "flex flex-col bg-background",
+        isFullscreen ? "fixed inset-0 z-[100]" : "h-full",
         className
       )}
     >
       {toolbar}
 
-      <div className="flex-1 overflow-hidden" data-color-mode={colorMode}>
+      <div className="flex-1 min-h-0 overflow-hidden" data-color-mode={colorMode}>
         <MDEditor
           value={value}
           onChange={(val) => onChange(val || "")}
           preview={getPreviewMode()}
           hideToolbar
           visibleDragbar={false}
-          height={isFullscreen ? "100%" : undefined}
+          height="100%"
           textareaProps={{
             placeholder,
             style: {
