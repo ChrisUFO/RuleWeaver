@@ -280,31 +280,72 @@ pub async fn generate_rule_with_ai(
     db: State<'_, Arc<Database>>,
     input: GenerateRuleInput,
 ) -> Result<GenerateRuleOutput> {
+    log::info!(
+        "generate_rule_with_ai called - description_length: {}",
+        input.description.len()
+    );
+
     let settings = db.get_ai_settings().await?;
+    log::debug!(
+        "generate_rule_with_ai: provider={}, model={:?}, enabled={}",
+        settings.provider,
+        settings.model,
+        settings.enabled
+    );
 
     if !settings.enabled {
+        log::warn!("generate_rule_with_ai: AI feature is not enabled");
         return Err(crate::error::AppError::Ai(
             crate::error::AiError::NotEnabled,
         ));
     }
 
-    let provider = AiProvider::from_str(&settings.provider).map_err(|_| {
-        crate::error::AppError::Ai(crate::error::AiError::RequestFailed(format!(
-            "Invalid provider: {}",
-            settings.provider
-        )))
-    })?;
+    let provider = match AiProvider::from_str(&settings.provider) {
+        Ok(p) => {
+            log::debug!("generate_rule_with_ai: Parsed provider: {:?}", p);
+            p
+        }
+        Err(_) => {
+            log::error!(
+                "generate_rule_with_ai: Invalid provider: {}",
+                settings.provider
+            );
+            return Err(crate::error::AppError::Ai(
+                crate::error::AiError::RequestFailed(format!(
+                    "Invalid provider: {}",
+                    settings.provider
+                )),
+            ));
+        }
+    };
 
-    let api_key =
-        get_api_key_for_provider(&settings.provider)
-            .await?
-            .ok_or(crate::error::AppError::Ai(
+    let api_key = match get_api_key_for_provider(&settings.provider).await? {
+        Some(key) => {
+            log::debug!(
+                "generate_rule_with_ai: Found API key, length: {}",
+                key.len()
+            );
+            key
+        }
+        None => {
+            log::warn!(
+                "generate_rule_with_ai: API key not configured for provider: {}",
+                settings.provider
+            );
+            return Err(crate::error::AppError::Ai(
                 crate::error::AiError::ApiKeyNotSet,
-            ))?;
+            ));
+        }
+    };
 
     let prompt = settings
         .generation_prompt
         .unwrap_or_else(|| DEFAULT_GENERATION_PROMPT.to_string());
+
+    log::debug!(
+        "generate_rule_with_ai: Using prompt, length: {}",
+        prompt.len()
+    );
 
     let user_message = if let Some(ref name) = input.rule_name {
         if let Some(ref context) = input.context {
@@ -330,6 +371,12 @@ pub async fn generate_rule_with_ai(
         )
     };
 
+    log::debug!(
+        "generate_rule_with_ai: Calling AI client - model: {}, base_url: {:?}",
+        settings.model,
+        settings.base_url
+    );
+
     let client = AiClient::new(
         provider,
         settings.base_url.as_deref(),
@@ -337,18 +384,26 @@ pub async fn generate_rule_with_ai(
         &settings.model,
     );
 
-    let rule_content = client.complete(&prompt, &user_message).await?;
+    match client.complete(&prompt, &user_message).await {
+        Ok(rule_content) => {
+            log::info!("generate_rule_with_ai: Successfully generated rule - model: {}, content_length: {}",
+                settings.model, rule_content.len());
+            let suggested_name = input
+                .rule_name
+                .or_else(|| extract_title_from_content(&rule_content));
 
-    let suggested_name = input
-        .rule_name
-        .or_else(|| extract_title_from_content(&rule_content));
-
-    Ok(GenerateRuleOutput {
-        rule_content,
-        suggested_name,
-        model_used: settings.model,
-        tokens_used: None,
-    })
+            Ok(GenerateRuleOutput {
+                rule_content,
+                suggested_name,
+                model_used: settings.model,
+                tokens_used: None,
+            })
+        }
+        Err(e) => {
+            log::error!("generate_rule_with_ai: AI client error: {:?}", e);
+            Err(crate::error::AppError::Ai(e.into()))
+        }
+    }
 }
 
 #[tauri::command]
