@@ -18,13 +18,6 @@ interface AdapterSettings {
   [key: string]: boolean;
 }
 
-interface MigrationProgress {
-  total: number;
-  migrated: number;
-  current_rule?: string;
-  status: "NotStarted" | "InProgress" | "Completed" | "Failed" | "RolledBack";
-}
-
 interface ImportPreview {
   path: string;
   rules: Rule[];
@@ -47,13 +40,7 @@ export interface UseSettingsStateReturn {
   selectedSecretWorkspace: string | null;
   isSecretsLoading: boolean;
   isSavingSecrets: boolean;
-  storageMode: "sqlite" | "file";
   storageInfo: Record<string, string> | null;
-  isMigratingStorage: boolean;
-  backupPath: string;
-  migrationProgress: MigrationProgress | null;
-  isRollingBack: boolean;
-  isVerifyingMigration: boolean;
   minimizeToTray: boolean;
   launchOnStartup: boolean;
   isExporting: boolean;
@@ -77,9 +64,6 @@ export interface UseSettingsStateReturn {
     saveWorkspaceSecret: (key: string, value: string, workspacePath: string) => Promise<void>;
     deleteGlobalSecret: (key: string) => Promise<void>;
     deleteWorkspaceSecret: (key: string, workspacePath: string) => Promise<void>;
-    migrateToFileStorage: () => Promise<void>;
-    rollbackMigration: () => Promise<void>;
-    verifyMigration: () => Promise<void>;
     toggleMinimizeToTray: (enabled: boolean) => Promise<void>;
     toggleLaunchOnStartup: (enabled: boolean) => Promise<void>;
     handleExport: () => Promise<void>;
@@ -114,13 +98,7 @@ export function useSettingsState(
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
   const [importMode, setImportMode] = useState<"overwrite" | "skip">("overwrite");
   const [launchOnStartup, setLaunchOnStartup] = useState(false);
-  const [storageMode, setStorageMode] = useState<"sqlite" | "file">("sqlite");
   const [storageInfo, setStorageInfo] = useState<Record<string, string> | null>(null);
-  const [isMigratingStorage, setIsMigratingStorage] = useState(false);
-  const [backupPath, setBackupPath] = useState<string>("");
-  const [migrationProgress, setMigrationProgress] = useState<MigrationProgress | null>(null);
-  const [isRollingBack, setIsRollingBack] = useState(false);
-  const [isVerifyingMigration, setIsVerifyingMigration] = useState(false);
   const [minimizeToTray, setMinimizeToTray] = useState(true);
   const [repoPathsDirty, setRepoPathsDirty] = useState(false);
   const [isSavingRepos, setIsSavingRepos] = useState(false);
@@ -154,10 +132,7 @@ export function useSettingsState(
           path,
           version,
           settingsJson,
-          mode,
           info,
-          savedBackupPath,
-          progress,
           minimizeToTraySetting,
           autoStartEnabled,
           tools,
@@ -167,10 +142,7 @@ export function useSettingsState(
           api.app.getAppDataPath(),
           api.app.getVersion(),
           api.settings.get(ADAPTER_SETTINGS_KEY),
-          api.storage.getMode(),
           api.storage.getInfo(),
-          api.settings.get("file_storage_backup_path"),
-          api.storage.getMigrationProgress(),
           api.settings.get("minimize_to_tray"),
           isEnabled(),
           api.registry.getTools(),
@@ -189,10 +161,7 @@ export function useSettingsState(
         } catch {
           setAppVersion(version);
         }
-        setStorageMode(mode === "file" ? "file" : "sqlite");
         setStorageInfo(info);
-        setBackupPath(savedBackupPath ?? "");
-        setMigrationProgress(progress);
         setMinimizeToTray(minimizeToTraySetting !== "false");
         setLaunchOnStartup(autoStartEnabled);
         setScopedSecrets(scopedSecretsRes);
@@ -300,37 +269,34 @@ export function useSettingsState(
   const removeRepositoryRoot = useCallback(
     async (path: string) => {
       try {
-        const [rules, commands, skills] = await Promise.all([
+        const [rulesRes, commandsRes, skillsRes] = await Promise.all([
           api.rules.getAll(),
           api.commands.getAll(),
           api.skills.getAll(),
         ]);
-
-        const usedByRule = rules.some((rule) => rule.targetPaths?.some((p: string) => p === path));
-        const usedByCommand = commands.some((command) =>
-          command.targetPaths?.some((p: string) => p === path)
-        );
-        const usedBySkill = skills.some(
-          (skill) =>
-            skill.scope === "local" && skill.directoryPath && skill.directoryPath.startsWith(path)
-        );
-
-        if (usedByRule || usedByCommand || usedBySkill) {
+        const allArtifacts = [...rulesRes, ...commandsRes, ...skillsRes];
+        const artifactUsingPath = allArtifacts.find((a) => {
+          if ("target_paths" in a && a.target_paths) {
+            return a.target_paths.includes(path);
+          }
+          return false;
+        });
+        if (artifactUsingPath) {
           toast.error(addToast, {
-            title: "Repository In Use",
-            description:
-              "Cannot remove this repository root while rules, commands, or skills still reference it.",
+            title: "Cannot Remove Path",
+            description: `Path is still in use by ${artifactUsingPath.name}. Remove the artifact or change its path first.`,
           });
           return;
         }
-
-        setRepositoryRoots((prev) => prev.filter((p) => p !== path));
-        setRepoPathsDirty(true);
-      } catch (error) {
+        setRepositoryRoots((prev) => {
+          const next = prev.filter((r) => r !== path);
+          setRepoPathsDirty(prev.length !== next.length);
+          return next;
+        });
+      } catch {
         toast.error(addToast, {
-          title: "Validation Failed",
-          description:
-            error instanceof Error ? error.message : "Could not validate repository usage",
+          title: "Remove Repository Failed",
+          description: "Could not check for artifact dependencies",
         });
       }
     },
@@ -340,30 +306,24 @@ export function useSettingsState(
   const saveRepositoryRoots = useCallback(async () => {
     setIsSavingRepos(true);
     try {
-      await saveRepositoryRootsSetting(repositoryRoots);
+      await saveRepositoryRootsSetting();
       setRepoPathsDirty(false);
       toast.success(addToast, {
-        title: "Repositories Saved",
-        description: "Repository roots updated for local artifact discovery",
+        title: "Repository Roots Saved",
+        description: "Local rule paths have been updated",
       });
     } catch (error) {
-      toast.error(addToast, {
-        title: "Save Failed",
-        error,
-        action: featureManager.isEnabled(FEATURE_FLAGS.ENHANCED_ERROR_UX)
-          ? { label: "Retry", onClick: () => saveRepositoryRoots() }
-          : undefined,
-      });
+      toast.error(addToast, { title: "Save Failed", error });
     } finally {
       setIsSavingRepos(false);
     }
-  }, [repositoryRoots, saveRepositoryRootsSetting, addToast]);
+  }, [saveRepositoryRootsSetting, addToast]);
 
   const saveGlobalSecret = useCallback(
     async (key: string, value: string) => {
       setIsSavingSecrets(true);
       try {
-        await api.settings.upsertScopedSecret({ key, value, scope: "global" });
+        await api.settings.upsertScopedSecret({ key: key.trim(), value, scope: "global" });
         await refreshScopedSecrets();
         toast.success(addToast, {
           title: "Global Secret Saved",
@@ -383,15 +343,15 @@ export function useSettingsState(
       setIsSavingSecrets(true);
       try {
         await api.settings.upsertScopedSecret({
-          key,
+          key: key.trim(),
           value,
           scope: "workspace",
           workspacePath,
         });
         await refreshScopedSecrets();
         toast.success(addToast, {
-          title: "Workspace Secret Saved",
-          description: `${key.trim()} now overrides the global value for this repository`,
+          title: "Workspace Override Saved",
+          description: `${key.trim()} now overrides the global value for ${workspacePath}`,
         });
       } catch (error) {
         toast.error(addToast, { title: "Secret Save Failed", error });
@@ -439,97 +399,6 @@ export function useSettingsState(
     },
     [addToast, refreshScopedSecrets]
   );
-
-  const migrateToFileStorage = useCallback(async () => {
-    setIsMigratingStorage(true);
-    let poll: ReturnType<typeof setInterval> | null = null;
-    try {
-      poll = setInterval(async () => {
-        try {
-          const progress = await api.storage.getMigrationProgress();
-          setMigrationProgress(progress);
-        } catch {
-          // no-op during migration polling
-        }
-      }, 500);
-
-      const result = await api.storage.migrateToFileStorage();
-      clearInterval(poll);
-      poll = null;
-
-      if (!result.success) {
-        throw new Error(
-          result.errors[0]?.error ?? "Migration completed with errors. Check logs for details."
-        );
-      }
-
-      setBackupPath(result.backup_path ?? "");
-
-      const [mode, info] = await Promise.all([api.storage.getMode(), api.storage.getInfo()]);
-      setStorageMode(mode === "file" ? "file" : "sqlite");
-      setStorageInfo(info);
-      setMigrationProgress(await api.storage.getMigrationProgress());
-
-      toast.success(addToast, {
-        title: "Migration Complete",
-        description: `Migrated ${result.rules_migrated} rules to file storage.`,
-      });
-    } catch (error) {
-      toast.error(addToast, { title: "Migration Failed", error });
-    } finally {
-      if (poll) {
-        clearInterval(poll);
-      }
-      setIsMigratingStorage(false);
-    }
-  }, [addToast]);
-
-  const rollbackMigration = useCallback(async () => {
-    if (!backupPath) {
-      toast.error(addToast, {
-        title: "Rollback Unavailable",
-        description: "No backup path available for rollback.",
-      });
-      return;
-    }
-
-    setIsRollingBack(true);
-    try {
-      await api.storage.rollbackMigration(backupPath);
-      setStorageMode("sqlite");
-      setMigrationProgress(await api.storage.getMigrationProgress());
-      toast.success(addToast, {
-        title: "Rollback Complete",
-        description: "Database backup restored and file storage disabled.",
-      });
-    } catch (error) {
-      toast.error(addToast, { title: "Rollback Failed", error });
-    } finally {
-      setIsRollingBack(false);
-    }
-  }, [backupPath, addToast]);
-
-  const verifyMigration = useCallback(async () => {
-    setIsVerifyingMigration(true);
-    try {
-      const result = await api.storage.verifyMigration();
-      if (result.is_valid) {
-        toast.success(addToast, {
-          title: "Migration Verified",
-          description: `Verified ${result.file_rule_count} file rules match ${result.db_rule_count} database rules.`,
-        });
-      } else {
-        toast.error(addToast, {
-          title: "Verification Failed",
-          description: `${result.missing_rules.length} missing, ${result.mismatched_rules.length} mismatched, ${result.load_errors} load errors.`,
-        });
-      }
-    } catch (error) {
-      toast.error(addToast, { title: "Verification Error", error });
-    } finally {
-      setIsVerifyingMigration(false);
-    }
-  }, [addToast]);
 
   const toggleMinimizeToTray = useCallback(
     async (enabled: boolean) => {
@@ -700,13 +569,7 @@ export function useSettingsState(
     selectedSecretWorkspace,
     isSecretsLoading,
     isSavingSecrets,
-    storageMode,
     storageInfo,
-    isMigratingStorage,
-    backupPath,
-    migrationProgress,
-    isRollingBack,
-    isVerifyingMigration,
     minimizeToTray,
     launchOnStartup,
     isExporting,
@@ -730,9 +593,6 @@ export function useSettingsState(
       saveWorkspaceSecret,
       deleteGlobalSecret,
       deleteWorkspaceSecret,
-      migrateToFileStorage,
-      rollbackMigration,
-      verifyMigration,
       toggleMinimizeToTray,
       toggleLaunchOnStartup,
       handleExport,
