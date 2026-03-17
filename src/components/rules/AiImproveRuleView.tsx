@@ -101,7 +101,7 @@ export function AiImproveRuleView({
   });
 
   return (
-    <div className="fixed inset-0 z-[150] bg-background flex flex-col animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-[150] bg-background/95 backdrop-blur-md flex flex-col animate-in fade-in zoom-in-95 duration-300">
       {/* Header */}
       <header className="flex items-center justify-between px-6 py-4 border-b border-white/10 bg-muted/30">
         <div className="flex items-center gap-4">
@@ -209,7 +209,7 @@ export function AiImproveRuleView({
                     variant="outline"
                     size="sm"
                     onClick={() => setSplitView(!splitView)}
-                    className="glass border-white/10 hover:bg-white/10 h-8 gap-2"
+                    className="glass border-white/10 hover:bg-white/20 h-8 gap-2 premium-shadow transition-all"
                   >
                     <Layout className="h-3.5 w-3.5" />
                     {splitView ? "Unified View" : "Split View"}
@@ -235,7 +235,9 @@ export function AiImproveRuleView({
                         addedGutterBackground: "rgba(34, 197, 94, 0.08)",
                         removedGutterBackground: "rgba(239, 68, 68, 0.08)",
                         emptyLineBackground: "transparent",
-                        gutterColor: "rgba(255, 255, 255, 0.3)",
+                        gutterColor: "rgba(255, 255, 255, 0.2)",
+                        codeFoldBackground: "rgba(255, 255, 255, 0.05)",
+                        codeFoldContentColor: "rgba(255, 255, 255, 0.4)",
                       },
                     },
                     line: {
@@ -288,10 +290,13 @@ export function AiImproveRuleView({
               variant="outline"
               onClick={handleRegenerateClick}
               disabled={isImproving}
-              className="glass border-white/10 hover:bg-white/10 h-10 w-full rounded-full transition-all hover:border-primary/50 group"
+              className="glass border-white/10 hover:bg-white/20 hover:border-primary/50 h-12 w-full rounded-full transition-all premium-shadow group relative overflow-hidden"
             >
-              <RefreshCw className="mr-2 h-4 w-4 transition-transform group-hover:rotate-180 duration-500" />
-              Not quite right? Regenerate with specific instructions...
+              <div className="absolute inset-0 bg-primary/5 opacity-0 group-hover:opacity-100 transition-opacity" />
+              <RefreshCw className="mr-2 h-4 w-4 transition-transform group-hover:rotate-180 duration-700" />
+              <span className="relative z-10 font-medium">
+                Not quite right? Regenerate with specific instructions...
+              </span>
             </Button>
           )}
 
