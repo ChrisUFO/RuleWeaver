@@ -225,30 +225,29 @@ pub async fn improve_rule_with_ai(
         prompt.len()
     );
 
-    let user_message = if let Some(ref name) = input.rule_name {
-        if let Some(ref instructions) = input.additional_instructions {
-            format!(
-                "Improve this rule named '{}' by applying the guidelines.\n\n# Additional Instructions\n\n{}\n\n# Rule Content\n\n{}",
-                name, instructions, input.rule_content
-            )
-        } else {
-            format!(
-                "Improve this rule named '{}' by applying the guidelines.\n\n# Rule Content\n\n{}",
-                name, input.rule_content
-            )
-        }
+    let user_message = if let (Some(ref name), Some(ref instructions)) = (
+        input.rule_name.as_ref(),
+        input.additional_instructions.as_ref(),
+    ) {
+        format!(
+            "Improve this rule named '{}' by applying the guidelines.\n\n# Additional Instructions\n\n{}\n\n# Rule Content\n\n{}",
+            name, instructions, input.rule_content
+        )
+    } else if let Some(ref name) = input.rule_name {
+        format!(
+            "Improve this rule named '{}' by applying the guidelines.\n\n# Rule Content\n\n{}",
+            name, input.rule_content
+        )
+    } else if let Some(ref instructions) = input.additional_instructions {
+        format!(
+            "Improve the following rule by applying the guidelines.\n\n# Additional Instructions\n\n{}\n\n# Rule Content\n\n{}",
+            instructions, input.rule_content
+        )
     } else {
-        if let Some(ref instructions) = input.additional_instructions {
-            format!(
-                "Improve the following rule by applying the guidelines.\n\n# Additional Instructions\n\n{}\n\n# Rule Content\n\n{}",
-                instructions, input.rule_content
-            )
-        } else {
-            format!(
-                "Improve the following rule by applying the guidelines.\n\n# Rule Content\n\n{}",
-                input.rule_content
-            )
-        }
+        format!(
+            "Improve the following rule by applying the guidelines.\n\n# Rule Content\n\n{}",
+            input.rule_content
+        )
     };
 
     log::debug!(
