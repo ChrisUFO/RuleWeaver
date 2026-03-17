@@ -13,7 +13,11 @@ interface UseAiImprovementReturn {
   improvedContent: string | null;
   modelUsed: string | null;
   error: string | null;
-  improve: (ruleContent: string, ruleName?: string) => Promise<ImproveRuleOutput | null>;
+  improve: (
+    ruleContent: string,
+    ruleName?: string,
+    additionalInstructions?: string
+  ) => Promise<ImproveRuleOutput | null>;
   clearResult: () => void;
 }
 
@@ -28,7 +32,11 @@ export function useAiImprovement(options: UseAiImprovementOptions = {}): UseAiIm
   optionsRef.current = options;
 
   const improve = useCallback(
-    async (ruleContent: string, ruleName?: string): Promise<ImproveRuleOutput | null> => {
+    async (
+      ruleContent: string,
+      ruleName?: string,
+      additionalInstructions?: string
+    ): Promise<ImproveRuleOutput | null> => {
       if (inProgressRef.current) {
         console.log("[useAiImprovement] Already improving, skipping duplicate request");
         return null;
@@ -43,12 +51,14 @@ export function useAiImprovement(options: UseAiImprovementOptions = {}): UseAiIm
       console.log("[useAiImprovement] Starting AI improvement request", {
         contentLength: ruleContent.length,
         ruleName,
+        hasInstructions: !!additionalInstructions,
       });
 
       try {
         const result = await api.ai.improveRule({
           ruleContent,
           ruleName: ruleName || null,
+          additionalInstructions: additionalInstructions || null,
         });
 
         console.log("[useAiImprovement] AI improvement succeeded", {

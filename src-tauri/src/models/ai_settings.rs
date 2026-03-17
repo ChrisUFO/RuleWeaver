@@ -241,6 +241,7 @@ pub struct UpsertAiSettingsInput {
 pub struct ImproveRuleInput {
     pub rule_content: String,
     pub rule_name: Option<String>,
+    pub additional_instructions: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

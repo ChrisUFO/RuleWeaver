@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
-import { Sparkles, Loader2, Check, X, RefreshCw, AlertTriangle } from "lucide-react";
+import { Sparkles, Loader2, Check, X, RefreshCw, AlertTriangle, Send } from "lucide-react";
 import ReactDiffViewer, { DiffMethod } from "react-diff-viewer-continued";
 import {
   Dialog,
@@ -42,6 +42,8 @@ export function AiImproveRuleDialog({
 }: AiImproveRuleDialogProps) {
   const { addToast } = useToast();
   const [viewMode, setViewMode] = useState<"diff" | "original" | "improved">("diff");
+  const [showRegenerateInput, setShowRegenerateInput] = useState(false);
+  const [regenerateInstructions, setRegenerateInstructions] = useState("");
 
   const hasRequestedRef = useRef(false);
 
@@ -72,14 +74,28 @@ export function AiImproveRuleDialog({
       hasRequestedRef.current = false;
       clearResult();
       setViewMode("diff");
+      setShowRegenerateInput(false);
+      setRegenerateInstructions("");
     }
   }, [open, ruleContent, ruleName, isContentTooLarge, improve, clearResult]);
 
   const hasChanges = improvedContent && improvedContent !== ruleContent;
-  const handleRegenerate = useCallback(() => {
+
+  const handleRegenerateClick = useCallback(() => {
+    setShowRegenerateInput(true);
+  }, []);
+
+  const handleRegenerateWithInstructions = useCallback(() => {
     clearResult();
-    improve(ruleContent, ruleName);
-  }, [clearResult, improve, ruleContent, ruleName]);
+    improve(ruleContent, ruleName, regenerateInstructions || undefined);
+    setShowRegenerateInput(false);
+    setRegenerateInstructions("");
+  }, [clearResult, improve, ruleContent, ruleName, regenerateInstructions]);
+
+  const handleCancelRegenerate = useCallback(() => {
+    setShowRegenerateInput(false);
+    setRegenerateInstructions("");
+  }, []);
 
   const handleReject = useCallback(() => {
     onOpenChange(false);
@@ -224,16 +240,45 @@ export function AiImproveRuleDialog({
         </div>
 
         <DialogFooter>
-          {improvedContent && !isImproving && (
+          {improvedContent && !isImproving && !showRegenerateInput && (
             <Button
               variant="outline"
-              onClick={handleRegenerate}
+              onClick={handleRegenerateClick}
               disabled={isImproving}
-              title="Try again with the same input"
+              title="Regenerate with optional instructions"
             >
               <RefreshCw className="mr-2 h-4 w-4" />
               Regenerate
             </Button>
+          )}
+          {showRegenerateInput && (
+            <div className="flex items-center gap-2 flex-1 mr-auto">
+              <input
+                type="text"
+                placeholder="e.g., 'Make it more concise' or 'Add error handling'"
+                value={regenerateInstructions}
+                onChange={(e) => setRegenerateInstructions(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    handleRegenerateWithInstructions();
+                  } else if (e.key === "Escape") {
+                    handleCancelRegenerate();
+                  }
+                }}
+                className="flex-1 px-3 py-1.5 text-sm bg-background border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                autoFocus
+              />
+              <Button
+                size="sm"
+                onClick={handleRegenerateWithInstructions}
+                title="Send instructions"
+              >
+                <Send className="h-4 w-4" />
+              </Button>
+              <Button size="sm" variant="ghost" onClick={handleCancelRegenerate} title="Cancel">
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
           )}
           <Button variant="outline" onClick={handleReject}>
             <X className="mr-2 h-4 w-4" />
