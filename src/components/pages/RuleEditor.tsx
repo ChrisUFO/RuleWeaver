@@ -5,11 +5,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardHeader } from "@/components/ui/card";
 import { MarkdownEditor, type FullscreenSaveState } from "@/components/ui/markdown-editor";
+import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { useKeyboardShortcuts, SHORTCUTS } from "@/hooks/useKeyboardShortcuts";
 import { type Rule } from "@/types/rule";
 import { useRuleEditorState } from "@/hooks/useRuleEditorState";
 import { RuleEditorSettingsPanel } from "@/components/rules/RuleEditorSettingsPanel";
-import { AiImproveRuleDialog } from "@/components/rules/AiImproveRuleDialog";
+import { AiImproveRuleView } from "@/components/rules/AiImproveRuleView";
 import { api } from "@/lib/tauri";
 import type { AiSettings } from "@/types/ai";
 
@@ -105,7 +106,6 @@ export function RuleEditor({ rule, onBack, onSelectRule, isNew = false }: RuleEd
       <MarkdownEditor
         value={content}
         onChange={setContent}
-        className="h-full"
         isFullscreen={true}
         onFullscreenChange={setIsFullscreen}
         fullscreenSaveState={fullscreenSaveState}
@@ -186,7 +186,7 @@ export function RuleEditor({ rule, onBack, onSelectRule, isNew = false }: RuleEd
           </Card>
         </div>
 
-        <div className="lg:col-span-1">
+        <div className="lg:col-span-1 flex flex-col min-h-0">
           <RuleEditorSettingsPanel
             scope={scope}
             onScopeChange={setScope}
@@ -202,13 +202,28 @@ export function RuleEditor({ rule, onBack, onSelectRule, isNew = false }: RuleEd
         </div>
       </div>
 
-      <AiImproveRuleDialog
-        open={isAiImproveDialogOpen}
-        onOpenChange={setIsAiImproveDialogOpen}
-        ruleContent={content}
-        ruleName={name}
-        onApply={(improvedContent) => setContent(improvedContent)}
-      />
+      {isAiImproveDialogOpen && (
+        <ErrorBoundary
+          fallback={
+            <div className="fixed inset-0 z-[150] bg-background/95 flex items-center justify-center">
+              <div className="text-center p-8">
+                <p className="text-lg mb-4">The diff viewer encountered an error.</p>
+                <Button onClick={() => setIsAiImproveDialogOpen(false)}>Close</Button>
+              </div>
+            </div>
+          }
+        >
+          <AiImproveRuleView
+            ruleContent={content}
+            ruleName={name}
+            onApply={(improvedContent) => {
+              setContent(improvedContent);
+              setIsAiImproveDialogOpen(false);
+            }}
+            onCancel={() => setIsAiImproveDialogOpen(false)}
+          />
+        </ErrorBoundary>
+      )}
     </div>
   );
 }

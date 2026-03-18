@@ -56,7 +56,7 @@ export function MainLayout({ children, activeView, onViewChange }: MainLayoutPro
       />
       <div className="flex flex-1 flex-col overflow-hidden relative z-10">
         <Header theme={theme} onThemeChange={setTheme} />
-        <main className="flex-1 overflow-auto p-6">{children}</main>
+        <main className="flex-1 overflow-y-auto overflow-x-hidden p-6">{children}</main>
       </div>
     </div>
   );

@@ -110,7 +110,8 @@ describe("RulesList import workflow", () => {
 
     renderWithProviders(<RulesList onSelectRule={vi.fn()} onCreateRule={vi.fn()} />);
 
-    await userEvent.click(screen.getByRole("button", { name: /import ai/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^import$/i }));
+    await userEvent.click(screen.getByRole("menuitem", { name: /auto-discover rules/i }));
 
     await waitFor(() => {
       expect(api.ruleImport.scanAiToolCandidates).toHaveBeenCalled();
@@ -157,7 +158,8 @@ describe("RulesList import workflow", () => {
 
     renderWithProviders(<RulesList onSelectRule={vi.fn()} onCreateRule={vi.fn()} />);
 
-    await userEvent.click(screen.getByRole("button", { name: /import ai/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^import$/i }));
+    await userEvent.click(screen.getByRole("menuitem", { name: /auto-discover rules/i }));
     await waitFor(() => expect(screen.getByText("quality-cline")).toBeInTheDocument());
 
     await userEvent.click(screen.getByRole("button", { name: /process import/i }));
@@ -207,7 +209,8 @@ describe("RulesList import workflow", () => {
 
     renderWithProviders(<RulesList onSelectRule={vi.fn()} onCreateRule={vi.fn()} />);
 
-    await userEvent.click(screen.getByRole("button", { name: /import ai/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^import$/i }));
+    await userEvent.click(screen.getByRole("menuitem", { name: /auto-discover rules/i }));
     await waitFor(() => expect(screen.getByText("quality-cline")).toBeInTheDocument());
 
     await userEvent.selectOptions(screen.getByLabelText(/conflict mode/i), "replace");
@@ -260,7 +263,8 @@ describe("RulesList import workflow", () => {
 
     renderWithProviders(<RulesList onSelectRule={vi.fn()} onCreateRule={vi.fn()} />);
 
-    await userEvent.click(screen.getByRole("button", { name: /import file/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^import$/i }));
+    await userEvent.click(screen.getByRole("menuitem", { name: /import file/i }));
     await waitFor(() => {
       expect(api.ruleImport.scanFromFile).toHaveBeenCalledWith("C:/tmp/rule.md");
     });
@@ -312,7 +316,8 @@ describe("RulesList import workflow", () => {
 
     renderWithProviders(<RulesList onSelectRule={vi.fn()} onCreateRule={vi.fn()} />);
 
-    await userEvent.click(screen.getByRole("button", { name: /import ai/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^import$/i }));
+    await userEvent.click(screen.getByRole("menuitem", { name: /auto-discover rules/i }));
     await waitFor(() => expect(screen.getByText("quality-cline")).toBeInTheDocument());
 
     await userEvent.selectOptions(screen.getByLabelText(/scope override/i), "local");
@@ -330,15 +335,6 @@ describe("RulesList import workflow", () => {
         })
       );
     });
-  });
-
-  it("shows URL required validation when scanning URL without input", async () => {
-    renderWithProviders(<RulesList onSelectRule={vi.fn()} onCreateRule={vi.fn()} />);
-
-    await userEvent.click(screen.getByRole("button", { name: /import url/i }));
-    await userEvent.click(screen.getByRole("button", { name: /scan remote source/i }));
-
-    expect(screen.getByText(/URL Required/i)).toBeInTheDocument();
   });
 
   it("shows drop not supported for dropped files without path", async () => {

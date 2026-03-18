@@ -38,13 +38,13 @@ export function RuleEditorSettingsPanel({
   const [adaptersOpen, setAdaptersOpen] = useState(true);
 
   return (
-    <Card className="h-fit glass-card premium-shadow border-none overflow-hidden">
-      <CardHeader className="bg-white/5 pb-4">
+    <Card className="h-full flex flex-col glass-card premium-shadow border-none overflow-hidden">
+      <CardHeader className="bg-white/5 pb-4 flex-shrink-0">
         <CardTitle className="text-sm font-semibold tracking-wide uppercase text-muted-foreground/80">
           Settings
         </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-2 pt-4">
+      <CardContent className="space-y-2 pt-4 flex-1 overflow-auto">
         <Collapsible open={scopeOpen} onOpenChange={setScopeOpen}>
           <CollapsibleTrigger className="flex items-center justify-between w-full py-2 text-sm font-medium hover:text-primary transition-colors">
             <span>Scope</span>

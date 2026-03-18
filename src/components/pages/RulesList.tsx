@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo, useRef } from "react";
 import type { DragEvent } from "react";
 import { cn } from "@/lib/utils";
-import { Plus, Upload, FileText, FolderUp, Link, Clipboard } from "lucide-react";
+import { Plus, Upload, FileText, FolderUp, ChevronDown, Sparkles } from "lucide-react";
 import { ImportDialog, type ImportSourceMode } from "@/components/import/ImportDialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -55,7 +55,9 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
   const [initialImportMode, setInitialImportMode] = useState<ImportSourceMode | null>(null);
   const [initialImportFilePaths, setInitialImportFilePaths] = useState<string[] | null>(null);
   const [isDragImportActive, setIsDragImportActive] = useState(false);
+  const [importMenuOpen, setImportMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const importMenuRef = useRef<HTMLDivElement>(null);
 
   useKeyboardShortcuts({
     shortcuts: [
@@ -81,13 +83,16 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
         setMenuOpen(null);
       }
+      if (importMenuRef.current && !importMenuRef.current.contains(event.target as Node)) {
+        setImportMenuOpen(false);
+      }
     };
 
-    if (menuOpen) {
+    if (menuOpen || importMenuOpen) {
       document.addEventListener("mousedown", handleClickOutside);
       return () => document.removeEventListener("mousedown", handleClickOutside);
     }
-  }, [menuOpen]);
+  }, [menuOpen, importMenuOpen]);
 
   const { sortField, sortDirection } = useMemo(() => parseSortValue(sortValue), [sortValue]);
 
@@ -295,26 +300,59 @@ export function RulesList({ onSelectRule, onCreateRule }: RulesListProps) {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <h1 className="text-2xl font-bold">Rules</h1>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => openImport("ai")}>
-            <Upload className="mr-2 h-4 w-4" aria-hidden="true" />
-            Import AI
-          </Button>
-          <Button variant="outline" onClick={() => openImport("file")}>
-            <FileText className="mr-2 h-4 w-4" aria-hidden="true" />
-            Import File
-          </Button>
-          <Button variant="outline" onClick={() => openImport("directory")}>
-            <FolderUp className="mr-2 h-4 w-4" aria-hidden="true" />
-            Import Folder
-          </Button>
-          <Button variant="outline" onClick={() => openImport("url")}>
-            <Link className="mr-2 h-4 w-4" aria-hidden="true" />
-            Import URL
-          </Button>
-          <Button variant="outline" onClick={() => openImport("clipboard")}>
-            <Clipboard className="mr-2 h-4 w-4" aria-hidden="true" />
-            Import Clipboard
-          </Button>
+          <div className="relative" ref={importMenuRef}>
+            <Button
+              variant="outline"
+              onClick={() => setImportMenuOpen((prev) => !prev)}
+              aria-haspopup="menu"
+              aria-expanded={importMenuOpen}
+            >
+              <Upload className="mr-2 h-4 w-4" aria-hidden="true" />
+              Import
+              <ChevronDown className="ml-2 h-4 w-4" aria-hidden="true" />
+            </Button>
+            {importMenuOpen && (
+              <div
+                className="absolute right-0 top-full mt-1 z-10 w-48 rounded-md border bg-background shadow-lg"
+                role="menu"
+                aria-label="Import options"
+              >
+                <button
+                  className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-accent focus:outline-none focus:bg-accent"
+                  onClick={() => {
+                    openImport("ai");
+                    setImportMenuOpen(false);
+                  }}
+                  role="menuitem"
+                >
+                  <Sparkles className="h-4 w-4" aria-hidden="true" />
+                  Auto-Discover Rules
+                </button>
+                <button
+                  className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-accent focus:outline-none focus:bg-accent"
+                  onClick={() => {
+                    openImport("file");
+                    setImportMenuOpen(false);
+                  }}
+                  role="menuitem"
+                >
+                  <FileText className="h-4 w-4" aria-hidden="true" />
+                  Import File
+                </button>
+                <button
+                  className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-accent focus:outline-none focus:bg-accent"
+                  onClick={() => {
+                    openImport("directory");
+                    setImportMenuOpen(false);
+                  }}
+                  role="menuitem"
+                >
+                  <FolderUp className="h-4 w-4" aria-hidden="true" />
+                  Import Folder
+                </button>
+              </div>
+            )}
+          </div>
           <RuleTemplateBrowser onInstalled={fetchRules} />
           <Button onClick={onCreateRule} aria-label="Create new rule">
             <Plus className="mr-2 h-4 w-4" aria-hidden="true" />

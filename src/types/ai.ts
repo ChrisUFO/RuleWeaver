@@ -46,6 +46,7 @@ export interface TestConnectionOutput {
 export interface ImproveRuleInput {
   ruleContent: string;
   ruleName?: string | null;
+  additionalInstructions?: string | null;
 }
 
 export interface ImproveRuleOutput {

@@ -9,6 +9,7 @@ import { toast } from "@/lib/toast-helpers";
 import type { useToast } from "@/components/ui/toast";
 import type { AiProvider, AiSettings, ModelInfo, SaveAiSettingsInput } from "@/types/ai";
 import { AI_PROVIDER_INFO } from "@/types/ai";
+import { cn } from "@/lib/utils";
 
 interface AiSettingsCardProps {
   addToast: ReturnType<typeof useToast>["addToast"];
@@ -25,6 +26,10 @@ export function AiSettingsCard({ addToast }: AiSettingsCardProps) {
   const [apiKey, setApiKey] = useState("");
   const [customModel, setCustomModel] = useState("");
   const [showCustomModelInput, setShowCustomModelInput] = useState(false);
+  const [defaultPrompts, setDefaultPrompts] = useState<{
+    improvement: string;
+    generation: string;
+  } | null>(null);
 
   const [formState, setFormState] = useState({
     provider: "openai" as AiProvider,
@@ -35,6 +40,8 @@ export function AiSettingsCard({ addToast }: AiSettingsCardProps) {
     generationPrompt: "" as string | null,
   });
 
+  const [activeTab, setActiveTab] = useState<"improvement" | "generation">("improvement");
+
   const loadModels = useCallback(async () => {
     try {
       setIsLoadingModels(true);
@@ -44,6 +51,15 @@ export function AiSettingsCard({ addToast }: AiSettingsCardProps) {
       setModels([]);
     } finally {
       setIsLoadingModels(false);
+    }
+  }, []);
+
+  const loadDefaultPrompts = useCallback(async () => {
+    try {
+      const [improvement, generation] = await api.ai.getDefaultPrompts();
+      setDefaultPrompts({ improvement, generation });
+    } catch {
+      // Silently fail, placeholders will just use the hardcoded default
     }
   }, []);
 
@@ -72,7 +88,8 @@ export function AiSettingsCard({ addToast }: AiSettingsCardProps) {
 
   useEffect(() => {
     loadSettings();
-  }, [loadSettings]);
+    loadDefaultPrompts();
+  }, [loadSettings, loadDefaultPrompts]);
 
   const handleSave = async () => {
     try {
@@ -232,7 +249,7 @@ export function AiSettingsCard({ addToast }: AiSettingsCardProps) {
                         (typeof AI_PROVIDER_INFO)[AiProvider],
                       ][]
                     ).map(([id, info]) => (
-                      <option key={id} value={id}>
+                      <option key={id} value={id} className="bg-background text-foreground">
                         {info.name}
                       </option>
                     ))}
@@ -258,13 +275,21 @@ export function AiSettingsCard({ addToast }: AiSettingsCardProps) {
                       onChange={(e) => handleModelSelect(e.target.value)}
                       className="w-full h-10 rounded-lg border border-white/10 bg-white/5 px-3 text-sm appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/50"
                     >
-                      <option value="">Select a model</option>
+                      <option value="" className="bg-background text-muted-foreground">
+                        Select a model
+                      </option>
                       {models.map((model) => (
-                        <option key={model.id} value={model.id}>
+                        <option
+                          key={model.id}
+                          value={model.id}
+                          className="bg-background text-foreground"
+                        >
                           {model.name || model.id}
                         </option>
                       ))}
-                      <option value="__custom__">Custom model name...</option>
+                      <option value="__custom__" className="bg-background text-foreground">
+                        Custom model name...
+                      </option>
                     </select>
                     <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
                   </div>
@@ -382,33 +407,75 @@ export function AiSettingsCard({ addToast }: AiSettingsCardProps) {
                 Custom Prompts (Advanced)
               </summary>
               <div className="space-y-4 pt-4">
-                <div className="space-y-2">
-                  <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                <div className="flex p-1 bg-white/5 border border-white/10 rounded-xl w-fit">
+                  <button
+                    onClick={() => setActiveTab("improvement")}
+                    className={cn(
+                      "px-4 py-1.5 text-xs font-medium rounded-lg transition-all",
+                      activeTab === "improvement"
+                        ? "bg-primary text-primary-foreground shadow-lg"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
                     Improvement Prompt
-                  </label>
-                  <textarea
-                    value={formState.improvementPrompt || ""}
-                    onChange={(e) =>
-                      setFormState((prev) => ({ ...prev, improvementPrompt: e.target.value }))
-                    }
-                    placeholder="Leave empty to use the default prompt..."
-                    rows={4}
-                    className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                  </button>
+                  <button
+                    onClick={() => setActiveTab("generation")}
+                    className={cn(
+                      "px-4 py-1.5 text-xs font-medium rounded-lg transition-all",
+                      activeTab === "generation"
+                        ? "bg-primary text-primary-foreground shadow-lg"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
                     Generation Prompt
-                  </label>
-                  <textarea
-                    value={formState.generationPrompt || ""}
-                    onChange={(e) =>
-                      setFormState((prev) => ({ ...prev, generationPrompt: e.target.value }))
-                    }
-                    placeholder="Leave empty to use the default prompt..."
-                    rows={4}
-                    className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none"
-                  />
+                  </button>
+                </div>
+
+                <div className="mt-2">
+                  {activeTab === "improvement" ? (
+                    <div className="space-y-2 animate-in fade-in slide-in-from-left-2 duration-300">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60">
+                          Rule Improvement Logic
+                        </label>
+                        <Badge variant="outline" className="text-[9px] opacity-50">
+                          Markdown
+                        </Badge>
+                      </div>
+                      <textarea
+                        value={formState.improvementPrompt || ""}
+                        onChange={(e) =>
+                          setFormState((prev) => ({ ...prev, improvementPrompt: e.target.value }))
+                        }
+                        placeholder={
+                          defaultPrompts?.improvement || "Leave empty to use the default prompt..."
+                        }
+                        className="w-full h-[300px] rounded-xl border border-white/10 bg-black/40 px-4 py-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/50 resize-y placeholder:text-muted-foreground/50 placeholder:italic overflow-y-auto"
+                      />
+                    </div>
+                  ) : (
+                    <div className="space-y-2 animate-in fade-in slide-in-from-right-2 duration-300">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/60">
+                          Rule Generation Logic
+                        </label>
+                        <Badge variant="outline" className="text-[9px] opacity-50">
+                          Markdown
+                        </Badge>
+                      </div>
+                      <textarea
+                        value={formState.generationPrompt || ""}
+                        onChange={(e) =>
+                          setFormState((prev) => ({ ...prev, generationPrompt: e.target.value }))
+                        }
+                        placeholder={
+                          defaultPrompts?.generation || "Leave empty to use the default prompt..."
+                        }
+                        className="w-full h-[300px] rounded-xl border border-white/10 bg-black/40 px-4 py-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/50 resize-y placeholder:text-muted-foreground/50 placeholder:italic overflow-y-auto"
+                      />
+                    </div>
+                  )}
                 </div>
                 <Button
                   variant="outline"

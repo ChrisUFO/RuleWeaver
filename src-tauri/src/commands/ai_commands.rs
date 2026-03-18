@@ -12,6 +12,70 @@ use crate::models::{
 };
 use crate::secure_storage::SecretStorage;
 
+struct AiClientContext {
+    settings: crate::models::AiSettingsRecord,
+    provider: AiProvider,
+    api_key: String,
+}
+
+async fn prepare_ai_client(
+    db: &State<'_, Arc<Database>>,
+    context: &str,
+) -> Result<AiClientContext> {
+    let settings = db.get_ai_settings().await?;
+    log::debug!(
+        "{}: provider={}, model={:?}, enabled={}",
+        context,
+        settings.provider,
+        settings.model,
+        settings.enabled
+    );
+
+    if !settings.enabled {
+        log::warn!("{}: AI feature is not enabled", context);
+        return Err(crate::error::AppError::Ai(
+            crate::error::AiError::NotEnabled,
+        ));
+    }
+
+    let provider = match AiProvider::from_str(&settings.provider) {
+        Ok(p) => {
+            log::debug!("{}: Parsed provider: {:?}", context, p);
+            p
+        }
+        Err(_) => {
+            let error_message = format!("Invalid provider: {}", settings.provider);
+            log::error!("{}: {}", context, error_message);
+            return Err(crate::error::AppError::Ai(
+                crate::error::AiError::RequestFailed(error_message),
+            ));
+        }
+    };
+
+    let api_key = match get_api_key_for_provider(&settings.provider).await? {
+        Some(key) => {
+            log::debug!("{}: Found API key, length: {}", context, key.len());
+            key
+        }
+        None => {
+            log::warn!(
+                "{}: API key not configured for provider: {}",
+                context,
+                settings.provider
+            );
+            return Err(crate::error::AppError::Ai(
+                crate::error::AiError::ApiKeyNotSet,
+            ));
+        }
+    };
+
+    Ok(AiClientContext {
+        settings,
+        provider,
+        api_key,
+    })
+}
+
 #[tauri::command]
 pub async fn get_ai_settings(db: State<'_, Arc<Database>>) -> Result<AiSettings> {
     let record = db.get_ai_settings().await?;
@@ -166,36 +230,40 @@ pub async fn improve_rule_with_ai(
     db: State<'_, Arc<Database>>,
     input: ImproveRuleInput,
 ) -> Result<ImproveRuleOutput> {
-    let settings = db.get_ai_settings().await?;
+    log::info!(
+        "improve_rule_with_ai called - content_length: {}",
+        input.rule_content.len()
+    );
 
-    if !settings.enabled {
-        return Err(crate::error::AppError::Ai(
-            crate::error::AiError::NotEnabled,
-        ));
-    }
+    let ctx = prepare_ai_client(&db, "improve_rule_with_ai").await?;
 
-    let provider = AiProvider::from_str(&settings.provider).map_err(|_| {
-        crate::error::AppError::Ai(crate::error::AiError::RequestFailed(format!(
-            "Invalid provider: {}",
-            settings.provider
-        )))
-    })?;
-
-    let api_key =
-        get_api_key_for_provider(&settings.provider)
-            .await?
-            .ok_or(crate::error::AppError::Ai(
-                crate::error::AiError::ApiKeyNotSet,
-            ))?;
-
-    let prompt = settings
+    let prompt = ctx
+        .settings
         .improvement_prompt
         .unwrap_or_else(|| DEFAULT_IMPROVEMENT_PROMPT.to_string());
 
-    let user_message = if let Some(ref name) = input.rule_name {
+    log::debug!(
+        "improve_rule_with_ai: Using prompt, length: {}",
+        prompt.len()
+    );
+
+    let user_message = if let (Some(ref name), Some(ref instructions)) = (
+        input.rule_name.as_ref(),
+        input.additional_instructions.as_ref(),
+    ) {
+        format!(
+            "Improve this rule named '{}' by applying the guidelines.\n\n# Additional Instructions\n\n{}\n\n# Rule Content\n\n{}",
+            name, instructions, input.rule_content
+        )
+    } else if let Some(ref name) = input.rule_name {
         format!(
             "Improve this rule named '{}' by applying the guidelines.\n\n# Rule Content\n\n{}",
             name, input.rule_content
+        )
+    } else if let Some(ref instructions) = input.additional_instructions {
+        format!(
+            "Improve the following rule by applying the guidelines.\n\n# Additional Instructions\n\n{}\n\n# Rule Content\n\n{}",
+            instructions, input.rule_content
         )
     } else {
         format!(
@@ -204,20 +272,37 @@ pub async fn improve_rule_with_ai(
         )
     };
 
-    let client = AiClient::new(
-        provider,
-        settings.base_url.as_deref(),
-        &api_key,
-        &settings.model,
+    log::debug!(
+        "improve_rule_with_ai: Calling AI client - model: {}, base_url: {:?}",
+        ctx.settings.model,
+        ctx.settings.base_url
     );
 
-    let improved_content = client.complete(&prompt, &user_message).await?;
+    let client = AiClient::new(
+        ctx.provider,
+        ctx.settings.base_url.as_deref(),
+        &ctx.api_key,
+        &ctx.settings.model,
+    );
 
-    Ok(ImproveRuleOutput {
-        improved_content,
-        model_used: settings.model,
-        tokens_used: None,
-    })
+    match client.complete(&prompt, &user_message).await {
+        Ok(improved_content) => {
+            log::info!(
+                "improve_rule_with_ai: Successfully improved rule - model: {}, content_length: {}",
+                ctx.settings.model,
+                improved_content.len()
+            );
+            Ok(ImproveRuleOutput {
+                improved_content,
+                model_used: ctx.settings.model,
+                tokens_used: None,
+            })
+        }
+        Err(e) => {
+            log::error!("improve_rule_with_ai: AI client error: {:?}", e);
+            Err(crate::error::AppError::Ai(e.into()))
+        }
+    }
 }
 
 #[tauri::command]
@@ -225,31 +310,22 @@ pub async fn generate_rule_with_ai(
     db: State<'_, Arc<Database>>,
     input: GenerateRuleInput,
 ) -> Result<GenerateRuleOutput> {
-    let settings = db.get_ai_settings().await?;
+    log::info!(
+        "generate_rule_with_ai called - description_length: {}",
+        input.description.len()
+    );
 
-    if !settings.enabled {
-        return Err(crate::error::AppError::Ai(
-            crate::error::AiError::NotEnabled,
-        ));
-    }
+    let ctx = prepare_ai_client(&db, "generate_rule_with_ai").await?;
 
-    let provider = AiProvider::from_str(&settings.provider).map_err(|_| {
-        crate::error::AppError::Ai(crate::error::AiError::RequestFailed(format!(
-            "Invalid provider: {}",
-            settings.provider
-        )))
-    })?;
-
-    let api_key =
-        get_api_key_for_provider(&settings.provider)
-            .await?
-            .ok_or(crate::error::AppError::Ai(
-                crate::error::AiError::ApiKeyNotSet,
-            ))?;
-
-    let prompt = settings
+    let prompt = ctx
+        .settings
         .generation_prompt
         .unwrap_or_else(|| DEFAULT_GENERATION_PROMPT.to_string());
+
+    log::debug!(
+        "generate_rule_with_ai: Using prompt, length: {}",
+        prompt.len()
+    );
 
     let user_message = if let Some(ref name) = input.rule_name {
         if let Some(ref context) = input.context {
@@ -275,25 +351,39 @@ pub async fn generate_rule_with_ai(
         )
     };
 
-    let client = AiClient::new(
-        provider,
-        settings.base_url.as_deref(),
-        &api_key,
-        &settings.model,
+    log::debug!(
+        "generate_rule_with_ai: Calling AI client - model: {}, base_url: {:?}",
+        ctx.settings.model,
+        ctx.settings.base_url
     );
 
-    let rule_content = client.complete(&prompt, &user_message).await?;
+    let client = AiClient::new(
+        ctx.provider,
+        ctx.settings.base_url.as_deref(),
+        &ctx.api_key,
+        &ctx.settings.model,
+    );
 
-    let suggested_name = input
-        .rule_name
-        .or_else(|| extract_title_from_content(&rule_content));
+    match client.complete(&prompt, &user_message).await {
+        Ok(rule_content) => {
+            log::info!("generate_rule_with_ai: Successfully generated rule - model: {}, content_length: {}",
+                ctx.settings.model, rule_content.len());
+            let suggested_name = input
+                .rule_name
+                .or_else(|| extract_title_from_content(&rule_content));
 
-    Ok(GenerateRuleOutput {
-        rule_content,
-        suggested_name,
-        model_used: settings.model,
-        tokens_used: None,
-    })
+            Ok(GenerateRuleOutput {
+                rule_content,
+                suggested_name,
+                model_used: ctx.settings.model,
+                tokens_used: None,
+            })
+        }
+        Err(e) => {
+            log::error!("generate_rule_with_ai: AI client error: {:?}", e);
+            Err(crate::error::AppError::Ai(e.into()))
+        }
+    }
 }
 
 #[tauri::command]
