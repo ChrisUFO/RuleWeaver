@@ -12,6 +12,70 @@ use crate::models::{
 };
 use crate::secure_storage::SecretStorage;
 
+struct AiClientContext {
+    settings: crate::models::AiSettingsRecord,
+    provider: AiProvider,
+    api_key: String,
+}
+
+async fn prepare_ai_client(
+    db: &State<'_, Arc<Database>>,
+    context: &str,
+) -> Result<AiClientContext> {
+    let settings = db.get_ai_settings().await?;
+    log::debug!(
+        "{}: provider={}, model={:?}, enabled={}",
+        context,
+        settings.provider,
+        settings.model,
+        settings.enabled
+    );
+
+    if !settings.enabled {
+        log::warn!("{}: AI feature is not enabled", context);
+        return Err(crate::error::AppError::Ai(
+            crate::error::AiError::NotEnabled,
+        ));
+    }
+
+    let provider = match AiProvider::from_str(&settings.provider) {
+        Ok(p) => {
+            log::debug!("{}: Parsed provider: {:?}", context, p);
+            p
+        }
+        Err(_) => {
+            let error_message = format!("Invalid provider: {}", settings.provider);
+            log::error!("{}: {}", context, error_message);
+            return Err(crate::error::AppError::Ai(
+                crate::error::AiError::RequestFailed(error_message),
+            ));
+        }
+    };
+
+    let api_key = match get_api_key_for_provider(&settings.provider).await? {
+        Some(key) => {
+            log::debug!("{}: Found API key, length: {}", context, key.len());
+            key
+        }
+        None => {
+            log::warn!(
+                "{}: API key not configured for provider: {}",
+                context,
+                settings.provider
+            );
+            return Err(crate::error::AppError::Ai(
+                crate::error::AiError::ApiKeyNotSet,
+            ));
+        }
+    };
+
+    Ok(AiClientContext {
+        settings,
+        provider,
+        api_key,
+    })
+}
+
 #[tauri::command]
 pub async fn get_ai_settings(db: State<'_, Arc<Database>>) -> Result<AiSettings> {
     let record = db.get_ai_settings().await?;
@@ -171,52 +235,10 @@ pub async fn improve_rule_with_ai(
         input.rule_content.len()
     );
 
-    let settings = db.get_ai_settings().await?;
-    log::debug!(
-        "improve_rule_with_ai: provider={}, model={:?}, enabled={}",
-        settings.provider,
-        settings.model,
-        settings.enabled
-    );
+    let ctx = prepare_ai_client(&db, "improve_rule_with_ai").await?;
 
-    if !settings.enabled {
-        log::warn!("improve_rule_with_ai: AI feature is not enabled");
-        return Err(crate::error::AppError::Ai(
-            crate::error::AiError::NotEnabled,
-        ));
-    }
-
-    let provider = match AiProvider::from_str(&settings.provider) {
-        Ok(p) => {
-            log::debug!("improve_rule_with_ai: Parsed provider: {:?}", p);
-            p
-        }
-        Err(_) => {
-            let error_message = format!("Invalid provider: {}", settings.provider);
-            log::error!("improve_rule_with_ai: {}", error_message);
-            return Err(crate::error::AppError::Ai(
-                crate::error::AiError::RequestFailed(error_message),
-            ));
-        }
-    };
-
-    let api_key = match get_api_key_for_provider(&settings.provider).await? {
-        Some(key) => {
-            log::debug!("improve_rule_with_ai: Found API key, length: {}", key.len());
-            key
-        }
-        None => {
-            log::warn!(
-                "improve_rule_with_ai: API key not configured for provider: {}",
-                settings.provider
-            );
-            return Err(crate::error::AppError::Ai(
-                crate::error::AiError::ApiKeyNotSet,
-            ));
-        }
-    };
-
-    let prompt = settings
+    let prompt = ctx
+        .settings
         .improvement_prompt
         .unwrap_or_else(|| DEFAULT_IMPROVEMENT_PROMPT.to_string());
 
@@ -252,27 +274,27 @@ pub async fn improve_rule_with_ai(
 
     log::debug!(
         "improve_rule_with_ai: Calling AI client - model: {}, base_url: {:?}",
-        settings.model,
-        settings.base_url
+        ctx.settings.model,
+        ctx.settings.base_url
     );
 
     let client = AiClient::new(
-        provider,
-        settings.base_url.as_deref(),
-        &api_key,
-        &settings.model,
+        ctx.provider,
+        ctx.settings.base_url.as_deref(),
+        &ctx.api_key,
+        &ctx.settings.model,
     );
 
     match client.complete(&prompt, &user_message).await {
         Ok(improved_content) => {
             log::info!(
                 "improve_rule_with_ai: Successfully improved rule - model: {}, content_length: {}",
-                settings.model,
+                ctx.settings.model,
                 improved_content.len()
             );
             Ok(ImproveRuleOutput {
                 improved_content,
-                model_used: settings.model,
+                model_used: ctx.settings.model,
                 tokens_used: None,
             })
         }
@@ -293,55 +315,10 @@ pub async fn generate_rule_with_ai(
         input.description.len()
     );
 
-    let settings = db.get_ai_settings().await?;
-    log::debug!(
-        "generate_rule_with_ai: provider={}, model={:?}, enabled={}",
-        settings.provider,
-        settings.model,
-        settings.enabled
-    );
+    let ctx = prepare_ai_client(&db, "generate_rule_with_ai").await?;
 
-    if !settings.enabled {
-        log::warn!("generate_rule_with_ai: AI feature is not enabled");
-        return Err(crate::error::AppError::Ai(
-            crate::error::AiError::NotEnabled,
-        ));
-    }
-
-    let provider = match AiProvider::from_str(&settings.provider) {
-        Ok(p) => {
-            log::debug!("generate_rule_with_ai: Parsed provider: {:?}", p);
-            p
-        }
-        Err(_) => {
-            let error_message = format!("Invalid provider: {}", settings.provider);
-            log::error!("generate_rule_with_ai: {}", error_message);
-            return Err(crate::error::AppError::Ai(
-                crate::error::AiError::RequestFailed(error_message),
-            ));
-        }
-    };
-
-    let api_key = match get_api_key_for_provider(&settings.provider).await? {
-        Some(key) => {
-            log::debug!(
-                "generate_rule_with_ai: Found API key, length: {}",
-                key.len()
-            );
-            key
-        }
-        None => {
-            log::warn!(
-                "generate_rule_with_ai: API key not configured for provider: {}",
-                settings.provider
-            );
-            return Err(crate::error::AppError::Ai(
-                crate::error::AiError::ApiKeyNotSet,
-            ));
-        }
-    };
-
-    let prompt = settings
+    let prompt = ctx
+        .settings
         .generation_prompt
         .unwrap_or_else(|| DEFAULT_GENERATION_PROMPT.to_string());
 
@@ -376,21 +353,21 @@ pub async fn generate_rule_with_ai(
 
     log::debug!(
         "generate_rule_with_ai: Calling AI client - model: {}, base_url: {:?}",
-        settings.model,
-        settings.base_url
+        ctx.settings.model,
+        ctx.settings.base_url
     );
 
     let client = AiClient::new(
-        provider,
-        settings.base_url.as_deref(),
-        &api_key,
-        &settings.model,
+        ctx.provider,
+        ctx.settings.base_url.as_deref(),
+        &ctx.api_key,
+        &ctx.settings.model,
     );
 
     match client.complete(&prompt, &user_message).await {
         Ok(rule_content) => {
             log::info!("generate_rule_with_ai: Successfully generated rule - model: {}, content_length: {}",
-                settings.model, rule_content.len());
+                ctx.settings.model, rule_content.len());
             let suggested_name = input
                 .rule_name
                 .or_else(|| extract_title_from_content(&rule_content));
@@ -398,7 +375,7 @@ pub async fn generate_rule_with_ai(
             Ok(GenerateRuleOutput {
                 rule_content,
                 suggested_name,
-                model_used: settings.model,
+                model_used: ctx.settings.model,
                 tokens_used: None,
             })
         }
